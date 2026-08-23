@@ -17,9 +17,6 @@ import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
  */
 export type AiProvider = "anthropic" | "openai" | "ollama" | "claude-code";
 
-/** The only truly-local provider (used for the ollama-specific structured-output flag). */
-const LOCAL_PROVIDERS: readonly AiProvider[] = ["ollama"];
-
 /**
  * Providers that authorise themselves and are NOT gated by AI_ALLOW_EXTERNAL:
  *  - ollama: local, data on-box.
@@ -46,15 +43,11 @@ async function allowExternal(): Promise<boolean> {
   return getBoolSetting("AI_ALLOW_EXTERNAL");
 }
 
-function isLocal(p: AiProvider): boolean {
-  return LOCAL_PROVIDERS.includes(p);
-}
-
 /** Per-provider default model when AI_MODEL is unset. */
 async function defaultModel(p: AiProvider): Promise<string> {
   if (p === "openai") return "gpt-4o";
   if (p === "ollama") return (await getSetting("OLLAMA_MODEL")) || "llama3.1";
-  return "claude-opus-4-8"; // anthropic default
+  return "claude-sonnet-5"; // anthropic default (align with the settings-UI guidance)
 }
 
 async function modelId(p: AiProvider): Promise<string> {
@@ -84,24 +77,6 @@ export async function aiConfigured(): Promise<boolean> {
  */
 export async function aiTeaserEnabled(): Promise<boolean> {
   return getBoolSetting("AI_TEASER");
-}
-
-/** Safe status object for UI/debugging — contains no secrets. */
-export async function aiStatus(): Promise<{
-  configured: boolean;
-  provider: AiProvider;
-  model: string;
-  local: boolean;
-  externalAllowed: boolean;
-}> {
-  const p = await provider();
-  return {
-    configured: await aiConfigured(),
-    provider: p,
-    model: await modelId(p),
-    local: isLocal(p),
-    externalAllowed: await allowExternal(),
-  };
 }
 
 /**

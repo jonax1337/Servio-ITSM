@@ -46,9 +46,11 @@ const SECRET_MARKERS = ["KEY", "PASS", "SECRET", "TOKEN"];
 
 // Privacy-critical keys Sable must never change about itself: flipping these could
 // steer an admin (via prompt-injection) into opening the off-box data path or
-// swapping the model provider. They stay editable in the real Settings UI, just not
-// through the AI operation layer. This deny-list takes precedence over the allow-list.
-const SELF_LOCKED_SETTING_KEYS = ["AI_ALLOW_EXTERNAL", "AI_PROVIDER"];
+// swapping the model provider — OLLAMA_BASE_URL included, because with the ollama
+// provider every chat payload (ticket transcripts, attached file text) is POSTed
+// to that URL. They stay editable in the real Settings UI, just not through the
+// AI operation layer. This deny-list takes precedence over the allow-list.
+const SELF_LOCKED_SETTING_KEYS = ["AI_ALLOW_EXTERNAL", "AI_PROVIDER", "OLLAMA_BASE_URL"];
 
 export const OPERATIONS: AiOperation[] = [
   {
