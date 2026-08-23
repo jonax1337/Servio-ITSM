@@ -264,7 +264,6 @@ async function main() {
     "Reset MFA device for user",
   ];
 
-  const now = Date.now();
   let ticketCount = 0;
   for (let i = 0; i < ticketTitles.length; i++) {
     const title = ticketTitles[i];
@@ -465,7 +464,10 @@ async function main() {
     data: {
       name: "Demo integration token",
       tokenHash: await bcrypt.hash(rawToken, 10),
-      prefix: rawToken.slice(0, 14),
+      // Prefix length MUST match lib/actions/tokens.ts (18 chars) — lib/api.ts
+      // looks tokens up by the exact prefix, so a shorter seed prefix never
+      // authenticates.
+      prefix: rawToken.slice(0, 18),
       scopes: "read,write",
       userId: byEmail("admin@servio.dev").id,
       lastUsedAt: daysAgo(1),
