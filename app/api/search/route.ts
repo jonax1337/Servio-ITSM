@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, isAgent, type Role } from "@/lib/session";
 import { ticketRef, problemRef, changeRef } from "@/lib/constants";
 import { ticketSearchWhere } from "@/lib/search";
 
@@ -10,6 +10,12 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  // Console search: agents/managers/admins search org-wide; a USER-role session
+  // (portal JWT) only ever sees their own tickets — never the whole CMDB, staff
+  // directory or other people's requests.
+  if (!isAgent(me.role as Role)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
   if (q.length < 1) return NextResponse.json({ results: [] });

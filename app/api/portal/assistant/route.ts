@@ -6,8 +6,9 @@ import {
   type UIMessage,
   type ModelMessage,
 } from "ai";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, getCurrentUser } from "@/lib/session";
 import { aiConfigured, currentProvider, resolveChatModel, chatMaxOutputTokens, generateAiChat } from "@/lib/ai";
+import { checkAiRate } from "@/lib/rate-limit";
 import {
   buildPortalTools,
   buildUserParts,
@@ -60,6 +61,19 @@ function attachmentsOf(m: UIMessage | undefined): ChatAttachment[] {
 export async function POST(req: Request) {
   const me = await getSessionUser();
   if (!me) return new Response("Not authorised", { status: 401 });
+  // Re-check the DB: the JWT may predate a deactivation, and the portal serves
+  // the whole user population — every request here drives an AI generation.
+  const row = await getCurrentUser();
+  if (!row || !row.isActive) return new Response("Not authorised", { status: 401 });
+
+  const limited = checkAiRate(me.id);
+  if (limited) {
+    return new Response("Too many requests — please wait a moment.", {
+      status: 429,
+      headers: { "retry-after": String(Math.ceil(limited.retryAfterMs / 1000)) },
+    });
+  }
+
   if (!(await aiConfigured())) return new Response("AI is not configured.", { status: 400 });
 
   let body: { messages?: UIMessage[] };

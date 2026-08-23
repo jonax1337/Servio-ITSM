@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/session";
+import { getSessionUser, getCurrentUser } from "@/lib/session";
+import { checkAiRate } from "@/lib/rate-limit";
 import { ProposalSchema } from "@/lib/portal-assistant";
 import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket } from "@/lib/portal-tickets";
 import { seatCatalogApprovalStages } from "@/lib/actions/approvals";
@@ -18,6 +19,16 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const me = await getSessionUser();
   if (!me) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  const row = await getCurrentUser();
+  if (!row || !row.isActive) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+
+  const limited = checkAiRate(me.id);
+  if (limited) {
+    return NextResponse.json(
+      { error: "Too many requests — please wait a moment." },
+      { status: 429, headers: { "retry-after": String(Math.ceil(limited.retryAfterMs / 1000)) } },
+    );
+  }
 
   let body: unknown;
   try {

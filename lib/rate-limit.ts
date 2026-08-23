@@ -55,6 +55,24 @@ export function checkApiRate(key: string, now = Date.now()): { retryAfterMs: num
   return res.allowed ? null : { retryAfterMs: res.retryAfterMs };
 }
 
+// ---- AI endpoint limiter ---------------------------------------------------
+
+const AI_LIMIT = Number(process.env.AI_RATE_LIMIT ?? 20);
+const AI_WINDOW_MS = Number(process.env.AI_RATE_WINDOW_MS ?? 60_000);
+const aiStore = new Map<string, Hit>();
+
+/**
+ * Rate-limit an AI endpoint call keyed by the session user id. Every chat turn
+ * drives a provider request (tokens cost money / local CPU), so a looping
+ * client must not be able to fire unbounded generations. Returns `null` when
+ * allowed, or `{ retryAfterMs }` for a 429.
+ */
+export function checkAiRate(userId: string, now = Date.now()): { retryAfterMs: number } | null {
+  sweep(aiStore, now);
+  const res = slidingWindow(aiStore, `ai:${userId}`, AI_LIMIT, AI_WINDOW_MS, now);
+  return res.allowed ? null : { retryAfterMs: res.retryAfterMs };
+}
+
 // ---- Login credential throttle -------------------------------------------
 
 type Lock = { failures: number; lockedUntil: number; resetAt: number };
