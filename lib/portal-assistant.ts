@@ -1,8 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ModelMessage } from "ai";
 import { db } from "@/lib/db";
-import { generateAiChat } from "@/lib/ai";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
@@ -320,7 +318,6 @@ Hard rules:
 - Always answer in the user's language.
 - Write in clean plain text: no emojis, and use normal punctuation (hyphens, not em-dashes).`;
 
-const MAX_TURNS = 12;
 
 /* ── Proposal shapes surfaced to the widget and validated at create time ── */
 
@@ -443,58 +440,4 @@ export function buildUserParts(text: string, atts: ChatAttachment[]): UserPart[]
   if (notes.length) blocks.push(`\n\nThe user attached:\n${notes.join("\n")}`);
   parts.unshift({ type: "text", text: blocks.join("").trim() || "(see attachment)" });
   return parts;
-}
-
-/** Run one portal-assistant turn. Returns the answer text and an optional draft
- *  (a ticket or a filled catalog order) the user can confirm to create. */
-export async function runPortalAssistant(
-  userId: string,
-  history: { role: "user" | "assistant"; content: string }[],
-  attachments: ChatAttachment[] = [],
-): Promise<{ text: string; proposal: RequestProposal | null }> {
-  const tools = buildPortalTools(userId);
-  const base: ModelMessage[] = history
-    .slice(-MAX_TURNS)
-    .filter((m) => m.content.trim())
-    .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
-
-  // Attach the current turn's files to the last user message (multimodal).
-  const multimodal: ModelMessage[] = [...base];
-  const lastIdx = multimodal.length - 1;
-  if (attachments.length && lastIdx >= 0 && multimodal[lastIdx].role === "user") {
-    const text = typeof multimodal[lastIdx].content === "string" ? (multimodal[lastIdx].content as string) : "";
-    multimodal[lastIdx] = { role: "user", content: buildUserParts(text, attachments) } as ModelMessage;
-  }
-
-  const run = (messages: ModelMessage[]) =>
-    generateAiChat({ system: SYSTEM_PROMPT, messages, tools, maxSteps: 6 });
-
-  let result;
-  try {
-    result = await run(multimodal);
-  } catch (err) {
-    // Model may not accept image/file parts — retry text-only so chat still works.
-    if (attachments.length) {
-      console.warn("[portal-assistant] multimodal failed, retrying text-only:", err instanceof Error ? err.message : err);
-      result = await run(base);
-    } else {
-      throw err;
-    }
-  }
-
-  // Surface the most recent draft (whichever propose_* ran last) for the widget.
-  let proposal: RequestProposal | null = null;
-  const last = [...result.toolCalls]
-    .reverse()
-    .find((t) => t.name === "propose_request" || t.name === "propose_service_request" || t.name === "propose_reply");
-  if (last) {
-    proposal =
-      last.name === "propose_service_request"
-        ? await buildServiceProposal(last.input)
-        : last.name === "propose_reply"
-          ? await buildCommentProposal(userId, last.input)
-          : await buildTicketProposal(last.input);
-  }
-
-  return { text: result.text, proposal };
 }

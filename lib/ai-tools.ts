@@ -3,7 +3,7 @@ import { z } from "zod";
 import { safeFetch } from "@/lib/safe-fetch";
 import { db } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
-import { ticketRef, problemRef, changeRef, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY } from "@/lib/constants";
+import { ticketRef, problemRef, changeRef } from "@/lib/constants";
 
 /**
  * Web tools for the AI chat agent. Search uses a real provider API when one is
@@ -390,76 +390,3 @@ export function parseTicketId(ref: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-const FIELD_ENUMS: Record<string, readonly string[]> = {
-  status: TICKET_STATUSES,
-  priority: PRIORITIES,
-  impact: IMPACT_URGENCY,
-  urgency: IMPACT_URGENCY,
-};
-
-export const proposeUpdateFieldTool = tool({
-  description:
-    "PROPOSE a change to the CURRENT ticket's field for the agent to approve. This does NOT apply immediately. " +
-    "Fields: status, priority, impact, urgency, team, category, assignee. Use a human value/name (e.g. status " +
-    "'RESOLVED', team 'Infrastructure', assignee 'Nora K900'). Always include a short reason.",
-  inputSchema: z.object({
-    field: z.enum(["status", "priority", "impact", "urgency", "team", "category", "assignee"]),
-    value: z.string().describe("target value or name"),
-    reason: z.string().describe("one short line: why this change"),
-  }),
-  execute: async ({ field, value }) => {
-    if (field in FIELD_ENUMS) {
-      const up = value.trim().toUpperCase();
-      if (!FIELD_ENUMS[field].includes(up)) {
-        return { ok: false, error: `Invalid ${field} "${value}". Allowed: ${FIELD_ENUMS[field].join(", ")}.` };
-      }
-      return { ok: true, proposed: `set ${field} to ${up} (awaiting the agent's approval)` };
-    }
-    if (field === "team") {
-      const g = await resolveGroupId(value);
-      return g ? { ok: true, proposed: `route to team ${g.name} (awaiting approval)` } : { ok: false, error: `No team matches "${value}". Use an exact team name from the directory.` };
-    }
-    if (field === "category") {
-      const c = await resolveCategoryId(value);
-      return c ? { ok: true, proposed: `set category ${c.name} (awaiting approval)` } : { ok: false, error: `No category matches "${value}".` };
-    }
-    const u = await resolveAgentId(value);
-    return u ? { ok: true, proposed: `assign to ${u.name} (awaiting approval)` } : { ok: false, error: `No agent matches "${value}".` };
-  },
-});
-
-export const proposeInternalNoteTool = tool({
-  description:
-    "PROPOSE adding an internal note (agents only, not visible to the requester) to the current ticket. Does NOT apply until the agent approves it in chat.",
-  inputSchema: z.object({ text: z.string().describe("the note content (markdown allowed)") }),
-  execute: async () => ({ ok: true, proposed: "internal note queued for the agent's approval" }),
-});
-
-export const proposeLinkTicketTool = tool({
-  description:
-    "PROPOSE linking the current ticket to another ticket (e.g. a duplicate or related incident). Does NOT apply until approved. Give the target ticket ref or number.",
-  inputSchema: z.object({
-    target: z.string().describe("target ticket ref or number, e.g. 'INC-0122' or '122'"),
-    relation: z.enum(["RELATED", "DUPLICATE", "BLOCKS", "CAUSED_BY"]).optional(),
-  }),
-  execute: async ({ target }) => {
-    const id = parseTicketId(target);
-    if (!id) return { ok: false, error: `Cannot parse a ticket number from "${target}".` };
-    const t = await db.ticket.findUnique({ where: { id }, select: { id: true, title: true } });
-    return t ? { ok: true, proposed: `link to ${target} ("${t.title}"), awaiting approval` } : { ok: false, error: `No ticket ${target} found.` };
-  },
-});
-
-/** The tool set exposed to the ticket chat agent — the whole ITSM record space,
- *  plus PROPOSE-only write actions that require the agent's live approval. */
-export const AI_CHAT_TOOLS = {
-  web_search: webSearchTool,
-  fetch_url: fetchUrlTool,
-  search_knowledge_base: knowledgeSearchTool,
-  search_tickets: ticketSearchTool,
-  search_problems: problemSearchTool,
-  search_changes: changeSearchTool,
-  propose_update_field: proposeUpdateFieldTool,
-  propose_internal_note: proposeInternalNoteTool,
-  propose_link_ticket: proposeLinkTicketTool,
-};

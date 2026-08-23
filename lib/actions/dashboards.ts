@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { hasRole, type Role, requireAgentUser } from "@/lib/session";
 import { DEFAULT_LAYOUT, type Widget, type WidgetType, type Tone, type Threshold } from "@/lib/dashboard/types";
 
 const TONES = ["primary", "success", "warning", "danger", "info", "neutral"];
@@ -33,9 +33,8 @@ function sanitizeOptions(o: unknown): Widget["options"] | undefined {
 }
 
 async function requireAgent() {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return null;
-  return me;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 const WIDGET_TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "csat", "aging", "list"];

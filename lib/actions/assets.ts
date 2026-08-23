@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { ASSET_TYPES, ASSET_STATUSES, ASSET_RELATION_TYPES } from "@/lib/constants";
 
@@ -110,8 +110,8 @@ export async function updateAssetField(formData: FormData) {
 // ── Full edit with field-level history ──────────────────────────────────────
 
 async function requireAgentA() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 const str = (v: FormDataEntryValue | null) => {

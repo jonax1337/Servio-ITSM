@@ -14,6 +14,7 @@ import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
+import { TicketTasks } from "@/components/tickets/ticket-tasks";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { CommentThread } from "@/components/comments/comment-thread";
@@ -82,6 +83,7 @@ export default async function TicketDetailPage({
         worklogs: { include: { user: true }, orderBy: { loggedAt: "desc" } },
         attachments: { orderBy: { createdAt: "desc" } },
         linksFrom: { include: { linked: true } },
+        tasks: { orderBy: { createdAt: "asc" } },
       },
     }),
     getFormOptions(),
@@ -456,6 +458,16 @@ export default async function TicketDetailPage({
           values={cfValues}
           editable={isAgentUser}
         />
+
+        {/* Checklist — agents work through subtasks before resolving. */}
+        {isAgentUser ? (
+          <Card className="mt-4">
+            <CardHeader><CardTitle className="text-sm">Tasks</CardTitle></CardHeader>
+            <CardContent>
+              <TicketTasks ticketId={ticket.id} tasks={ticket.tasks} />
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}

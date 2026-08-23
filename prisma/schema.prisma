@@ -296,7 +296,7 @@ model Group {
   color              String   @default("#6366f1")
   managerId          String?
   autoAssign         String   @default("OFF") // OFF | ROUND_ROBIN | LEAST_BUSY
-  lastAssignedUserId String? // round-robin cursor
+  lastAssignedUserId String? // round-robin cursor (indexed for the assign lookup)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -455,14 +455,14 @@ model EscalationPolicy {
 
 /// One escalation step: at `thresholdPercent` of SLA elapsed, run `action`.
 model EscalationStep {
-  id              String  @id @default(cuid())
-  policyId        String
-  order           Int     @default(0)
-  thresholdPercent Int    @default(100) // % of SLA elapsed that triggers it (e.g. 50/75/100)
-  action          String // NOTIFY | REASSIGN | BUMP_PRIORITY
-  targetGroupId   String? // group to reassign/notify
-  targetUserId    String? // user to reassign/notify
-  bumpToPriority  String? // priority to bump to (for BUMP_PRIORITY)
+  id               String  @id @default(cuid())
+  policyId         String
+  order            Int     @default(0)
+  thresholdPercent Int     @default(100) // % of SLA elapsed that triggers it (e.g. 50/75/100)
+  action           String // NOTIFY | REASSIGN | BUMP_PRIORITY
+  targetGroupId    String? // group to reassign/notify
+  targetUserId     String? // user to reassign/notify
+  bumpToPriority   String? // priority to bump to (for BUMP_PRIORITY)
 
   policy EscalationPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
 
@@ -502,7 +502,7 @@ model CatalogItem {
   formSchema       String   @default("[]") // JSON: array of form field definitions
   requiresApproval Boolean  @default(false)
   approverId       String?
-  approvalStages   String?  // JSON: ordered array of stage descriptors {approverId?|groupId?}; approverId is the stage-0 fallback
+  approvalStages   String? // JSON: ordered array of stage descriptors {approverId?|groupId?}; approverId is the stage-0 fallback
   estimatedDays    Int?
   isPublished      Boolean  @default(true)
   order            Int      @default(0)
@@ -528,7 +528,7 @@ model Ticket {
   descriptionHtml String? // sanitized rich-text HTML; null = plaintext-only
   type            String  @default("INCIDENT") // INCIDENT | REQUEST — freely switchable
   prefix          String  @default("INC") // human-ref prefix (INC/REQ), fixed at creation; stays stable when `type` changes
-  status          String  @default("NEW") // NEW | OPEN | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
+  status          String  @default("NEW") // NEW | OPEN | IN_PROGRESS | PENDING | ON_HOLD | RESOLVED | CLOSED | CANCELLED
   priority        String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   impact          String  @default("MEDIUM") // LOW | MEDIUM | HIGH
   urgency         String  @default("MEDIUM") // LOW | MEDIUM | HIGH
@@ -551,26 +551,26 @@ model Ticket {
   problemId         Int?
   changeId          Int?
 
-  formData         String? // JSON answers when submitted from a catalog form
-  formSchema       String? // snapshot of the catalog form schema at submit time (survives item deletion)
-  customFields     String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=TICKET)
-  approvalState    String? // null | PENDING | APPROVED | REJECTED
-  dueDate          DateTime? // manual due date set by an agent (distinct from the SLA clock)
+  formData            String? // JSON answers when submitted from a catalog form
+  formSchema          String? // snapshot of the catalog form schema at submit time (survives item deletion)
+  customFields        String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=TICKET)
+  approvalState       String? // null | PENDING | APPROVED | REJECTED
+  dueDate             DateTime? // manual due date set by an agent (distinct from the SLA clock)
   // ---- SLA clock (resolved from SLA/service/priority at create) ----
-  dueAt            DateTime? // mirror of resolveDueAt (kept for existing views)
-  responseDueAt    DateTime?
-  resolveDueAt     DateTime?
-  responseBreached Boolean   @default(false)
-  resolveBreached  Boolean   @default(false)
-  pendingSince     DateTime? // set while PENDING/ON_HOLD so the clock can pause
-  pausedMs         Int       @default(0) // accumulated paused time
-  escalatedAt      DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
+  dueAt               DateTime? // mirror of resolveDueAt (kept for existing views)
+  responseDueAt       DateTime?
+  resolveDueAt        DateTime?
+  responseBreached    Boolean   @default(false)
+  resolveBreached     Boolean   @default(false)
+  pendingSince        DateTime? // set while PENDING/ON_HOLD so the clock can pause
+  pausedMs            Int       @default(0) // accumulated paused time
+  escalatedAt         DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
   slaAtRiskNotifiedAt DateTime? // set when SLA-at-risk notification has fired (idempotency marker)
-  firstResponseAt  DateTime?
-  resolvedAt       DateTime?
-  closedAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  firstResponseAt     DateTime?
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
   requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
@@ -609,6 +609,13 @@ model Ticket {
   @@index([createdAt])
   @@index([resolvedAt])
   @@index([resolveDueAt])
+  @@index([updatedAt])
+  @@index([serviceId])
+  @@index([categoryId])
+  @@index([slaId])
+  @@index([problemId])
+  @@index([changeId])
+  @@index([mergedIntoId])
 }
 
 model TicketComment {
@@ -618,7 +625,7 @@ model TicketComment {
   body           String // plaintext twin (search / notifications / mentions)
   bodyHtml       String? // sanitized rich-text HTML; null = legacy plaintext row
   isInternal     Boolean  @default(false)
-  channel        String   @default("WEB") // WEB | EMAIL — how this reply arrived
+  channel        String   @default("WEB") // WEB | EMAIL | FORWARD — how this reply arrived
   fromEmail      String? // external sender address when it came in via email
   emailMessageId String? // link to the inbound EmailMessage that produced it
   createdAt      DateTime @default(now())
@@ -1156,7 +1163,7 @@ model ApiToken {
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
-  action    String // CREATE | UPDATE | DELETE | LOGIN | SYNC | ...
+  action    String // CREATE | UPDATE | DELETE | LOGIN | LOGIN_FAILED | SYNC | ...
   entity    String // Ticket | Asset | ...
   entityId  String
   summary   String?
@@ -1167,6 +1174,8 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@index([action])
   @@index([createdAt])
 }
 
@@ -1255,23 +1264,23 @@ model AutomationRule {
 }
 
 model Article {
-  id          String    @id @default(cuid())
-  title       String
-  slug        String    @unique
-  excerpt     String?
-  body        String
-  bodyFormat  String    @default("markdown") // markdown | plain
-  status      String    @default("DRAFT") // DRAFT | REVIEW | PUBLISHED | RETIRED
-  visibility  String    @default("INTERNAL") // INTERNAL (agents only) | PUBLIC (end-user portal)
-  published   Boolean   @default(false) // denormalized mirror of (status === PUBLISHED)
-  categoryId  String?
-  authorId    String?
+  id           String    @id @default(cuid())
+  title        String
+  slug         String    @unique
+  excerpt      String?
+  body         String
+  bodyFormat   String    @default("markdown") // markdown | plain
+  status       String    @default("DRAFT") // DRAFT | REVIEW | PUBLISHED | RETIRED
+  visibility   String    @default("INTERNAL") // INTERNAL (agents only) | PUBLIC (end-user portal)
+  published    Boolean   @default(false) // denormalized mirror of (status === PUBLISHED)
+  categoryId   String?
+  authorId     String?
   approvedById String?
-  views       Int       @default(0)
-  publishedAt DateTime?
-  approvedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  views        Int       @default(0)
+  publishedAt  DateTime?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   category    Category?         @relation(fields: [categoryId], references: [id])
   author      User?             @relation(fields: [authorId], references: [id])

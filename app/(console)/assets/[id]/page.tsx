@@ -112,7 +112,9 @@ export default async function AssetDetailPage({
       asset.location
     ),
   );
-  push("Cost", asset.cost != null ? `$${asset.cost.toLocaleString()}` : null);
+  // Locale-formatted, currency-neutral — there's no org currency setting, so a
+  // hard-coded symbol would be wrong outside the US.
+  push("Cost", asset.cost != null ? asset.cost.toLocaleString() : null);
   push("Warranty end", asset.warrantyEnd ? format(asset.warrantyEnd, "PP") : null);
 
   return (

@@ -247,20 +247,27 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `priority` | `LOW`\|`MEDIUM`\|`HIGH`\|`CRITICAL` | `MEDIUM` | |
 | `impact` | `LOW`\|`MEDIUM`\|`HIGH` | `MEDIUM` | |
 | `urgency` | `LOW`\|`MEDIUM`\|`HIGH` | `MEDIUM` | |
-| `status` | ticket status enum | `NEW` | **agents only** |
+| `status` | ticket status enum — **open statuses only** | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
-| `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only** |
+| `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
 `urgency` are honored; all other fields fall back to defaults. SLA response/resolve
-deadlines are resolved from the service + priority at creation time.
+deadlines are resolved from the service + priority at creation time. Agents may
+pick a starting status, but only an **open** one (`NEW`, `OPEN`, `IN_PROGRESS`,
+`PENDING`, `ON_HOLD`) — a ticket can't be born `RESOLVED`/`CLOSED`/`CANCELLED`,
+which would skip breach stamping, automations and the survey pipeline (else `422`).
 
 **`PATCH /tickets/{id}` body** (agents only): `title`, `description`, `status`,
 `priority`, `assigneeId` (nullable). Changing `status`:
 
-- The transition is validated against the state machine
-  ([`lib/transitions.ts`](../lib/transitions.ts)); an illegal move returns `409`.
-- Moving into `PENDING`/`ON_HOLD` pauses the SLA clock; moving out resumes it.
+- The transition is validated against the **admin-configured workflow**
+  ([`lib/workflow.ts`](../lib/workflow.ts): built-in map + admin overrides + role
+  gates — the same rules the console enforces); a disallowed move returns `409`.
+- Moving into `PENDING`/`ON_HOLD` pauses the SLA clock (in business time when the
+  SLA carries a calendar); moving out resumes it.
+- Changing `priority` re-stamps the SLA response/resolve deadlines (same contract
+  as the console's `updateTicketField`).
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,

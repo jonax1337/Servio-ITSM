@@ -4,14 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 
 /** Only agents/managers/admins may act on the agent console. */
 async function requireAgent() {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return null;
-  return me;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 import {
   sendMail, ticketThreadHeaders, mailBrand,
@@ -27,7 +26,7 @@ import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import { canActOnTicket } from "@/lib/authz";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
-  slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData,
+  slaCreateData, pauseData, resumeData, firstResponseData, statusChangeData, ticketCalendar,
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import {
@@ -230,12 +229,15 @@ export async function updateTicketField(formData: FormData) {
 
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
-    const current = await db.ticket.findUnique({ where: { id } });
+    const current = await db.ticket.findUnique({
+      where: { id },
+      include: { sla: { select: { businessCalendarId: true } } },
+    });
     if (!current) return;
     // Enforce the configured lifecycle (built-in map + admin overrides + role).
     if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
     // Shared with the automation engine so both keep the SLA clock consistent.
-    Object.assign(patch, statusChangeData(current, value));
+    Object.assign(patch, statusChangeData(current, value, new Date(), await ticketCalendar(current)));
   }
   // Verify a relation FK actually exists before writing it (a bogus id would
   // otherwise 500 on the FK constraint or dangle).
@@ -465,8 +467,20 @@ export async function deliverTicketReply(opts: {
     await notify(u.id, { type: "MENTION", title: `${me.name} mentioned you`, body: snippet, entity: "Ticket", entityId: String(id) });
   }
 
-  // Notify watchers of the new activity
-  await notifyWatchers(id, me.id, { type: "COMMENT", title: `New comment on ${ticketRef(ticket.id, ticket.type)}`, body: snippet, entity: "Ticket", entityId: String(id) });
+  // Notify watchers of the new activity. Internal notes only announce THAT
+  // something happened — no content snippet, so a confidential note never leaks
+  // into a watcher's notification feed.
+  await notifyWatchers(
+    id,
+    me.id,
+    {
+      type: "COMMENT",
+      title: `New comment on ${ticketRef(ticket.id, ticket.type)}`,
+      body: isInternal ? "(internal note)" : snippet,
+      entity: "Ticket",
+      entityId: String(id),
+    },
+  );
 
   if (!isPublicAgentReply) return;
 
@@ -657,7 +671,12 @@ export async function escalateTicket(formData: FormData) {
   // Route the implicit NEW→OPEN through the configured lifecycle instead of
   // forcing it; if the transition isn't allowed for this role, leave status as-is.
   const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
-  await db.ticket.update({ where: { id }, data: { priority: next, status: toOpen ? "OPEN" : t.status } });
+  // A priority change re-prices the SLA — same contract as updateTicketField,
+  // so the deadlines track the new tier instead of going stale.
+  const sla = !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status)
+    ? await slaCreateData({ serviceId: t.serviceId, priority: next })
+    : {};
+  await db.ticket.update({ where: { id }, data: { priority: next, status: toOpen ? "OPEN" : t.status, ...sla } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Escalated priority to ${next}` });
   if (t.assigneeId) await notify(t.assigneeId, { type: "ESCALATION", title: `Ticket escalated to ${next}`, body: t.title, entity: "Ticket", entityId: String(id) });
   await notifyWatchers(id, me.id, { type: "ESCALATION", title: `Ticket escalated to ${next}`, body: t.title, entity: "Ticket", entityId: String(id) });
@@ -677,9 +696,14 @@ export async function toggleMajorIncident(formData: FormData) {
   // Route the implicit NEW→OPEN through the configured lifecycle rather than
   // forcing it (leave status untouched when the transition isn't allowed).
   const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
+  // Declaring a Major bumps priority to CRITICAL — re-price the SLA with it,
+  // same contract as updateTicketField.
+  const sla = now && !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status)
+    ? await slaCreateData({ serviceId: t.serviceId, priority: "CRITICAL" })
+    : {};
   await db.ticket.update({
     where: { id },
-    data: now ? { isMajorIncident: true, priority: "CRITICAL", status: toOpen ? "OPEN" : t.status } : { isMajorIncident: false },
+    data: now ? { isMajorIncident: true, priority: "CRITICAL", status: toOpen ? "OPEN" : t.status, ...sla } : { isMajorIncident: false },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: now ? "Declared a Major Incident" : "Cleared Major Incident" });
   if (now) {
@@ -825,7 +849,10 @@ export async function setTicketResolution(formData: FormData) {
   const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return;
 
-  const current = await db.ticket.findUnique({ where: { id } });
+  const current = await db.ticket.findUnique({
+    where: { id },
+    include: { sla: { select: { businessCalendarId: true } } },
+  });
   if (!current) return;
   if (!(await canActOnTicket(me, current))) return;
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
@@ -836,7 +863,7 @@ export async function setTicketResolution(formData: FormData) {
     // Stop the clock: resume/shift out of any pause, then judge breach vs the shifted deadline.
     let effResolveDueAt = current.resolveDueAt;
     if (current.pendingSince) {
-      const resumed = resumeData(current, now);
+      const resumed = resumeData(current, now, await ticketCalendar(current));
       Object.assign(clock, resumed);
       effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
     }

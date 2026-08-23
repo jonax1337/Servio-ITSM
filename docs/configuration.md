@@ -71,6 +71,8 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `API_CORS_ORIGIN` _(not in `.env.example`)_ | No | `*` | Allowed origin for the bearer-token REST API responses. Read in [`../lib/api.ts`](../lib/api.ts). Lock this down in production — see [rest-api.md](rest-api.md). |
 | `API_RATE_LIMIT` _(not in `.env.example`)_ | No | `120` | Max REST API requests per token (falling back to client IP) per window. Read in [`../lib/rate-limit.ts`](../lib/rate-limit.ts); in-memory, per-process — see the multi-instance caveat in [deployment.md](deployment.md). |
 | `API_RATE_WINDOW_MS` _(not in `.env.example`)_ | No | `60000` | Sliding-window length (ms) for `API_RATE_LIMIT`. |
+| `AI_RATE_LIMIT` _(not in `.env.example`)_ | No | `20` | Max AI-endpoint requests (console + portal chat, confirm-create, triage) per session user per window — every request drives a provider call. |
+| `AI_RATE_WINDOW_MS` _(not in `.env.example`)_ | No | `60000` | Sliding-window length (ms) for `AI_RATE_LIMIT`. |
 | `LOGIN_FREE_ATTEMPTS` _(not in `.env.example`)_ | No | `5` | Failed login attempts allowed before backoff kicks in ([`../lib/rate-limit.ts`](../lib/rate-limit.ts)). |
 | `LOGIN_BASE_BACKOFF_MS` _(not in `.env.example`)_ | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
 | `LOGIN_MAX_BACKOFF_MS` _(not in `.env.example`)_ | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |

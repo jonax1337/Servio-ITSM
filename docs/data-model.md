@@ -298,11 +298,16 @@ you need fresh demo data. Use `pnpm db:reset` to get back to a known clean state
 
 The demo login created by the seed is `admin@servio.dev` / `servio123`.
 
-### Existing migrations
+### Migration baseline
 
-Nine migrations exist (all dated 2026-08-08/09), building the schema incrementally: `init`,
-`vip_and_email`, `ticket_collab`, `service_catalog`, `change_problem_comments`, `automations`, `locations`,
-and `pending_reason`. The provider lock is `sqlite`
+The history is a **single squashed baseline** (`20260823000000_init_baseline`) that
+creates the full schema in one migration — the nine original incremental
+migrations (2026-08-08/09) had drifted far behind the schema (23 models were
+never migrated, which broke `pnpm setup`/`db:reset`) and were collapsed after
+every finding was remediated. The baseline is verified drift-free against
+`prisma/schema.prisma` (`prisma migrate diff` reports no difference); local
+development keeps using `pnpm db:push`, while `pnpm setup` (migrate deploy +
+seed) works on any fresh database. The provider lock is `sqlite`
 ([`prisma/migrations/migration_lock.toml`](../prisma/migrations/migration_lock.toml)); switching to Postgres
 for production means changing both the `datasource` provider and this lock, then regenerating the migration
 history for the new engine.

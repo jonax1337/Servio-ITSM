@@ -7,7 +7,7 @@ import { getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { canActOnTicket } from "@/lib/authz";
 import { isGroupMember, autoAssignTicket } from "@/lib/assignment";
-import { statusChangeData } from "@/lib/sla";
+import { statusChangeData, ticketCalendar } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { deliverTicketReply } from "@/lib/actions/tickets";
@@ -217,11 +217,13 @@ export async function applyMacro(formData: FormData) {
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
     // The clock fields (responseDueAt … pausedMs) are needed by statusChangeData
-    // so a status action pauses/resumes the SLA correctly.
+    // so a status action pauses/resumes the SLA correctly; the SLA carries the
+    // business calendar for pause shifts in working time.
     select: {
       id: true, title: true, type: true, requesterId: true,
       assigneeId: true, groupId: true, status: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
+      sla: { select: { businessCalendarId: true } },
     },
   });
   if (!ticket) return { error: "Ticket not found." };
@@ -252,7 +254,7 @@ export async function applyMacro(formData: FormData) {
         if (!TICKET_STATUSES.includes(a.value as (typeof TICKET_STATUSES)[number])) break;
         // Enforce the configured lifecycle + role, same as updateTicketField.
         if (!(await canTransitionConfigured("TICKET", ticket.status, a.value, me.role as Role))) break;
-        Object.assign(patch, { status: a.value }, statusChangeData(ticket, a.value));
+        Object.assign(patch, { status: a.value }, statusChangeData(ticket, a.value, new Date(), await ticketCalendar(ticket)));
         summaryParts.push(`status → ${a.value}`);
         break;
       }

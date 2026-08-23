@@ -10,7 +10,8 @@ export const metadata: Metadata = { title: "Macros" };
 export const dynamic = "force-dynamic";
 
 export default async function MacrosSettingsPage() {
-  const me = await requireRole("MANAGER");
+  // Agents reach this page for their PERSONAL macros; sharing stays MANAGER+.
+  const me = await requireRole("AGENT");
   const canShare = hasRole(me.role as Role, "MANAGER");
 
   const [macros, options] = await Promise.all([
@@ -45,7 +46,6 @@ export default async function MacrosSettingsPage() {
         <MacroManager
           macros={rows}
           canShare={canShare}
-          currentUserId={me.id}
           agents={options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, hint: a.email }))}
           groups={options.groups.map((g) => ({ value: g.id, label: g.name }))}
         />

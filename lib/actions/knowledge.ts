@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { getSessionUser, getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
 
@@ -22,8 +22,8 @@ const articleSchema = z.object({
 });
 
 async function requireAgent() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 function slugify(s: string) {

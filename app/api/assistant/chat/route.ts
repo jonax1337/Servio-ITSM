@@ -16,6 +16,7 @@ import {
   type PreparedTurn,
 } from "@/lib/assistant-core";
 import { findOperation } from "@/lib/ai-operations/registry";
+import { checkAiRate } from "@/lib/rate-limit";
 import { stageDataUrls, deleteStagedAttachments } from "@/lib/attachment-intake";
 import type { UploadedAttachment } from "@/lib/actions/ai-assistant";
 
@@ -204,6 +205,14 @@ function extractTurn(message: UIMessage | undefined): { content: string; uploads
 export async function POST(req: Request) {
   const me = await getActingAgent();
   if (!me) return new Response("Not authorised", { status: 401 });
+
+  const limited = checkAiRate(me.id);
+  if (limited) {
+    return new Response("Too many AI requests — slow down a little.", {
+      status: 429,
+      headers: { "retry-after": String(Math.ceil(limited.retryAfterMs / 1000)) },
+    });
+  }
 
   if (!(await aiConfigured())) {
     return new Response("AI is not configured.", { status: 400 });

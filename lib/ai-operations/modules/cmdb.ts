@@ -25,6 +25,29 @@ async function findLocation(name: string) {
   });
 }
 
+/**
+ * Deterministically resolve a single asset for a write op: exact name (or
+ * unique assetTag) only — never a fuzzy `contains`, which can silently hit the
+ * wrong record ("SRV-1" must not mutate "SRV-12"). If an exact name matches
+ * more than one asset, refuse and ask for the asset tag instead.
+ */
+async function resolveAsset(ref: string): Promise<{ asset: { id: string; name: string } } | { error: string }> {
+  const select = { id: true, name: true } as const;
+  const q = ref.trim();
+  if (!q) return { error: "Asset name is required." };
+
+  const byTag = await db.asset.findFirst({ where: { assetTag: q }, select });
+  if (byTag) return { asset: byTag };
+
+  // Exact name match only — fetch up to 2 to detect ambiguity.
+  const matches = await db.asset.findMany({ where: { name: q }, select, take: 2 });
+  if (matches.length === 0) return { error: `Asset not found: ${q}` };
+  if (matches.length > 1) {
+    return { error: `Multiple assets are named "${q}". Please specify the asset's tag to disambiguate.` };
+  }
+  return { asset: matches[0] };
+}
+
 export const OPERATIONS: AiOperation[] = [
   {
     id: "asset.create",
@@ -112,11 +135,9 @@ export const OPERATIONS: AiOperation[] = [
     run: async (a, ctx) => {
       const assetName = str(a.asset);
       if (!assetName) return err("Asset name is required.");
-      const asset = await db.asset.findFirst({
-        where: { name: { contains: assetName } },
-        select: { id: true, name: true },
-      });
-      if (!asset) return err(`Asset not found: ${assetName}`);
+      const resolved = await resolveAsset(assetName);
+      if ("error" in resolved) return err(resolved.error);
+      const asset = resolved.asset;
 
       const field = String(a.field);
       const rawValue = str(a.value);

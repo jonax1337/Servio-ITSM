@@ -226,15 +226,24 @@ route/server code imports the full instance from `auth.ts`.
 `token.uid`, `token.role`, and `token.picture` at login; the `session` callback
 copies `id` and `role` onto `session.user`. Because the JWT freezes role/active
 state at sign-in, the server-side `requireUser()` helper re-reads the DB user row
-per request (see below) so demotions/deactivations take effect immediately.
+per request (see below) so demotions/deactivations take effect immediately — and
+every server-action agent guard shares the same DB-truth check via
+`requireAgentUser()` (`lib/session.ts`), so actions never trust the frozen JWT role.
 
 **Providers:**
 
 - **Credentials** — email + password. `authorize()` validates with Zod, looks up
   the user, checks `isActive`, compares the bcrypt hash, and stamps `lastLoginAt`.
+  Attempts are throttled per-IP and per-account (exponential backoff — see the
+  `LOGIN_*` knobs in [configuration.md](./configuration.md)), and every
+  successful/failed login writes a `LOGIN`/`LOGIN_FAILED` audit row (with IP).
 - **OIDC / SSO** — registered **only** when `AUTH_OIDC_ID` and `AUTH_OIDC_ISSUER`
-  are set. `ssoEnabled` / `ssoProviderName` are exported so the login page can
-  conditionally render the SSO button. See [configuration.md](./configuration.md).
+  are set. Auto-linking an SSO identity to a local account requires the IdP to
+  assert a **verified** email (`allowDangerousEmailAccountLinking: false`);
+  unverified emails surface `OAuthAccountNotLinked` instead of taking over an
+  account by email collision. `ssoEnabled` / `ssoProviderName` are exported so
+  the login page can conditionally render the SSO button. See
+  [configuration.md](./configuration.md).
 
 ## 🛡️ RBAC — four roles, three enforcement layers
 

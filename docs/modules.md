@@ -37,7 +37,7 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Catalog | Services, Service Catalog (MANAGER+) |
 | CMDB | Assets, Locations |
 | Organisation | Groups, People, Categories |
-| Administration | Automations (MANAGER+), Macros (MANAGER+), Syncs (MANAGER+), Audit Log (ADMIN), Settings (MANAGER+) |
+| Administration | Automations (MANAGER+), Macros (AGENT+; sharing is MANAGER+), Syncs (MANAGER+), Audit Log (ADMIN), Settings (MANAGER+) |
 
 ---
 
@@ -53,10 +53,10 @@ filenames match it (`sable-*`/`Sable*`). Full write-up: [ai.md](./ai.md).
 | --- | --- |
 | Routes | `app/(console)/assistant/page.tsx` (route `/assistant`, AGENT+) — renders the ONE global window inline (deep-linkable) |
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) — server-authoritative: rebuilds history from the DB and streams (AI SDK v7 `streamText` → `toUIMessageStreamResponse`; the claude-code provider is buffered and synthesises tool parts) |
-| Shared core | `lib/assistant-core.ts` (`getActingAgent`, `prepareAssistantTurn`, `buildUserContent`, `generalSystemPrompt`/`adminSystemPrompt`, `buildAssistantProposals`, `sanitizeUploads`) — pre-model logic shared by the route |
+| Shared core | `lib/assistant-core.ts` (`getActingAgent`, `prepareAssistantTurn`, `buildUserContent`, `generalSystemPrompt`/`adminSystemPromptSection`, `buildAssistantProposals`, `sanitizeUploads`) — pre-model logic shared by the route |
 | Actions | `lib/actions/ai-assistant.ts` — conversation CRUD (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`) + folder actions (`listFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `moveConversation`) + `applyAssistantProposal` (the old console `sendMessage` is retired) |
 | Global window | `components/assistant/` — `sable-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `sable-mount`, `sable-window`, `sable-fab` (floating action button restoring the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark) |
-| Chat UI | `sable-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `sable-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `sable-rail` (New chat, search, folders with @dnd-kit drag, archived, GENERAL/ADMIN scope switch) |
+| Chat UI | `sable-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `sable-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `sable-rail` (New chat, search, folders with @dnd-kit drag, archived) |
 | assistant-ui scaffold | `components/thread.tsx` (+ `markdown-text`, `reasoning`, `tool-fallback`, `tool-group`, `tooltip-icon-button`, `attachment`, `follow-up-suggestions`) — packages `@assistant-ui/react` + `@assistant-ui/react-ai-sdk` |
 | Provider layer | `lib/ai.ts` (config + privacy gate; `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`), `lib/claude-cli.ts` (Claude Agent SDK adapter) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
@@ -83,7 +83,7 @@ The core incident/request module and the richest one in the codebase.
 | Actions | `lib/actions/tickets.ts` |
 | Components | `components/tickets/` |
 
-Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `comment-composer`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, `macro-picker` (apply a canned macro in one click), plus the reusable `link-picker` (attach problems/changes/assets) and `saved-views-bar`.
+Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, `macro-picker` (apply a canned macro in one click), plus the reusable `link-picker` (attach problems/changes/assets), `saved-views-bar`, and `ticket-tasks` (sidebar checklist — actions `addTask`/`toggleTask`/`deleteTask`). Create forms (`ticket-form`, `problem-form`, `change-form`) include admin-defined custom fields (`components/custom-fields/form-custom-fields`).
 
 **Cross-field search & CSV export:** the tickets list uses `lib/search.ts` (`ticketSearchWhere`/`applyTicketSearch`) for a free-text `q` that spans title, description, comment bodies, requester name/email, and custom-field values (plus a bare-number match on the ticket id) — SQLite-portable, ANDed onto the existing filters. The same helper backs the global `/api/search` route. An **Export CSV** button on the list (and dashboard) hits `GET /api/export?type=tickets` (AGENT+), built on the shared `lib/csv.ts` (`toCsv`/`csvResponse`).
 
@@ -245,14 +245,14 @@ Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, 
 | Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
 
 ### Settings
-A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages:
+A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages — cards carry a `minRole` and hide when the viewer can't open the target, so managers never see admin dead-ends:
 
 | Sub-page | Route | Purpose | Actions / components |
 | --- | --- | --- | --- |
 | API tokens | `settings/api/page.tsx` | Create/revoke API tokens | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`); `components/settings/token-manager` |
 | Mail | `settings/mail/page.tsx` | SMTP status + mail queue (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
 | SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
-| Macros | `settings/macros/page.tsx` (MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`) |
+| Macros | `settings/macros/page.tsx` (AGENT+ for personal macros; sharing is MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`); `components/settings/macro-manager` |
 
 **Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach.
 

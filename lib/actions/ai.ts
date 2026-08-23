@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { requireAgentUser } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { aiConfigured, generateAiText, generateAiObject } from "@/lib/ai";
 import { getBoolSetting } from "@/lib/settings";
@@ -13,9 +13,8 @@ import { getOrgDirectory } from "@/lib/ai-context";
 
 /** Only agents/managers/admins may use the AI console (mirrors tickets.ts). */
 async function requireAgent() {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return null;
-  return me;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 const NOT_CONFIGURED =

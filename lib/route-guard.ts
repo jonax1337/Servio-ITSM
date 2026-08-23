@@ -36,6 +36,9 @@ export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRol
   { prefix: "/catalog", minRole: "MANAGER" },
   { prefix: "/automations", minRole: "MANAGER" },
   { prefix: "/syncs", minRole: "MANAGER" },
+  // Longest prefix wins — agents may open /settings/macros for their personal
+  // macros even though the rest of /settings needs MANAGER.
+  { prefix: "/settings/macros", minRole: "AGENT" },
   { prefix: "/settings", minRole: "MANAGER" },
   { prefix: "/sla", minRole: "MANAGER" },
   { prefix: "/audit", minRole: "ADMIN" },

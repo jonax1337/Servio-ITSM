@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { hasRole, type Role, requireAgentUser } from "@/lib/session";
 
 /** Filter params we allow a saved view to carry, per entity. */
 const ALLOWED_KEYS: Record<string, string[]> = {
@@ -20,9 +20,8 @@ const BASE_PATH: Record<string, string> = {
 };
 
 async function requireAgent() {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return null;
-  return me;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 /** Keep only known keys with short string values → a safe JSON to store. */

@@ -69,11 +69,17 @@ export async function getNumberSetting(key: string, fallback: number): Promise<n
 /**
  * True when a value exists (DB override or env) and is non-empty. Used to show a
  * "configured" state for secret fields WITHOUT ever returning the secret itself.
+ * An encrypted row that can no longer be DECRYPTED (e.g. after a key rotation)
+ * does not count as set — the override is dead and silently falls back to env,
+ * so the UI must not claim the secret is configured.
  */
 export async function settingIsSet(key: string): Promise<boolean> {
   const all = await loadAll();
   const row = all[key];
-  if (row && row.value !== "") return true;
+  if (row && row.value !== "") {
+    if (row.encrypted) return decryptSecret(row.value) !== null;
+    return true;
+  }
   const env = process.env[key];
   return env !== undefined && env !== "";
 }

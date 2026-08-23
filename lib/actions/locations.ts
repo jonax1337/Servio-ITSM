@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { LOCATION_TYPES } from "@/lib/constants";
 
 async function requireAgent() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 const opt = (v: FormDataEntryValue | null) => {
@@ -54,6 +54,28 @@ export async function updateLocation(_prev: LocationState, formData: FormData): 
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
   const parentId = opt(formData.get("parentId"));
+  // A location cannot be its own parent, nor sit under one of its own
+  // descendants — walk the proposed parent's ancestor chain and reject if we
+  // ever reach `id` (same guard as categories).
+  if (parentId && parentId !== "none") {
+    let cursor: string | null = parentId;
+    const seen = new Set<string>();
+    let cycle = false;
+    while (cursor) {
+      if (cursor === id) {
+        cycle = true;
+        break;
+      }
+      if (seen.has(cursor)) break; // pre-existing cycle: stop, don't loop forever
+      seen.add(cursor);
+      const node: { parentId: string | null } | null = await db.location.findUnique({
+        where: { id: cursor },
+        select: { parentId: true },
+      });
+      cursor = node?.parentId ?? null;
+    }
+    if (cycle) return { error: "A location can't be moved under itself or one of its children." };
+  }
   await db.location.update({
     where: { id },
     data: {

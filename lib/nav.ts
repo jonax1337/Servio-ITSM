@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   ScrollText,
   MessageSquareText,
+  Bot,
 } from "lucide-react";
 
 export type NavItem = {
@@ -34,6 +35,7 @@ export const consoleNav: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", href: "/", icon: LayoutDashboard },
+      { title: "Assistant", href: "/assistant", icon: Bot },
     ],
   },
   {
@@ -72,7 +74,9 @@ export const consoleNav: NavGroup[] = [
     label: "Administration",
     items: [
       { title: "Automations", href: "/automations", icon: Zap, minRole: "MANAGER" },
-      { title: "Macros", href: "/settings/macros", icon: MessageSquareText, minRole: "MANAGER" },
+      // Agents manage their OWN personal macros (matching the server actions);
+      // sharing a macro org-wide stays MANAGER+ (MacroManager gates the toggle).
+      { title: "Macros", href: "/settings/macros", icon: MessageSquareText },
       { title: "Syncs", href: "/syncs", icon: RefreshCw, minRole: "MANAGER" },
       { title: "Audit Log", href: "/audit", icon: ScrollText, minRole: "ADMIN" },
       { title: "Settings", href: "/settings", icon: Settings, minRole: "MANAGER" },

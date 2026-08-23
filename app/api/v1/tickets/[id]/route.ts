@@ -2,10 +2,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, principalIsAgent, validateTicketAssignee } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
-import { pauseData, resumeData } from "@/lib/sla";
-import { canTransition, TICKET_TRANSITIONS } from "@/lib/transitions";
+import { slaCreateData, statusChangeData, ticketCalendar } from "@/lib/sla";
+import { canTransitionConfigured } from "@/lib/workflow";
 import { serializeTicket } from "../../_serializers";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
+import type { Role } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const ticketId = Number(id);
   if (!Number.isInteger(ticketId)) return apiError(404, "Ticket not found");
 
-  const existing = await db.ticket.findUnique({ where: { id: ticketId } });
+  const existing = await db.ticket.findUnique({
+    where: { id: ticketId },
+    include: { sla: { select: { businessCalendarId: true } } },
+  });
   if (!existing) return apiError(404, "Ticket not found");
   // Non-agents cannot mutate tickets via the API (they may only read their own).
   if (!principalIsAgent(auth.principal)) return apiError(404, "Ticket not found");
@@ -71,26 +75,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const data = { ...parsed.data } as Record<string, unknown>;
   const to = parsed.data.status;
   if (to && to !== existing.status) {
-    // Mirror the server-action lifecycle: guard the transition and run the SLA clock.
-    if (!canTransition(TICKET_TRANSITIONS, existing.status, to)) {
+    // Mirror the server-action lifecycle: guard the ADMIN-CONFIGURED transition
+    // map (built-ins + overrides + role gates) and run the shared SLA clock
+    // helper, so an API token can't do transitions the console forbids.
+    if (!(await canTransitionConfigured("TICKET", existing.status, to, auth.principal.role as Role))) {
       return apiError(409, `Illegal status transition ${existing.status} → ${to}`);
     }
-    const now = new Date();
-    const wasPending = existing.status === "PENDING" || existing.status === "ON_HOLD";
-    const willPending = to === "PENDING" || to === "ON_HOLD";
-    if (willPending && !wasPending) Object.assign(data, pauseData(existing, now));
-    let effResolveDueAt = existing.resolveDueAt;
-    if (!willPending && wasPending) {
-      const resumed = resumeData(existing, now);
-      Object.assign(data, resumed);
-      effResolveDueAt = resumed.resolveDueAt ?? existing.resolveDueAt;
+    Object.assign(data, statusChangeData(existing, to, new Date(), await ticketCalendar(existing)));
+  }
+
+  // SLA recompute: a priority change on an open ticket re-stamps the deadlines
+  // (same contract as the console's updateTicketField) — otherwise the API
+  // leaves a stale clock against the new SLA tier.
+  if (parsed.data.priority && parsed.data.priority !== existing.priority && !["RESOLVED", "CLOSED", "CANCELLED"].includes(existing.status)) {
+    const sla = await slaCreateData({ slaId: existing.slaId, serviceId: existing.serviceId, priority: parsed.data.priority });
+    if ("slaId" in sla) {
+      Object.assign(data, sla);
+      if (existing.firstResponseAt) data.responseDueAt = null;
     }
-    if (to === "RESOLVED") {
-      data.resolvedAt = now;
-      data.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
-    }
-    if (to === "CLOSED") data.closedAt = now;
-    if (!willPending) { data.pendingReason = null; data.pendingNote = null; }
   }
 
   const ticket = await db.ticket.update({

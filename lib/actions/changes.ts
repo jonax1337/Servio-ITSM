@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { getSessionUser, isAgent, hasRole, type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab } from "@/lib/cab";
 import { readRichBody, readRichField } from "@/lib/markdown";
+import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
   changeRef,
   CHANGE_TYPES,
@@ -63,6 +64,13 @@ export async function createChange(
   const me = await getSessionUser();
   if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
+  // Custom-field inputs post as `cf_<key>` — collect them (the schema strips
+  // the key; the JSON blob is persisted explicitly below).
+  const customFields: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("cf_") && typeof v === "string") customFields[k.slice(3)] = v;
+  }
+
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return {
@@ -72,8 +80,20 @@ export async function createChange(
   }
   const data = parsed.data;
 
+  // Enforce required, currently-visible custom fields (same contract as tickets).
+  const defs = await db.customFieldDef.findMany({ where: { entityType: "CHANGE", active: true } });
+  if (defs.length > 0) {
+    const res = assertRequiredCustomFields(defs as CustomFieldDef[], customFields, entityFieldValues({ type: data.type, priority: data.priority, risk: data.risk }));
+    if (!res.ok) return { error: res.error };
+  }
+
   const change = await db.change.create({
-    data: { ...data, status: "DRAFT", createdById: me.id },
+    data: {
+      ...data,
+      status: "DRAFT",
+      createdById: me.id,
+      ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
+    },
   });
 
   await writeAudit({
@@ -398,8 +418,8 @@ export async function setCabRule(formData: FormData) {
 // ── Comments & edit ──────────────────────────────────────────────────────────
 
 async function requireAgentC() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 export async function addChangeComment(formData: FormData) {

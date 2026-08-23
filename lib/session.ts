@@ -38,6 +38,22 @@ export async function requireUser() {
   return { ...user, role: row.role as Role };
 }
 
+/**
+ * DB-truth agent guard for server actions: rehydrates role/isActive from the
+ * database (the JWT freezes them at login) and requires AGENT or above.
+ * Returns the full user row with a typed `role`, or null when not allowed —
+ * callers map that to their silent "Not authorised" return, matching the
+ * original session-only guards.
+ */
+export async function requireAgentUser() {
+  const s = await getSessionUser();
+  if (!s) return null;
+  const row = await getCurrentUser();
+  if (!row || !row.isActive || !isAgent(row.role as Role)) return null;
+  // `name` keeps the session shape's non-null guarantee (falls back to email).
+  return { ...row, role: row.role as Role, name: row.name ?? row.email };
+}
+
 export function hasRole(role: Role, min: Role) {
   return RANK[role] >= RANK[min];
 }

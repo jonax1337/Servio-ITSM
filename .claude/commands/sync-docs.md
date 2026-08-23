@@ -38,7 +38,7 @@ The authoritative code→doc mapping lives in `scripts/check-doc-drift.mjs` (the
 3. If a change adds/removes a **user-facing capability**, also update the feature overview in `README.md`.
 4. When the change touches a `String`-backed enum (`lib/constants.ts`) that has a mirrored comment in `prisma/schema.prisma` or a listing in `docs/data-model.md`, update those to match exactly.
 5. Match each file's existing tone and structure. Be precise and concise. **Never document a bug or a security gap as intended behavior** — if the code looks wrong, note it in your summary instead of enshrining it in the docs.
-6. Do not touch `AUDIT.md` (a point-in-time snapshot) or the auto-generated agent block in `AGENTS.md`.
+6. Do not touch `docs/audit.md` (a point-in-time audit snapshot) or the auto-generated agent block in `AGENTS.md`.
 
 ## Finish
 

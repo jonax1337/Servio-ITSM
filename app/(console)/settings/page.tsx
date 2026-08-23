@@ -16,6 +16,7 @@ import {
   Bot,
   UploadCloud,
   Workflow,
+  MessageSquareText,
   SlidersHorizontal,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -32,6 +33,8 @@ type SettingCard = {
   title: string;
   description: string;
   icon: LucideIcon;
+  /** Minimum role to OPEN the target page — cards above the viewer's role are hidden. */
+  minRole?: "AGENT" | "MANAGER" | "ADMIN";
 };
 
 const CARDS: SettingCard[] = [
@@ -40,89 +43,124 @@ const CARDS: SettingCard[] = [
     title: "General & Branding",
     description: "Application name and public URL used across the app and emails.",
     icon: Palette,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/email",
     title: "Email (SMTP)",
     description: "Configure outgoing mail delivery, or run in outbox mode.",
     icon: Mail,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/inbound",
     title: "Inbound Mail (IMAP)",
     description: "Poll a shared mailbox so replies become ticket comments.",
     icon: Inbox,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/email-templates",
     title: "Email Templates",
     description: "Edit the subject and content of the ticket emails users receive.",
     icon: MailCheck,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/ai",
     title: "AI Assistant",
     description: "Provider, model and API keys for the built-in AI assistant.",
     icon: Bot,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/uploads",
     title: "Uploads",
     description: "File attachment size limits for tickets, comments and articles.",
     icon: UploadCloud,
+    minRole: "ADMIN",
   },
   {
     href: "/settings/sla",
     title: "SLA Policies",
     description: "Define response and resolution targets and how the clock is applied.",
     icon: Timer,
+    minRole: "MANAGER",
   },
   {
     href: "/settings/workflows",
     title: "Status Workflows",
     description: "Control allowed status changes per entity and gate transitions behind a role.",
     icon: Workflow,
+    minRole: "MANAGER",
   },
   {
     href: "/settings/custom-fields",
     title: "Custom Fields",
     description: "Add admin-defined fields to tickets, problems and changes with conditional visibility.",
     icon: SlidersHorizontal,
+    minRole: "MANAGER",
+  },
+  {
+    href: "/settings/mail",
+    title: "Mail Log",
+    description: "Inspect the outbox and every processed inbound message.",
+    icon: Mail,
+    minRole: "MANAGER",
   },
   {
     href: "/automations",
     title: "Automations",
     description: "Build rules that route, prioritise and act on tickets automatically.",
     icon: Zap,
+    minRole: "MANAGER",
+  },
+  {
+    href: "/settings/macros",
+    title: "Macros",
+    description: "One-click action bundles — shared org-wide or personal to an agent.",
+    icon: MessageSquareText,
+    minRole: "AGENT",
   },
   {
     href: "/settings/api",
     title: "API Tokens",
     description: "Create and revoke personal access tokens for the REST API.",
     icon: KeyRound,
+    minRole: "ADMIN",
   },
   {
     href: "/syncs",
     title: "Syncs",
     description: "Connect directories and external systems to import data.",
     icon: RefreshCw,
+    minRole: "MANAGER",
   },
   {
     href: "/categories",
     title: "Categories",
     description: "Organise tickets, problems, changes and assets by category.",
     icon: FolderTree,
+    minRole: "AGENT",
   },
   {
     href: "/people",
     title: "People",
     description: "Manage users, roles and group memberships.",
     icon: Users,
+    minRole: "AGENT",
   },
 ];
 
+const RANK = { AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
+
 export default async function SettingsPage() {
   const me = await requireRole("MANAGER");
+  // Only show cards the viewer can actually open — a card that redirects to
+  // /no-access is a dead end (mirrors lib/nav.ts's filterNav ranks).
+  const visible = CARDS.filter(
+    (c) => !c.minRole || RANK[me.role as keyof typeof RANK] >= RANK[c.minRole],
+  );
 
   return (
     <>
@@ -134,7 +172,7 @@ export default async function SettingsPage() {
 
       <PageBody className="grid gap-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CARDS.map((card) => (
+          {visible.map((card) => (
             <Link key={card.href} href={card.href} className="group block">
               <Card className="h-full transition-colors group-hover:ring-primary/30">
                 <CardHeader className="flex-row items-start justify-between">

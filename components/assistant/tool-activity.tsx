@@ -47,6 +47,8 @@ type Meta = { icon: LucideIcon; label: (a: Args) => string };
 const TOOLS: Record<string, Meta> = {
   // Knowledge / catalog / web (portal + console)
   search_knowledge: { icon: BookOpen, label: (a) => `Searched the knowledge base${suffix(a, "query")}` },
+  category_list: { icon: Tags, label: () => "Listed categories" },
+  group_list: { icon: Users, label: () => "Listed teams" },
   search_knowledge_base: { icon: BookOpen, label: (a) => `Searched the knowledge base${suffix(a, "query")}` },
   search_catalog: { icon: ShoppingBag, label: (a) => `Searched the service catalog${suffix(a, "query")}` },
   list_categories: { icon: Tags, label: () => "Listed ticket categories" },
