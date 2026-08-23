@@ -219,7 +219,9 @@ Widget definitions live in code, not the DB — `lib/dashboard/types.ts` (`Widge
 
 Every "enum" is a `String` column whose allowed values are declared as a `readonly` tuple in
 [`lib/constants.ts`](../lib/constants.ts). Each domain also exports a `*_META` map with a human label, a badge
-`tone`, and (often) a Lucide icon, so a value renders consistently everywhere.
+`tone`, and (often) a Lucide icon, so a value renders consistently everywhere. `TONE_CLASSES` maps each tone to its
+badge classes; the derived `TONE_BANNER_CLASSES` / `TONE_TEXT_CLASSES` reuse the same palette for full-width status
+banner tints and standalone accent text/icons, so call sites never hand-pick raw palette utilities.
 
 | Constant | Backs | Allowed values |
 | --- | --- | --- |
@@ -258,7 +260,8 @@ Every "enum" is a `String` column whose allowed values are declared as a `readon
 | `TICKET_LINK` types | `TicketLink.type` | `RELATED`, `DUPLICATE`, `BLOCKS`, `CAUSED_BY` *(defined inline on the schema, not exported as a constant)* |
 
 There is no `lib/enums.ts` — all enum tuples and their metadata live in
-[`lib/constants.ts`](../lib/constants.ts).
+[`lib/constants.ts`](../lib/constants.ts). The file also holds a few cross-cutting non-enum exports, most notably
+`APP_VERSION` (kept in sync with `package.json` "version"; shown in the sidebar footer and Settings › About).
 
 ### Enums as the single source of truth
 

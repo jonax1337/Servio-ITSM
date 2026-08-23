@@ -109,7 +109,7 @@ revoke any. Revoked tokens are excluded from authentication immediately.
 | Current version | `1.0.0` (see `GET /api/v1`) |
 | Content type | `application/json` |
 | Runtime | Node.js (`runtime = "nodejs"`); list/detail routes are `dynamic = "force-dynamic"` |
-| CORS | `Access-Control-Allow-Origin` defaults to `*`, overridable via `API_CORS_ORIGIN`; methods `GET, POST, PATCH, OPTIONS`; allowed headers `Authorization, Content-Type`. Every route implements `OPTIONS` (preflight → `204`). |
+| CORS | Default **closed**: no `Access-Control-*` headers are emitted unless `API_CORS_ORIGIN` is set to an explicit origin (never `*`); when set, methods `GET, POST, PATCH, OPTIONS`, allowed headers `Authorization, Content-Type`. Every route implements `OPTIONS` (preflight → `204`). |
 
 Because these are Bearer-token endpoints, they do not rely on cookies.
 

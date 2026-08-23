@@ -186,6 +186,8 @@ action, so Sable can do exactly what the acting user could do by hand — no mor
 `setting.update` refuses any key that looks secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`) **and
 hard-refuses the self-locked privacy keys `AI_ALLOW_EXTERNAL` / `AI_PROVIDER`** so a prompt-injection
 can never steer an admin into opening the off-box data path — change those in the Settings UI only.
+When the underlying server action fails, ops like `ticket.escalate` / `ticket.watch` propagate its
+`{ ok: false, error }` result back to the model as `err(...)` instead of always reporting success.
 
 > **`adminOnly` ops are gated by role AND scope.** `availableOperations` / `runOperation`
 > (`lib/ai-operations/tools.ts`) filter and re-check `adminOnly` operations against **both**

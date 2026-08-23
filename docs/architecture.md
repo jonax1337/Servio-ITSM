@@ -259,9 +259,11 @@ Roles are a plain string on `User.role`, ordered by rank:
 Enforcement happens in three complementary places:
 
 **1. Edge gate — [`proxy.ts`](../proxy.ts).** The middleware runs on every request
-(except Next internals/static assets, per its `matcher`). It:
+(except Next internals and shallow static assets, per its `matcher` — deep routes that merely
+*end* in an image/media extension still run middleware). It:
 
-- allows the public prefixes `/login`, `/api/auth`, `/api/v1`;
+- allows the public prefixes `/login`, `/api/auth`, `/api/v1` via an **anchored** match
+  (`path === p || path.startsWith(p + "/")`, so `/surveypayload` is not covered by `/survey`);
 - redirects already-logged-in users away from `/login` to `/`;
 - redirects unauthenticated users to `/login?callbackUrl=…`;
 - redirects plain `USER`s to `/portal` if they try to reach any non-portal path.
