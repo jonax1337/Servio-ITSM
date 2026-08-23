@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { FormCustomFields } from "@/components/custom-fields/form-custom-fields";
 import type { ComboOption } from "@/components/combobox";
+import type { CustomFieldDef } from "@/lib/custom-fields";
 import {
   TICKET_TYPES, PRIORITIES, IMPACT_URGENCY,
   TICKET_TYPE_META, PRIORITY_META, LEVEL_META,
@@ -33,11 +35,12 @@ function Field({
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function TicketForm({
-  options, requesters, currentUserId,
+  options, requesters, currentUserId, customFieldDefs = [],
 }: {
   options: FormOptions;
   requesters: UserOpt[];
   currentUserId: string;
+  customFieldDefs?: CustomFieldDef[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createTicket, undefined);
   const fe = state?.fieldErrors ?? {};
@@ -88,6 +91,13 @@ export function TicketForm({
         <Field label="Category"><ComboField name="categoryId" options={catOpts} includeNone noneLabel="No category" /></Field>
         <Field label="Service"><ComboField name="serviceId" options={svcOpts} includeNone noneLabel="No service" /></Field>
       </div>
+
+      {customFieldDefs.length > 0 ? (
+        <div className="grid gap-3">
+          <p className="text-sm font-medium">Custom fields</p>
+          <FormCustomFields defs={customFieldDefs} disabled={pending} />
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">
         <Button type="submit" disabled={pending}>

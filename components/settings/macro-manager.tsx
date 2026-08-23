@@ -285,7 +285,6 @@ export function MacroManager({
 }: {
   macros: MacroRow[];
   canShare: boolean;
-  currentUserId: string;
   agents: Opt[];
   groups: Opt[];
 }) {
@@ -320,7 +319,7 @@ export function MacroManager({
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium text-muted-foreground">
-                        <UserIcon className="size-3" /> {m.ownerName ? "Personal" : "Personal"}
+                        <UserIcon className="size-3" /> Personal{m.ownerName ? ` · ${m.ownerName}` : ""}
                       </span>
                     )}
                   </div>

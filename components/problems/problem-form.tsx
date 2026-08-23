@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { FormCustomFields } from "@/components/custom-fields/form-custom-fields";
+import type { CustomFieldDef } from "@/lib/custom-fields";
 import type { ComboOption } from "@/components/combobox";
 import {
   PROBLEM_STATUSES, PRIORITIES, IMPACT_URGENCY,
@@ -31,10 +33,11 @@ function Field({
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
 export function ProblemForm({
-  options, currentUserId,
+  options, currentUserId, customFieldDefs = [],
 }: {
   options: FormOptions;
   currentUserId: string;
+  customFieldDefs?: CustomFieldDef[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createProblem, undefined);
   const fe = state?.fieldErrors ?? {};
@@ -77,6 +80,12 @@ export function ProblemForm({
         </Field>
       </div>
 
+      {customFieldDefs.length > 0 ? (
+        <div className="grid gap-3">
+          <p className="text-sm font-medium">Custom fields</p>
+          <FormCustomFields defs={customFieldDefs} disabled={pending} />
+        </div>
+      ) : null}
       <div className="flex items-center justify-end gap-2 border-t pt-4">
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
