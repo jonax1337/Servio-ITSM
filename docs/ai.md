@@ -53,9 +53,11 @@ server-side in every route/action.
 | **General** | All agents | Day-to-day service-desk work: your queue, tickets, KB, records. |
 | **Admin** | Admins only (extra tab) | System-wide stats, settings, and management operations. |
 
-The scope switch sits at the top of the left rail (above **New chat**). Non-admins only ever get the
-General scope; the Admin tab is hidden **and** the Admin operations are refused server-side. Scope is
-a property of each conversation (`AiConversation.scope`).
+There is **no scope switch in the UI** — the old General/Admin rail toggle was removed. Admin
+operations (system-wide stats, settings, management ops) surface in the normal chat and are gated
+**per-operation by the acting user's role** (`minRole` / `adminOnly` = ADMIN, checked against the
+fresh DB role at propose AND apply time). Legacy conversations may still carry `scope=ADMIN` in the
+database; the column no longer gates anything.
 
 ---
 
@@ -206,9 +208,9 @@ Nothing Sable "decides" to change is applied automatically. The path is:
    (`components/assistant/proposal-card.tsx`) with **Approve** and **Dismiss** buttons. (Proposals
    are also collected into message metadata and persisted, so the cards survive a re-hydrate.)
 3. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
-   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`, plus `adminOnly` ⇒
-   ADMIN — the check is **role-only**; the conversation `scope` is passed but not enforced),
-   **re-validates the args** (via `runOperation`), then runs the real mutation —
+   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`; `adminOnly` ops
+   additionally require the ADMIN role), **re-validates the args** (via `runOperation`), then runs
+   the real mutation —
    reusing existing server actions where possible, else a guarded Prisma write plus an audit entry.
 
 Client-supplied args are never trusted: they are re-validated at apply time. The underlying
@@ -353,7 +355,7 @@ file parts to providers that support them).
 ### The rail
 
 `components/assistant/sable-rail.tsx` is the premium left rail shown in the max window: **New chat**,
-a search box, the **General/Admin scope switch** (above New chat), user **folders**
+a search box, user **folders**
 (create / rename / delete, with `@dnd-kit` drag to move chats in and out), and a collapsible
 **Archived** section. Its folder + conversation actions call the server actions in
 `lib/actions/ai-assistant.ts`: `listFolders` / `createFolder` / `renameFolder` / `deleteFolder` /
