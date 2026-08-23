@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getSessionUser, isAgent, type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
+import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
   PROBLEM_STATUSES,
   PRIORITIES,
@@ -37,13 +38,32 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   const me = await getSessionUser();
   if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
 
-  const parsed = createSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData) as Record<string, unknown>;
+  // Custom-field inputs post as `cf_<key>` — collect them into the create data.
+  const customFields: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("cf_") && typeof v === "string") customFields[k.slice(3)] = v;
+  }
+  if (Object.keys(customFields).length) raw.customFields = customFields;
+
+  const parsed = createSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
   }
   const data = parsed.data;
 
-  const problem = await db.problem.create({ data });
+  // Enforce required, currently-visible custom fields (same contract as tickets):
+  // abort the create when a required field is missing rather than persisting an
+  // incomplete record.
+  const defs = await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } });
+  if (defs.length > 0) {
+    const res = assertRequiredCustomFields(defs as CustomFieldDef[], customFields, entityFieldValues({ status: data.status, priority: data.priority, categoryId: data.categoryId }));
+    if (!res.ok) return { error: res.error };
+  }
+
+  const problem = await db.problem.create({
+    data: { ...data, ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}) },
+  });
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Problem", entityId: problem.id, summary: `Created problem "${problem.title}"` });
   if (data.assigneeId && data.assigneeId !== me.id) {
@@ -101,8 +121,8 @@ export async function updateProblemField(formData: FormData) {
 // ── Comments & edit ──────────────────────────────────────────────────────────
 
 async function requireAgentP() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 export async function addProblemComment(formData: FormData) {

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { sendMail } from "@/lib/mail";
-import { resumeData } from "@/lib/sla";
+import { resumeData, ticketCalendar } from "@/lib/sla";
 import { autoAssignTicket } from "@/lib/assignment";
 import { runAutomations } from "@/lib/automations";
 import { effectiveApprovalStages, type ApprovalStage } from "@/lib/service-forms";
@@ -138,7 +138,11 @@ export async function decideApproval(formData: FormData) {
 
   const approval = await db.ticketApproval.findUnique({
     where: { id: approvalId },
-    include: { ticket: { include: { requester: true, service: true, catalogItem: true } } },
+    include: {
+      ticket: {
+        include: { requester: true, service: true, catalogItem: true, sla: { select: { businessCalendarId: true } } },
+      },
+    },
   });
   if (!approval || approval.status !== "PENDING") return;
   // only the assigned approver (or an admin) may decide
@@ -224,11 +228,11 @@ export async function decideApproval(formData: FormData) {
 /** Final-stage approval: resume the SLA clock, flip the request to live work,
  *  auto-assign it, run creation automations, and notify the requester. */
 async function releaseApprovedRequest(
-  t: { id: number; pendingSince: Date | null; responseDueAt: Date | null; resolveDueAt: Date | null; dueAt: Date | null; pausedMs: number; type: string; title: string; requesterId: string; requester?: { email: string | null; name: string | null } | null; catalogItem?: { name: string } | null; service?: { name: string } | null },
+  t: { id: number; pendingSince: Date | null; responseDueAt: Date | null; resolveDueAt: Date | null; dueAt: Date | null; pausedMs: number; type: string; title: string; requesterId: string; requester?: { email: string | null; name: string | null } | null; catalogItem?: { name: string } | null; service?: { name: string } | null; sla?: { businessCalendarId: string | null } | null },
   actorId: string,
   comment: string | null,
 ) {
-  const resume = t.pendingSince ? resumeData(t) : {};
+  const resume = t.pendingSince ? resumeData(t, new Date(), await ticketCalendar(t)) : {};
   await db.ticket.update({
     where: { id: t.id },
     data: { approvalState: "APPROVED", status: "NEW", ...resume },

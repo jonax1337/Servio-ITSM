@@ -5,13 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { SERVICE_STATUSES, CRITICALITIES } from "@/lib/constants";
 
 async function requireAgent() {
-  const me = await getSessionUser();
-  return me && isAgent(me.role as Role) ? me : null;
+  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
+  return requireAgentUser();
 }
 
 const optionalId = z
@@ -157,6 +157,9 @@ export async function deleteService(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const service = await db.service.findUnique({ where: { id }, select: { name: true } });
   if (!service) return;
+  // The polymorphic Approval has no FK to Service — clean its rows so the
+  // /approvals queue doesn't fill with dangling, still-actionable sign-offs.
+  await db.approval.deleteMany({ where: { entityType: "SERVICE", entityId: id } });
   await db.service.delete({ where: { id } });
   await writeAudit({
     userId: me.id,

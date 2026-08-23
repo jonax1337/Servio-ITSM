@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
-import { statusChangeData } from "@/lib/sla";
+import { statusChangeData, ticketCalendar } from "@/lib/sla";
 import { safeWebhookFetch } from "@/lib/safe-fetch";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
@@ -39,7 +39,7 @@ type Trigger =
 async function loadTicket(id: number) {
   return db.ticket.findUnique({
     where: { id },
-    include: { requester: true, group: true, assignee: true },
+    include: { requester: true, group: true, assignee: true, sla: { select: { businessCalendarId: true } } },
   });
 }
 type TicketRow = NonNullable<Awaited<ReturnType<typeof loadTicket>>>;
@@ -107,7 +107,7 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
             break;
           }
           patch.status = next;
-          Object.assign(patch, statusChangeData(t, next));
+          Object.assign(patch, statusChangeData(t, next, new Date(), await ticketCalendar(t)));
           break;
         }
         case "set_priority":

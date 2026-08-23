@@ -86,6 +86,17 @@ export async function POST(req: Request) {
     const reason = await validateTicketAssignee(parsed.data.assigneeId, null);
     if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
+  // FK existence up front — a bogus requester/category/service id is a 422, not
+  // a 500 on the Prisma FK constraint (matches the assigneeId contract).
+  if (parsed.data.requesterId && !(await db.user.findUnique({ where: { id: parsed.data.requesterId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { requesterId: [`Unknown requester: ${parsed.data.requesterId}`] });
+  }
+  if (parsed.data.categoryId && !(await db.category.findUnique({ where: { id: parsed.data.categoryId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { categoryId: [`Unknown category: ${parsed.data.categoryId}`] });
+  }
+  if (parsed.data.serviceId && !(await db.service.findUnique({ where: { id: parsed.data.serviceId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { serviceId: [`Unknown service: ${parsed.data.serviceId}`] });
+  }
   // Non-agents can only file tickets as themselves; agents may set requesterId.
   const requesterId = isAgentPrincipal
     ? parsed.data.requesterId ?? auth.principal.userId
@@ -94,9 +105,15 @@ export async function POST(req: Request) {
   const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
   // Non-agents may not set server-controlled fields (status/assignee/queue/etc.)
   // — those fall back to schema defaults. Prevents self-assign / pre-resolved
-  // tickets that would skew SLA and metrics.
+  // tickets that would skew SLA and metrics. Agents may pick a starting status,
+  // but it must be an OPEN one: a ticket can't be born RESOLVED/CLOSED (that
+  // would skip breach stamping, automations and the survey pipeline).
+  const agentData = { ...parsed.data, prefix: prefixForType(parsed.data.type), ...sla, requesterId, source: "API" as const };
+  if (isAgentPrincipal && parsed.data.status && !OPEN_TICKET_STATUSES.includes(parsed.data.status as (typeof OPEN_TICKET_STATUSES)[number])) {
+    return apiError(422, "Validation failed", { status: ["Tickets can only be created in an open status (NEW, OPEN, IN_PROGRESS, PENDING, ON_HOLD); transition after creation instead."] });
+  }
   const data = isAgentPrincipal
-    ? { ...parsed.data, prefix: prefixForType(parsed.data.type), ...sla, requesterId, source: "API" as const }
+    ? agentData
     : {
         title: parsed.data.title,
         description: parsed.data.description,

@@ -72,16 +72,34 @@ export async function loadBusinessCalendar(
 }
 
 /**
+ * The business calendar attached to a ticket's SLA (null when the ticket has no
+ * SLA or the SLA is 24/7). Callers fetching a ticket for a status/clock change
+ * should `include: { sla: { select: { businessCalendarId: true } } }` and pass
+ * the result into statusChangeData/resumeData so pause shifts stay in business
+ * time.
+ */
+export async function ticketCalendar(
+  ticket: { sla?: { businessCalendarId: string | null } | null },
+): Promise<BusinessCalendarLike | null> {
+  return loadBusinessCalendar(ticket.sla?.businessCalendarId ?? null);
+}
+
+/**
  * Compute a deadline `mins` minutes after `from`. When a business calendar is
  * supplied the minutes are counted in BUSINESS time; otherwise wall-clock.
+ * Returns null when the calendar is degenerate (no open time at all) — such a
+ * deadline would equal `from` and breach instantly, so callers treat it as
+ * "no computable SLA clock".
  */
 export function deadlineFrom(
   from: Date,
   mins: number,
   calendar: BusinessCalendarLike | null,
-): Date {
+): Date | null {
   const durationMs = mins * 60_000;
-  return calendar ? addBusinessMs(from, durationMs, calendar) : new Date(from.getTime() + durationMs);
+  if (!calendar) return new Date(from.getTime() + durationMs);
+  const d = addBusinessMs(from, durationMs, calendar);
+  return d.getTime() === from.getTime() ? null : d;
 }
 
 /**
@@ -95,6 +113,9 @@ export async function slaCreateData(input: SlaInput, from: Date = new Date()) {
   const calendar = await loadBusinessCalendar(sla.businessCalendarId);
   const responseDueAt = deadlineFrom(from, sla.responseMins, calendar);
   const resolveDueAt = deadlineFrom(from, sla.resolveMins, calendar);
+  // Degenerate calendar (no open time): no computable clock — don't stamp
+  // deadlines that would breach the instant the ticket is created.
+  if (!responseDueAt && !resolveDueAt) return {} as Record<string, never>;
   return { slaId: sla.id, responseDueAt, resolveDueAt, dueAt: resolveDueAt };
 }
 
@@ -112,11 +133,23 @@ export function pauseData(ticket: { pendingSince: Date | null }, now: Date = new
   return { pendingSince: now };
 }
 
-/** Fields to write when a ticket leaves a paused state: shift deadlines forward. */
-export function resumeData(ticket: ClockTicket, now: Date = new Date()) {
+/**
+ * Fields to write when a ticket leaves a paused state: shift deadlines forward
+ * by the time the ticket was actually paused. Wall-clock SLAs shift by the raw
+ * pause delta; business-hours SLAs shift by the BUSINESS time consumed during
+ * the pause (a weekend pause consumes zero working time) so the shifted
+ * deadline keeps its original working-time budget.
+ */
+export function resumeData(
+  ticket: ClockTicket,
+  now: Date = new Date(),
+  calendar: BusinessCalendarLike | null = null,
+) {
   if (!ticket.pendingSince) return {};
-  const delta = Math.max(0, now.getTime() - ticket.pendingSince.getTime());
-  const shift = (d: Date | null) => (d ? new Date(d.getTime() + delta) : d);
+  const rawDelta = Math.max(0, now.getTime() - ticket.pendingSince.getTime());
+  const delta = calendar ? elapsedBusinessMs(ticket.pendingSince, now, calendar) : rawDelta;
+  const shift = (d: Date | null) =>
+    d ? (calendar ? addBusinessMs(d, delta, calendar) : new Date(d.getTime() + delta)) : d;
   return {
     pendingSince: null,
     pausedMs: ticket.pausedMs + delta,
@@ -177,6 +210,7 @@ export function statusChangeData(
   },
   value: string,
   now: Date = new Date(),
+  calendar: BusinessCalendarLike | null = null,
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   const wasPending = current.status === "PENDING" || current.status === "ON_HOLD";
@@ -185,7 +219,7 @@ export function statusChangeData(
   if (willPending && !wasPending) Object.assign(patch, pauseData(current, now));
   let effResolveDueAt = current.resolveDueAt;
   if (!willPending && wasPending) {
-    const resumed = resumeData(current, now);
+    const resumed = resumeData(current, now, calendar);
     Object.assign(patch, resumed);
     effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
   }
@@ -242,9 +276,12 @@ export function slaSnapshot(
 
   if (calendar) {
     // Business-hours mode: compare elapsed WORKING time to the working budget.
-    // The budget is the working span from createdAt to the (already
-    // business-computed) resolve deadline; elapsed is the working time so far.
-    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar) - ticket.pausedMs;
+    // The budget is the working span from createdAt to the resolve deadline; the
+    // deadline already carries any business-time pause shift from resumeData,
+    // and elapsed working time contains the same pause span — the two cancel,
+    // so no extra pausedMs correction is needed here (subtracting it would
+    // double-count the pause and breach early).
+    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar);
     const elapsed = elapsedBusinessMs(ticket.createdAt, now, calendar);
     if (budget <= 0) return now > dueAt ? { state: "BREACHED", dueAt } : { state: "ON_TRACK", dueAt };
     if (elapsed >= budget) return { state: "BREACHED", dueAt };
@@ -277,7 +314,9 @@ export function slaElapsedPercent(
   const dueAt = ticket.resolveDueAt ?? ticket.dueAt;
   if (!dueAt) return null;
   if (calendar) {
-    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar) - ticket.pausedMs;
+    // Business mode: budget/elapsed both span the same pause shift (see
+    // slaSnapshot) — no pausedMs correction to avoid double-counting.
+    const budget = elapsedBusinessMs(ticket.createdAt, dueAt, calendar);
     if (budget <= 0) return now >= dueAt ? 100 : 0;
     const elapsed = elapsedBusinessMs(ticket.createdAt, now, calendar);
     return (elapsed / budget) * 100;

@@ -8,7 +8,7 @@ import {
 import { runAutomations } from "@/lib/automations";
 import { notify, writeAudit } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
-import { PRIORITIES } from "@/lib/constants";
+import { PRIORITIES, OPEN_TICKET_STATUSES } from "@/lib/constants";
 import type { BusinessCalendarLike } from "@/lib/business-hours";
 
 // ---------------------------------------------------------------------------
@@ -39,8 +39,10 @@ import type { BusinessCalendarLike } from "@/lib/business-hours";
 // pre-check + best-effort — a rare double-fire is acceptable and logged.)
 // ---------------------------------------------------------------------------
 
-// Open, non-terminal statuses whose SLA clock is still running.
-const OPEN_STATUSES = ["NEW", "OPEN", "PENDING", "ON_HOLD"] as const;
+// Open, non-terminal statuses whose SLA clock is still running — IN_PROGRESS
+// included (it's the most common working state; keep in sync with
+// OPEN_TICKET_STATUSES in lib/constants.ts).
+const OPEN_STATUSES = OPEN_TICKET_STATUSES;
 
 const STEP_MARKER = (stepId: string) => `[[sla-escalation:${stepId}]]`;
 
