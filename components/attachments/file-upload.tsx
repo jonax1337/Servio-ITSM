@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
+import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
 
 function targetField(target: AttachmentTarget): [string, string] {
   if ("ticketId" in target) return ["ticketId", String(target.ticketId)];
@@ -13,13 +13,16 @@ function targetField(target: AttachmentTarget): [string, string] {
 }
 
 export function FileUpload({
-  target, disabled, accept = UPLOAD_ACCEPT, label = "Attach file",
+  target, disabled, accept = UPLOAD_ACCEPT, label = "Attach file", maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   target: AttachmentTarget;
   disabled?: boolean;
   accept?: string;
   label?: string;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
 }) {
+  const maxBytes = maxUploadBytes(maxMb);
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -58,8 +61,8 @@ export function FileUpload({
     setError(null);
     setBusy(true);
     for (const file of Array.from(files)) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        setError(`${file.name} is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+      if (file.size > maxBytes) {
+        setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`);
         continue;
       }
       setProgress(0);

@@ -244,6 +244,8 @@ Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, 
 | Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, from `instrumentation.ts`) |
 | Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
 
+The whole scheduler (`lib/scheduler.ts`: SLA escalation sweep, inbound-mail poll, scheduled syncs) can be disabled per process with the `SCHEDULER_ENABLED` env flag (default `true`) — see [configuration.md](./configuration.md).
+
 ### Settings
 A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages — cards carry a `minRole` and hide when the viewer can't open the target, so managers never see admin dead-ends:
 

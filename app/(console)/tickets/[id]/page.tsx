@@ -20,7 +20,7 @@ import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } f
 import { CommentThread } from "@/components/comments/comment-thread";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
-import { getBoolSetting } from "@/lib/settings";
+import { getBoolSetting, getMaxUploadMb } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
 import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { TicketActions } from "@/components/tickets/ticket-actions";
@@ -38,6 +38,7 @@ import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
   PENDING_REASON_META, RESOLUTION_CODE_META, metaFor,
   ticketRef, problemRef, changeRef,
+  TONE_BANNER_CLASSES, TONE_TEXT_CLASSES,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -63,6 +64,7 @@ export default async function TicketDetailPage({
   if (!Number.isFinite(ticketId)) notFound();
 
   const me = await getSessionUser();
+  const maxUploadMb = await getMaxUploadMb();
   const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
@@ -208,7 +210,7 @@ export default async function TicketDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/tickets" variant="ghost" size="icon-sm">
+          <LinkButton href="/tickets" variant="ghost" size="icon-sm" aria-label="Back to tickets">
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
@@ -248,18 +250,18 @@ export default async function TicketDetailPage({
         ) : null}
 
         {ticket.pendingReason && (ticket.status === "PENDING" || ticket.status === "ON_HOLD") ? (
-          <div className="flex flex-wrap items-center gap-2 border-b bg-amber-500/5 px-4 py-2.5 text-sm sm:px-6">
+          <div className={`flex flex-wrap items-center gap-2 border-b ${TONE_BANNER_CLASSES.warning} px-4 py-2.5 text-sm sm:px-6`}>
             <ToneBadge meta={metaFor(PENDING_REASON_META, ticket.pendingReason)} />
             {ticket.pendingNote ? <span className="text-muted-foreground">{ticket.pendingNote}</span> : null}
           </div>
         ) : null}
 
         {ticket.resolutionNote && ["RESOLVED", "CLOSED", "CANCELLED"].includes(ticket.status) ? (
-          <div className="flex flex-wrap items-center gap-2 border-b bg-emerald-500/5 px-4 py-2.5 text-sm sm:px-6">
+          <div className={`flex flex-wrap items-center gap-2 border-b ${TONE_BANNER_CLASSES.success} px-4 py-2.5 text-sm sm:px-6`}>
             {ticket.resolutionCode ? (
               <ToneBadge meta={metaFor(RESOLUTION_CODE_META, ticket.resolutionCode)} />
             ) : (
-              <CheckCircle2 className="size-4 text-emerald-500" />
+              <CheckCircle2 className={`size-4 ${TONE_TEXT_CLASSES.success}`} />
             )}
             <span className="text-muted-foreground">{ticket.resolutionNote}</span>
           </div>
@@ -312,6 +314,7 @@ export default async function TicketDetailPage({
               canUpload={false}
               canDeleteAll={!!me && isAgent(me.role as Role)}
               currentUserId={me?.id}
+              maxMb={maxUploadMb}
             />
           ) : null}
 
@@ -365,7 +368,7 @@ export default async function TicketDetailPage({
           {(ticket.problem || ticket.change || ticket.assets.length > 0 || ticket.linksFrom.length > 0) ? (
             <div className="flex flex-wrap gap-2">
               {ticket.problem ? (
-                <Chip href={`/problems/${ticket.problem.id}`} icon={<AlertTriangle className="size-3.5 text-amber-500" />} label={`${problemRef(ticket.problem.id)} · ${ticket.problem.title}`}
+                <Chip href={`/problems/${ticket.problem.id}`} icon={<AlertTriangle className={`size-3.5 ${TONE_TEXT_CLASSES.warning}`} />} label={`${problemRef(ticket.problem.id)} · ${ticket.problem.title}`}
                   unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "problem" }} />} />
               ) : null}
               {ticket.change ? (
@@ -373,11 +376,11 @@ export default async function TicketDetailPage({
                   unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "change" }} />} />
               ) : null}
               {ticket.linksFrom.map((l) => (
-                <Chip key={l.id} href={`/tickets/${l.linkedTicketId}`} icon={<Link2 className="size-3.5 text-sky-500" />} label={`${ticketRef(l.linked.id, l.linked.prefix)} · ${l.linked.title}`}
+                <Chip key={l.id} href={`/tickets/${l.linkedTicketId}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${ticketRef(l.linked.id, l.linked.prefix)} · ${l.linked.title}`}
                   unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.id, ticketId: ticket.id }} />} />
               ))}
               {ticket.assets.map((a) => (
-                <Chip key={a.assetId} href={`/assets/${a.assetId}`} icon={<Server className="size-3.5 text-indigo-500" />} label={a.asset.name}
+                <Chip key={a.assetId} href={`/assets/${a.assetId}`} icon={<Server className={`size-3.5 ${TONE_TEXT_CLASSES.indigo}`} />} label={a.asset.name}
                   unlink={<UnlinkBtn action={unlinkAsset} fields={{ ticketId: ticket.id, assetId: a.assetId }} />} />
               ))}
             </div>
@@ -419,6 +422,7 @@ export default async function TicketDetailPage({
                 candidateUsers: replyCandidates,
               }}
               enableForward
+              maxMb={maxUploadMb}
             />
           </div>
         </div>

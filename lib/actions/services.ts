@@ -86,6 +86,22 @@ export async function updateServiceField(formData: FormData) {
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
 
+  // Validate the String-backed "enum" against lib/constants.ts and verify a
+  // relation FK actually exists before writing it (mirrors updateAssetField /
+  // updateTicketField) so a forged POST can't corrupt enum data or dangle an FK.
+  if (field === "status" && !SERVICE_STATUSES.includes(v as (typeof SERVICE_STATUSES)[number])) return;
+  if (field === "criticality" && !CRITICALITIES.includes(v as (typeof CRITICALITIES)[number])) return;
+  if (isRelation && v) {
+    const relExists: Record<string, () => Promise<boolean>> = {
+      categoryId: async () => !!(await db.category.findUnique({ where: { id: v }, select: { id: true } })),
+      ownerId: async () => !!(await db.user.findUnique({ where: { id: v }, select: { id: true } })),
+      slaId: async () => !!(await db.sLA.findUnique({ where: { id: v }, select: { id: true } })),
+      groupId: async () => !!(await db.group.findUnique({ where: { id: v }, select: { id: true } })),
+    };
+    const check = relExists[field];
+    if (check && !(await check())) return;
+  }
+
   await db.service.update({ where: { id }, data: { [field]: v } });
   await writeAudit({
     userId: me.id,

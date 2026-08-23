@@ -122,7 +122,7 @@ export default async function AssetDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/assets" variant="ghost" size="icon-sm">
+          <LinkButton href="/assets" variant="ghost" size="icon-sm" aria-label="Back to assets">
             <ArrowLeft className="size-4" />
           </LinkButton>
           {asset.assetTag ? (

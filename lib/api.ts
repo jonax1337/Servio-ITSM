@@ -98,27 +98,33 @@ export async function validateTicketAssignee(
   return null;
 }
 
-// Bearer-token APIs don't use cookies, but keep the origin configurable rather
-// than hard-wiring a wildcard so deployments can lock it down.
-const CORS = {
-  "Access-Control-Allow-Origin": process.env.API_CORS_ORIGIN ?? "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-};
+// Bearer-token APIs don't use cookies, so cross-origin browser access is not
+// needed by default. CORS stays CLOSED unless API_CORS_ORIGIN is explicitly
+// configured: no Access-Control-* headers are emitted, making the API
+// same-origin-only. Set an exact origin to opt a browser client in.
+function corsHeaders(): Record<string, string> {
+  const origin = process.env.API_CORS_ORIGIN?.trim();
+  if (!origin) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  };
+}
 
 export function ok(data: unknown, init?: { status?: number; meta?: unknown }) {
   return NextResponse.json(
     init?.meta !== undefined ? { data, meta: init.meta } : { data },
-    { status: init?.status ?? 200, headers: CORS },
+    { status: init?.status ?? 200, headers: corsHeaders() },
   );
 }
 
 export function apiError(status: number, message: string, details?: unknown) {
-  return NextResponse.json({ error: { message, details } }, { status, headers: CORS });
+  return NextResponse.json({ error: { message, details } }, { status, headers: corsHeaders() });
 }
 
 export function preflight() {
-  return new NextResponse(null, { status: 204, headers: CORS });
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
 }
 
 /** Best-effort client IP from proxy headers (single-node deploy). */
@@ -145,7 +151,7 @@ export async function guard(
     return {
       response: NextResponse.json(
         { error: { message: "Rate limit exceeded. Slow down and retry later." } },
-        { status: 429, headers: { ...CORS, "Retry-After": String(retryAfter) } },
+        { status: 429, headers: { ...corsHeaders(), "Retry-After": String(retryAfter) } },
       ),
     };
   }

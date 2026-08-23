@@ -9,11 +9,19 @@ import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
  * Tiny in-process scheduler. Started once per server instance from
- * instrumentation.ts. Runs two independent ticks: the inbound-mail poll and the
- * cron-driven sync runner (reading SyncSource.schedule).
+ * instrumentation.ts. Runs three independent ticks: the inbound-mail poll, the
+ * cron-driven sync runner (reading SyncSource.schedule), and the SLA escalation
+ * sweep.
+ *
+ * SINGLE-INSTANCE ONLY: state (overlap guards, SLA "already fired" markers) is
+ * in-memory, so every replica would fire duplicate work. Gate replicas with
+ * `SCHEDULER_ENABLED=false` — exactly one instance keeps the default `true`
+ * (see docs/deployment.md).
  *
  * Node-only. Guarded against double-registration under `next dev` HMR via a
- * globalThis flag (same pattern as lib/db.ts / lib/storage.ts).
+ * globalThis flag (same pattern as lib/db.ts / lib/storage.ts). `stopScheduler`
+ * clears all timers; instrumentation.ts wires it to SIGTERM/SIGINT so rolling
+ * deploys don't fire ticks mid-shutdown.
  */
 
 const g = globalThis as unknown as {
@@ -24,6 +32,11 @@ const g = globalThis as unknown as {
     slaTimer?: NodeJS.Timeout;
   };
 };
+
+/** Kill-switch: set SCHEDULER_ENABLED=false on replicas that must stay passive. */
+function schedulerEnabled(): boolean {
+  return (process.env.SCHEDULER_ENABLED ?? "true").trim().toLowerCase() !== "false";
+}
 
 let polling = false;
 let syncing = false;
@@ -133,6 +146,10 @@ async function slaEscalationTick(): Promise<void> {
 }
 
 export async function startScheduler(): Promise<void> {
+  if (!schedulerEnabled()) {
+    console.log("[servio:scheduler] disabled (SCHEDULER_ENABLED=false)");
+    return;
+  }
   if (g.__servioScheduler?.started) return; // HMR / double-register guard
 
   const seconds = await getNumberSetting("IMAP_POLL_SECONDS", 60);
@@ -160,4 +177,18 @@ export async function startScheduler(): Promise<void> {
   void inboundTick(); // immediate first pass
   void syncTick();
   void slaEscalationTick();
+}
+
+/**
+ * Clear all scheduler timers (graceful shutdown). Idempotent; safe to call when
+ * the scheduler never started. Wired to SIGTERM/SIGINT in instrumentation.ts.
+ */
+export function stopScheduler(): void {
+  const s = g.__servioScheduler;
+  if (!s) return;
+  for (const t of [s.timer, s.syncTimer, s.slaTimer]) {
+    if (t) clearInterval(t);
+  }
+  g.__servioScheduler = undefined;
+  console.log("[servio:scheduler] stopped (timers cleared)");
 }

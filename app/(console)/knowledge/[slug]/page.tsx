@@ -63,7 +63,7 @@ export default async function ArticlePage({
   return (
     <div className="mx-auto w-full max-w-3xl">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/knowledge" variant="ghost" size="icon-sm">
+        <LinkButton href="/knowledge" variant="ghost" size="icon-sm" aria-label="Back to knowledge base">
           <ArrowLeft className="size-4" />
         </LinkButton>
         <StatusBadge map={ARTICLE_VISIBILITY_META} value={article.visibility} />

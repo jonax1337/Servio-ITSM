@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AttachmentList } from "@/components/attachments/attachment-list";
 import { FileUpload } from "@/components/attachments/file-upload";
 import type { AttachmentRow, AttachmentTarget } from "@/lib/attachments-ui";
+import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
 import { cn } from "@/lib/utils";
 
 export function AttachmentsCard({
-  attachments, target, canUpload, canDeleteAll = false, currentUserId, className,
+  attachments, target, canUpload, canDeleteAll = false, currentUserId, maxMb = DEFAULT_MAX_UPLOAD_MB, className,
 }: {
   attachments: AttachmentRow[];
   target: AttachmentTarget;
@@ -14,6 +15,8 @@ export function AttachmentsCard({
   /** Agents may delete any file; otherwise only own uploads (via currentUserId). */
   canDeleteAll?: boolean;
   currentUserId?: string;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
   className?: string;
 }) {
   return (
@@ -29,7 +32,7 @@ export function AttachmentsCard({
       </CardHeader>
       <CardContent className="grid gap-3">
         <AttachmentList attachments={attachments} canDeleteAll={canDeleteAll} currentUserId={currentUserId} />
-        {canUpload ? <FileUpload target={target} /> : null}
+        {canUpload ? <FileUpload target={target} maxMb={maxMb} /> : null}
       </CardContent>
     </Card>
   );

@@ -3,8 +3,8 @@ node_modules
 .git
 .github
 *.log
-.env
-.env.local
+# Never bake env files into the build context (matches .env* incl. .env.local/.env.production).
+.env*
 prisma/dev.db
 prisma/dev.db-journal
 .playwright-mcp

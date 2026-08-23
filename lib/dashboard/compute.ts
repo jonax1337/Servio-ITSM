@@ -276,22 +276,29 @@ async function computeCsat(filters: TicketFilters): Promise<Computed> {
 }
 
 async function computeAging(where: Prisma.TicketWhereInput): Promise<Computed> {
-  const rows = await db.ticket.findMany({ where, select: { createdAt: true } });
+  // Bucket by ticket age with four bounded COUNT queries on createdAt (indexed)
+  // instead of loading every matching ticket's createdAt into JS. Portable
+  // Prisma only — no dialect SQL. Cumulative counts: c1 = age < 1d, c3 = age
+  // < 3d, c7 = age < 7d, total = all matches; buckets are their differences.
   const now = Date.now();
-  const buckets = [
-    { label: "< 1 day", value: 0 },
-    { label: "1–3 days", value: 0 },
-    { label: "3–7 days", value: 0 },
-    { label: "> 7 days", value: 0 },
-  ];
-  for (const t of rows) {
-    const ageD = (now - t.createdAt.getTime()) / 86400000;
-    if (ageD < 1) buckets[0].value++;
-    else if (ageD < 3) buckets[1].value++;
-    else if (ageD < 7) buckets[2].value++;
-    else buckets[3].value++;
-  }
-  return { kind: "aging", rows: buckets };
+  const d1 = new Date(now - 86400000);
+  const d3 = new Date(now - 3 * 86400000);
+  const d7 = new Date(now - 7 * 86400000);
+  const [c1, c3, c7, total] = await Promise.all([
+    db.ticket.count({ where: { AND: [where, { createdAt: { gt: d1 } }] } }),
+    db.ticket.count({ where: { AND: [where, { createdAt: { gt: d3 } }] } }),
+    db.ticket.count({ where: { AND: [where, { createdAt: { gt: d7 } }] } }),
+    db.ticket.count({ where }),
+  ]);
+  return {
+    kind: "aging",
+    rows: [
+      { label: "< 1 day", value: c1 },
+      { label: "1–3 days", value: c3 - c1 },
+      { label: "3–7 days", value: c7 - c3 },
+      { label: "> 7 days", value: total - c7 },
+    ],
+  };
 }
 
 const TONES = ["primary", "success", "warning", "danger", "info", "neutral"];

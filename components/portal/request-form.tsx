@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import { PortalAttachments } from "@/components/portal/portal-attachments";
+import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
 import { ReportIssueArt, RequestServiceArt } from "@/components/portal/illustrations";
 import { cn } from "@/lib/utils";
 import { TICKET_TYPES, PRIORITIES, PRIORITY_META } from "@/lib/constants";
@@ -62,12 +63,14 @@ function TypeSelector({ name, defaultValue }: { name: string; defaultValue: stri
 }
 
 export function RequestForm({
-  categories, services, defaultType, defaultService,
+  categories, services, defaultType, defaultService, maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   categories: Opt[];
   services: Opt[];
   defaultType: string;
   defaultService?: string;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
 }) {
   const [state, action, pending] = useActionState<PortalState, FormData>(createPortalTicket, undefined);
   const fe = state?.fieldErrors ?? {};
@@ -108,7 +111,7 @@ export function RequestForm({
 
       <div className="grid gap-1.5">
         <Label>Attachments (optional)</Label>
-        <PortalAttachments />
+        <PortalAttachments maxMb={maxMb} />
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">

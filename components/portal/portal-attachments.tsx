@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { X, Loader2, UploadCloud } from "lucide-react";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { iconForMime, formatBytes, MAX_UPLOAD_BYTES, UPLOAD_ACCEPT } from "@/lib/attachments-ui";
+import { iconForMime, formatBytes, DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT } from "@/lib/attachments-ui";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +15,11 @@ type Staged = { id: string; filename: string; mime: string; size: number; previe
  * hidden `attachmentIds` inputs. The create action re-parents them onto the new
  * ticket. Clears on the form's reset.
  */
-export function PortalAttachments() {
+export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
+}) {
+  const maxBytes = maxUploadBytes(maxMb);
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<Staged[]>([]);
@@ -67,8 +71,8 @@ export function PortalAttachments() {
     setError(null);
     setBusy(true);
     for (const file of Array.from(list)) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        setError(`${file.name} is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+      if (file.size > maxBytes) {
+        setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`);
         continue;
       }
       const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
@@ -113,7 +117,7 @@ export function PortalAttachments() {
         )}
         <span className="text-sm font-medium">Add a screenshot or file</span>
         <span className="text-xs text-muted-foreground">
-          Drag &amp; drop, or click to browse. Images, PDF, Office docs, media &amp; more (max {formatBytes(MAX_UPLOAD_BYTES)}).
+          Drag &amp; drop, or click to browse. Images, PDF, Office docs, media &amp; more (max {formatBytes(maxBytes)}).
         </span>
       </button>
 

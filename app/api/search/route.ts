@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getCurrentUser, isAgent, type Role } from "@/lib/session";
 import { ticketRef, problemRef, changeRef } from "@/lib/constants";
 import { ticketSearchWhere } from "@/lib/search";
 
@@ -8,8 +8,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const me = await getSessionUser();
-  if (!me) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  // DB-truth guard: the JWT freezes role/isActive at login, so rehydrate from
+  // the DB — a deactivated or demoted user must not keep org-wide search until
+  // token expiry.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
   // Console search: agents/managers/admins search org-wide; a USER-role session
   // (portal JWT) only ever sees their own tickets — never the whole CMDB, staff
   // directory or other people's requests.

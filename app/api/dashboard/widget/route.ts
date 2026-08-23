@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, isAgent, type Role } from "@/lib/session";
+import { getCurrentUser, isAgent, type Role } from "@/lib/session";
 import { computeWidget } from "@/lib/dashboard/compute";
 import type { Widget, WidgetType } from "@/lib/dashboard/types";
 
@@ -14,8 +14,10 @@ const TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "aging", "lis
  * ticket columns so there's nothing to inject.
  */
 export async function POST(req: Request) {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) {
+  // DB-truth guard: the JWT freezes role/isActive at login, so a deactivated or
+  // demoted user must not keep widget access until token expiry.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive || !isAgent(me.role as Role)) {
     return NextResponse.json({ error: "unauthorised" }, { status: 401 });
   }
   let body: unknown;

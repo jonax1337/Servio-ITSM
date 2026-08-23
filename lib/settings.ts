@@ -66,6 +66,11 @@ export async function getNumberSetting(key: string, fallback: number): Promise<n
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Per-file upload cap in MB (Admin Settings › Uploads, env `MAX_UPLOAD_MB` fallback). */
+export async function getMaxUploadMb(): Promise<number> {
+  return getNumberSetting("MAX_UPLOAD_MB", 15);
+}
+
 /**
  * True when a value exists (DB override or env) and is non-empty. Used to show a
  * "configured" state for secret fields WITHOUT ever returning the secret itself.

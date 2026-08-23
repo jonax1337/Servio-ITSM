@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { CheckCircle2 } from "lucide-react";
 import { Wordmark } from "@/components/brand";
 import { ticketRef } from "@/lib/constants";
-import { getSurveyByToken } from "@/lib/actions/survey";
+import { getSurveyByToken } from "@/lib/csat-survey";
 import { SurveyForm } from "./survey-form";
 
 export const metadata: Metadata = { title: "Rate our support" };

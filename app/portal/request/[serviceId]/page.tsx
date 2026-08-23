@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/session";
 import { parseFormSchema } from "@/lib/service-forms";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { LinkButton } from "@/components/link-button";
+import { getMaxUploadMb } from "@/lib/settings";
 import { Card, CardContent } from "@/components/ui/card";
 import { ServiceRequestForm } from "@/components/portal/service-request-form";
 
@@ -31,6 +32,7 @@ export default async function CatalogRequestPage({
   const item = await db.catalogItem.findUnique({ where: { id: serviceId } });
   if (!item || !item.isPublished) notFound();
 
+  const maxUploadMb = await getMaxUploadMb();
   const fields = parseFormSchema(item.formSchema);
 
   return (
@@ -60,6 +62,7 @@ export default async function CatalogRequestPage({
             serviceId={item.id}
             fields={fields}
             requiresApproval={item.requiresApproval}
+            maxMb={maxUploadMb}
           />
         </CardContent>
       </Card>

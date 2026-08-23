@@ -2,13 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { defaultMap, entityStatuses, isWorkflowEntity } from "@/lib/workflow";
 
+// DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
+// demoted/deactivated manager loses write access immediately.
 async function requireManager() {
-  const me = await getSessionUser();
-  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
 const ROLES_ALLOWED = ["MANAGER", "ADMIN"];

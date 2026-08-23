@@ -15,6 +15,32 @@ export const dynamic = "force-dynamic";
 
 const err = (status: number, message: string) => NextResponse.json({ error: message }, { status });
 
+/** Raised when the streamed request body crosses the ingress cap. */
+class PayloadTooLargeError extends Error {
+  constructor() {
+    super("request body exceeds the upload cap");
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+/**
+ * Wrap the raw request stream in a counting TransformStream that errors as soon
+ * as more than `cap` bytes flow through. This bounds RAM use BEFORE req.formData()
+ * would otherwise buffer an unbounded multipart body (memory-DoS guard).
+ */
+function cappedBodyStream(body: ReadableStream<Uint8Array>, cap: number) {
+  let total = 0;
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        total += chunk.byteLength;
+        if (total > cap) throw new PayloadTooLargeError();
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+}
+
 export async function POST(req: Request) {
   // 1. Session auth, rehydrated from the DB (a deactivated/demoted user must not
   //    keep upload rights on a stale JWT). Never Bearer — files are a browser flow.
@@ -32,18 +58,34 @@ export async function POST(req: Request) {
   //     Cap is admin-configurable (MAX_UPLOAD_MB in Admin Settings) with the env
   //     default; MAX_UPLOAD_BYTES stays the client-side mirror.
   const maxBytes = (await getNumberSetting("MAX_UPLOAD_MB", 15)) * 1024 * 1024;
+  const ingressCap = maxBytes + 1024 * 1024;
+  // Early reject when the client declares an over-cap length. Not trusted on its
+  // own — chunked uploads omit content-length, so 2c enforces the cap on bytes.
   const declaredLen = Number(req.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLen) && declaredLen > maxBytes + 1024 * 1024) {
+  if (Number.isFinite(declaredLen) && declaredLen > ingressCap) {
     return err(413, "File is too large.");
   }
 
-  // 3. Parse: a file + exactly one target discriminator.
+  // 2c. Hard byte cap on the actual stream: count every chunk off the wire and
+  //     abort the moment the cap is crossed, instead of letting req.formData()
+  //     buffer a body of any size into RAM first.
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
+    if (!req.body) throw new PayloadTooLargeError();
+    const cappedReq = new Request(req.url, {
+      method: "POST",
+      headers: { "content-type": req.headers.get("content-type") ?? "" },
+      body: cappedBodyStream(req.body, ingressCap),
+      duplex: "half",
+    } as RequestInit);
+    form = await cappedReq.formData();
+  } catch (e) {
+    if (e instanceof PayloadTooLargeError || String((e as Error)?.message ?? "").includes("exceeds the upload cap")) {
+      return err(413, "File is too large.");
+    }
     return err(422, "Could not parse the upload.");
   }
+  // 3. Parse done: a file + exactly one target discriminator.
   const file = form.get("file");
   if (!(file instanceof File)) return err(422, "No file provided.");
 

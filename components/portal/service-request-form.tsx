@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PortalAttachments } from "@/components/portal/portal-attachments";
+import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
 
 /** Select field for a dynamic catalog form: submits an empty value until chosen,
  * matching the previous <Select name=…> (no auto-selected first option). */
@@ -32,10 +33,13 @@ export function ServiceRequestForm({
   serviceId,
   fields,
   requiresApproval,
+  maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   serviceId: string;
   fields: ServiceField[];
   requiresApproval: boolean;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
 }) {
   const [state, action, pending] = useActionState<CatalogState, FormData>(createCatalogRequest, undefined);
   const fe = state?.fieldErrors ?? {};
@@ -93,7 +97,7 @@ export function ServiceRequestForm({
 
       <div className="grid gap-1.5">
         <Label>Attachments (optional)</Label>
-        <PortalAttachments />
+        <PortalAttachments maxMb={maxMb} />
       </div>
 
       {requiresApproval ? (

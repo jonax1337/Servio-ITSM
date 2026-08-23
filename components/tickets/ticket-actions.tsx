@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal, UserPlus,
 } from "lucide-react";
@@ -20,6 +21,17 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type Candidate = { value: string; label: string };
+
+/** Typed-result actions surface failures as toasts instead of silently no-oping. */
+async function runToggleWatch(fd: FormData): Promise<void> {
+  const res = await toggleWatch(fd);
+  if (res && !res.ok) toast.error(res.error ?? "Could not update watch.");
+}
+
+async function runEscalateTicket(fd: FormData): Promise<void> {
+  const res = await escalateTicket(fd);
+  if (res && !res.ok) toast.error(res.error ?? "Could not escalate.");
+}
 
 const LINK_TYPES: ComboOption[] = [
   { value: "RELATED", label: "Related to", tone: "info" },
@@ -54,7 +66,7 @@ export function TicketActions({
       <Tooltip>
         <TooltipTrigger
           render={
-            <form action={toggleWatch}>
+            <form action={runToggleWatch}>
               <input type="hidden" name="id" value={ticketId} />
               <Button type="submit" variant={isWatching ? "secondary" : "outline"} size="sm">
                 {isWatching ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -84,7 +96,7 @@ export function TicketActions({
           <MoreHorizontal className="size-4" /> Actions
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <form action={escalateTicket}>
+          <form action={runEscalateTicket}>
             <input type="hidden" name="id" value={ticketId} />
             <DropdownMenuItem nativeButton closeOnClick={false} render={<button type="submit" className="w-full" />}>
               <ChevronsUp className="size-4" /> Escalate priority

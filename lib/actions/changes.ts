@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, isAgent, hasRole, type Role, requireAgentUser } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
@@ -57,12 +57,23 @@ export type ActionState =
   | { error?: string; fieldErrors?: Record<string, string[]> }
   | undefined;
 
+// DB-truth guards: role/isActive freeze in the JWT at login, so every mutation
+// rehydrates them from the user row (see requireAgentUser / groups / sla-admin).
+async function requireAgentC() {
+  return requireAgentUser();
+}
+
+async function requireManagerC() {
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
+}
+
 export async function createChange(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return { error: "Not authorised" };
+  const me = await requireAgentC();
+  if (!me) return { error: "Not authorised" };
 
   // Custom-field inputs post as `cf_<key>` — collect them (the schema strips
   // the key; the JSON blob is persisted explicitly below).
@@ -124,8 +135,8 @@ const updateSchema = z.object({
 });
 
 export async function updateChangeField(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return;
+  const me = await requireAgentC();
+  if (!me) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id, field, value } = parsed.data;
@@ -185,8 +196,8 @@ const decideSchema = z.object({
 });
 
 export async function decideApproval(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return;
+  const me = await requireAgentC();
+  if (!me) return;
   const parsed = decideSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { approvalId, decision, comment } = parsed.data;
@@ -248,8 +259,8 @@ const addApproverSchema = z.object({ changeId: z.coerce.number(), approverId: z.
 const removeApproverSchema = z.object({ approvalId: z.string().min(1) });
 
 export async function submitChangeForApproval(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return;
+  const me = await requireAgentC();
+  if (!me) return;
   const parsed = submitSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id } = parsed.data;
@@ -293,7 +304,8 @@ export async function submitChangeForApproval(formData: FormData) {
 }
 
 export async function addChangeApprover(formData: FormData) {
-  const me = await getSessionUser();
+  // Manager+ DB-truth gate — the change owner must NOT curate their own board (SoD).
+  const me = await requireManagerC();
   if (!me) return;
   const parsed = addApproverSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -301,8 +313,6 @@ export async function addChangeApprover(formData: FormData) {
 
   const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, risk: true, title: true } });
   if (!change) return;
-  // Manager+ only — the change owner must NOT curate their own approval board (SoD).
-  if (!hasRole(me.role as Role, "MANAGER")) return;
   if (change.status !== "APPROVAL") return;
   // SoD — never seat the owner (assignee) or the creator.
   if (approverId === change.assigneeId || approverId === change.createdById) return;
@@ -320,7 +330,8 @@ export async function addChangeApprover(formData: FormData) {
 }
 
 export async function removeChangeApprover(formData: FormData) {
-  const me = await getSessionUser();
+  // Manager+ DB-truth gate — the owner must NOT prune their own board (SoD).
+  const me = await requireManagerC();
   if (!me) return;
   const parsed = removeApproverSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -331,11 +342,12 @@ export async function removeChangeApprover(formData: FormData) {
     include: { change: { select: { id: true, status: true, assigneeId: true } } },
   });
   if (!row) return;
-  // Manager+ only — the owner must NOT prune their own board (could force approval).
-  if (!hasRole(me.role as Role, "MANAGER")) return;
   if (row.change.status !== "APPROVAL") return;
 
-  await db.changeApproval.delete({ where: { id: approvalId } }).catch(() => {});
+  // deleteMany (not delete+swallow): no throw when a concurrent prune already
+  // removed the seat, and the audit below only fires on a real removal.
+  const gone = await db.changeApproval.deleteMany({ where: { id: approvalId } });
+  if (gone.count === 0) return;
 
   // Removing a row can complete the rule (e.g. it drops the seat count under a
   // QUORUM/PERCENT target) — recompute, but never auto-approve an empty board,
@@ -370,13 +382,13 @@ const setRuleSchema = z.object({
  * the change is now approved when the bar is lowered.
  */
 export async function setCabRule(formData: FormData) {
-  const me = await getSessionUser();
+  // Manager+ DB-truth gate (never the owner — SoD).
+  const me = await requireManagerC();
   if (!me) return;
   const parsed = setRuleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { changeId, rule } = parsed.data;
 
-  if (!hasRole(me.role as Role, "MANAGER")) return;
   const change = await db.change.findUnique({
     where: { id: changeId },
     select: { status: true, assigneeId: true, createdById: true },
@@ -416,11 +428,6 @@ export async function setCabRule(formData: FormData) {
 }
 
 // ── Comments & edit ──────────────────────────────────────────────────────────
-
-async function requireAgentC() {
-  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
-  return requireAgentUser();
-}
 
 export async function addChangeComment(formData: FormData) {
   const me = await requireAgentC();

@@ -3,13 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, hasRole, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { TRIGGERS, MATCH_TYPES } from "@/lib/automation-defs";
 
+// DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
+// demoted/deactivated manager loses write access immediately.
 async function requireManager() {
-  const me = await getSessionUser();
-  return me && hasRole(me.role as Role, "MANAGER") ? me : null;
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
 const schema = z.object({
@@ -119,6 +121,8 @@ export async function deleteRule(formData: FormData) {
   const me = await requireManager();
   if (!me) return;
   const id = String(formData.get("id") ?? "");
-  await db.automationRule.delete({ where: { id } }).catch(() => {});
+  // deleteMany: no throw when the rule is already gone; skip revalidate on a no-op.
+  const gone = await db.automationRule.deleteMany({ where: { id } }).catch(() => null);
+  if (!gone || gone.count === 0) return;
   revalidatePath("/automations");
 }

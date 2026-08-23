@@ -6,7 +6,7 @@ import { recordInboundEmail } from "@/lib/mail";
 import { getSetting } from "@/lib/settings";
 import { parseTicketRef, ticketRef } from "@/lib/constants";
 import { writeAudit, notify } from "@/lib/audit";
-import { createTicketCore } from "@/lib/actions/tickets";
+import { createTicketCore } from "@/lib/ticket-core";
 import type { ParsedInboundMail } from "./types";
 
 export type InboundResult =

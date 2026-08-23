@@ -36,6 +36,32 @@ export const TONE_CLASSES: Record<Tone, string> = {
 
 export type Meta = { label: string; tone: Tone; icon?: LucideIcon };
 
+/**
+ * Tone-derived classes for full-width status banners (background tint only —
+ * content keeps its own colours) and for standalone accent icons/text.
+ * Derived from the same palette as TONE_CLASSES so banners/chips stay on-token
+ * without hand-picking raw palette utilities at the call site.
+ */
+export const TONE_BANNER_CLASSES: Record<Tone, string> = {
+  neutral: "bg-muted/40",
+  info: "bg-sky-500/5",
+  success: "bg-emerald-500/5",
+  warning: "bg-amber-500/5",
+  danger: "bg-red-500/5",
+  purple: "bg-purple-500/5",
+  indigo: "bg-indigo-500/5",
+};
+
+export const TONE_TEXT_CLASSES: Record<Tone, string> = {
+  neutral: "text-muted-foreground",
+  info: "text-sky-500 dark:text-sky-400",
+  success: "text-emerald-500 dark:text-emerald-400",
+  warning: "text-amber-500 dark:text-amber-400",
+  danger: "text-destructive",
+  purple: "text-purple-500 dark:text-purple-400",
+  indigo: "text-indigo-500 dark:text-indigo-400",
+};
+
 // ---- Roles ----------------------------------------------------------------
 export const ROLES = ["ADMIN", "MANAGER", "AGENT", "USER"] as const;
 export type Role = (typeof ROLES)[number];
@@ -116,6 +142,12 @@ export const RESOLUTION_CODE_META: Record<string, Meta> = {
 
 /** The AI assistant's name — used consistently across chat, triage, and prompts. */
 export const AI_ASSISTANT_NAME = "Sable";
+
+/**
+ * Application version — keep in sync with package.json "version"
+ * (shown in the sidebar footer and Settings › About).
+ */
+export const APP_VERSION = "0.1.0";
 
 /** Scope of a standalone Sable conversation (String-enum strategy). */
 export const AI_SCOPES = ["GENERAL", "ADMIN"] as const;

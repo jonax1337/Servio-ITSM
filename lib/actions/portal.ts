@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
 import { createPortalTicketFor, linkStagedAttachments } from "@/lib/portal-tickets";
@@ -26,8 +26,10 @@ const schema = z.object({
 });
 
 export async function createPortalTicket(_prev: PortalState, formData: FormData): Promise<PortalState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  // DB truth (not the JWT): role/isActive freeze at login, so a deactivated
+  // user must lose portal powers even before their token expires.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return { error: "Not authenticated" };
 
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -40,8 +42,9 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
 }
 
 export async function addPortalComment(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me) return;
+  // DB truth: deactivated users keep no portal powers (see createPortalTicket).
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return;
   const id = Number(formData.get("ticketId"));
 
   const rawHtml = formData.get("bodyHtml");

@@ -10,7 +10,7 @@ import { isGroupMember, autoAssignTicket } from "@/lib/assignment";
 import { statusChangeData, ticketCalendar } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { deliverTicketReply } from "@/lib/actions/tickets";
+import { deliverTicketReply, slaRepricePatch } from "@/lib/ticket-core";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
 
 /**
@@ -218,10 +218,13 @@ export async function applyMacro(formData: FormData) {
     where: { id: ticketId },
     // The clock fields (responseDueAt … pausedMs) are needed by statusChangeData
     // so a status action pauses/resumes the SLA correctly; the SLA carries the
-    // business calendar for pause shifts in working time.
+    // business calendar for pause shifts in working time. priority/serviceId/slaId/
+    // firstResponseAt drive the SLA re-price for a set_priority action (same
+    // contract as updateTicketField).
     select: {
       id: true, title: true, type: true, requesterId: true,
       assigneeId: true, groupId: true, status: true,
+      priority: true, serviceId: true, slaId: true, firstResponseAt: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
       sla: { select: { businessCalendarId: true } },
     },
@@ -261,6 +264,13 @@ export async function applyMacro(formData: FormData) {
       case "set_priority": {
         if (!PRIORITIES.includes(a.value as (typeof PRIORITIES)[number])) break;
         patch.priority = a.value;
+        // Re-price the SLA exactly like updateTicketField does, so the
+        // response/resolve deadlines track the new tier instead of going stale
+        // (shared helper — one repricing implementation for all priority writers).
+        Object.assign(patch, await slaRepricePatch(
+          { status: ticket.status, firstResponseAt: ticket.firstResponseAt },
+          { priority: a.value, serviceId: ticket.serviceId, slaId: ticket.slaId },
+        ));
         summaryParts.push(`priority → ${a.value}`);
         break;
       }

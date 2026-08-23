@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { RequestForm } from "@/components/portal/request-form";
+import { getMaxUploadMb } from "@/lib/settings";
 import type { SearchParams } from "@/lib/query";
 import { getParam } from "@/lib/query";
 
@@ -16,6 +17,7 @@ export default async function PortalNewPage({
 }) {
   await requireUser();
   const sp = await searchParams;
+  const maxUploadMb = await getMaxUploadMb();
   const [categories, services] = await Promise.all([
     db.category.findMany({
       select: { id: true, name: true },
@@ -42,6 +44,7 @@ export default async function PortalNewPage({
             services={services.map((s) => ({ value: s.id, label: s.name }))}
             defaultType={getParam(sp, "type") ?? "INCIDENT"}
             defaultService={getParam(sp, "service")}
+            maxMb={maxUploadMb}
           />
         </CardContent>
       </Card>

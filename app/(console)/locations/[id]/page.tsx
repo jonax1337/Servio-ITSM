@@ -40,7 +40,7 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
     <div className="p-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <LinkButton href="/locations" variant="ghost" size="icon-sm"><ArrowLeft className="size-4" /></LinkButton>
+          <LinkButton href="/locations" variant="ghost" size="icon-sm" aria-label="Back to locations"><ArrowLeft className="size-4" /></LinkButton>
           <StatusBadge map={LOCATION_TYPE_META} value={location.type} />
           {location.parent ? (
             <span className="flex items-center gap-1 text-sm text-muted-foreground">

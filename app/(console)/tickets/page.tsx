@@ -4,7 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
-import { getVisibleSavedViews } from "@/lib/actions/saved-views";
+import { getVisibleSavedViews } from "@/lib/board-service";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { buildTicketWhere } from "@/lib/dashboard/compute";

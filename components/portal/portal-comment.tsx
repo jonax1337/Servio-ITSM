@@ -7,6 +7,7 @@ import { addPortalComment } from "@/lib/actions/portal";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
+import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -18,7 +19,11 @@ function SubmitButton() {
   );
 }
 
-export function PortalComment({ ticketId }: { ticketId: number }) {
+export function PortalComment({ ticketId, maxMb = DEFAULT_MAX_UPLOAD_MB }: {
+  ticketId: number;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
+}) {
   const ref = useRef<HTMLFormElement>(null);
   return (
     <form
@@ -31,7 +36,7 @@ export function PortalComment({ ticketId }: { ticketId: number }) {
     >
       <input type="hidden" name="ticketId" value={ticketId} />
       <RichTextEditor name="bodyHtml" required ariaLabel="Reply" placeholder="Add more details or reply to the agent…" />
-      <ComposerAttachments ticketId={ticketId} />
+      <ComposerAttachments ticketId={ticketId} maxMb={maxMb} />
       <div className="flex justify-end border-t pt-2">
         <SubmitButton />
       </div>

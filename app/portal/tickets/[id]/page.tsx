@@ -13,6 +13,7 @@ import { sanitizeCommentHtml } from "@/lib/markdown";
 import { iconForMime, formatBytes } from "@/lib/attachments-ui";
 import { FormAnswers } from "@/components/tickets/form-answers";
 import { effectiveApprovalStages } from "@/lib/service-forms";
+import { getMaxUploadMb } from "@/lib/settings";
 import { reRequestCatalogItem } from "@/lib/actions/catalog";
 import { ApprovalProgress } from "../approval-progress";
 import {
@@ -38,6 +39,7 @@ export default async function PortalTicketDetail({
   params: Promise<{ id: string }>;
 }) {
   const me = await requireUser();
+  const maxUploadMb = await getMaxUploadMb();
   const { id } = await params;
 
   const ticket = await db.ticket.findFirst({
@@ -166,6 +168,7 @@ export default async function PortalTicketDetail({
           target={{ ticketId: ticket.id }}
           canUpload={!isClosed}
           currentUserId={me.id}
+          maxMb={maxUploadMb}
         />
       ) : null}
 
@@ -225,7 +228,7 @@ export default async function PortalTicketDetail({
 
         {!isClosed ? (
           <div className="mt-5">
-            <PortalComment ticketId={ticket.id} />
+            <PortalComment ticketId={ticket.id} maxMb={maxUploadMb} />
           </div>
         ) : (
           <div className="mt-5 rounded-2xl border bg-muted/30 px-4 py-3 text-center text-sm text-muted-foreground">

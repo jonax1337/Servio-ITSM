@@ -103,7 +103,7 @@ export default async function SyncDetailPage({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/syncs" variant="ghost" size="icon-sm">
+        <LinkButton href="/syncs" variant="ghost" size="icon-sm" aria-label="Back to syncs">
           <ArrowLeft className="size-4" />
         </LinkButton>
         <StatusBadge map={SYNC_TYPE_META} value={source.type} dot={false} />

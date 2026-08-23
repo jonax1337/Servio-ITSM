@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
+// Demo credentials are a dev/demo convenience only: shown outside production
+// builds, or in production when NEXT_PUBLIC_DEMO_MODE="true" is set explicitly
+// (e.g. the public demo instance). Never rendered for real production users.
+const SHOW_DEMO_CREDENTIALS =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 export function LoginForm({
   ssoEnabled,
   ssoName,
@@ -52,7 +59,7 @@ export function LoginForm({
             type="email"
             placeholder="you@company.com"
             autoComplete="email"
-            defaultValue="admin@servio.dev"
+            defaultValue={SHOW_DEMO_CREDENTIALS ? "admin@servio.dev" : undefined}
             required
           />
         </div>
@@ -64,7 +71,7 @@ export function LoginForm({
             type="password"
             placeholder="••••••••"
             autoComplete="current-password"
-            defaultValue="servio123"
+            defaultValue={SHOW_DEMO_CREDENTIALS ? "servio123" : undefined}
             required
           />
         </div>
@@ -85,11 +92,13 @@ export function LoginForm({
         </Button>
       </form>
 
-      <p className="text-center text-xs text-muted-foreground">
-        Demo account prefilled ·{" "}
-        <span className="font-mono">admin@servio.dev</span> /{" "}
-        <span className="font-mono">servio123</span>
-      </p>
+      {SHOW_DEMO_CREDENTIALS ? (
+        <p className="text-center text-xs text-muted-foreground">
+          Demo account prefilled ·{" "}
+          <span className="font-mono">admin@servio.dev</span> /{" "}
+          <span className="font-mono">servio123</span>
+        </p>
+      ) : null}
     </div>
   );
 }

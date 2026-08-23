@@ -4,8 +4,15 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-// Keep in sync with MAX_UPLOAD_MB / lib/files.ts MAX_UPLOAD_BYTES (server is authoritative).
-export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+// Client-side mirror of the server's MAX_UPLOAD_MB cap (Admin Settings →
+// env fallback). Server pages pass the configured value down as `maxMb`;
+// this default only covers callers that weren't given a prop.
+export const DEFAULT_MAX_UPLOAD_MB = 15;
+
+/** Byte limit for a configured MB value (pure, client-safe). */
+export function maxUploadBytes(mb: number = DEFAULT_MAX_UPLOAD_MB): number {
+  return mb * 1024 * 1024;
+}
 
 /**
  * `accept` allow-list offered by the file picker. This is a UX hint only — the

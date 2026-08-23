@@ -27,6 +27,14 @@ import { format } from "date-fns";
 export const metadata: Metadata = { title: "Audit log" };
 export const dynamic = "force-dynamic";
 
+/** Actor-picker lookback window (see the bounded distinct below). */
+const ACTOR_WINDOW_MS = 90 * 86400000;
+
+/** Isolated so the render body stays free of direct impure calls. */
+function actorWindowStart(): Date {
+  return new Date(Date.now() - ACTOR_WINDOW_MS);
+}
+
 /** Tailwind tint per action verb so the log scans quickly. */
 const ACTION_CLASS: Record<string, string> = {
   CREATE: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-300",
@@ -59,8 +67,20 @@ export default async function AuditPage({
     queryAuditLog(filters, page),
     // Only users who have actually produced audit events, so the actor picker
     // stays short. `AuditLog.userId` is a plain FK, so this is a two-step lookup.
+    // Bounded: distinct actors from the last 90 days (uses the @@index([createdAt])),
+    // most-recent activity first, capped at 200 — a whole-table DISTINCT would
+    // scan every audit row on each render.
     db.auditLog
-      .findMany({ where: { userId: { not: null } }, distinct: ["userId"], select: { userId: true } })
+      .findMany({
+        where: {
+          userId: { not: null },
+          createdAt: { gte: actorWindowStart() },
+        },
+        distinct: ["userId"],
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: { userId: true },
+      })
       .then((ids) =>
         db.user.findMany({
           where: {

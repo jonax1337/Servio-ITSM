@@ -22,6 +22,7 @@ import {
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
 import { requireRole } from "@/lib/session";
+import { APP_VERSION } from "@/lib/constants";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -204,7 +205,7 @@ export default async function SettingsPage() {
             </div>
             <div className="flex items-center justify-between gap-2 border-b pb-2.5">
               <span className="text-muted-foreground">Version</span>
-              <span className="font-mono text-xs">0.1</span>
+              <span className="font-mono text-xs">{APP_VERSION}</span>
             </div>
             <div className="flex items-center justify-between gap-2 border-b pb-2.5">
               <span className="text-muted-foreground">License</span>

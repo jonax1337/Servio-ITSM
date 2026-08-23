@@ -68,15 +68,17 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `BRAVE_API_KEY` | No | — | [Brave Search](https://brave.com/search/api) key (independent web index; free tier ~2k/mo). Secret. |
 | `GOTENBERG_URL` | No | — | Optional [Gotenberg](https://gotenberg.dev) (LibreOffice) service, e.g. `http://gotenberg:3000`. When set, office docs (docx/pptx/legacy/ODF) preview as a faithful PDF; blank = built-in best-effort text/HTML. See [deployment.md](deployment.md#-docker). |
 | `SETTINGS_ENCRYPTION_KEY` | Recommended | — | 32-byte key (base64/hex) that encrypts secret settings (SMTP password, AI keys) stored in the DB. Bootstrap secret — `.env`-only. |
-| `API_CORS_ORIGIN` _(not in `.env.example`)_ | No | `*` | Allowed origin for the bearer-token REST API responses. Read in [`../lib/api.ts`](../lib/api.ts). Lock this down in production — see [rest-api.md](rest-api.md). |
-| `API_RATE_LIMIT` _(not in `.env.example`)_ | No | `120` | Max REST API requests per token (falling back to client IP) per window. Read in [`../lib/rate-limit.ts`](../lib/rate-limit.ts); in-memory, per-process — see the multi-instance caveat in [deployment.md](deployment.md). |
-| `API_RATE_WINDOW_MS` _(not in `.env.example`)_ | No | `60000` | Sliding-window length (ms) for `API_RATE_LIMIT`. |
-| `AI_RATE_LIMIT` _(not in `.env.example`)_ | No | `20` | Max AI-endpoint requests (console + portal chat, confirm-create, triage) per session user per window — every request drives a provider call. |
-| `AI_RATE_WINDOW_MS` _(not in `.env.example`)_ | No | `60000` | Sliding-window length (ms) for `AI_RATE_LIMIT`. |
-| `LOGIN_FREE_ATTEMPTS` _(not in `.env.example`)_ | No | `5` | Failed login attempts allowed before backoff kicks in ([`../lib/rate-limit.ts`](../lib/rate-limit.ts)). |
-| `LOGIN_BASE_BACKOFF_MS` _(not in `.env.example`)_ | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
-| `LOGIN_MAX_BACKOFF_MS` _(not in `.env.example`)_ | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |
-| `LOGIN_DECAY_MS` _(not in `.env.example`)_ | No | `900000` | Idle window (ms, 15 min) after which a login's failure count decays/resets. |
+| `API_CORS_ORIGIN` | No | _unset ⇒ no CORS header_ | Allowed origin for the bearer-token REST API responses. Default-**closed**: when unset no `Access-Control-Allow-Origin` is emitted, so browsers treat the API as same-origin-only (curl/server clients unaffected). Read in [`../lib/api.ts`](../lib/api.ts). See [rest-api.md](rest-api.md). |
+| `API_RATE_LIMIT` | No | `120` | Max REST API requests per token (falling back to client IP) per window. Read in [`../lib/rate-limit.ts`](../lib/rate-limit.ts); in-memory, per-process — see the multi-instance caveat in [deployment.md](deployment.md). |
+| `API_RATE_WINDOW_MS` | No | `60000` | Sliding-window length (ms) for `API_RATE_LIMIT`. |
+| `AI_RATE_LIMIT` | No | `20` | Max AI-endpoint requests (console + portal chat, confirm-create, triage) per session user per window — every request drives a provider call. |
+| `AI_RATE_WINDOW_MS` | No | `60000` | Sliding-window length (ms) for `AI_RATE_LIMIT`. |
+| `LOGIN_FREE_ATTEMPTS` | No | `5` | Failed login attempts allowed before backoff kicks in ([`../lib/rate-limit.ts`](../lib/rate-limit.ts)). |
+| `LOGIN_BASE_BACKOFF_MS` | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
+| `LOGIN_MAX_BACKOFF_MS` | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |
+| `LOGIN_DECAY_MS` | No | `900000` | Idle window (ms, 15 min) after which a login's failure count decays/resets. |
+| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
+| `NEXT_PUBLIC_DEMO_MODE` | No | `false` | Set `"true"` to keep the pre-filled demo credentials (`admin@servio.dev` / `servio123`) and their hint on the login page ([`../app/login/login-form.tsx`](../app/login/login-form.tsx)) visible in production builds. They always show outside production and are hidden in production unless this is set. |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
 
 > **Tip for agents:** the enable gates are literal `Boolean(process.env.X && ...)`

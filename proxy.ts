@@ -7,6 +7,10 @@ const { auth } = NextAuth(authConfig);
 
 const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey"];
 
+/** Anchored prefix match: "/survey" must not also cover "/surveypayload". */
+const isPublicPath = (path: string) =>
+  PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+
 export default auth((req) => {
   const { nextUrl } = req;
   const path = nextUrl.pathname;
@@ -14,9 +18,9 @@ export default auth((req) => {
   const role = req.auth?.user?.role ?? "USER";
 
   // Public routes — always allowed
-  if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
+  if (isPublicPath(path)) {
     // Redirect logged-in users away from the login page
-    if (path.startsWith("/login") && isLoggedIn) {
+    if (isLoggedIn && (path === "/login" || path.startsWith("/login/"))) {
       return NextResponse.redirect(new URL("/", nextUrl));
     }
     return NextResponse.next();
@@ -56,6 +60,11 @@ export default auth((req) => {
 });
 
 export const config = {
-  // Skip Next internals & static assets
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)$).*)"],
+  // Skip Next internals & static assets. The asset exemption is constrained to
+  // SHALLOW paths — the file itself is the last segment (root, or one folder
+  // deep, e.g. /favicon.ico, /img/logo.svg). Deep routes merely ENDING in an
+  // image/media extension (e.g. /reports/export/123.png) still run middleware.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|(?:[^/]+/)?[^/]+\\.(?:png|jpg|jpeg|svg|gif|webp|ico)$).*)",
+  ],
 };

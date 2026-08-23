@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 import type { ReactNode } from "react";
 
 /**
@@ -33,11 +36,30 @@ export function UnlinkButton({
   action,
   fields,
 }: {
-  action: (formData: FormData) => void | Promise<void>;
+  // Actions may return void or a typed result ({ ok, error }) — failures are
+  // surfaced as a toast instead of silently no-oping.
+  action: (formData: FormData) => void | Promise<unknown>;
   fields: Record<string, string | number>;
 }) {
+  // Adapt to <form action>'s `Promise<void>` signature while tolerating actions
+  // that return nothing at all.
+  const submit = async (fd: FormData): Promise<void> => {
+    const res: unknown = await action(fd);
+    if (
+      res &&
+      typeof res === "object" &&
+      "ok" in res &&
+      (res as { ok?: unknown }).ok === false
+    ) {
+      const error =
+        "error" in res && typeof (res as { error?: unknown }).error === "string"
+          ? (res as { error: string }).error
+          : "";
+      toast.error(error || "Could not unlink record.");
+    }
+  };
   return (
-    <form action={action} className="flex">
+    <form action={submit} className="flex">
       {Object.entries(fields).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}

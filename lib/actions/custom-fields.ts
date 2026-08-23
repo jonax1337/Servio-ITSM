@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getSessionUser, getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { MATCH_TYPES } from "@/lib/automation-defs";
 import {
@@ -126,7 +126,10 @@ export async function deleteCustomField(formData: FormData) {
   const me = await requireManager();
   if (!me) return;
   const id = String(formData.get("id") ?? "");
-  await db.customFieldDef.delete({ where: { id } }).catch(() => {});
+  // deleteMany + count: a missing id is not a delete (no audit), while a real
+  // DB failure propagates instead of being silently swallowed.
+  const deleted = await db.customFieldDef.deleteMany({ where: { id } });
+  if (deleted.count === 0) return;
   await writeAudit({ userId: me.id, action: "DELETE", entity: "CustomFieldDef", entityId: id, summary: "Deleted custom field" });
   revalidatePath("/settings/custom-fields");
 }
@@ -162,8 +165,9 @@ export async function moveCustomField(formData: FormData) {
  * merges into the entity's customFields JSON and writes it back.
  */
 export async function setCustomFieldValue(formData: FormData) {
-  const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return;
+  // DB truth: role/isActive rehydrated (JWT freezes them at login).
+  const me = await getCurrentUser();
+  if (!me || !me.isActive || !isAgent(me.role as Role)) return;
 
   const entityType = String(formData.get("entityType") ?? "");
   if (!CUSTOM_FIELD_ENTITIES.includes(entityType as (typeof CUSTOM_FIELD_ENTITIES)[number])) return;

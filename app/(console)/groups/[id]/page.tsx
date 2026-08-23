@@ -60,7 +60,7 @@ export default async function GroupDetailPage({
   return (
     <>
       <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/groups" variant="ghost" size="icon-sm">
+        <LinkButton href="/groups" variant="ghost" size="icon-sm" aria-label="Back to groups">
           <ArrowLeft className="size-4" />
         </LinkButton>
         <span

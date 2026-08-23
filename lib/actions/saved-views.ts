@@ -95,24 +95,3 @@ export async function deleteSavedView(formData: FormData) {
   revalidatePath(BASE_PATH[view.entity] ?? "/tickets");
 }
 
-/** Views visible to a user for an entity: their own + shared team views. */
-export async function getVisibleSavedViews(entity: string, userId: string) {
-  const memberships = await db.groupMember.findMany({
-    where: { userId },
-    select: { groupId: true },
-  });
-  const groupIds = memberships.map((m) => m.groupId);
-  const views = await db.savedView.findMany({
-    where: {
-      entity,
-      OR: [
-        { ownerId: userId },
-        { isShared: true, groupId: null },
-        { isShared: true, groupId: { in: groupIds } },
-      ],
-    },
-    include: { owner: { select: { name: true, email: true } } },
-    orderBy: [{ isShared: "asc" }, { order: "asc" }, { createdAt: "asc" }],
-  });
-  return views;
-}

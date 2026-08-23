@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
-  createTicketCore,
   updateTicketField,
   addTicketComment,
   setTicketResolution,
@@ -12,6 +11,7 @@ import {
   toggleWatch,
   toggleMajorIncident,
 } from "@/lib/actions/tickets";
+import { createTicketCore } from "@/lib/ticket-core";
 import {
   resolveGroupId,
   resolveCategoryId,
@@ -293,7 +293,8 @@ export const OPERATIONS: AiOperation[] = [
     run: async (a) => {
       const ticket = await resolveTicket(a.ref);
       if (!ticket) return err(`Ticket not found: ${a.ref}`);
-      await escalateTicket(toFormData({ id: ticket.id }));
+      const res = await escalateTicket(toFormData({ id: ticket.id }));
+      if (res && !res.ok) return err(res.error ?? "Could not escalate.");
       return ok(`Escalated ${ticketRef(ticket.id, ticket.type)}`);
     },
   },
@@ -391,7 +392,8 @@ export const OPERATIONS: AiOperation[] = [
       }
       // toggleWatch flips the acting user's watch state — safe because we only
       // call it when the current state differs from what's wanted.
-      await toggleWatch(toFormData({ id: ticket.id }));
+      const res = await toggleWatch(toFormData({ id: ticket.id }));
+      if (res && !res.ok) return err(res.error ?? "Could not update watch.");
       return ok(`${want ? "Now watching" : "Stopped watching"} ${ticketRef(ticket.id, ticket.type)}`);
     },
   },

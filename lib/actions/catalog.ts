@@ -3,9 +3,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { createCatalogRequestFor, linkStagedAttachments } from "@/lib/portal-tickets";
-import { seatCatalogApprovalStages } from "@/lib/actions/approvals";
+import { seatCatalogApprovalStages } from "@/lib/approval-seating";
 
 export type CatalogState =
   | { error?: string; fieldErrors?: Record<string, string> }
@@ -15,8 +15,9 @@ export async function createCatalogRequest(
   _prev: CatalogState,
   formData: FormData,
 ): Promise<CatalogState> {
-  const me = await getSessionUser();
-  if (!me) return { error: "Not authenticated" };
+  // DB truth (not the JWT): a deactivated user keeps no catalog powers.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return { error: "Not authenticated" };
 
   const itemId = String(formData.get("catalogItemId") ?? "");
   const rawAnswers: Record<string, string> = {};
@@ -40,8 +41,9 @@ export async function createCatalogRequest(
  * only from a cancelled request that came from the catalog.
  */
 export async function reRequestCatalogItem(formData: FormData): Promise<void> {
-  const me = await getSessionUser();
-  if (!me) return;
+  // DB truth: deactivated users keep no catalog powers.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return;
   const sourceId = Number(formData.get("ticketId"));
   if (!Number.isFinite(sourceId)) return;
 

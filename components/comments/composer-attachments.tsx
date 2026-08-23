@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Paperclip, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { MAX_UPLOAD_BYTES, UPLOAD_ACCEPT, formatBytes } from "@/lib/attachments-ui";
+import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes } from "@/lib/attachments-ui";
 
 type Staged = { id: string; filename: string };
 
@@ -16,11 +16,14 @@ type Staged = { id: string; filename: string };
 export function ComposerAttachments({
   ticketId,
   layout = "block",
+  maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   ticketId: number;
   /** "block" stacks chips above a full trigger (portal). "inline" keeps the
    *  trigger and chips on one row so it can live in the composer footer. */
   layout?: "block" | "inline";
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -28,6 +31,7 @@ export function ComposerAttachments({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startDelete] = useTransition();
+  const maxBytes = maxUploadBytes(maxMb);
 
   useEffect(() => {
     const form = rootRef.current?.closest("form");
@@ -64,7 +68,7 @@ export function ComposerAttachments({
     setError(null);
     setBusy(true);
     for (const file of Array.from(list)) {
-      if (file.size > MAX_UPLOAD_BYTES) { setError(`${file.name} is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.`); continue; }
+      if (file.size > maxBytes) { setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`); continue; }
       await upload(file);
     }
     setBusy(false);

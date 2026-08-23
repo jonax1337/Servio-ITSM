@@ -11,16 +11,27 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
-    # Gotenberg listens on 3000 inside the container. Published on host :3001 so a
-    # local `next dev` (host :3000) can use it too — set GOTENBERG_URL=http://localhost:3001.
+    # Gotenberg listens on 3000 inside the container and its HTTP API is
+    # UNAUTHENTICATED, so publish it loopback-only on host :3001 — a local
+    # `next dev` (host :3000) can use it via GOTENBERG_URL=http://localhost:3001,
+    # but other hosts cannot reach it.
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
+    healthcheck:
+      # /health returns 200 when the conversion API is ready. Try busybox wget
+      # first, fall back to curl (image tooling varies between releases).
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   web:
     build: .
     restart: unless-stopped
     depends_on:
-      - gotenberg
+      gotenberg:
+        condition: service_healthy
     # Secrets & provider config come from your .env (AUTH_SECRET, AI keys, SMTP…).
     env_file:
       - .env
@@ -30,10 +41,21 @@ services:
       GOTENBERG_URL: http://gotenberg:3000
       DATABASE_URL: file:/data/servio.db
       UPLOAD_DIR: /data/uploads
+      # Background cron ticks (SLA escalation, inbound-mail poll, scheduled
+      # syncs) must run on EXACTLY ONE instance — set "false" on every extra
+      # replica. See docs/deployment.md ("Run a single app instance").
+      SCHEDULER_ENABLED: "true"
     volumes:
       - servio-data:/data
     ports:
       - "3000:3000"
+    healthcheck:
+      # Mirrors the image HEALTHCHECK (node fetch on /login).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   # ── Optional: Postgres instead of the bundled SQLite ────────────────────────
   # Servio's Prisma schema currently targets SQLite (prisma/schema.prisma →

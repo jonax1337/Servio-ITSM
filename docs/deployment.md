@@ -61,7 +61,9 @@ pnpm setup
   can generate new migrations).
 - `prisma db seed` then runs the seed defined under the `prisma.seed` key:
   `tsx prisma/seed.ts && tsx prisma/seed-extras.ts`. This creates the initial admin
-  user and demo/reference data.
+  user and demo/reference data. Note that **tsx is a devDependency** — on a lean
+  production box without devDependencies installed, install them or run the seed
+  through `npx tsx prisma/seed.ts && npx tsx prisma/seed-extras.ts`.
 
 > **Seeding is optional and one-time.** On an existing production database you usually
 > want migrations only. Run `pnpm exec prisma migrate deploy` on its own for subsequent
@@ -149,7 +151,8 @@ App Router). Node runtime is required — the app uses `node:fs`/`node:crypto` f
 >
 > Servio is designed to run as a **single instance**. The background scheduler
 > ([`lib/scheduler.ts`](../lib/scheduler.ts)) is an in-process `setInterval` loop that starts
-> in **every** server process and its idempotency is **in-memory only**. If you run two or more
+> in **every** server process (unless `SCHEDULER_ENABLED=false`, see below) and whose
+> idempotency is **in-memory only**. If you run two or more
 > app instances (horizontal scaling, blue/green with overlap, a hot standby that also serves),
 > **each replica independently fires the same background work**:
 >
@@ -162,8 +165,12 @@ App Router). Node runtime is required — the app uses `node:fs`/`node:crypto` f
 >   idempotent, so imported *data* stays correct, but the runs are duplicated).
 >
 > Until an external scheduler / durable at-most-once locking is added, **scale vertically, or
-> designate exactly one instance as the scheduler/worker** and disable the loop elsewhere. See
-> [Scheduled syncs](#-scheduled-syncs) below.
+> designate exactly one instance as the scheduler/worker** and disable the loop elsewhere:
+> the designated instance keeps `SCHEDULER_ENABLED=true` (the default) and every other
+> replica sets **`SCHEDULER_ENABLED=false`**, which skips all background ticks entirely.
+> Timers are also cleared on SIGTERM/SIGINT (`stopScheduler`, wired in
+> [`instrumentation.ts`](../instrumentation.ts)) so a rolling deploy never fires ticks
+> mid-shutdown. See [Scheduled syncs](#-scheduled-syncs) below.
 
 ---
 
@@ -181,16 +188,23 @@ docker compose up -d gotenberg          # publishes host :3001 → set GOTENBERG
 docker compose up --build               # app on :3000, Gotenberg internal
 ```
 
-- **Database.** The image defaults to **SQLite on the `/data` volume**
-  (`DATABASE_URL=file:/data/servio.db`) — Servio's Prisma schema currently targets
+- **Database.** The compose stack defaults to **SQLite on the `/data` volume**
+  (`DATABASE_URL=file:/data/servio.db`, set in `docker-compose.yml`; the image
+  itself ships **no baked-in DATABASE_URL**). Servio's Prisma schema currently targets
   SQLite. To run Postgres instead, switch `datasource.provider` to `postgresql` in
   [`prisma/schema.prisma`](../prisma/schema.prisma), migrate, then uncomment the `db`
   service in the compose file and repoint `DATABASE_URL`.
 - **Uploads.** Blob storage is redirected to `/data/uploads` (same volume) via
   `UPLOAD_DIR`, so DB + files persist together.
-- **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma db push`
-  (matching the dev workflow, since the committed migrations have drifted) and seeds
-  once per volume, then `pnpm start`.
+- **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma migrate deploy`
+  (the committed baseline migration is kept current) and seeds once per volume,
+  then starts Next via `pnpm start`. Migration failures abort boot (`set -e`).
+- **Health.** The image defines a `HEALTHCHECK` (GET `/login`) and the compose file adds
+  matching healthchecks for `web` and `gotenberg`; `web` waits for Gotenberg's `/health`
+  before starting.
+- **Scheduler.** The container defaults to `SCHEDULER_ENABLED=true`. If you run more than
+  one replica of this stack, set `SCHEDULER_ENABLED=false` on all but one — see the
+  single-instance warning above.
 - **Office previews.** The web service sets `GOTENBERG_URL=http://gotenberg:3000`
   automatically. Documents (docx/pptx/legacy/ODF) then render as a faithful PDF in the
   lightbox; without it, Servio falls back to a best-effort text/HTML preview.
@@ -268,12 +282,13 @@ runs on an **in-process scheduler** started at server boot from
 
 > **⚠️ Multi-instance caveat (applies to the whole scheduler, not just syncs).** The scheduler
 > — the sync tick **and** the inbound-mail poll **and** the SLA escalation sweep — runs in
-> *every* server instance, and its idempotency is in-memory only. If you scale horizontally,
-> each replica independently fires all three: duplicate `SyncRun` rows (imports are idempotent,
-> so data stays correct), re-polled inbound mail, and **double-fired SLA escalations/notifications**
-> (the AT_RISK marker is a per-process `Set` and breach escalation has no durable marker). For
-> multiple replicas, run the scheduler on a single instance/worker or add external locking. See
-> the [single-instance warning under Build & run](#-build--run).
+> *every* server instance by default, and its idempotency is in-memory only. If you scale
+> horizontally, each replica independently fires all three: duplicate `SyncRun` rows (imports are
+> idempotent, so data stays correct), re-polled inbound mail, and **double-fired SLA
+> escalations/notifications** (the AT_RISK marker is a per-process `Set` and breach escalation has
+> no durable marker). Run the scheduler on exactly one instance: keep the default
+> **`SCHEDULER_ENABLED=true`** there and set **`SCHEDULER_ENABLED=false`** on every other replica
+> (or add external locking). See the single-instance warning under [Build & run](#-build--run).
 
 There is no external cron dependency to provision.
 

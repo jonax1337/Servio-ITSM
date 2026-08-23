@@ -49,7 +49,10 @@ type Emphasis = "normal" | "on" | "dim";
  *  Dense lifecycles are calm by default and light up around the selected node. */
 function styleEdge(role: string, emphasis: Emphasis): Partial<Edge> {
   const gated = !!role && role !== "none";
-  const color = gated ? "#f59e0b" : "#64748b";
+  // Token-based colours, mirroring the Recharts wrappers in charts.tsx:
+  // --chart-5 is the theme's amber accent (gated transitions),
+  // --muted-foreground the calm grey for open ones.
+  const color = gated ? "var(--chart-5)" : "var(--muted-foreground)";
   // Focus mode: with a node selected, non-related edges vanish so only the
   // clicked status's transitions show — dense lifecycles read cleanly.
   const opacity = emphasis === "dim" ? 0 : emphasis === "on" ? 1 : 0.16;
@@ -58,7 +61,7 @@ function styleEdge(role: string, emphasis: Emphasis): Partial<Edge> {
     animated: gated && emphasis === "on",
     markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
     style: { stroke: color, strokeWidth: emphasis === "on" ? 2 : 1.5, strokeOpacity: opacity },
-    labelStyle: { fontSize: 10, fill: "#f59e0b" },
+    labelStyle: { fontSize: 10, fill: "var(--chart-5)" },
     labelBgStyle: { fill: "var(--card)", fillOpacity: 0.9 },
   };
 }

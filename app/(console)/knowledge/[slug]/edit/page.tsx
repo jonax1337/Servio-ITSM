@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArticleEditor } from "@/components/knowledge/article-editor";
 import { AttachmentsCard } from "@/components/attachments/attachments-card";
 import { updateArticle } from "@/lib/actions/knowledge";
+import { getMaxUploadMb } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Edit article" };
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ export default async function EditArticlePage({
     db.category.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   if (!article) notFound();
+
+  const maxUploadMb = await getMaxUploadMb();
 
   return (
     <>
@@ -58,6 +61,7 @@ export default async function EditArticlePage({
             target={{ articleId: article.id }}
             canUpload
             canDeleteAll
+            maxMb={maxUploadMb}
           />
         </div>
       </PageBody>

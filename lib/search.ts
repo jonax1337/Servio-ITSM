@@ -8,11 +8,12 @@ import type { Prisma } from "@prisma/client";
  * name/email, and the serialised custom-field JSON) instead of the old
  * title-only `contains`.
  *
- * SQLite-portable: it uses plain `contains` (no `mode: "insensitive"`, which
- * SQLite does not support). SQLite's default `LIKE` is already
- * case-insensitive for ASCII, so this behaves case-insensitively in dev; on
- * Postgres `contains` is case-sensitive, so a follow-up FTS index is the real
- * long-term answer (see below).
+ * Provider-portable: SQLite's default `LIKE` is already case-insensitive for
+ * ASCII and rejects Prisma's `mode` flag, so the SQLite path uses plain
+ * `contains`. On Postgres `contains` is case-sensitive — there we add
+ * `mode: "insensitive"` so behaviour matches across the dev/prod switch
+ * (`containsClause` below). A native FTS index remains the long-term answer
+ * (see below).
  *
  * NOTE (deferred): a native full-text index — SQLite FTS5 or a Postgres
  * `tsvector`/`GIN` column — would supersede this OR-of-LIKEs approach with
@@ -47,6 +48,19 @@ export type TicketSearchOptions = {
 };
 
 /**
+ * Case-insensitive `contains` clause. SQLite (default `file:` URL) keeps plain
+ * `contains` — it is already CI and rejects `mode`. A Postgres
+ * `DATABASE_URL` opts into `mode: "insensitive"`, whose filter type the
+ * sqlite-generated client does not declare, hence the narrow cast.
+ */
+function containsClause(q: string): Prisma.StringFilter {
+  if (/^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "")) {
+    return { contains: q, mode: "insensitive" } as Prisma.StringFilter;
+  }
+  return { contains: q };
+}
+
+/**
  * Turn a raw query string into a set of OR'd `contains` clauses spanning the
  * chosen fields. Returns `undefined` for an empty/blank query so callers can
  * skip merging it into their `where`.
@@ -65,25 +79,25 @@ export function ticketSearchWhere(
   for (const field of fields) {
     switch (field) {
       case "title":
-        OR.push({ title: { contains: q } });
+        OR.push({ title: containsClause(q) });
         break;
       case "description":
-        OR.push({ description: { contains: q } });
+        OR.push({ description: containsClause(q) });
         break;
       case "comments":
         // `comments` is a one-to-many relation (TicketComment.body is the
         // plaintext twin used for search) — `some` keeps this a single query.
-        OR.push({ comments: { some: { body: { contains: q } } } });
+        OR.push({ comments: { some: { body: containsClause(q) } } });
         break;
       case "requester":
-        OR.push({ requester: { is: { name: { contains: q } } } });
-        OR.push({ requester: { is: { email: { contains: q } } } });
+        OR.push({ requester: { is: { name: containsClause(q) } } });
+        OR.push({ requester: { is: { email: containsClause(q) } } });
         break;
       case "customFields":
         // Custom-field answers live in the `customFields` JSON *string*
         // column; a substring match against the serialised JSON finds any
         // field value (or key) without needing to know the schema.
-        OR.push({ customFields: { contains: q } });
+        OR.push({ customFields: containsClause(q) });
         break;
     }
   }

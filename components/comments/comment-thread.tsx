@@ -35,7 +35,7 @@ export type ThreadComment = {
   fromEmail?: string | null;
   /** WEB | EMAIL | FORWARD — FORWARD marks an outbound "you forwarded this" entry. */
   channel?: string | null;
-  /** For a sent message: who it was emailed to (shown as "An / Cc"). */
+  /** For a sent message: who it was emailed to (shown as "To / Cc"). */
   recipients?: { to: string; cc: string[] } | null;
   createdAt: Date;
   attachments: AttachmentRow[];
@@ -226,6 +226,7 @@ export function CommentThread({
   composerExtra,
   emailReply,
   enableForward = false,
+  maxMb,
 }: {
   idField: string;
   entityId: number;
@@ -251,6 +252,8 @@ export function CommentThread({
   };
   /** Show a per-message "Forward" action (ticket agent view only). */
   enableForward?: boolean;
+  /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
+  maxMb?: number;
 }) {
   const ref = useRef<HTMLFormElement>(null);
   const editorRef = useRef<RichTextEditorHandle | null>(null);
@@ -372,8 +375,8 @@ export function CommentThread({
                   ) : null}
                 </div>
                 {c.recipients ? (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground" title={`An: ${c.recipients.to}${c.recipients.cc.length ? `\nCc: ${c.recipients.cc.join(", ")}` : ""}`}>
-                    An: {c.recipients.to}
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground" title={`To: ${c.recipients.to}${c.recipients.cc.length ? `\nCc: ${c.recipients.cc.join(", ")}` : ""}`}>
+                    To: {c.recipients.to}
                     {c.recipients.cc.length ? <span> · Cc: {c.recipients.cc.join(", ")}</span> : null}
                   </div>
                 ) : null}
@@ -523,7 +526,7 @@ export function CommentThread({
                     </Label>
                   </div>
                 ) : null}
-                {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} layout="inline" /> : null}
+                {attachTarget ? <ComposerAttachments ticketId={attachTarget.ticketId} layout="inline" maxMb={maxMb} /> : null}
                 {composerExtra ? <span className="contents">{composerExtra}</span> : null}
               </div>
               <div className="flex items-center gap-2">

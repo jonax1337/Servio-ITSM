@@ -1,6 +1,6 @@
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
-import { getVisibleDashboards, ensurePersonalDashboard } from "@/lib/actions/dashboards";
+import { getVisibleDashboards, ensurePersonalDashboard } from "@/lib/board-service";
 import { computeWidget } from "@/lib/dashboard/compute";
 import { DEFAULT_LAYOUT, type Widget, type Computed } from "@/lib/dashboard/types";
 import { DashboardPicker } from "@/components/dashboard/dashboard-picker";

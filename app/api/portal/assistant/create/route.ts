@@ -3,7 +3,7 @@ import { getSessionUser, getCurrentUser } from "@/lib/session";
 import { checkAiRate } from "@/lib/rate-limit";
 import { ProposalSchema } from "@/lib/portal-assistant";
 import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket } from "@/lib/portal-tickets";
-import { seatCatalogApprovalStages } from "@/lib/actions/approvals";
+import { seatCatalogApprovalStages } from "@/lib/approval-seating";
 import type { ProposalAttachment } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
 
