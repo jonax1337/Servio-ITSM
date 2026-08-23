@@ -15,7 +15,9 @@
     "db:studio": "prisma studio",
     "setup": "prisma migrate deploy && prisma db seed",
     "docs:check": "node scripts/check-doc-drift.mjs --working",
-    "hooks:install": "git config core.hooksPath .githooks"
+    "hooks:install": "git config core.hooksPath .githooks",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts && tsx prisma/seed-extras.ts"
@@ -100,7 +102,8 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.10",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@11.0.8"
 }
