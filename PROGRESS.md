@@ -46,6 +46,22 @@ memory across runs, not a sacred artifact.
       proposed; just noting it in case a future run hits the same confusing
       symptom. Workaround used: override `NEXTAUTH_URL`/`APP_URL` env vars to
       match whatever port `next dev` actually bound to.
+- [x] Pre-existing `⚠ ./instrumentation.ts ... Node.js API is used (process.on)
+      ... not supported in the Edge Runtime` build warning (visible in every
+      previous run's `pnpm build` output) — fixed 2026-08-28, see run log.
+- [ ] 2026-08-28: this run's browser "use & test" pass hit an unrelated dev-env
+      snag while trying to exercise the Self-Service Portal request flow (the
+      already-running dev server on port 3099 — started outside this agent,
+      likely Jonas' own `pnpm dev` session — went into a repeating
+      "Jest worker encountered 2 child process exceptions, exceeding retry
+      limit" crash loop on `/portal/request/[serviceId]`, serving a 500
+      `_error` page). This looks like a local Turbopack/Jest-worker resource
+      issue on that already-running process (possibly stale from a long dev
+      session), not a Servio code bug — no repro isolated to app code yet.
+      Next run: if the dev server is healthy, try the Portal catalog →
+      request → submit flow end-to-end (admin/`VPN access`, 0 form fields, is
+      a good minimal case) and confirm whether the crash reproduces on a
+      freshly started `next dev`.
 - [ ] (Agent: add newly discovered issues here as you find them, with date
       and a short repro/description.)
 
@@ -53,6 +69,29 @@ memory across runs, not a sacred artifact.
 
 (newest first — each entry: date, run type, what changed, verification
 result, anything discovered)
+
+- 2026-08-28 — build (+ partial use & test): fixed the pre-existing
+  `instrumentation.ts` build warning (`Node.js API is used (process.on) ...
+  not supported in the Edge Runtime`) that had been showing up in every
+  `pnpm build` run since the scheduler was wired in. Root cause: Turbopack
+  cross-checks `instrumentation.ts` against both the Node and Edge runtime
+  bundles, so a Node-only API referenced directly in that file trips the
+  warning even though the call only ever executes on the guarded
+  `NEXT_RUNTIME === "nodejs"` branch. Fix: moved the Node-only body (the
+  `process.on("SIGTERM"/"SIGINT", ...)` graceful-shutdown wiring) into a new
+  `lib/instrumentation-node.ts` module, loaded via a dynamic `import()` from
+  `instrumentation.ts` only on the Node branch — matches the "Specifying the
+  runtime" pattern in the Next.js instrumentation docs (conditional
+  `require()`/`import()` to a dedicated file rather than inlining Node-only
+  code). Updated `docs/deployment.md` and `docs/modules.md` references
+  accordingly. Verification: `pnpm lint` 0/0, `tsc --noEmit` clean, `pnpm
+  test` 150/150 green, `pnpm build` green with **zero** warnings this time
+  (previously always had the two instrumentation.ts Edge-runtime warnings).
+  Also attempted a browser "use & test" pass on the Self-Service Portal
+  request flow (login as admin worked fine, catalog browsing worked fine),
+  but hit an unrelated dev-server crash loop on the request-detail page —
+  logged as a new backlog item above with a repro plan for next run, not a
+  code fix in this run. Committed and pushed to `agent/servio-autodev`.
 
 - 2026-08-28 — use & test: ran `next dev` on a free port (3000 was occupied by
   another local app on this machine) and drove the app for real via desktop

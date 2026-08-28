@@ -241,7 +241,7 @@ Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, 
 | Routes | `app/(console)/syncs/` — `page.tsx`, `[id]/page.tsx`, `new/page.tsx`, `[id]/edit/page.tsx` |
 | Connectors | `lib/connectors/` — `types.ts`, `index.ts` (registry), `spec.ts` (form fields, pure), `import.ts` (shared upsert), `ldap.ts`, `azure.ts`, `csv.ts`, `rest.ts` |
 | Actions | `lib/actions/syncs.ts` — `runSync`, `create`/`update`/`delete` `SyncSource`, `testSyncConnection`, `toggleSyncActive` |
-| Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, from `instrumentation.ts`) |
+| Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, started via `lib/instrumentation-node.ts` from `instrumentation.ts`) |
 | Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
 
 The whole scheduler (`lib/scheduler.ts`: SLA escalation sweep, inbound-mail poll, scheduled syncs) can be disabled per process with the `SCHEDULER_ENABLED` env flag (default `true`) — see [configuration.md](./configuration.md).
