@@ -179,8 +179,8 @@ The only console module keyed by `slug` instead of `[id]`, with a dedicated edit
 | | |
 | --- | --- |
 | Routes | `app/(console)/knowledge/page.tsx`, `[slug]/page.tsx`, `[slug]/edit/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/knowledge.ts` — `createArticle`, `updateArticle`, `changeArticleStatus`, `deleteArticle` |
-| Components | `components/knowledge/article-editor` (uses the shared `components/ui/rich-text-editor`) |
+| Actions | `lib/actions/knowledge.ts` — `createArticle`, `updateArticle`, `changeArticleStatus`, `deleteArticle`, `restoreArticleRevision` |
+| Components | `components/knowledge/article-editor` (uses the shared `components/ui/rich-text-editor`), `components/knowledge/article-history-dialog` (browse `ArticleRevision` history, non-destructive restore — restoring writes a new revision instead of deleting/rewriting) |
 
 ---
 
