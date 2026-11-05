@@ -14,6 +14,7 @@ import { LinkPicker } from "@/components/link-picker";
 import { addAssetRelation, deleteAssetRelation } from "@/lib/actions/assets";
 import { EntityHistory, HistoryHeading } from "@/components/history/entity-history";
 import { ImpactGraph } from "@/components/assets/impact-graph";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { computeImpact } from "@/lib/cmdb-graph";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -341,17 +342,18 @@ function Meta({ label, value }: { label: string; value: string }) {
 
 function RelationUnlink({ relationId, assetId }: { relationId: string; assetId: string }) {
   return (
-    <form action={deleteAssetRelation} className="flex">
-      <input type="hidden" name="relationId" value={relationId} />
-      <input type="hidden" name="assetId" value={assetId} />
-      <button
-        type="submit"
-        aria-label="Remove relationship"
-        title="Remove relationship"
-        className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-      >
-        <X className="size-3.5" />
-      </button>
-    </form>
+    <ConfirmButton
+      action={deleteAssetRelation}
+      fields={{ relationId, assetId }}
+      title="Remove relationship?"
+      description="This relationship will be removed from the asset graph."
+      confirmLabel="Remove"
+      triggerVariant="ghost"
+      triggerSize="icon-xs"
+      triggerClassName="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+      triggerLabel="Remove relationship"
+    >
+      <X className="size-3.5" />
+    </ConfirmButton>
   );
 }

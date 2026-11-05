@@ -10,6 +10,7 @@ import { isAgent, type Role } from "@/lib/session";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
 import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
+import { checkReplyRate } from "@/lib/rate-limit";
 
 /** @deprecated Use IntakeFile from @/lib/attachment-intake. Re-exported for callers. */
 export type ProposalAttachment = IntakeFile;
@@ -35,16 +36,22 @@ export async function linkStagedAttachments(userId: string, ticketId: number, id
   });
 }
 
+/** Shown to the requester when they post portal replies faster than the limit. */
+export const REPLY_RATE_LIMIT_MESSAGE = "You're replying too quickly. Please wait a moment and try again.";
+
+export type PortalReplyResult = { ok: true } | { ok: false; reason: "UNAVAILABLE" | "RATE_LIMITED" };
+
 /**
  * Post a PUBLIC reply on the user's OWN open ticket (used by the Sable assistant
  * after the user confirms). Scoped to requesterId, never internal, never on a
- * closed/cancelled ticket.
+ * closed/cancelled ticket, and rate-limited per user.
  */
-export async function addPortalReply(userId: string, ticketId: number, body: string): Promise<boolean> {
+export async function addPortalReply(userId: string, ticketId: number, body: string): Promise<PortalReplyResult> {
   const clean = body.trim().slice(0, 5000);
-  if (!clean) return false;
+  if (!clean) return { ok: false, reason: "UNAVAILABLE" };
   const ticket = await db.ticket.findFirst({ where: { id: ticketId, requesterId: userId }, select: { id: true, status: true } });
-  if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return false;
+  if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return { ok: false, reason: "UNAVAILABLE" };
+  if (checkReplyRate(userId)) return { ok: false, reason: "RATE_LIMITED" };
 
   await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
   await reopenOnCustomerReply(ticketId, userId);
@@ -58,7 +65,7 @@ export async function addPortalReply(userId: string, ticketId: number, body: str
   });
   revalidatePath(`/portal/tickets/${ticketId}`);
   revalidatePath(`/tickets/${ticketId}`);
-  return true;
+  return { ok: true };
 }
 
 type Level = "LOW" | "MEDIUM" | "HIGH";

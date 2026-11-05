@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { writeAudit, notify } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
-import { statusChangeData, ticketCalendar } from "@/lib/sla";
+import { slaRepricePatch, statusChangeData, ticketCalendar } from "@/lib/sla";
+import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { safeWebhookFetch } from "@/lib/safe-fetch";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
@@ -108,7 +109,6 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
             break;
           }
           patch.status = next;
-          Object.assign(patch, statusChangeData(t, next, new Date(), await ticketCalendar(t)));
           break;
         }
         case "set_priority":
@@ -216,8 +216,20 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
       }
     }
 
+    // SLA clock, applied once whatever the action order: set_priority / escalate /
+    // major_incident re-price like every other priority writer, then a set_status
+    // gets the console's pause/resume + resolution side effects on top of that.
+    const reprice = typeof patch.priority === "string" && patch.priority !== t.priority
+      ? await slaRepricePatch(t, { priority: patch.priority, serviceId: t.serviceId, slaId: t.slaId })
+      : {};
+    Object.assign(patch, reprice);
+    if (typeof patch.status === "string") {
+      Object.assign(patch, statusChangeData({ ...t, ...reprice }, patch.status, new Date(), await ticketCalendar(t)));
+    }
+
     if (Object.keys(patch).length > 0) {
       await db.ticket.update({ where: { id: ticketId }, data: patch });
+      await withdrawPendingApprovals(ticketId, patch);
       t = await loadTicket(ticketId);
       if (!t) return;
       // Emit the same assignment notification the console does — but only if the

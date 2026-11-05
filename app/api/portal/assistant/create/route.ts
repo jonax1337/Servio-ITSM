@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getSessionUser, getCurrentUser } from "@/lib/session";
 import { checkAiRate } from "@/lib/rate-limit";
 import { ProposalSchema } from "@/lib/portal-assistant";
-import { createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket } from "@/lib/portal-tickets";
+import {
+  createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket,
+  REPLY_RATE_LIMIT_MESSAGE,
+} from "@/lib/portal-tickets";
 import { seatCatalogApprovalStages } from "@/lib/approval-seating";
 import type { ProposalAttachment } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
@@ -56,8 +59,12 @@ export async function POST(req: Request) {
 
   try {
     if (parsed.data.kind === "comment") {
-      const ok = await addPortalReply(me.id, parsed.data.ticketId, parsed.data.body);
-      if (!ok) return NextResponse.json({ error: "Couldn't post the reply — the ticket may be closed." }, { status: 400 });
+      const reply = await addPortalReply(me.id, parsed.data.ticketId, parsed.data.body);
+      if (!reply.ok) {
+        return reply.reason === "RATE_LIMITED"
+          ? NextResponse.json({ error: REPLY_RATE_LIMIT_MESSAGE }, { status: 429 })
+          : NextResponse.json({ error: "Couldn't post the reply — the ticket may be closed." }, { status: 400 });
+      }
       await attachDataUrlsToTicket(me.id, parsed.data.ticketId, attachments);
       return NextResponse.json({ ok: true, id: parsed.data.ticketId, ref: parsed.data.ref, url: `/portal/tickets/${parsed.data.ticketId}`, posted: true });
     }

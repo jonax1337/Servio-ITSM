@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
 import type { TicketFilters } from "@/lib/dashboard/types";
+import { db } from "@/lib/db";
+import { PRIORITIES, TICKET_STATUSES } from "@/lib/constants";
 import { getParam, type SearchParams } from "@/lib/query";
 import { applyTicketSearch } from "@/lib/search";
 
@@ -10,6 +12,54 @@ export const TICKET_LIST_PARAMS = [
   "impact", "urgency", "source", "major", "vip", "breached", "sort", "dir",
 ] as const;
 
+/** Priority and status are String columns: SQL would sort them alphabetically, so they sort by rank. */
+export type RankSort = { key: "priority" | "status"; dir: "asc" | "desc" };
+
+const RANK_ORDER = { priority: PRIORITIES, status: TICKET_STATUSES } as const;
+
+function rankOf(key: RankSort["key"], value: string): number {
+  const order: readonly string[] = RANK_ORDER[key];
+  const index = order.indexOf(value);
+  return index === -1 ? order.length : index;
+}
+
+/** Sorts by severity (priority) or lifecycle position (status); ties keep newest activity first, then highest id. */
+export function sortByRank<T extends { id: number; priority: string; status: string; updatedAt: Date }>(
+  rows: T[],
+  { key, dir }: RankSort,
+): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort(
+    (a, b) => sign * (rankOf(key, a[key]) - rankOf(key, b[key])) ||
+      b.updatedAt.getTime() - a.updatedAt.getTime() ||
+      b.id - a.id,
+  );
+}
+
+type TicketPageArgs = Pick<Prisma.TicketFindManyArgs, "where" | "orderBy" | "skip" | "take">;
+
+/**
+ * Loads one window of the filtered, sorted ticket list. Rank sorts cannot be done in SQL, so they
+ * sort a light {id, priority, status, updatedAt} projection in memory, then fetch just the page's rows.
+ * `fetch` supplies the caller's include, so the page and the export differ only in what they load.
+ */
+export async function findTicketWindow<R extends { id: number }>(
+  query: ReturnType<typeof ticketListQuery>,
+  window: { skip: number; take: number },
+  fetch: (args: TicketPageArgs) => Promise<R[]>,
+): Promise<R[]> {
+  const { where, orderBy, rankSort } = query;
+  if (!rankSort) return fetch({ where, orderBy, ...window });
+
+  const slim = await db.ticket.findMany({ where, select: { id: true, priority: true, status: true, updatedAt: true } });
+  const pageIds = sortByRank(slim, rankSort)
+    .slice(window.skip, window.skip + window.take)
+    .map((t) => t.id);
+  const rows = await fetch({ where: { id: { in: pageIds } } });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return pageIds.flatMap((id) => byId.get(id) ?? []);
+}
+
 /**
  * The Prisma filter and sort for the ticket list, built from its URL params.
  * Shared by /tickets and /api/export so an export contains exactly the rows on screen.
@@ -17,6 +67,7 @@ export const TICKET_LIST_PARAMS = [
 export function ticketListQuery(sp: SearchParams): {
   where: Prisma.TicketWhereInput;
   orderBy: Prisma.TicketOrderByWithRelationInput;
+  rankSort?: RankSort;
 } {
   // Same builder as the dashboard widgets, so widget drill-down links match exactly.
   const filters: TicketFilters = {
@@ -42,13 +93,13 @@ export function ticketListQuery(sp: SearchParams): {
   const ORDER: Record<string, Prisma.TicketOrderByWithRelationInput> = {
     id: { id: dir },
     title: { title: dir },
-    status: { status: dir },
-    priority: { priority: dir },
     updatedAt: { updatedAt: dir },
     createdAt: { createdAt: dir },
     requester: { requester: { name: dir } },
     assignee: { assignee: { name: dir } },
   };
   const orderBy = ORDER[getParam(sp, "sort") ?? "updatedAt"] ?? { updatedAt: dir };
-  return { where, orderBy };
+  const sort = getParam(sp, "sort");
+  const rankSort: RankSort | undefined = sort === "priority" || sort === "status" ? { key: sort, dir } : undefined;
+  return { where, orderBy, rankSort };
 }

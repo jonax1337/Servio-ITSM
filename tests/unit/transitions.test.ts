@@ -12,6 +12,12 @@ describe("approvalAllowsStatus", () => {
     expect(approvalAllowsStatus("PENDING", "CANCELLED")).toBe(true);
   });
 
+  // A request cancelled while awaiting approval must not be reopened past the
+  // approval it never received.
+  it.each(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"])("keeps a withdrawn (CANCELLED) approval from being worked: %s", (to) => {
+    expect(approvalAllowsStatus("CANCELLED", to)).toBe(false);
+  });
+
   it.each([null, undefined, "APPROVED", "REJECTED"])("does not restrict tickets whose approval state is %s", (state) => {
     expect(approvalAllowsStatus(state, "RESOLVED")).toBe(true);
   });

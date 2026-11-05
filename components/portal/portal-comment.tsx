@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Send, Loader2 } from "lucide-react";
 import { addPortalComment } from "@/lib/actions/portal";
@@ -25,18 +25,22 @@ export function PortalComment({ ticketId, maxMb = DEFAULT_MAX_UPLOAD_MB }: {
   maxMb?: number;
 }) {
   const ref = useRef<HTMLFormElement>(null);
+  const [error, setError] = useState<string | null>(null);
   return (
     <form
       ref={ref}
       action={async (fd) => {
-        await addPortalComment(fd);
-        ref.current?.reset();
+        const result = await addPortalComment(fd);
+        setError(result?.error ?? null);
+        // Keep the draft when the reply was refused so the user can resend it.
+        if (!result?.error) ref.current?.reset();
       }}
       className="grid gap-2 rounded-xl border bg-card p-3"
     >
       <input type="hidden" name="ticketId" value={ticketId} />
       <RichTextEditor name="bodyHtml" required ariaLabel="Reply" placeholder="Add more details or reply to the agent…" />
       <ComposerAttachments ticketId={ticketId} maxMb={maxMb} />
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
       <div className="flex justify-end border-t pt-2">
         <SubmitButton />
       </div>

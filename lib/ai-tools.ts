@@ -248,7 +248,7 @@ export const ticketSearchTool = tool({
 
 export const problemSearchTool = tool({
   description:
-    "Search Problem records (root-cause investigations & known errors) by keyword, including their comments. Use for 'is there a known error / root cause / workaround for this' and recurring incidents.",
+    "Search Problem records (root-cause investigations & known errors) by keyword, including their comments. Use for 'is there a known error / root cause / workaround for this' and recurring incidents. For one problem in full (linked incidents, comments) use problem_get.",
   inputSchema: z.object({ query: z.string().describe("keywords to search problems for") }),
   execute: async ({ query }) => {
     const rows = await db.problem.findMany({
@@ -282,7 +282,7 @@ export const problemSearchTool = tool({
 
 export const changeSearchTool = tool({
   description:
-    "Search Change records (planned changes & maintenance) by keyword, including their comments. Use for 'was there a recent change that could have caused this' and scheduled work.",
+    "Search Change records (planned changes & maintenance) by keyword, including their comments. Use for 'was there a recent change that could have caused this' and scheduled work. For one change in full (plans, CAB approvals, linked tickets) use change_get.",
   inputSchema: z.object({ query: z.string().describe("keywords to search changes for") }),
   execute: async ({ query }) => {
     const rows = await db.change.findMany({

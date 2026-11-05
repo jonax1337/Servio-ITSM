@@ -9,6 +9,7 @@ import { getNumberSetting } from "@/lib/settings";
 import { extractText } from "@/lib/rag/extract";
 import { indexProjectFile } from "@/lib/rag/retrieve";
 import { classifyFile } from "@/lib/ai-file-tag";
+import { checkUploadRate } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +48,16 @@ export async function POST(req: Request) {
   const me = await getCurrentUser();
   if (!me || !me.isActive) return err(401, "Sign in to upload files.");
   const actor = { id: me.id, role: me.role as Role };
+
+  // 1b. Per-user throttle for portal end users (agents bulk-upload into Sable Projects) before any body is read, so a looping client can't
+  //     flood storage. The message is shown as-is by the upload UI.
+  const limited = me.role === "USER" ? checkUploadRate(me.id) : null;
+  if (limited) {
+    return NextResponse.json(
+      { error: "You're uploading too quickly. Please wait a moment and try again." },
+      { status: 429, headers: { "retry-after": String(Math.ceil(limited.retryAfterMs / 1000)) } },
+    );
+  }
 
   // 2. Must be multipart.
   if (!(req.headers.get("content-type") ?? "").includes("multipart/form-data")) {

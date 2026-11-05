@@ -142,7 +142,7 @@ export function htmlToText(html: string): string {
   return (html ?? "")
     .replace(/<(?:br|hr)\s*\/?>/gi, "\n")
     .replace(/<li[^>]*>/gi, "\n- ")
-    .replace(/<\/(?:p|h[1-6]|li|tr|blockquote|pre)>/gi, "\n")
+    .replace(/<\/(?:p|div|h[1-6]|li|tr|blockquote|pre)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")

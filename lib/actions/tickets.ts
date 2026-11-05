@@ -14,7 +14,7 @@ async function requireAgent() {
 }
 import {
   sendMail, ticketThreadHeaders, mailBrand,
-  tplTicketAssigned, tplTicketResolved, tplTicketParticipant,
+  tplTicketAssigned, tplTicketParticipant,
   textToHtmlParagraphs, renderEmailHtml, renderThreadHistory,
 } from "@/lib/mail";
 import { renderTicketResolvedEmail } from "@/lib/email-templates";
@@ -24,8 +24,9 @@ import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import { canActOnTicket } from "@/lib/authz";
+import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import {
-  slaCreateData, pauseData, resumeData, statusChangeData, ticketCalendar,
+  firstResponseData, pauseData, resumeData, statusChangeData, ticketCalendar,
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
@@ -82,6 +83,15 @@ export async function createTicket(_prev: ActionState, formData: FormData): Prom
   redirect(`/tickets/${ticket.id}`);
 }
 
+/**
+ * The approvalState a cancelled ticket ends up with: CANCELLED when it was still
+ * awaiting approval, otherwise undefined (leave it). Reuses statusChangeData so
+ * paths that build their own patch (resolution dialog, merge) follow the same rule.
+ */
+function cancelledApprovalState(ticket: Parameters<typeof statusChangeData>[0], now = new Date()) {
+  return statusChangeData(ticket, "CANCELLED", now).approvalState as string | undefined;
+}
+
 const updateSchema = z.object({
   id: z.coerce.number(),
   field: z.enum([
@@ -91,11 +101,11 @@ const updateSchema = z.object({
   value: z.string(),
 });
 
-export async function updateTicketField(formData: FormData) {
+export async function updateTicketField(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refused(INVALID_CHANGE);
   const { id, field, value } = parsed.data;
 
   const isRelation = field.endsWith("Id");
@@ -103,7 +113,7 @@ export async function updateTicketField(formData: FormData) {
 
   // Authorization: only ADMIN/MANAGER, or the assignee / a member of the ticket's
   // group, may mutate a ticket.
-  if (!(await ensureCanAct(id, me))) return;
+  if (!(await ensureCanAct(id, me))) return refused(NOT_YOUR_TICKET);
 
   // Validate String-backed "enum" values against lib/constants.ts so a forged
   // POST can't write an off-list priority/impact/urgency/type.
@@ -113,7 +123,7 @@ export async function updateTicketField(formData: FormData) {
     urgency: IMPACT_URGENCY,
     type: TICKET_TYPES,
   };
-  if (field in ENUM_FIELDS && !ENUM_FIELDS[field].includes(value)) return;
+  if (field in ENUM_FIELDS && !ENUM_FIELDS[field].includes(value)) return refused(INVALID_CHANGE);
 
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
@@ -121,12 +131,15 @@ export async function updateTicketField(formData: FormData) {
       where: { id },
       include: { sla: { select: { businessCalendarId: true } } },
     });
-    if (!current) return;
-    if (!approvalAllowsStatus(current.approvalState, value)) return;
+    if (!current) return refused(TICKET_NOT_FOUND);
+    if (!approvalAllowsStatus(current.approvalState, value)) return refused(AWAITING_APPROVAL);
     // Enforce the configured lifecycle (built-in map + admin overrides + role).
-    if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
+    if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
     // Shared with the automation engine so both keep the SLA clock consistent.
-    Object.assign(patch, statusChangeData(current, value, new Date(), await ticketCalendar(current)));
+    const now = new Date();
+    Object.assign(patch, statusChangeData(current, value, now, await ticketCalendar(current)));
+    // The resolution notice is the requester's first answer when nobody replied before.
+    if (value === "RESOLVED" && !current.firstResponseAt) Object.assign(patch, firstResponseData(current, now));
   }
   // Verify a relation FK actually exists before writing it (a bogus id would
   // otherwise 500 on the FK constraint or dangle).
@@ -139,12 +152,12 @@ export async function updateTicketField(formData: FormData) {
       slaId: async () => !!(await db.sLA.findUnique({ where: { id: v }, select: { id: true } })),
     };
     const check = relExists[field];
-    if (check && !(await check())) return;
+    if (check && !(await check())) return refused(INVALID_CHANGE);
   }
   // The assignee must belong to the ticket's group (anyone when there's no group).
   if (field === "assigneeId" && v) {
     const current = await db.ticket.findUnique({ where: { id }, select: { groupId: true } });
-    if (current?.groupId && !(await isGroupMember(current.groupId, v))) return;
+    if (current?.groupId && !(await isGroupMember(current.groupId, v))) return refused(ASSIGNEE_NOT_IN_GROUP);
   }
   // Re-routing to a group the current assignee isn't in clears the assignee
   // (auto-assign below then picks an eligible member).
@@ -162,18 +175,18 @@ export async function updateTicketField(formData: FormData) {
     const current = await db.ticket.findUnique({
       where: { id },
       select: {
-        status: true, firstResponseAt: true,
+        status: true, firstResponseAt: true, createdAt: true, pausedMs: true,
         priority: true, serviceId: true, slaId: true,
       },
     });
     Object.assign(patch, await slaRepricePatch(
-      current && { status: current.status, firstResponseAt: current.firstResponseAt },
+      current,
       {
         priority: field === "priority" ? value : current?.priority ?? "",
         serviceId: field === "serviceId" ? v : current?.serviceId ?? null,
         slaId: field === "slaId" ? v : current?.slaId ?? null,
       },
-      field === "slaId" && v === null,
+      { slaChosen: field === "slaId", slaCleared: field === "slaId" && v === null },
     ));
   }
 
@@ -182,13 +195,10 @@ export async function updateTicketField(formData: FormData) {
     data: patch,
     include: { requester: true, assignee: true },
   });
+  await withdrawPendingApprovals(id, patch);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
 
-  if (field === "status" && value === "RESOLVED" && ticket.requester?.email) {
-    const cc = await ticketCcEmails(ticket.id, [ticket.requester.email, me.email]);
-    const threadHeaders = await ticketThreadHeaders(ticket.id);
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, cc, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...threadHeaders, ...(await tplTicketResolved(ticket, await mailBrand(), { requesterName: ticket.requester.name ?? "" })) });
-  }
+  if (field === "status" && value === "RESOLVED") await sendResolvedMail(ticket, me.email, null);
   if (field === "assigneeId" && ticket.assignee?.email && ticket.assigneeId !== me.id) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand())) });
@@ -201,6 +211,7 @@ export async function updateTicketField(formData: FormData) {
 
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
+  return { ok: true };
 }
 
 /**
@@ -304,6 +315,45 @@ function escapeInlineText(s: string): string {
   return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Why a ticket change was refused — surfaced to the agent instead of a silent no-op.
+const NOT_AUTHORISED = "You are not signed in as an agent.";
+const NOT_YOUR_TICKET = "You can't change this ticket — it belongs to a group you're not a member of.";
+const AWAITING_APPROVAL = "This request is awaiting approval; it can only be cancelled until it is decided.";
+const TRANSITION_NOT_ALLOWED = "The status workflow doesn't allow this change.";
+const ASSIGNEE_NOT_IN_GROUP = "That agent isn't a member of the ticket's group.";
+const TICKET_NOT_FOUND = "Ticket not found.";
+const INVALID_CHANGE = "That change isn't valid for this ticket.";
+const refused = (error: string): TicketActionResult => ({ ok: false, error });
+
+type ResolvedMailTicket = {
+  id: number; title: string; type: string; prefix: string | null;
+  requester: { email: string | null; name: string | null } | null;
+};
+
+/**
+ * The resolution notice to the requester: participants in CC, threaded onto the
+ * ticket's mail conversation, carrying the public resolution note and the CSAT
+ * "Rate our support" link (a survey token is minted or reused per ticket).
+ */
+async function sendResolvedMail(ticket: ResolvedMailTicket, actorEmail: string, resolutionNote: string | null) {
+  const surveyToken = await ensureSurvey(ticket.id);
+  if (!ticket.requester?.email) return;
+  await sendMail({
+    to: ticket.requester.email, toName: ticket.requester.name,
+    cc: await ticketCcEmails(ticket.id, [ticket.requester.email, actorEmail]),
+    entity: "Ticket", entityId: ticket.id, ticketId: ticket.id,
+    ...(await ticketThreadHeaders(ticket.id)),
+    ...(await renderTicketResolvedEmail({
+      brand: await mailBrand(),
+      ref: ticketRef(ticket.id, ticket.prefix || ticket.type),
+      title: ticket.title,
+      requesterName: ticket.requester.name ?? "",
+      surveyUrl: surveyToken ? await surveyUrl(surveyToken) : null,
+      resolutionNote,
+    })),
+  });
+}
+
 // ── Ticket actions ─────────────────────────────────────────────────────────
 
 export async function escalateTicket(formData: FormData): Promise<TicketActionResult> {
@@ -323,9 +373,7 @@ export async function escalateTicket(formData: FormData): Promise<TicketActionRe
   const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
   // A priority change re-prices the SLA — same contract as updateTicketField,
   // so the deadlines track the new tier instead of going stale.
-  const sla = !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status)
-    ? await slaCreateData({ serviceId: t.serviceId, priority: next })
-    : {};
+  const sla = await slaRepricePatch(t, { priority: next, serviceId: t.serviceId, slaId: t.slaId });
   await db.ticket.update({ where: { id }, data: { priority: next, status: toOpen ? "OPEN" : t.status, ...sla } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Escalated priority to ${next}` });
   if (t.assigneeId) await notify(t.assigneeId, { type: "ESCALATION", title: `Ticket escalated to ${next}`, body: t.title, entity: "Ticket", entityId: String(id) });
@@ -349,9 +397,7 @@ export async function toggleMajorIncident(formData: FormData) {
   const toOpen = t.status === "NEW" && (await canTransitionConfigured("TICKET", "NEW", "OPEN", me.role as Role));
   // Declaring a Major bumps priority to CRITICAL — re-price the SLA with it,
   // same contract as updateTicketField.
-  const sla = now && !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status)
-    ? await slaCreateData({ serviceId: t.serviceId, priority: "CRITICAL" })
-    : {};
+  const sla = now ? await slaRepricePatch(t, { priority: "CRITICAL", serviceId: t.serviceId, slaId: t.slaId }) : {};
   await db.ticket.update({
     where: { id },
     data: now ? { isMajorIncident: true, priority: "CRITICAL", status: toOpen ? "OPEN" : t.status, ...sla } : { isMajorIncident: false },
@@ -485,7 +531,10 @@ export async function mergeTicket(formData: FormData) {
     }
 
     // 3) Close the source as merged, and cross-link
-    await tx.ticket.update({ where: { id }, data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date() } });
+    await tx.ticket.update({
+      where: { id },
+      data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date(), approvalState: cancelledApprovalState(source) },
+    });
     await tx.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}. Comments, watchers and assets were carried over.` } });
     await tx.ticketLink.upsert({
       where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
@@ -493,6 +542,7 @@ export async function mergeTicket(formData: FormData) {
       update: { type: "DUPLICATE" },
     });
   });
+  await withdrawPendingApprovals(id, { approvalState: cancelledApprovalState(source) });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Merged into ${ticketRef(targetId)}` });
 
   revalidatePath(`/tickets/${id}`);
@@ -502,9 +552,9 @@ export async function mergeTicket(formData: FormData) {
 
 // ── Resolution / cancel ──────────────────────────────────────────────────────
 
-export async function setTicketResolution(formData: FormData) {
+export async function setTicketResolution(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
   const status = String(formData.get("status") ?? "");
   const code = String(formData.get("code") ?? "").trim() || null;
@@ -512,16 +562,16 @@ export async function setTicketResolution(formData: FormData) {
   const bodyHtml = typeof rawHtml === "string" && rawHtml.trim() ? sanitizeCommentHtml(rawHtml) : null;
   const note = bodyHtml ? htmlToText(bodyHtml).trim() || null : String(formData.get("note") ?? "").trim() || null;
   const noteInternal = formData.get("isInternal") === "on";
-  if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return;
+  if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return refused(INVALID_CHANGE);
 
   const current = await db.ticket.findUnique({
     where: { id },
     include: { sla: { select: { businessCalendarId: true } } },
   });
-  if (!current) return;
-  if (!(await canActOnTicket(me, current))) return;
-  if (!approvalAllowsStatus(current.approvalState, status)) return;
-  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
+  if (!current) return refused(TICKET_NOT_FOUND);
+  if (!(await canActOnTicket(me, current))) return refused(NOT_YOUR_TICKET);
+  if (!approvalAllowsStatus(current.approvalState, status)) return refused(AWAITING_APPROVAL);
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
 
   const now = new Date();
   const clock: Record<string, unknown> = {};
@@ -534,6 +584,8 @@ export async function setTicketResolution(formData: FormData) {
       effResolveDueAt = resumed.resolveDueAt ?? current.resolveDueAt;
     }
     clock.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
+    // The resolution notice is the requester's first answer when nobody replied before.
+    if (!current.firstResponseAt) Object.assign(clock, firstResponseData(current, now));
   } else if (current.pendingSince) {
     // CLOSED/CANCELLED from a paused state: just clear the anchor + bank paused time,
     // no point shifting deadlines on a terminal, non-resolved ticket.
@@ -541,18 +593,17 @@ export async function setTicketResolution(formData: FormData) {
     clock.pausedMs = current.pausedMs + Math.max(0, now.getTime() - current.pendingSince.getTime());
   }
 
-  const ticket = await db.ticket.update({
-    where: { id },
-    data: {
-      status,
-      resolutionCode: status === "CANCELLED" ? null : code,
-      resolutionNote: note,
-      resolvedAt: status === "RESOLVED" ? now : undefined,
-      closedAt: status === "CLOSED" || status === "CANCELLED" ? now : undefined,
-      ...clock,
-    },
-    include: { requester: true },
-  });
+  const data = {
+    status,
+    resolutionCode: status === "CANCELLED" ? null : code,
+    resolutionNote: note,
+    resolvedAt: status === "RESOLVED" ? now : undefined,
+    closedAt: status === "CLOSED" || status === "CANCELLED" ? now : undefined,
+    approvalState: status === "CANCELLED" ? cancelledApprovalState(current, now) : undefined,
+    ...clock,
+  };
+  const ticket = await db.ticket.update({ where: { id }, data, include: { requester: true } });
+  await withdrawPendingApprovals(id, data);
 
   const verb = status === "CANCELLED" ? "Cancelled" : status === "CLOSED" ? "Closed" : "Resolved";
   await db.ticketComment.create({
@@ -566,28 +617,11 @@ export async function setTicketResolution(formData: FormData) {
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
 
-  if (status === "RESOLVED") {
-    // CSAT: mint (or reuse) a survey token for this ticket and, if we're emailing
-    // the requester, ride the "Rate our support" link along with the resolution.
-    const surveyToken = await ensureSurvey(id);
-    if (ticket.requester?.email) {
-      const link = surveyToken ? await surveyUrl(surveyToken) : null;
-      await sendMail({
-        to: ticket.requester.email, toName: ticket.requester.name,
-        entity: "Ticket", entityId: id, ticketId: id,
-        ...(await renderTicketResolvedEmail({
-          brand: await mailBrand(),
-          ref: ticketRef(ticket.id, ticket.type),
-          title: ticket.title,
-          requesterName: ticket.requester.name ?? "",
-          surveyUrl: link,
-        })),
-      });
-    }
-  }
+  if (status === "RESOLVED") await sendResolvedMail(ticket, me.email, noteInternal ? null : note);
   await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
+  return { ok: true };
 }
 
 // ── Unlink relations ─────────────────────────────────────────────────────────
@@ -961,9 +995,9 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
   return { ok: true };
 }
 
-export async function setTicketPending(formData: FormData) {
+export async function setTicketPending(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
   const status = String(formData.get("status") ?? "");
   const reason = String(formData.get("reason") ?? "");
@@ -971,13 +1005,13 @@ export async function setTicketPending(formData: FormData) {
   const bodyHtml = typeof rawHtml === "string" && rawHtml.trim() ? sanitizeCommentHtml(rawHtml) : null;
   const note = bodyHtml ? htmlToText(bodyHtml).trim() || null : String(formData.get("note") ?? "").trim() || null;
   const noteInternal = formData.get("isInternal") === "on";
-  if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return;
+  if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return refused(INVALID_CHANGE);
 
   const current = await db.ticket.findUnique({ where: { id }, select: { status: true, approvalState: true, pendingSince: true, assigneeId: true, groupId: true } });
-  if (!current) return;
-  if (!(await canActOnTicket(me, current))) return;
-  if (!approvalAllowsStatus(current.approvalState, status)) return;
-  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
+  if (!current) return refused(TICKET_NOT_FOUND);
+  if (!(await canActOnTicket(me, current))) return refused(NOT_YOUR_TICKET);
+  if (!approvalAllowsStatus(current.approvalState, status)) return refused(AWAITING_APPROVAL);
+  if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
 
   await db.ticket.update({
     where: { id },
@@ -997,4 +1031,5 @@ export async function setTicketPending(formData: FormData) {
   await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
+  return { ok: true };
 }

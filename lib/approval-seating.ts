@@ -115,3 +115,17 @@ export async function seatCatalogApprovalStages(ticketId: number): Promise<void>
     });
   }
 }
+
+/**
+ * Close out the pending catalog approvals of a ticket whose status patch just
+ * cancelled it (statusChangeData sets `approvalState: "CANCELLED"` then). Call
+ * it after the ticket update with the same patch; it is a no-op for any other
+ * patch, so every cancel path can call it unconditionally.
+ */
+export async function withdrawPendingApprovals(ticketId: number, patch: Record<string, unknown>): Promise<void> {
+  if (patch.approvalState !== "CANCELLED") return;
+  await db.ticketApproval.updateMany({
+    where: { ticketId, status: "PENDING" },
+    data: { status: "CANCELLED", decidedAt: new Date() },
+  });
+}

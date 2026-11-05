@@ -6,6 +6,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { CustomFieldEditor } from "@/components/custom-fields/custom-field-editor";
 import { deleteCustomField, moveCustomField } from "@/lib/actions/custom-fields";
@@ -99,10 +100,16 @@ export default async function CustomFieldsPage() {
                               </form>
                             </div>
                             <CustomFieldEditor entityType={entity as CustomFieldEntity} def={d} />
-                            <form action={deleteCustomField}>
-                              <input type="hidden" name="id" value={d.id} />
-                              <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete field"><Trash2 className="size-4 text-muted-foreground" /></Button>
-                            </form>
+                            <ConfirmButton
+                              action={deleteCustomField}
+                              fields={{ id: d.id }}
+                              title="Delete custom field?"
+                              description={`"${d.label}" and the values stored in it will be permanently deleted.`}
+                              triggerVariant="ghost"
+                              triggerLabel="Delete field"
+                            >
+                              <Trash2 className="size-4 text-muted-foreground" />
+                            </ConfirmButton>
                           </div>
                         </CardContent>
                       </Card>

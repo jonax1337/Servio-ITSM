@@ -8,6 +8,7 @@ import { writeAudit } from "@/lib/audit";
 import { canActOnTicket } from "@/lib/authz";
 import { isGroupMember, autoAssignTicket } from "@/lib/assignment";
 import { statusChangeData, ticketCalendar } from "@/lib/sla";
+import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
@@ -225,7 +226,7 @@ export async function applyMacro(formData: FormData) {
     select: {
       id: true, title: true, type: true, requesterId: true,
       assigneeId: true, groupId: true, status: true, approvalState: true,
-      priority: true, serviceId: true, slaId: true, firstResponseAt: true,
+      priority: true, serviceId: true, slaId: true, firstResponseAt: true, createdAt: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
       sla: { select: { businessCalendarId: true } },
     },
@@ -245,6 +246,7 @@ export async function applyMacro(formData: FormData) {
   // Accumulate field changes into one ticket update; comments/replies are created
   // separately. `patch` mirrors the fields updateTicketField writes.
   const patch: Record<string, unknown> = {};
+  let nextStatus: string | null = null;
   let touchedGroup = false;
   const summaryParts: string[] = [];
   // Public replies created by this macro. Their outbound email + notifications are
@@ -259,20 +261,13 @@ export async function applyMacro(formData: FormData) {
         if (!approvalAllowsStatus(ticket.approvalState, a.value)) break;
         // Enforce the configured lifecycle + role, same as updateTicketField.
         if (!(await canTransitionConfigured("TICKET", ticket.status, a.value, me.role as Role))) break;
-        Object.assign(patch, { status: a.value }, statusChangeData(ticket, a.value, new Date(), await ticketCalendar(ticket)));
+        nextStatus = a.value;
         summaryParts.push(`status → ${a.value}`);
         break;
       }
       case "set_priority": {
         if (!PRIORITIES.includes(a.value as (typeof PRIORITIES)[number])) break;
         patch.priority = a.value;
-        // Re-price the SLA exactly like updateTicketField does, so the
-        // response/resolve deadlines track the new tier instead of going stale
-        // (shared helper — one repricing implementation for all priority writers).
-        Object.assign(patch, await slaRepricePatch(
-          { status: ticket.status, firstResponseAt: ticket.firstResponseAt },
-          { priority: a.value, serviceId: ticket.serviceId, slaId: ticket.slaId },
-        ));
         summaryParts.push(`priority → ${a.value}`);
         break;
       }
@@ -323,9 +318,21 @@ export async function applyMacro(formData: FormData) {
     }
   }
 
+  // SLA clock, applied once whatever the action order: re-price for the final
+  // priority (same helper as every priority writer), then the status change's
+  // pause/resume and resolution stamps on top of the re-priced deadlines.
+  const reprice = typeof patch.priority === "string" && patch.priority !== ticket.priority
+    ? await slaRepricePatch(ticket, { priority: patch.priority, serviceId: ticket.serviceId, slaId: ticket.slaId })
+    : {};
+  Object.assign(patch, reprice);
+  if (nextStatus) {
+    Object.assign(patch, { status: nextStatus }, statusChangeData({ ...ticket, ...reprice }, nextStatus, new Date(), await ticketCalendar(ticket)));
+  }
+
   const hasFieldChange = Object.keys(patch).length > 0;
   if (hasFieldChange) {
     await db.ticket.update({ where: { id: ticketId }, data: patch });
+    await withdrawPendingApprovals(ticketId, patch);
   } else {
     // Reply/note-only macro: still bump updatedAt so the ticket resurfaces
     // (Prisma's @updatedAt already handles the field-change path above).

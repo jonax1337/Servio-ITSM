@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 import { Plus, X, Square, CheckSquare } from "lucide-react";
 import { addTask, toggleTask, deleteTask } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -44,12 +45,18 @@ export function TicketTasks({ ticketId, tasks }: { ticketId: number; tasks: Task
               </button>
             </form>
             <span className={cn("flex-1 text-sm", t.done && "text-muted-foreground line-through")}>{t.title}</span>
-            <form action={deleteTask}>
-              <input type="hidden" name="taskId" value={t.id} />
-              <button type="submit" className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100" aria-label="Delete task">
-                <X className="size-3.5" />
-              </button>
-            </form>
+            <ConfirmButton
+              action={deleteTask}
+              fields={{ taskId: t.id }}
+              title="Delete task?"
+              description={`"${t.title}" will be permanently deleted.`}
+              triggerVariant="ghost"
+              triggerSize="icon-xs"
+              triggerClassName="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              triggerLabel="Delete task"
+            >
+              <X className="size-3.5" />
+            </ConfirmButton>
           </li>
         ))}
       </ul>

@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { LinkButton } from "@/components/link-button";
-import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { ToneBadge } from "@/components/status-badge";
 import {
   Table,
@@ -109,17 +109,18 @@ export default async function ApiTokensPage() {
                       {t.revoked ? (
                         <span className="text-xs text-muted-foreground">—</span>
                       ) : (
-                        <form action={revokeApiToken} className="inline">
-                          <input type="hidden" name="id" value={t.id} />
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Ban className="size-3.5" /> Revoke
-                          </Button>
-                        </form>
+                        <ConfirmButton
+                          action={revokeApiToken}
+                          fields={{ id: t.id }}
+                          title="Revoke API token?"
+                          description={`"${t.name}" will stop working immediately. This can't be undone.`}
+                          confirmLabel="Revoke"
+                          triggerVariant="ghost"
+                          triggerSize="sm"
+                          triggerClassName="text-muted-foreground hover:text-destructive"
+                        >
+                          <Ban className="size-3.5" /> Revoke
+                        </ConfirmButton>
                       )}
                     </TableCell>
                   </TableRow>

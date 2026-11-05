@@ -7,6 +7,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ToneBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { RuleBuilder, type AutomationOptions } from "@/components/automations/rule-builder";
 import { ToggleRuleSwitch } from "@/components/automations/toggle-switch";
@@ -123,10 +124,16 @@ export default async function AutomationsPage() {
                       options={options}
                       rule={{ id: r.id, name: r.name, description: r.description, trigger: r.trigger, matchType: r.matchType, conditions, actions, isActive: r.isActive }}
                     />
-                    <form action={deleteRule}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete rule"><Trash2 className="size-4 text-muted-foreground" /></Button>
-                    </form>
+                    <ConfirmButton
+                      action={deleteRule}
+                      fields={{ id: r.id }}
+                      title="Delete rule?"
+                      description={`"${r.name}" will be permanently deleted and stop running.`}
+                      triggerVariant="ghost"
+                      triggerLabel="Delete rule"
+                    >
+                      <Trash2 className="size-4 text-muted-foreground" />
+                    </ConfirmButton>
                   </div>
                 </CardContent>
               </Card>

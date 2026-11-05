@@ -231,7 +231,10 @@ export async function ticketThreadHeaders(
 // Thin wrappers that assemble variables + shell config and defer wording to the
 // admin-editable template engine (lib/email-templates.ts). The shell (badges,
 // CTA, footer) stays code-controlled; subject/body are DB-editable per template.
-type TicketLike = { id: number; title: string; type: string; status: string };
+type TicketLike = { id: number; title: string; type: string; prefix?: string | null; status: string };
+
+/** The ticket's stable ref: the stored prefix survives a later type switch. */
+const refOf = (t: TicketLike) => ticketRef(t.id, t.prefix || t.type);
 
 /** Brand + public origin for links, read from settings (APP_NAME / APP_URL). */
 export async function mailBrand(): Promise<MailBrand> {
@@ -242,14 +245,14 @@ export async function mailBrand(): Promise<MailBrand> {
 export function tplTicketReceived(t: TicketLike, brand?: MailBrand, opts?: { requesterName?: string; messageHtml?: string }) {
   return renderTicketEmail("ticket_received", {
     brand,
-    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, requesterName: opts?.requesterName ?? "" },
+    vars: { appName: brand?.appName ?? "Servio", ref: refOf(t), title: t.title, requesterName: opts?.requesterName ?? "" },
   });
 }
 
 export function tplTicketAssigned(t: TicketLike, agentName: string, brand?: MailBrand) {
   return renderTicketEmail("ticket_assigned", {
     brand,
-    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, agentName },
+    vars: { appName: brand?.appName ?? "Servio", ref: refOf(t), title: t.title, agentName },
   });
 }
 
@@ -262,7 +265,7 @@ export function tplTicketReply(
     brand,
     vars: {
       appName: brand?.appName ?? "Servio",
-      ref: ticketRef(t.id, t.type),
+      ref: refOf(t),
       title: t.title,
       requesterName: opts.requesterName ?? "",
       message: opts.messageHtml,
@@ -277,19 +280,12 @@ export function tplTicketParticipant(t: TicketLike, name: string, addedBy: strin
     brand,
     vars: {
       appName: brand?.appName ?? "Servio",
-      ref: ticketRef(t.id, t.type),
+      ref: refOf(t),
       title: t.title,
       requesterName: name,
       agentName: addedBy,
       message: note ? quoteHtml(escapeInline(note)) : "",
     },
-  });
-}
-
-export function tplTicketResolved(t: TicketLike, brand?: MailBrand, opts?: { requesterName?: string }) {
-  return renderTicketEmail("ticket_resolved", {
-    brand,
-    vars: { appName: brand?.appName ?? "Servio", ref: ticketRef(t.id, t.type), title: t.title, requesterName: opts?.requesterName ?? "" },
   });
 }
 

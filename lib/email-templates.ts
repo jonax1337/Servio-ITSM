@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
-import { renderEmailHtml, type MailBrand } from "@/lib/mail-template";
+import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
 
 /**
  * Admin-editable email templates. Each is a SUBJECT + a BODY (HTML) with
@@ -24,7 +24,7 @@ export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export const TEMPLATE_META: Record<TemplateKey, { label: string; description: string; vars: string[] }> = {
   ticket_received: { label: "Request received", description: "Short confirmation to the requester when a new ticket is created.", vars: ["appName", "ref", "requesterName"] },
   ticket_reply: { label: "Reply to requester", description: "Agent reply: message + signature + quoted trail ({{quote}}).", vars: ["ref", "title", "requesterName", "message", "signature", "quote"] },
-  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with an optional CSAT survey link ({{survey}}).", vars: ["ref", "title", "requesterName", "survey"] },
+  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with the public resolution note ({{resolution}}) and an optional CSAT survey link ({{survey}}).", vars: ["ref", "title", "requesterName", "resolution", "survey"] },
   ticket_participant: { label: "Added as participant", description: "When someone is added as a participant / CC'd.", vars: ["ref", "title", "requesterName", "agentName", "message"] },
   ticket_assigned: { label: "Ticket assigned", description: "Internal notice to the assigned agent.", vars: ["ref", "title", "agentName"] },
 };
@@ -48,6 +48,7 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
     bodyHtml:
       `<p>Hi {{requesterName}},</p>` +
       `<p>good news — your request <strong>{{ref}}</strong> has been marked as <strong>resolved</strong>. If anything is still open, just reply to this email.</p>` +
+      `{{resolution}}` +
       `{{survey}}`,
   },
   ticket_participant: {
@@ -65,7 +66,7 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
   },
 };
 
-const HTML_KEYS = new Set(["message", "signature", "quote", "survey"]);
+const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey"]);
 
 /** A small "Rate our support" CTA block for the resolved email (empty string if no link). */
 export function surveyCtaHtml(url?: string | null): string {
@@ -124,6 +125,8 @@ export function renderTicketResolvedEmail(ctx: {
   title: string;
   requesterName?: string;
   surveyUrl?: string | null;
+  /** Public resolution note shown to the requester; omit for an internal note. */
+  resolutionNote?: string | null;
 }) {
   return renderTicketEmail("ticket_resolved", {
     brand: ctx.brand,
@@ -132,6 +135,7 @@ export function renderTicketResolvedEmail(ctx: {
       ref: ctx.ref,
       title: ctx.title,
       requesterName: ctx.requesterName ?? "",
+      resolution: ctx.resolutionNote ? quoteHtml(textToHtmlParagraphs(ctx.resolutionNote)) : "",
       survey: surveyCtaHtml(ctx.surveyUrl),
     },
   });

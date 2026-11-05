@@ -7,7 +7,7 @@ import { getVisibleSavedViews } from "@/lib/board-service";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
-import { ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
+import { findTicketWindow, ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -40,7 +40,8 @@ export default async function TicketsPage({
 
   // Filters, search and sort live in lib/ticket-list.ts — shared with the CSV export
   // and matching the dashboard widgets' drill-down params.
-  const { where, orderBy } = ticketListQuery(sp);
+  const query = ticketListQuery(sp);
+  const { where } = query;
   const sort = getParam(sp, "sort") ?? "updatedAt";
   const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
 
@@ -55,13 +56,12 @@ export default async function TicketsPage({
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
-    db.ticket.findMany({
-      where,
-      include: { assignee: true, requester: true, group: true, category: true },
-      orderBy: [orderBy],
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-    }),
+    findTicketWindow(query, { skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }, (args) =>
+      db.ticket.findMany({
+        ...args,
+        include: { assignee: true, requester: true, group: true, category: true },
+      }),
+    ),
   ]);
 
   const rows = tickets.map((t) => ({

@@ -61,3 +61,23 @@ export function str(v: unknown): string | undefined {
   const s = String(v).trim();
   return s.length ? s : undefined;
 }
+
+/**
+ * Parse a human record ref ("PRB-0019", "prb-19", or a bare "19") to its number.
+ * A ref carrying a prefix outside `prefixes` is rejected, so a CHG ref can never
+ * be mistaken for a problem. Returns null when no valid number is present.
+ */
+export function parseRecordNumber(ref: unknown, prefixes: readonly string[]): number | null {
+  const m = String(ref ?? "").trim().match(/^(?:([A-Za-z]+)-)?0*(\d+)$/);
+  if (!m) return null;
+  if (m[1] && !prefixes.includes(m[1].toUpperCase())) return null;
+  const n = Number(m[2]);
+  return n > 0 ? n : null;
+}
+
+/** Shorten long free text for a compact tool result; null/blank becomes null. */
+export function clip(text: string | null | undefined, max = 600): string | null {
+  const s = (text ?? "").trim();
+  if (!s) return null;
+  return s.length > max ? `${s.slice(0, max)}… [truncated, ${s.length} chars]` : s;
+}

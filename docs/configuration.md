@@ -73,6 +73,9 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `API_RATE_WINDOW_MS` | No | `60000` | Sliding-window length (ms) for `API_RATE_LIMIT`. |
 | `AI_RATE_LIMIT` | No | `20` | Max AI-endpoint requests (console + portal chat, confirm-create, triage) per session user per window — every request drives a provider call. |
 | `AI_RATE_WINDOW_MS` | No | `60000` | Sliding-window length (ms) for `AI_RATE_LIMIT`. |
+| `REPLY_RATE_LIMIT` | No | `10` | Max portal ticket replies (form and Sable) per session user per window. |
+| `UPLOAD_RATE_LIMIT` | No | `30` | Max file uploads per session user per window, applied to `USER`-role (portal) accounts only. |
+| `WRITE_RATE_WINDOW_MS` | No | `60000` | Sliding-window length (ms) shared by `REPLY_RATE_LIMIT` and `UPLOAD_RATE_LIMIT`. |
 | `LOGIN_FREE_ATTEMPTS` | No | `5` | Failed login attempts allowed before backoff kicks in ([`../lib/rate-limit.ts`](../lib/rate-limit.ts)). |
 | `LOGIN_BASE_BACKOFF_MS` | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
 | `LOGIN_MAX_BACKOFF_MS` | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { loginRetryAfter, recordLoginFailure, recordLoginSuccess, slidingWindow } from "@/lib/rate-limit";
+import {
+  checkReplyRate, checkUploadRate, loginRetryAfter, recordLoginFailure, recordLoginSuccess, slidingWindow,
+} from "@/lib/rate-limit";
 
 describe("slidingWindow", () => {
   it("allows up to the limit inside a window, then denies", () => {
@@ -82,5 +84,30 @@ describe("loginThrottle", () => {
     // LOGIN_DECAY_MS default is 15 min; the lock itself expires by then too.
     expect(loginRetryAfter("decay", now)).toBeGreaterThan(0);
     expect(loginRetryAfter("decay", now + 15 * 60_000 + 1)).toBe(0);
+  });
+});
+
+describe("portal reply and upload limiters", () => {
+  const burst = (check: (id: string, now: number) => unknown, id: string, now: number) => {
+    let allowed = 0;
+    while (check(id, now) === null) allowed += 1;
+    return allowed;
+  };
+
+  it("caps replies per user, then reports when to retry", () => {
+    expect(burst(checkReplyRate, "reply-user", 0)).toBe(10);
+    expect(checkReplyRate("reply-user", 1)?.retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it("tracks users and reply vs upload budgets independently", () => {
+    burst(checkReplyRate, "shared-user", 0);
+    expect(checkReplyRate("other-user", 0)).toBeNull();
+    expect(checkUploadRate("shared-user", 0)).toBeNull();
+  });
+
+  it("allows 30 uploads per minute and frees the budget after the window", () => {
+    expect(burst(checkUploadRate, "upload-user", 0)).toBe(30);
+    expect(checkUploadRate("upload-user", 59_000)).not.toBeNull();
+    expect(checkUploadRate("upload-user", 60_001)).toBeNull();
   });
 });

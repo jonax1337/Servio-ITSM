@@ -85,7 +85,7 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
 | `TicketLink` | Typed relationship between two tickets | `(ticketId, linkedTicketId)` unique; `type` (`RELATED`/`DUPLICATE`/`BLOCKS`/`CAUSED_BY`) |
-| `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`), `stage` (Int, default 0 — multi-stage catalog approvals), `decidedAt` |
+| `TicketApproval` | Approval request on a ticket (catalog approvals) | `approverId`, `status` (`PENDING`/`APPROVED`/`REJECTED`/`CANCELLED` — withdrawn when the ticket is cancelled while awaiting approval), `stage` (Int, default 0 — multi-stage catalog approvals), `decidedAt` |
 | `SurveyResponse` | Post-resolution CSAT survey (one per ticket) | `ticketId` (unique), `token` (unique — gates the public rating link), `rating` (`SURVEY_RATING_MIN`..`MAX`, i.e. 1–5), `comment`, `sentAt`, `respondedAt`; `onDelete: Cascade` |
 | `Macro` | Reusable, ordered set of ticket actions an agent applies in one click | `name`, `description`, `actions` (JSON as TEXT: ordered `{type,value}[]`), `ownerId`, `isShared` |
 | `TicketWatcher` | Users following a ticket | composite PK `(ticketId, userId)` |
@@ -241,7 +241,7 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `RISKS` | `Change.risk` | `LOW`, `MEDIUM`, `HIGH` |
 | `CAB_APPROVAL_RULES` | `Change.approvalRule` | `UNANIMOUS`, `QUORUM`, `PERCENT` |
 | `ESCALATION_ACTIONS` | `EscalationStep.action` | `NOTIFY`, `REASSIGN`, `BUMP_PRIORITY` |
-| `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Approval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED` |
+| `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Approval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED` |
 | `SERVICE_STATUSES` | `Service.status` | `OPERATIONAL`, `DEGRADED`, `OUTAGE`, `MAINTENANCE`, `RETIRED` |
 | `CRITICALITIES` | `Service.criticality` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `AUTO_ASSIGN_STRATEGIES` | `Group.autoAssign` | `OFF`, `ROUND_ROBIN`, `LEAST_BUSY` |

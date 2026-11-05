@@ -10,6 +10,7 @@ import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab } from "@/lib/cab";
+import { isWindowEditable, plannedWindowError, submitBlockedMessage, submitBlockers } from "@/lib/change-rules";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
@@ -90,6 +91,11 @@ export async function createChange(
     };
   }
   const data = parsed.data;
+
+  const windowError = plannedWindowError(data.plannedStart, data.plannedEnd);
+  if (windowError) {
+    return { error: "Please fix the errors below.", fieldErrors: { plannedEnd: [windowError] } };
+  }
 
   // Enforce required, currently-visible custom fields (same contract as tickets).
   const defs = await db.customFieldDef.findMany({ where: { entityType: "CHANGE", active: true } });
@@ -258,20 +264,30 @@ const submitSchema = z.object({ id: z.coerce.number() });
 const addApproverSchema = z.object({ changeId: z.coerce.number(), approverId: z.string().min(1) });
 const removeApproverSchema = z.object({ approvalId: z.string().min(1) });
 
-export async function submitChangeForApproval(formData: FormData) {
+export type SubmitResult = { ok: boolean; error?: string };
+
+export async function submitChangeForApproval(formData: FormData): Promise<SubmitResult> {
   const me = await requireAgentC();
-  if (!me) return;
+  if (!me) return { ok: false, error: "Not authorised" };
   const parsed = submitSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
   const { id } = parsed.data;
 
   const current = await db.change.findUnique({
     where: { id },
-    select: { id: true, type: true, risk: true, status: true, assigneeId: true, createdById: true, title: true },
+    select: {
+      id: true, type: true, risk: true, status: true, assigneeId: true, createdById: true, title: true,
+      implementationPlan: true, rollbackPlan: true, plannedStart: true, plannedEnd: true,
+    },
   });
-  if (!current) return;
+  if (!current) return { ok: false, error: "Change not found." };
   // Only from DRAFT — this also makes a double-click idempotent (2nd submit is in APPROVAL).
-  if (!canTransition(CHANGE_TRANSITIONS, current.status, "SUBMITTED", true)) return;
+  if (!canTransition(CHANGE_TRANSITIONS, current.status, "SUBMITTED", true)) {
+    return { ok: false, error: "Only a draft change can be submitted for approval." };
+  }
+
+  const missing = submitBlockers(current);
+  if (missing.length > 0) return { ok: false, error: submitBlockedMessage(missing) };
 
   if (current.type === "STANDARD") {
     // Pre-authorized: straight to APPROVED, no CAB. (Bypasses the transition map
@@ -283,7 +299,7 @@ export async function submitChangeForApproval(formData: FormData) {
     if (approverIds.length === 0) {
       // Never silently approve an unreviewed change — stay in DRAFT for a retry.
       await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "No eligible CAB approvers — submission blocked" });
-      return;
+      return { ok: false, error: "No eligible CAB approvers are available for this change." };
     }
     await db.changeApproval.createMany({ data: approverIds.map((approverId) => ({ changeId: id, approverId })) });
     await db.change.update({ where: { id }, data: { status: "APPROVAL" } });
@@ -301,6 +317,7 @@ export async function submitChangeForApproval(formData: FormData) {
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
   revalidatePath("/approvals");
+  return { ok: true };
 }
 
 export async function addChangeApprover(formData: FormData): Promise<{ ok: boolean; error?: string }> {
@@ -458,6 +475,32 @@ export async function updateChangeDetails(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Edited details" });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
+}
+
+const windowSchema = z.object({ id: z.coerce.number(), plannedStart: optionalDate, plannedEnd: optionalDate });
+
+/** Sets or clears the planned maintenance window; the end must come after the start. */
+export async function updateChangeWindow(formData: FormData): Promise<SubmitResult> {
+  const me = await requireAgentC();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const parsed = windowSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  const { id, plannedStart, plannedEnd } = parsed.data;
+
+  const windowError = plannedWindowError(plannedStart, plannedEnd);
+  if (windowError) return { ok: false, error: windowError };
+
+  const change = await db.change.findUnique({ where: { id }, select: { status: true } });
+  if (!change) return { ok: false, error: "Change not found." };
+  if (!isWindowEditable(change.status)) {
+    return { ok: false, error: "The planned window is locked once the change is in approval." };
+  }
+
+  await db.change.update({ where: { id }, data: { plannedStart, plannedEnd } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Updated planned window" });
+  revalidatePath(`/changes/${id}`);
+  revalidatePath("/changes");
+  return { ok: true };
 }
 
 // ── Planning fields (reason, implementation plan, rollback plan) ─────────────

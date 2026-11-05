@@ -3,6 +3,7 @@ import { GitPullRequestArrow, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { refSearchWhere } from "@/lib/ref-search";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
@@ -47,7 +48,7 @@ export default async function ChangesPage({
   const risk = getParam(sp, "risk");
 
   const where: Prisma.ChangeWhereInput = {};
-  if (q) where.title = { contains: q };
+  if (q) Object.assign(where, refSearchWhere(q, "CHG"));
   if (status && status !== "all") where.status = status;
   if (type && type !== "all") where.type = type;
   if (risk && risk !== "all") where.risk = risk;

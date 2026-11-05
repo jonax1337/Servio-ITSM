@@ -240,11 +240,13 @@ export const CHANGE_STATUS_META: Record<string, Meta> = {
 export const RISKS = ["LOW", "MEDIUM", "HIGH"] as const;
 export const RISK_META: Record<string, Meta> = LEVEL_META;
 
-export const APPROVAL_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+// CANCELLED = withdrawn before a decision (the request's ticket was cancelled).
+export const APPROVAL_STATUSES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 export const APPROVAL_META: Record<string, Meta> = {
   PENDING: { label: "Pending", tone: "warning" },
   APPROVED: { label: "Approved", tone: "success" },
   REJECTED: { label: "Rejected", tone: "danger" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
 
 // How a Change's CAB approvals resolve (see Change.approvalRule / approvalThreshold).

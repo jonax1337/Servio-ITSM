@@ -174,7 +174,9 @@ async function runEscalationPolicy(
         if (target && PRIORITIES.includes(target as (typeof PRIORITIES)[number])) {
           const curIdx = PRIORITIES.indexOf(curPriority as (typeof PRIORITIES)[number]);
           const tgtIdx = PRIORITIES.indexOf(target as (typeof PRIORITIES)[number]);
-          // Only raise, never lower.
+          // Only raise, never lower. Deliberately NOT re-priced (unlike every other
+          // priority writer): the bump reacts to the running SLA nearing its
+          // deadline, and a tighter tier measured from creation would breach at once.
           if (tgtIdx > curIdx) {
             patch.priority = target;
             curPriority = target;

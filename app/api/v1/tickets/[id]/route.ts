@@ -2,7 +2,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, principalIsAgent, validateTicketAssignee } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
-import { slaCreateData, statusChangeData, ticketCalendar } from "@/lib/sla";
+import { slaRepricePatch, statusChangeData, ticketCalendar } from "@/lib/sla";
+import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import { serializeTicket } from "../../_serializers";
@@ -74,6 +75,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const data = { ...parsed.data } as Record<string, unknown>;
+
+  // SLA recompute: a priority change on an open ticket re-stamps the deadlines
+  // (same contract as the console's updateTicketField). Done BEFORE the status
+  // side effects so a pause resume shifts the new deadlines, not the old ones.
+  const reprice = parsed.data.priority && parsed.data.priority !== existing.priority
+    ? await slaRepricePatch(existing, { priority: parsed.data.priority, serviceId: existing.serviceId, slaId: existing.slaId })
+    : {};
+  Object.assign(data, reprice);
+
   const to = parsed.data.status;
   if (to && to !== existing.status) {
     if (!approvalAllowsStatus(existing.approvalState, to)) {
@@ -85,18 +95,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!(await canTransitionConfigured("TICKET", existing.status, to, auth.principal.role as Role))) {
       return apiError(409, `Illegal status transition ${existing.status} → ${to}`);
     }
-    Object.assign(data, statusChangeData(existing, to, new Date(), await ticketCalendar(existing)));
-  }
-
-  // SLA recompute: a priority change on an open ticket re-stamps the deadlines
-  // (same contract as the console's updateTicketField) — otherwise the API
-  // leaves a stale clock against the new SLA tier.
-  if (parsed.data.priority && parsed.data.priority !== existing.priority && !["RESOLVED", "CLOSED", "CANCELLED"].includes(existing.status)) {
-    const sla = await slaCreateData({ slaId: existing.slaId, serviceId: existing.serviceId, priority: parsed.data.priority });
-    if ("slaId" in sla) {
-      Object.assign(data, sla);
-      if (existing.firstResponseAt) data.responseDueAt = null;
-    }
+    Object.assign(data, statusChangeData({ ...existing, ...reprice }, to, new Date(), await ticketCalendar(existing)));
   }
 
   const ticket = await db.ticket.update({
@@ -104,6 +103,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     data,
     include: { requester: true, assignee: true },
   });
+  await withdrawPendingApprovals(ticketId, data);
   await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: "Updated via API" });
 
   return ok(serializeTicket(ticket));

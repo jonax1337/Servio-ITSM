@@ -177,8 +177,25 @@ Coverage by module:
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
 | Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, location create/update/delete |
 | Knowledge base | `modules/knowledge.ts` | article create, set status, delete |
-| Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment |
+| Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment; `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
+
+**Ticket to problem/change links.** `ticket.set_problem` and `ticket.set_change` (both `minRole` AGENT) take a
+ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. They reuse `setTicketProblem` /
+`setTicketChange`, the actions the ticket page uses, so the link appears in the UI exactly as if an agent had set it.
+The ops then read `Ticket.problemId` / `changeId` back and return `err(...)` when the action silently refused (role,
+missing target). A ref of the wrong kind (a `CHG-` ref for a problem) is rejected by `parseRecordNumber`
+(`helpers.ts`). A change's own `problemId` has no reusable server action, so Sable cannot set it yet.
+
+**Refused writes.** The field-update and status ops read the record back after the action runs (`verifyFieldWrite` in `helpers.ts`) and return an error when the write was refused (workflow rule, role, or a request awaiting approval — which can only be cancelled) instead of claiming success.
+
+**Reading one problem or change.** The read ops `problem.get` and `change.get` (tools `problem_get`, `change_get`)
+return a compact record. A problem: status, priority, impact, root cause, workaround, team, assignee, description,
+linked tickets and changes, latest comments. A change: type, risk, priority, impact, status, planned and actual
+start/end, reason, implementation plan, rollback plan (`not recorded` when empty), the CAB approval rule with each
+approver's decision and comment, linked problem and tickets, assignee, team, latest comments. Long text is clipped
+(`clip`). The schema has no test-plan field, so none is returned. `search_problems` / `search_changes` remain the
+keyword search.
 
 Authority is **the app's real RBAC**. Each operation's `minRole` mirrors the underlying UI
 action, so Sable can do exactly what the acting user could do by hand — no more. Operations flagged

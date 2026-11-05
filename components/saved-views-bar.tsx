@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Bookmark, BookmarkPlus, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -101,17 +102,18 @@ export function SavedViewsBar({
             {v.name}
           </Link>
           {v.ownerId === currentUserId || canManageShared ? (
-            <form action={deleteSavedView} className="-ml-1">
-              <input type="hidden" name="id" value={v.id} />
-              <button
-                type="submit"
-                aria-label={`Delete view ${v.name}`}
-                title="Delete view"
-                className="grid size-5 place-items-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/view:opacity-100"
-              >
-                <X className="size-3" />
-              </button>
-            </form>
+            <ConfirmButton
+              action={deleteSavedView}
+              fields={{ id: v.id }}
+              title="Delete view?"
+              description={`The saved view "${v.name}" will be permanently deleted.`}
+              triggerVariant="ghost"
+              triggerSize="icon-xs"
+              triggerClassName="-ml-1 size-5 rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/view:opacity-100"
+              triggerLabel={`Delete view ${v.name}`}
+            >
+              <X className="size-3" />
+            </ConfirmButton>
           ) : null}
         </span>
       ))}

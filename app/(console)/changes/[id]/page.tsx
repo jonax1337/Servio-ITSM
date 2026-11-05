@@ -15,7 +15,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { SubmitForApproval } from "@/components/changes/submit-for-approval";
+import { isWindowEditable } from "@/lib/change-rules";
+import { ChangeWindowEditor } from "@/components/changes/change-window-editor";
+import { SubmitForApproval }from "@/components/changes/submit-for-approval";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
 import { ApprovalProgress } from "@/components/changes/approval-progress";
 import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
@@ -403,8 +405,14 @@ export default async function ChangeDetailPage({
           <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <Meta label="Priority" value={PRIORITY_META[change.priority]?.label ?? change.priority} />
-            <Meta label="Planned start" value={change.plannedStart ? format(change.plannedStart, "PP p") : "—"} />
-            <Meta label="Planned end" value={change.plannedEnd ? format(change.plannedEnd, "PP p") : "—"} />
+            {isAgentUser && isWindowEditable(change.status) ? (
+              <ChangeWindowEditor changeId={change.id} plannedStart={change.plannedStart} plannedEnd={change.plannedEnd} />
+            ) : (
+              <>
+                <Meta label="Planned start" value={change.plannedStart ? format(change.plannedStart, "PP p") : "—"} />
+                <Meta label="Planned end" value={change.plannedEnd ? format(change.plannedEnd, "PP p") : "—"} />
+              </>
+            )}
             {change.actualStart ? <Meta label="Actual start" value={format(change.actualStart, "PP p")} /> : null}
             {change.actualEnd ? <Meta label="Actual end" value={format(change.actualEnd, "PP p")} /> : null}
             <Meta label="Created" value={format(change.createdAt, "PP p")} />

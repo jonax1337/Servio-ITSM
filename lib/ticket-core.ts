@@ -14,7 +14,7 @@ import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { slaCreateData, firstResponseData, customerReplyReopenData } from "@/lib/sla";
+import { slaCreateData, slaRepricePatch, firstResponseData, customerReplyReopenData } from "@/lib/sla";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -98,6 +98,8 @@ async function enforceRequiredCustomFields(
 export async function createTicketCore(
   data: z.infer<typeof createSchema>,
   actorId: string,
+  /** Message-ID of the customer email that opened the ticket, so the confirmation threads onto it. */
+  sourceMessageId?: string | null,
 ) {
   // Reject an incomplete ticket up front: required, currently-visible custom
   // fields must be present. Runs against the ticket's built-in values so a field
@@ -132,7 +134,7 @@ export async function createTicketCore(
   // If no HIGH SLA resolves, vipSla is {} and the original deadlines are kept.
   if (ticket.requester?.isVip && (ticket.priority === "LOW" || ticket.priority === "MEDIUM")) {
     ticket.priority = "HIGH";
-    const vipSla = await slaCreateData({ serviceId: ticket.serviceId, priority: "HIGH" });
+    const vipSla = await slaRepricePatch(ticket, { priority: "HIGH", serviceId: ticket.serviceId, slaId: ticket.slaId });
     await db.ticket.update({ where: { id: ticket.id }, data: { priority: "HIGH", ...vipSla } });
   }
 
@@ -141,7 +143,8 @@ export async function createTicketCore(
   if (ticket.requester?.email) {
     // This confirmation is the ROOT of the ticket's mail thread — its Message-ID
     // is what inbound replies reference back to. Hence ticketId is set.
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, brand, { requesterName: ticket.requester.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
+    const threadOnSource = sourceMessageId ? { inReplyTo: sourceMessageId, references: sourceMessageId } : {};
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...threadOnSource, ...(await tplTicketReceived(ticket, brand, { requesterName: ticket.requester.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   // Assignment notice
   if (ticket.assignee && ticket.assigneeId !== actorId) {
@@ -447,37 +450,8 @@ export async function deliverTicketReply(opts: {
   });
 }
 
-// ── SLA re-pricing (shared by updateTicketField + macro set_priority) ────────
-
-const TERMINAL_STATUSES = ["RESOLVED", "CLOSED", "CANCELLED"];
-
-/**
- * Extra patch keys for a priority/service/SLA change on a ticket: fresh
- * response/resolve deadlines anchored to now, banking already-paused time and
- * preserving a recorded first response (frozen response clock instead of a
- * re-opened one). Returns {} for a terminal ticket (clock frozen) or when no SLA
- * applies; with `slaCleared` (an explicit SLA removal on a non-terminal ticket)
- * it clears the deadlines the SLA drove. Mirrors the contract of
- * updateTicketField so every priority writer reprices identically.
- */
-export async function slaRepricePatch(
-  current: { status: string; firstResponseAt: Date | null } | null,
-  next: { priority: string; serviceId: string | null; slaId: string | null },
-  slaCleared = false,
-): Promise<Record<string, unknown>> {
-  if (!current || TERMINAL_STATUSES.includes(current.status)) return {};
-  const sla = await slaCreateData({ slaId: next.slaId, serviceId: next.serviceId, priority: next.priority });
-  const patch: Record<string, unknown> = {};
-  if ("slaId" in sla) {
-    Object.assign(patch, sla);
-    if (current.firstResponseAt) {
-      patch.responseDueAt = null;
-    }
-  } else if (slaCleared) {
-    Object.assign(patch, { responseDueAt: null, resolveDueAt: null, dueAt: null });
-  }
-  return patch;
-}
+// SLA re-pricing lives in lib/sla.ts (automations need it too and cannot import this module).
+export { slaRepricePatch } from "@/lib/sla";
 
 /** Participant CC lookup shared with the reply pipeline (used by updateTicketField's resolve mail). */
 export async function ticketCcEmails(ticketId: number, exclude: (string | null | undefined)[] = []): Promise<string[]> {

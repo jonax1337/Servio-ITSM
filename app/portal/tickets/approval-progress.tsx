@@ -2,7 +2,7 @@ import { Check, X, Clock, User, Users, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
-type StageStatus = "PENDING" | "APPROVED" | "REJECTED";
+type StageStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
 export type ProgressStage = {
   index: number;
@@ -10,6 +10,8 @@ export type ProgressStage = {
   status: StageStatus;
   approverName: string | null;
   decidedAt: Date | null;
+  /** The approver's note on their decision (why it was approved or declined). */
+  comment: string | null;
 };
 
 /**
@@ -28,14 +30,16 @@ export function ApprovalProgress({
 }) {
   // The live stage is the first non-decided one, unless the whole request settled.
   const liveIndex = stages.findIndex((s) => s.status === "PENDING");
-  const settled = state === "APPROVED" || state === "REJECTED";
+  const settled = state !== "PENDING";
 
   const headline =
     state === "APPROVED"
       ? "Approved"
       : state === "REJECTED"
         ? "Declined"
-        : `Awaiting approval${stages.length > 1 && liveIndex >= 0 ? ` — stage ${liveIndex + 1} of ${stages.length}` : ""}`;
+        : state === "CANCELLED"
+          ? "Cancelled before a decision"
+          : `Awaiting approval${stages.length > 1 && liveIndex >= 0 ? ` — stage ${liveIndex + 1} of ${stages.length}` : ""}`;
 
   return (
     <div className={cn("rounded-2xl border bg-card p-6", className)}>
@@ -49,7 +53,9 @@ export function ApprovalProgress({
               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
               : state === "REJECTED"
                 ? "bg-destructive/10 text-destructive"
-                : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                : state === "CANCELLED"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
           )}
         >
           {headline}
@@ -107,10 +113,15 @@ export function ApprovalProgress({
                     ? `Approved${s.decidedAt ? ` · ${format(s.decidedAt, "PP")}` : ""}`
                     : s.status === "REJECTED"
                       ? `Declined${s.decidedAt ? ` · ${format(s.decidedAt, "PP")}` : ""}`
-                      : isLive
-                        ? "Waiting for a decision"
-                        : "Pending earlier stages"}
+                      : s.status === "CANCELLED" || settled
+                        ? "Not decided"
+                        : isLive
+                          ? "Waiting for a decision"
+                          : "Pending earlier stages"}
                 </p>
+                {s.comment ? (
+                  <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-sm">{s.comment}</p>
+                ) : null}
               </div>
             </li>
           );

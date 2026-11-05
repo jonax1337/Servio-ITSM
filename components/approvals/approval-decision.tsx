@@ -15,6 +15,7 @@ export function ApprovalDecision({ approvalId }: { approvalId: string }) {
         <input type="hidden" name="approvalId" value={approvalId} />
         <input type="hidden" name="decision" value="REJECTED" />
         <Textarea name="comment" placeholder="Reason for rejection (optional)…" className="min-h-16" />
+        <p className="text-xs text-muted-foreground">Visible to the requester.</p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={() => setRejecting(false)}>
             Cancel

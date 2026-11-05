@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { TICKET_TYPES, PRIORITIES, ticketRef } from "@/lib/constants";
-import { createPortalTicketFor, linkStagedAttachments } from "@/lib/portal-tickets";
+import { createPortalTicketFor, linkStagedAttachments, REPLY_RATE_LIMIT_MESSAGE } from "@/lib/portal-tickets";
+import { checkReplyRate } from "@/lib/rate-limit";
 import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
@@ -42,7 +43,9 @@ export async function createPortalTicket(_prev: PortalState, formData: FormData)
   redirect(`/portal/tickets/${ticket.id}`);
 }
 
-export async function addPortalComment(formData: FormData) {
+export type PortalCommentResult = { error: string } | undefined;
+
+export async function addPortalComment(formData: FormData): Promise<PortalCommentResult> {
   // DB truth: deactivated users keep no portal powers (see createPortalTicket).
   const me = await getCurrentUser();
   if (!me || !me.isActive) return;
@@ -67,6 +70,7 @@ export async function addPortalComment(formData: FormData) {
   // Same rule as the portal page, which hides the reply form on finished tickets
   // (the requester opens a new request instead); RESOLVED stays replyable.
   if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return;
+  if (checkReplyRate(me.id)) return { error: REPLY_RATE_LIMIT_MESSAGE };
 
   // Attach files staged on the requester's own ticket onto this comment (atomic + capped).
   const attachmentIds = formData.getAll("attachmentIds").map(String).filter(Boolean).slice(0, 20);

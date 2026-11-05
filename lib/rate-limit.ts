@@ -73,6 +73,33 @@ export function checkAiRate(userId: string, now = Date.now()): { retryAfterMs: n
   return res.allowed ? null : { retryAfterMs: res.retryAfterMs };
 }
 
+// ---- Portal reply + upload limiters ----------------------------------------
+
+const REPLY_LIMIT = Number(process.env.REPLY_RATE_LIMIT ?? 10);
+const UPLOAD_LIMIT = Number(process.env.UPLOAD_RATE_LIMIT ?? 30);
+const WRITE_WINDOW_MS = Number(process.env.WRITE_RATE_WINDOW_MS ?? 60_000);
+const replyStore = new Map<string, Hit>();
+const uploadStore = new Map<string, Hit>();
+
+function checkUserRate(store: Map<string, Hit>, userId: string, limit: number, now: number) {
+  sweep(store, now);
+  const res = slidingWindow(store, userId, limit, WRITE_WINDOW_MS, now);
+  return res.allowed ? null : { retryAfterMs: res.retryAfterMs };
+}
+
+/**
+ * Rate-limit ticket replies posted from the portal (form and Sable assistant),
+ * keyed by session user id. Returns `null` when allowed, or `{ retryAfterMs }`.
+ */
+export function checkReplyRate(userId: string, now = Date.now()): { retryAfterMs: number } | null {
+  return checkUserRate(replyStore, userId, REPLY_LIMIT, now);
+}
+
+/** Rate-limit file uploads (every upload target), keyed by session user id. */
+export function checkUploadRate(userId: string, now = Date.now()): { retryAfterMs: number } | null {
+  return checkUserRate(uploadStore, userId, UPLOAD_LIMIT, now);
+}
+
 // ---- Login credential throttle -------------------------------------------
 
 type Lock = { failures: number; lockedUntil: number; resetAt: number };

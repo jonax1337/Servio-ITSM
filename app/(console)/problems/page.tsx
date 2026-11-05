@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { requireUser } from "@/lib/session";
+import { refSearchWhere } from "@/lib/ref-search";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { CreateProblemDialog } from "@/components/problems/create-problem-dialog";
@@ -47,7 +48,7 @@ export default async function ProblemsPage({
   const priority = getParam(sp, "priority");
 
   const where: Prisma.ProblemWhereInput = {};
-  if (q) where.title = { contains: q };
+  if (q) Object.assign(where, refSearchWhere(q, "PRB"));
   if (status && status !== "all") where.status = status;
   if (priority && priority !== "all") where.priority = priority;
 

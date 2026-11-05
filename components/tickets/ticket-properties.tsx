@@ -25,6 +25,9 @@ import {
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
 
+/** The refusal message of a ticket action result, or null when it went through. */
+const errorOf = (res: { ok: boolean; error?: string }) => (res.ok ? null : res.error ?? "Could not save changes.");
+
 /** Editable fields staged in the local draft (saved together via "Save changes"). */
 type DraftKey = "status" | "type" | "priority" | "impact" | "urgency" | "assigneeId" | "groupId" | "categoryId" | "serviceId";
 const DRAFT_KEYS: DraftKey[] = ["status", "type", "priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
@@ -215,15 +218,16 @@ export function TicketProperties({
     const payload = statusPayload;
     savingRef.current = true;
     startSaving(async () => {
+      let refusal: string | null = null;
       try {
         for (const c of nonStatus) {
           const fd = new FormData();
           fd.set("id", String(ticket.id));
           fd.set("field", c.field);
           fd.set("value", c.value);
-          await updateTicketField(fd);
+          refusal = refusal ?? errorOf(await updateTicketField(fd));
         }
-        if (statusChanged) {
+        if (statusChanged && !refusal) {
           const fd = new FormData();
           fd.set("id", String(ticket.id));
           if (newStatus === "PENDING" || newStatus === "ON_HOLD") {
@@ -231,18 +235,22 @@ export function TicketProperties({
             fd.set("reason", payload?.reason ?? PENDING_REASONS[0]);
             fd.set("bodyHtml", payload?.noteHtml ?? "");
             if (payload?.isInternal) fd.set("isInternal", "on");
-            await setTicketPending(fd);
+            refusal = errorOf(await setTicketPending(fd));
           } else if (newStatus === "RESOLVED" || newStatus === "CLOSED" || newStatus === "CANCELLED") {
             fd.set("status", newStatus);
             if (payload?.code) fd.set("code", payload.code);
             fd.set("bodyHtml", payload?.noteHtml ?? "");
             if (payload?.isInternal) fd.set("isInternal", "on");
-            await setTicketResolution(fd);
+            refusal = errorOf(await setTicketResolution(fd));
           } else {
             fd.set("field", "status");
             fd.set("value", newStatus);
-            await updateTicketField(fd);
+            refusal = errorOf(await updateTicketField(fd));
           }
+        }
+        if (refusal) {
+          toast.error(refusal);
+          return;
         }
         const count = nonStatus.length + (statusChanged ? 1 : 0);
         toast.success(`Saved ${count} change${count > 1 ? "s" : ""}`);

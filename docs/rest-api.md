@@ -151,7 +151,7 @@ only for validation failures:
 | `401` | Missing or invalid token |
 | `403` | Token lacks the required scope, or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
 | `404` | Resource not found (or hidden from a non-agent) |
-| `409` | Illegal ticket status transition |
+| `409` | Illegal ticket status transition, or a request awaiting approval (only cancelling is allowed) |
 | `422` | Zod validation failed, or an invalid `assigneeId` (`details` holds field errors) |
 | `429` | Rate limit exceeded — a `Retry-After` header is returned |
 
@@ -266,8 +266,12 @@ which would skip breach stamping, automations and the survey pipeline (else `422
   gates — the same rules the console enforces); a disallowed move returns `409`.
 - Moving into `PENDING`/`ON_HOLD` pauses the SLA clock (in business time when the
   SLA carries a calendar); moving out resumes it.
-- Changing `priority` re-stamps the SLA response/resolve deadlines (same contract
-  as the console's `updateTicketField`).
+- While a catalog request awaits approval (`approvalState` `PENDING`) the only
+  allowed status change is `CANCELLED`; anything else returns `409`. Cancelling it
+  sets `approvalState` to `CANCELLED` and withdraws the pending approvals.
+- Changing `priority` re-measures the SLA response/resolve deadlines from the
+  ticket's creation plus its banked pause time (the clock never restarts), via the
+  shared `slaRepricePatch` (same contract as the console's `updateTicketField`).
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,

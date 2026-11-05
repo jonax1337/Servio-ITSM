@@ -254,12 +254,19 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
                       <li key={h.id} className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs">
                         <span className="font-medium">{h.name}</span>
                         <span className="text-muted-foreground">{new Date(h.date).toISOString().slice(0, 10)}</span>
-                        <form action={deleteHoliday}>
-                          <input type="hidden" name="id" value={h.id} />
-                          <button type="submit" aria-label="Remove holiday" className="text-muted-foreground hover:text-destructive">
-                            <Trash2 className="size-3" />
-                          </button>
-                        </form>
+                        <ConfirmButton
+                          action={deleteHoliday}
+                          fields={{ id: h.id }}
+                          title="Remove holiday?"
+                          description={`"${h.name}" will be removed from this calendar.`}
+                          confirmLabel="Remove"
+                          triggerVariant="ghost"
+                          triggerSize="icon-xs"
+                          triggerClassName="size-4 text-muted-foreground hover:text-destructive"
+                          triggerLabel="Remove holiday"
+                        >
+                          <Trash2 className="size-3" />
+                        </ConfirmButton>
                       </li>
                     ))}
                   </ul>

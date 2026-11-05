@@ -103,10 +103,12 @@ export async function decideApproval(formData: FormData) {
   }
 
   if (rejected) {
-    await db.ticket.update({
-      where: { id: t.id },
+    // Conditional: a concurrent cancel/decision must not be overwritten.
+    const { count } = await db.ticket.updateMany({
+      where: { id: t.id, approvalState: "PENDING" },
       data: { approvalState: "REJECTED", status: "CANCELLED", closedAt: new Date() },
     });
+    if (count === 0) return;
     await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: t.id, summary: "Rejected request" });
     await notify(t.requesterId, {
       type: "APPROVAL_RESULT",
@@ -139,10 +141,12 @@ async function releaseApprovedRequest(
   comment: string | null,
 ) {
   const resume = t.pendingSince ? resumeData(t, new Date(), await ticketCalendar(t)) : {};
-  await db.ticket.update({
-    where: { id: t.id },
+  // Conditional: a concurrent cancel must not be resurrected.
+  const { count } = await db.ticket.updateMany({
+    where: { id: t.id, approvalState: "PENDING" },
     data: { approvalState: "APPROVED", status: "NEW", ...resume },
   });
+  if (count === 0) return;
   await writeAudit({ userId: actorId, action: "UPDATE", entity: "Ticket", entityId: t.id, summary: "Approved request" });
   // Now that it's live, run the creation automations that were held back while
   // pending, then auto-assign from the routed group.

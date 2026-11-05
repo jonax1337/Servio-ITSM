@@ -15,9 +15,9 @@ import { FormAnswers } from "@/components/tickets/form-answers";
 import { effectiveApprovalStages } from "@/lib/service-forms";
 import { getMaxUploadMb } from "@/lib/settings";
 import { reRequestCatalogItem } from "@/lib/actions/catalog";
-import { ApprovalProgress } from "../approval-progress";
+import { ApprovalProgress, type ProgressStage } from "../approval-progress";
 import {
-  TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, ticketRef,
+  APPROVAL_STATUSES, TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, ticketRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -65,6 +65,7 @@ export default async function PortalTicketDetail({
   const stages = ticket.catalogItem ? effectiveApprovalStages(ticket.catalogItem) : [];
   const isCatalogRequest = !!ticket.catalogItemId;
   const canReRequest = isCatalogRequest && ticket.status === "CANCELLED";
+  const wasDeclined = ticket.approvalState === "REJECTED";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -112,7 +113,7 @@ export default async function PortalTicketDetail({
         </div>
       </div>
 
-      {stages.length > 0 && (ticket.approvalState === "PENDING" || ticket.approvalState === "APPROVED" || ticket.approvalState === "REJECTED") ? (
+      {stages.length > 0 && ticket.approvalState && APPROVAL_STATUSES.includes(ticket.approvalState as (typeof APPROVAL_STATUSES)[number]) ? (
         <ApprovalProgress
           className="mt-6"
           state={ticket.approvalState}
@@ -121,9 +122,10 @@ export default async function PortalTicketDetail({
             return {
               index: i,
               kind: (s.groupId ? "group" : "user") as "group" | "user",
-              status: (seated?.status ?? "PENDING") as "PENDING" | "APPROVED" | "REJECTED",
+              status: (seated?.status ?? "PENDING") as ProgressStage["status"],
               approverName: seated?.approver?.name ?? seated?.approver?.email ?? null,
               decidedAt: seated?.decidedAt ?? null,
+              comment: seated?.comment ?? null,
             };
           })}
         />
@@ -132,7 +134,7 @@ export default async function PortalTicketDetail({
       {canReRequest ? (
         <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">This request was declined</p>
+            <p className="font-medium">{wasDeclined ? "This request was declined" : "This request was cancelled"}</p>
             <p className="text-sm text-muted-foreground">You can resubmit it with the same details to try again.</p>
           </div>
           <form action={reRequestCatalogItem}>

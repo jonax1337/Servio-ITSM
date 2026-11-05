@@ -236,10 +236,16 @@ export function EscalationManager({
                         <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{s.thresholdPercent}%</span>
                         <StatusBadge map={ESCALATION_ACTION_META} value={s.action} />
                         <span className="min-w-0 flex-1 truncate text-muted-foreground">{stepTarget(s, groups, users)}</span>
-                        <form action={deleteStep}>
-                          <input type="hidden" name="id" value={s.id} />
-                          <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete step"><Trash2 className="size-4 text-muted-foreground" /></Button>
-                        </form>
+                        <ConfirmButton
+                          action={deleteStep}
+                          fields={{ id: s.id }}
+                          title="Delete escalation step?"
+                          description={`The ${s.thresholdPercent}% step will be removed from this policy.`}
+                          triggerVariant="ghost"
+                          triggerLabel="Delete step"
+                        >
+                          <Trash2 className="size-4 text-muted-foreground" />
+                        </ConfirmButton>
                       </li>
                     ))}
                   </ul>

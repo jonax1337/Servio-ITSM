@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { updateProblemField, addProblemComment } from "@/lib/actions/problems";
 import { updateChangeField, addChangeComment } from "@/lib/actions/changes";
+import { setTicketProblem, setTicketChange } from "@/lib/actions/tickets";
 import {
   resolveGroupId,
   resolveCategoryId,
@@ -19,9 +20,20 @@ import {
   RISKS,
   problemRef,
   changeRef,
+  ticketRef,
 } from "@/lib/constants";
-import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite } from "../helpers";
+import type { AiOperation, AiOpResult } from "../types";
+import {
+  ok,
+  err,
+  str,
+  toFormData,
+  coerceEnum,
+  richHtml,
+  verifyFieldWrite,
+  parseRecordNumber,
+  clip,
+} from "../helpers";
 
 /**
  * Problems & Changes. Exports `OPERATIONS: AiOperation[]`, one entry per capability.
@@ -35,6 +47,51 @@ import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite } from
 function parseRefId(ref: unknown): number | null {
   const m = String(ref ?? "").match(/(\d+)/);
   return m ? Number(m[1]) : null;
+}
+
+const TICKET_REF_PREFIXES = ["INC", "REQ"] as const;
+const dateTime = (d: Date | null) => (d ? d.toISOString().slice(0, 16).replace("T", " ") : null);
+const ticketLinks = (rows: { id: number; prefix: string; title: string; status: string }[]) =>
+  rows.map((t) => ({ ref: ticketRef(t.id, t.prefix), title: t.title, status: t.status }));
+
+type LinkTarget = { name: "problem" | "change"; prefix: string; field: "problemId" | "changeId" };
+const PROBLEM_LINK: LinkTarget = { name: "problem", prefix: "PRB", field: "problemId" };
+const CHANGE_LINK: LinkTarget = { name: "change", prefix: "CHG", field: "changeId" };
+
+/**
+ * Link (or, with target "none", unlink) a ticket and a problem/change through the
+ * same server action the ticket page uses. That action returns silently when it
+ * refuses (role, missing target), so the stored relation is read back and checked.
+ */
+async function setTicketLink(a: Record<string, unknown>, link: LinkTarget): Promise<AiOpResult> {
+  const ticketId = parseRecordNumber(a.ref, TICKET_REF_PREFIXES);
+  if (!ticketId) return err(`Cannot parse a ticket ref (INC-0042 / REQ-0042) from "${a.ref}".`);
+  const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { id: true, prefix: true } });
+  if (!ticket) return err(`Ticket not found: ${a.ref}`);
+
+  const raw = str(a.target)?.toLowerCase() ?? "";
+  const unlink = raw === "none";
+  const targetId = unlink ? null : parseRecordNumber(raw, [link.prefix]);
+  if (!unlink && !targetId) {
+    return err(`Cannot parse a ${link.name} ref (${link.prefix}-0019) from "${a.target}", or use "none" to unlink.`);
+  }
+  if (!unlink) {
+    const lookup = { where: { id: targetId! }, select: { id: true } };
+    const found = link.name === "problem" ? await db.problem.findUnique(lookup) : await db.change.findUnique(lookup);
+    if (!found) return err(`${link.name === "problem" ? "Problem" : "Change"} not found: ${a.target}`);
+  }
+
+  const act = link.name === "problem" ? setTicketProblem : setTicketChange;
+  await act(toFormData({ ticketId: ticket.id, [link.field]: unlink ? "none" : targetId }));
+
+  const after = await db.ticket.findUnique({ where: { id: ticket.id }, select: { problemId: true, changeId: true } });
+  const ref = ticketRef(ticket.id, ticket.prefix);
+  const targetRef = link.name === "problem" ? problemRef : changeRef;
+  return verifyFieldWrite(
+    after?.[link.field],
+    unlink ? "none" : String(targetId),
+    unlink ? `Unlinked ${ref} from its ${link.name}` : `Linked ${ref} to ${targetRef(targetId!)}`,
+  );
 }
 
 export const OPERATIONS: AiOperation[] = [
@@ -348,6 +405,167 @@ export const OPERATIONS: AiOperation[] = [
         toFormData({ changeId: change.id, bodyHtml: richHtml(text) ?? text, isInternal: internal ? "on" : "" }),
       );
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${changeRef(change.id)}`);
+    },
+  },
+  {
+    id: "ticket.set_problem",
+    group: "Problems",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Link a ticket (incident/request) to a Problem, or unlink it. Works from either side: pass the ticket ref and the problem ref. " +
+      "Use target 'none' to remove the ticket's current problem link. A ticket has at most one problem.",
+    input: z.object({
+      ref: z.string().describe("ticket ref, e.g. 'INC-0157'"),
+      target: z.string().describe("problem ref, e.g. 'PRB-0019', or 'none' to unlink"),
+    }),
+    label: (a) => (str(a.target)?.toLowerCase() === "none" ? `Unlink ${a.ref} from its problem` : `Link ${a.ref} → ${a.target}`),
+    run: (a) => setTicketLink(a, PROBLEM_LINK),
+  },
+  {
+    id: "ticket.set_change",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Link a ticket (incident/request) to a Change, or unlink it. Works from either side: pass the ticket ref and the change ref. " +
+      "Use target 'none' to remove the ticket's current change link. A ticket has at most one change.",
+    input: z.object({
+      ref: z.string().describe("ticket ref, e.g. 'INC-0157'"),
+      target: z.string().describe("change ref, e.g. 'CHG-0025', or 'none' to unlink"),
+    }),
+    label: (a) => (str(a.target)?.toLowerCase() === "none" ? `Unlink ${a.ref} from its change` : `Link ${a.ref} → ${a.target}`),
+    run: (a) => setTicketLink(a, CHANGE_LINK),
+  },
+  {
+    id: "problem.get",
+    group: "Problems",
+    kind: "read",
+    minRole: "AGENT",
+    description:
+      "Get ONE Problem in full by ref ('PRB-0019' or '19'): status, priority, impact, root cause, workaround, team, assignee, " +
+      "description, linked incidents/tickets, changes that reference it and the latest comments.",
+    input: z.object({ ref: z.string().describe("problem ref or number") }),
+    run: async (a) => {
+      const id = parseRecordNumber(a.ref, [PROBLEM_LINK.prefix]);
+      if (!id) return err(`Cannot parse a problem number from "${a.ref}".`);
+      const p = await db.problem.findUnique({
+        where: { id },
+        include: {
+          assignee: { select: { name: true } },
+          group: { select: { name: true } },
+          category: { select: { name: true } },
+          tickets: { select: { id: true, prefix: true, title: true, status: true }, orderBy: { id: "desc" }, take: 20 },
+          changes: { select: { id: true, title: true, status: true }, orderBy: { id: "desc" }, take: 10 },
+          comments: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            select: { body: true, isInternal: true, createdAt: true, author: { select: { name: true } } },
+          },
+        },
+      });
+      if (!p) return err(`Problem not found: ${a.ref}`);
+      return ok(`${problemRef(p.id)} — ${p.title}`, {
+        ok: true,
+        problem: {
+          ref: problemRef(p.id),
+          title: p.title,
+          status: p.status,
+          priority: p.priority,
+          impact: p.impact,
+          rootCause: clip(p.rootCause) ?? "not recorded",
+          workaround: clip(p.workaround) ?? "not recorded",
+          team: p.group?.name ?? null,
+          category: p.category?.name ?? null,
+          assignee: p.assignee?.name ?? "Unassigned",
+          created: dateTime(p.createdAt),
+          resolved: dateTime(p.resolvedAt),
+          description: clip(p.description),
+          linkedTickets: ticketLinks(p.tickets),
+          linkedChanges: p.changes.map((c) => ({ ref: changeRef(c.id), title: c.title, status: c.status })),
+          latestComments: p.comments.map((c) => ({
+            by: c.author.name,
+            internal: c.isInternal,
+            at: dateTime(c.createdAt),
+            text: clip(c.body, 300),
+          })),
+        },
+      });
+    },
+  },
+  {
+    id: "change.get",
+    group: "Changes",
+    kind: "read",
+    minRole: "AGENT",
+    description:
+      "Get ONE Change in full by ref ('CHG-0025' or '25'): type, risk, priority, impact, status, planned/actual start and end, " +
+      "reason, implementation plan, rollback (backout) plan, CAB approval rule and each approver's decision with comment, " +
+      "linked problem and tickets, assignee, team and the latest comments. Use it before reasoning about a change.",
+    input: z.object({ ref: z.string().describe("change ref or number") }),
+    run: async (a) => {
+      const id = parseRecordNumber(a.ref, [CHANGE_LINK.prefix]);
+      if (!id) return err(`Cannot parse a change number from "${a.ref}".`);
+      const c = await db.change.findUnique({
+        where: { id },
+        include: {
+          assignee: { select: { name: true } },
+          createdBy: { select: { name: true } },
+          group: { select: { name: true } },
+          category: { select: { name: true } },
+          problem: { select: { id: true, title: true, status: true } },
+          approvals: {
+            orderBy: { createdAt: "asc" },
+            select: { status: true, comment: true, decidedAt: true, approver: { select: { name: true } } },
+          },
+          tickets: { select: { id: true, prefix: true, title: true, status: true }, orderBy: { id: "desc" }, take: 20 },
+          comments: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            select: { body: true, isInternal: true, createdAt: true, author: { select: { name: true } } },
+          },
+        },
+      });
+      if (!c) return err(`Change not found: ${a.ref}`);
+      return ok(`${changeRef(c.id)} — ${c.title}`, {
+        ok: true,
+        change: {
+          ref: changeRef(c.id),
+          title: c.title,
+          type: c.type,
+          status: c.status,
+          risk: c.risk,
+          priority: c.priority,
+          impact: c.impact,
+          team: c.group?.name ?? null,
+          category: c.category?.name ?? null,
+          assignee: c.assignee?.name ?? "Unassigned",
+          requestedBy: c.createdBy?.name ?? null,
+          plannedStart: dateTime(c.plannedStart),
+          plannedEnd: dateTime(c.plannedEnd),
+          actualStart: dateTime(c.actualStart),
+          actualEnd: dateTime(c.actualEnd),
+          reason: clip(c.reason),
+          description: clip(c.description),
+          implementationPlan: clip(c.implementationPlan, 1500) ?? "not recorded",
+          rollbackPlan: clip(c.rollbackPlan, 1500) ?? "not recorded",
+          approvalRule: c.approvalThreshold ? `${c.approvalRule} (${c.approvalThreshold})` : c.approvalRule,
+          approvals: c.approvals.map((x) => ({
+            approver: x.approver.name,
+            decision: x.status,
+            comment: clip(x.comment, 300),
+            decidedAt: dateTime(x.decidedAt),
+          })),
+          linkedProblem: c.problem ? { ref: problemRef(c.problem.id), title: c.problem.title, status: c.problem.status } : null,
+          linkedTickets: ticketLinks(c.tickets),
+          latestComments: c.comments.map((x) => ({
+            by: x.author.name,
+            internal: x.isInternal,
+            at: dateTime(x.createdAt),
+            text: clip(x.body, 300),
+          })),
+        },
+      });
     },
   },
 ];

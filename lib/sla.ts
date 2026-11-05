@@ -106,17 +106,79 @@ export function deadlineFrom(
  * Data to spread into `ticket.create` — resolves the SLA and stamps the
  * response/resolve deadlines. Returns `{}` when no SLA applies. When the SLA has
  * a business calendar, deadlines honour working hours + holidays.
+ *
+ * `bankedPauseMs` extends both deadlines by time the ticket already spent paused
+ * (business ms when the SLA has a calendar, matching how `pausedMs` is banked).
  */
-export async function slaCreateData(input: SlaInput, from: Date = new Date()) {
+export async function slaCreateData(input: SlaInput, from: Date = new Date(), bankedPauseMs = 0) {
   const sla = await resolveSla(input);
   if (!sla) return {} as Record<string, never>;
   const calendar = await loadBusinessCalendar(sla.businessCalendarId);
-  const responseDueAt = deadlineFrom(from, sla.responseMins, calendar);
-  const resolveDueAt = deadlineFrom(from, sla.resolveMins, calendar);
+  const bankedMins = bankedPauseMs / 60_000;
+  const responseDueAt = deadlineFrom(from, sla.responseMins + bankedMins, calendar);
+  const resolveDueAt = deadlineFrom(from, sla.resolveMins + bankedMins, calendar);
   // Degenerate calendar (no open time): no computable clock — don't stamp
   // deadlines that would breach the instant the ticket is created.
   if (!responseDueAt && !resolveDueAt) return {} as Record<string, never>;
   return { slaId: sla.id, responseDueAt, resolveDueAt, dueAt: resolveDueAt };
+}
+
+const TERMINAL_STATUSES = ["RESOLVED", "CLOSED", "CANCELLED"];
+
+type RepriceTicket = { status: string; createdAt: Date; pausedMs: number; firstResponseAt: Date | null };
+type RepriceTarget = { priority: string; serviceId: string | null; slaId: string | null };
+
+/**
+ * The SLA id to treat as an explicit choice when repricing. A ticket stores the
+ * SLA that matched at creation; an SLA bound to a priority ("Gold — Critical")
+ * only governs that priority, so after a priority change it must not be passed
+ * back as explicit — the new priority's SLA has to win. Priority-agnostic SLAs
+ * (no priority) remain an explicit choice.
+ */
+async function explicitSlaId(target: RepriceTarget): Promise<string | null> {
+  if (!target.slaId) return null;
+  const sla = await db.sLA.findUnique({ where: { id: target.slaId }, select: { priority: true } });
+  return sla?.priority && sla.priority !== target.priority ? null : target.slaId;
+}
+
+/**
+ * Patch keys for a priority/service/SLA change on a ticket. Deadlines are
+ * re-measured from the ticket's ORIGINAL start plus the pause time it already
+ * banked, so re-prioritising never restarts the clock (raising the priority can
+ * legitimately make a ticket late at once). A recorded first response keeps the
+ * response deadline it was measured against. Returns {} for a terminal ticket
+ * (clock frozen) or when no SLA applies.
+ *
+ * `slaChosen`: the SLA itself is what the user just picked, so it is applied as
+ * given even when it is bound to another priority. `slaCleared`: an explicit SLA
+ * removal; with no fallback SLA the deadlines it drove are cleared.
+ *
+ * Shared by every priority writer: console, macros, escalate, major incident,
+ * REST and automations. Callers that also change the status must reprice FIRST
+ * and run `statusChangeData` on the merged result, so a pause resume shifts the
+ * new deadlines rather than being overwritten by them.
+ *
+ * Known limit: banked `pausedMs` is in the old SLA's units (business ms under a
+ * calendar, wall ms otherwise); switching between a 24/7 and a calendar SLA
+ * reinterprets it in the new SLA's units.
+ */
+export async function slaRepricePatch(
+  current: RepriceTicket | null,
+  next: RepriceTarget,
+  opts: { slaChosen?: boolean; slaCleared?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  if (!current || TERMINAL_STATUSES.includes(current.status)) return {};
+  const sla = await slaCreateData(
+    { ...next, slaId: opts.slaChosen ? next.slaId : await explicitSlaId(next) },
+    current.createdAt,
+    current.pausedMs,
+  );
+  if (!("slaId" in sla)) {
+    return opts.slaCleared ? { responseDueAt: null, resolveDueAt: null, dueAt: null } : {};
+  }
+  const patch: Record<string, unknown> = { ...sla };
+  if (current.firstResponseAt) delete patch.responseDueAt;
+  return patch;
 }
 
 type ClockTicket = {
@@ -205,6 +267,7 @@ export function resolveBreachData(ticket: { resolveDueAt: Date | null }, resolve
 export function statusChangeData(
   current: ClockTicket & {
     status: string;
+    approvalState?: string | null;
     resolutionCode?: string | null;
     resolutionNote?: string | null;
   },
@@ -229,6 +292,9 @@ export function statusChangeData(
     patch.resolveBreached = effResolveDueAt ? now > effResolveDueAt : false;
   }
   if (value === "CLOSED") patch.closedAt = now;
+  // Cancelling a request still awaiting approval withdraws that approval. The
+  // caller closes its TicketApproval rows via withdrawPendingApprovals.
+  if (value === "CANCELLED" && current.approvalState === "PENDING") patch.approvalState = "CANCELLED";
   if (value === "OPEN" || value === "NEW") {
     patch.resolvedAt = null;
     patch.closedAt = null;

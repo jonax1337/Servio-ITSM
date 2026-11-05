@@ -7,6 +7,7 @@ import { getSetting } from "@/lib/settings";
 import { parseTicketRef, ticketRef } from "@/lib/constants";
 import { writeAudit } from "@/lib/audit";
 import { createTicketCore, notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
+import { isForwardedSubject, stripQuotedHtml, stripQuotedText } from "./reply-strip";
 import type { ParsedInboundMail } from "./types";
 
 export type InboundResult =
@@ -79,6 +80,7 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
         slaId: null,
       },
       sender.id,
+      mail.messageId,
     );
     const email = await recordInboundEmail({
       fromEmail: from,
@@ -115,12 +117,13 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   // corroborated inside matchTicket, so those arrive with corroborated=true.)
   const isInternal = !!notified || !match!.corroborated;
 
+  const reply = replyContent(mail, body);
   const comment = await db.ticketComment.create({
     data: {
       ticketId,
       authorId: sender.id,
-      body: body || "(empty message)",
-      bodyHtml,
+      body: reply.text || "(empty message)",
+      bodyHtml: reply.html,
       isInternal,
       channel: "EMAIL",
       fromEmail: from,
@@ -144,7 +147,7 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   await db.ticketComment.update({ where: { id: comment.id }, data: { emailMessageId: email.id } });
   await saveInboundAttachments(mail, { commentId: comment.id }, sender.id);
 
-  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { type: true, requesterId: true } });
+  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { type: true, prefix: true, requesterId: true } });
   // Only a CUSTOMER reply reopens a resolved/closed ticket — a vendor's internal
   // note shouldn't. Otherwise just bump the activity timestamp.
   if (isInternal) {
@@ -161,14 +164,33 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   }
 
   // In-app notify: assignee + watchers (except the sender).
-  const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
-  const ref = ticketRef(ticketId, t?.type ?? "INC");
+  const snippet = reply.text.length > 160 ? `${reply.text.slice(0, 157)}…` : reply.text;
+  const ref = ticketRef(ticketId, t?.prefix || t?.type || "INC");
   await notifyAssigneeAndWatchers(ticketId, sender.id, {
     type: "COMMENT", title: `Email reply on ${ref}`, body: snippet, entity: "Ticket", entityId: String(ticketId),
   });
   await writeAudit({ userId: sender.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Email reply received" });
 
   return { action: "appended", ticketId };
+}
+
+/**
+ * What lands in the ticket comment for a reply: the sender's own words without
+ * the quoted conversation (forwards keep everything). Stripping runs on the RAW
+ * html because the sanitizer removes the quote markers; the result is sanitized
+ * afterwards. `fullText` is the unstripped plaintext used for the mail log.
+ */
+function replyContent(mail: ParsedInboundMail, fullText: string): { text: string; html: string | null } {
+  if (isForwardedSubject(mail.subject)) {
+    return { text: fullText, html: mail.html ? sanitizeCommentHtml(mail.html) : null };
+  }
+  const rawText = mail.text?.trim() ?? "";
+  const text = rawText ? stripQuotedText(rawText) : null;
+  // The text twin decides: only when it shows trailing history (something was cut)
+  // is the html quote container safe to drop — inline answers sit inside it.
+  const stripHtml = text === null || text !== rawText;
+  const html = mail.html ? sanitizeCommentHtml(stripHtml ? stripQuotedHtml(mail.html) : mail.html) : null;
+  return { text: text ?? (html ? htmlToText(html) : fullText), html };
 }
 
 // ── Matching ───────────────────────────────────────────────────────────────

@@ -217,37 +217,37 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
   const base = buildTicketWhere({ ...filters, status: undefined });
   const href = ticketsHref(filters);
 
-  // Resolved-in-window tickets carry the met/breached signal + MTTR.
+  // Resolved-in-window tickets carry MTTR; those that ran under an SLA also carry
+  // the met/breached signal (a ticket with no SLA can neither meet nor miss one).
   const rows = await db.ticket.findMany({
     where: { AND: [base, { resolvedAt: { gte: windowStart } }] },
-    select: { createdAt: true, resolvedAt: true, resolveBreached: true },
+    select: { createdAt: true, resolvedAt: true, resolveBreached: true, resolveDueAt: true },
   });
-  // Live breaches: still-open tickets already past a deadline. Excluding these
-  // (as the old gauge did) made compliance look better the more work was overdue.
+  // Live breaches: still-active, unpaused tickets already past their resolve
+  // deadline. Excluding these made compliance look better the more work was
+  // overdue. Cancelled tickets never resolve and paused ones have a stale
+  // (not yet shifted) deadline, so neither counts.
   const openBreached = await db.ticket.count({
     where: {
       AND: [
         base,
-        { resolvedAt: null },
-        { OR: [
-          { resolveBreached: true },
-          { resolveDueAt: { lt: now } },
-          { responseBreached: true },
-          { responseDueAt: { lt: now }, firstResponseAt: null },
-        ] },
+        { resolvedAt: null, pendingSince: null },
+        { status: { notIn: ["RESOLVED", "CLOSED", "CANCELLED", "PENDING", "ON_HOLD"] } },
+        { resolveDueAt: { lt: now } },
       ],
     },
   });
 
   const resolved = rows.length;
-  const denom = resolved + openBreached;
-  if (denom === 0) return { kind: "sla", pct: null, mttrHours: null, resolved: 0, href };
-
-  // Resolution SLA: closed-on-time count over (resolved-in-window + live open breaches).
-  const resolutionMet = rows.filter((r) => !r.resolveBreached).length;
-  const pct = Math.round((resolutionMet / denom) * 100);
+  const underSla = rows.filter((r) => r.resolveDueAt);
+  const denom = underSla.length + openBreached;
   const totalMs = rows.reduce((a, r) => a + (r.resolvedAt!.getTime() - r.createdAt.getTime()), 0);
   const mttrHours = resolved === 0 ? null : Math.round(totalMs / resolved / 3600000);
+  if (denom === 0) return { kind: "sla", pct: null, mttrHours, resolved, href };
+
+  // Resolution SLA: resolved-on-time over (resolved under an SLA + live open breaches).
+  const resolutionMet = underSla.filter((r) => !r.resolveBreached).length;
+  const pct = Math.round((resolutionMet / denom) * 100);
   return { kind: "sla", pct, mttrHours, resolved, href };
 }
 

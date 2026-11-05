@@ -94,6 +94,8 @@ Actions include `createTicket`, `updateTicketField` (incl. switching `type` — 
 
 **Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
 
+**Refusals & list order:** ticket actions (`updateTicketField`, `setTicketResolution`, `setTicketPending`) return `{ ok, error }` and report why a change was refused (e.g. not a member of the ticket's group, awaiting approval, workflow disallows it) instead of silently doing nothing. On the ticket list, priority sorts by severity and status by lifecycle order, not alphabetically (`lib/ticket-list.ts` `sortByRank`).
+
 **Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar to set assignee/team/priority/status on many tickets at once (`bulkUpdateTickets` re-runs `updateTicketField` per ticket, so transitions/SLA/automations stay correct). All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
 
 ### Problems
@@ -113,6 +115,8 @@ Includes a built-in approval workflow.
 | Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval`, `setCabRule` (CAB quorum/percent rule); `lib/actions/change-assets.ts` — `attachAffectedCi`/`detachAffectedCi` |
 | Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval`; affected-CI panel with automated impact/risk |
 
+**Change rules** (`lib/change-rules.ts`): the planned end must be after the start; submitting for CAB requires an implementation plan, a rollback plan and a planned window (`STANDARD` changes are exempt) and reports what is missing; the window (`updateChangeWindow`, `change-window-editor`) is editable only in `DRAFT`/`SUBMITTED`/`REJECTED`, i.e. before approval. The change and problem lists search by ref (`lib/ref-search.ts`: `CHG-0025`, `#25`, `25`) as well as title.
+
 **CAB quorum & affected CIs:** a change carries an `approvalRule` (`UNANIMOUS` / `QUORUM` / `PERCENT`) + `approvalThreshold`; `lib/cab.ts` (`evaluateCab`) tallies seated approvals against the rule and reports whether the board is satisfied, and `setCabRule` (MANAGER+) can lower the bar mid-flight. The affected-CI panel attaches `ChangeAsset` rows and surfaces blast-radius impact from `lib/cmdb-graph.ts` (`computeImpact`).
 
 ### Approvals
@@ -124,7 +128,9 @@ A cross-cutting inbox for the current user's pending approvals (currently backed
 | Actions | `lib/actions/approvals.ts` — `decideApproval` (advances multi-stage catalog approvals), `seatCatalogStage`/`seatCatalogApprovalStages` (seat the ordered stages), plus the generic ad-hoc `requestApproval`/`decideEntityApproval`/`cancelApproval` |
 | Components | `components/approvals/approval-decision` |
 
-**Multi-stage / group catalog approvals:** a `CatalogItem` can define ordered `approvalStages` (each an approver *or* a group) via `lib/actions/catalog-admin.ts` → `updateApprovalStages` (editor UI in the catalog admin page). New requests seat stage 0; approving a stage advances to the next (`seatCatalogStage`), and a rejected/cancelled request can be re-raised with the saved answers via `lib/actions/catalog.ts` → `reRequestCatalogItem`. The portal shows a stage-progress timeline.
+**Multi-stage / group catalog approvals:** a `CatalogItem` can define ordered `approvalStages` (each an approver *or* a group) via `lib/actions/catalog-admin.ts` → `updateApprovalStages` (editor UI in the catalog admin page). New requests seat stage 0; approving a stage advances to the next (`seatCatalogStage`), and a rejected/cancelled request can be re-raised with the saved answers via `lib/actions/catalog.ts` → `reRequestCatalogItem`. The portal shows a stage-progress timeline, including each approver's decision comment to the requester.
+
+**Awaiting approval = cancel only:** while `approvalState` is `PENDING` (or already `CANCELLED`) the only allowed status change is `CANCELLED` (`approvalAllowsStatus` in `lib/transitions.ts`) — enforced in console actions, macros, automations, the REST API (`409`) and Sable. Cancelling sets `approvalState` to `CANCELLED` and withdraws the pending approvals (`withdrawPendingApprovals` in `lib/approval-seating.ts`).
 
 ---
 
@@ -261,7 +267,9 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
 | Macros | `settings/macros/page.tsx` (AGENT+ for personal macros; sharing is MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`); `components/settings/macro-manager` |
 
-**Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach.
+**Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach. `BUMP_PRIORITY` deliberately does **not** reprice the SLA (a tighter tier measured from creation would breach at once).
+
+**Re-pricing:** a priority/service/SLA change re-measures the deadlines from the ticket's creation plus the pause time it already banked — the clock never restarts, so raising a priority can make a ticket late at once. A priority-bound SLA follows the new priority unless that SLA was picked explicitly; a recorded first response keeps its response deadline; terminal tickets are untouched. Every priority writer (console, macros, escalate, major incident, REST, automations, VIP bump) shares `slaRepricePatch` in `lib/sla.ts`. Resolving a ticket nobody answered stamps the first response. The dashboard **SLA met** gauge counts only resolved tickets that ran under an SLA, plus active, unpaused tickets already past their resolve deadline.
 
 ### Audit Log
 Read-only viewer over the existing `AuditLog` model, ADMIN-only (also gated in `lib/route-guard.ts`).
@@ -295,8 +303,11 @@ Global command palette (`Cmd/Ctrl+K` or `/`), not a route.
 | Component | `components/command-menu.tsx` (mounted in the console layout) |
 | Backend | `app/api/search/route.ts` — a Node route handler that fans out across tickets, problems, changes, assets, people, and services, returning grouped `{ group, href, title, sub }` results. Auth-gated via `getSessionUser`. Ticket matching reuses the shared cross-field helper in `lib/search.ts` (`ticketSearchWhere`). |
 
+### Mail threading & inbound replies
+Subject refs use the stored ticket prefix (stable after a type switch). The auto-acknowledgement for a ticket created from an email threads onto the customer's original `Message-ID`. Quoted reply history (Outlook/Gmail/Apple attributions, `>` quotes) is stripped from inbound reply comments by `lib/mail-inbound/reply-strip.ts`; the raw mail stays in the mail log and forwards (`Fwd:`/`WG:`) are left untouched. A customer reply reopens a resolved ticket (see Portal).
+
 ### CSAT surveys
-A post-resolution satisfaction survey. On a ticket's resolution, `lib/actions/tickets.ts` mints a `SurveyResponse` row and the resolution email ([`lib/email-templates.ts`](../lib/email-templates.ts)) carries a token link. The rating page is **public and unauthenticated** (the token is the credential) — `proxy.ts` whitelists `/survey`.
+A post-resolution satisfaction survey. On a ticket's resolution, `lib/actions/tickets.ts` mints a `SurveyResponse` row and the resolution email ([`lib/email-templates.ts`](../lib/email-templates.ts)) carries a token link. The resolution mail CCs the ticket's participants, threads onto the ticket's mail conversation, and includes the public resolution note (`{{resolution}}` template variable; omitted for an internal note). The rating page is **public and unauthenticated** (the token is the credential) — `proxy.ts` whitelists `/survey`.
 
 | | |
 | --- | --- |
@@ -335,7 +346,7 @@ The requester surface under `app/portal/*`, laid out by `app/portal/layout.tsx` 
 | Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles (search + category pills) | `components/portal/knowledge-browser`; only published/public articles surface |
 | Ask Sable | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#sable-in-the-self-service-portal-end-users)) — uses the same assistant-ui `Thread` UI as the console, USER-scoped and still confirm-to-create | `components/portal/sable-widget`; `lib/portal-assistant.ts`; streaming route `app/api/portal/assistant/route.ts` + confirm-create `app/api/portal/assistant/create/route.ts` |
 
-Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Sable, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. All privileged mutations stay in the console action files.
+Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Sable, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. Customer replies (portal, Sable, inbound mail) reopen `RESOLVED`/`CLOSED` tickets through the configured workflow (`reopenOnCustomerReply` in `lib/ticket-core.ts`); portal replies and attachments are refused on `CLOSED`/`CANCELLED` tickets. Replies are rate-limited per user (`REPLY_RATE_LIMIT`, 10/min) and uploads by `USER`-role accounts too (`UPLOAD_RATE_LIMIT`, 30/min) — see [configuration.md](configuration.md). All privileged mutations stay in the console action files.
 
 ---
 
