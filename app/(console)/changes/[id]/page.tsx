@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Server, AlertTriangle, Ticket as TicketIcon,
-  ClipboardList, RotateCcw, FileText, X,
+  ArrowLeft, Server, Ticket as TicketIcon,
+  ClipboardList, RotateCcw, FileText, Flag,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { RelatedArticlesCard } from "@/components/related-articles-card";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
 import { allowedTransitions } from "@/lib/workflow";
@@ -15,19 +16,23 @@ import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { isWindowEditable } from "@/lib/change-rules";
+import {
+  canSeatApprovers, isChangeLocked, isWindowEditable, requiresRescheduleReason, submitBlockers,
+} from "@/lib/change-rules";
 import { ChangeWindowEditor } from "@/components/changes/change-window-editor";
-import { SubmitForApproval }from "@/components/changes/submit-for-approval";
+import { SubmitForApproval } from "@/components/changes/submit-for-approval";
+import { CancelChangeButton } from "@/components/changes/cancel-change";
+import { ChangeDetailsDialog, ChangeTextCard } from "@/components/changes/change-editors";
+import { ChangeProblemChip, ChangeProblemPicker } from "@/components/changes/change-problem-link";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
 import { ApprovalProgress } from "@/components/changes/approval-progress";
 import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
 import { approverRolesForRisk, evaluateCab } from "@/lib/cab";
 import { computeImpact } from "@/lib/cmdb-graph";
+import { LinkedChip, UnlinkButton } from "@/components/linked-records";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
-import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { EditableTextCard } from "@/components/editable-text-card";
-import { addChangeComment, updateChangeDetails, updateChangeText } from "@/lib/actions/changes";
+import { addChangeComment } from "@/lib/actions/changes";
 import { setTicketChange } from "@/lib/actions/tickets";
 import { LinkPicker } from "@/components/link-picker";
 import { sanitizeCommentHtml } from "@/lib/markdown";
@@ -35,7 +40,7 @@ import { initials } from "@/lib/avatar";
 import type { ComboOption } from "@/components/combobox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, PRIORITY_META,
+  CHANGE_OUTCOME_META, CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, PRIORITY_META,
   changeRef, problemRef, ticketRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -61,7 +66,7 @@ export default async function ChangeDetailPage({
   const changeId = Number(id);
   if (!Number.isFinite(changeId)) notFound();
 
-  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs, allAssets] = await Promise.all([
+  const [change, options, audits, linkableTickets, adHocApprovals, customFieldDefs, allAssets, openProblems] = await Promise.all([
     db.change.findUnique({
       where: { id: changeId },
       include: {
@@ -93,6 +98,12 @@ export default async function ChangeDetailPage({
       orderBy: { name: "asc" },
       take: 500,
     }),
+    db.problem.findMany({
+      where: { status: { not: "CLOSED" } },
+      select: { id: true, title: true },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    }),
   ]);
   if (!change) notFound();
 
@@ -101,6 +112,9 @@ export default async function ChangeDetailPage({
     isFieldVisible(def, entityFieldValues(change)),
   );
 
+  const problemOpts = openProblems
+    .filter((p) => p.id !== change.problemId)
+    .map((p) => ({ value: String(p.id), label: `${problemRef(p.id)} · ${p.title}` }));
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
 
   const me = await getSessionUser();
@@ -108,6 +122,10 @@ export default async function ChangeDetailPage({
   // Manager+ curate the approval board (not the owner — SoD, matches the server).
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const isAgentUser = !!me && isAgent(me.role as Role);
+  // A closed or cancelled change is a finished record: descriptive fields lock, links and comments stay open.
+  const locked = isChangeLocked(change.status);
+  const canEdit = isAgentUser && !locked;
+  const missingForSubmit = submitBlockers(change);
   const approverIds = new Set(change.approvals.map((a) => a.approverId));
   // Offer only people addChangeApprover will actually seat (role per risk, SoD).
   const eligibleIds = new Set(
@@ -167,8 +185,7 @@ export default async function ChangeDetailPage({
   );
   // Managers may re-tune the rule while the board is being seated (DRAFT/APPROVAL,
   // non-STANDARD). Matches the server-side gate in setCabRule.
-  const canSeatRule =
-    canManage && change.type !== "STANDARD" && (change.status === "DRAFT" || change.status === "APPROVAL");
+  const canSeatRule = canManage && change.type !== "STANDARD" && canSeatApprovers(change.status);
 
   const comments = change.comments.map((c) => ({
     id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
@@ -195,17 +212,18 @@ export default async function ChangeDetailPage({
                 changeId={change.id}
                 isStandard={change.type === "STANDARD"}
                 approverCount={change.approvals.length}
+                missing={missingForSubmit}
               />
             ) : null}
-            <EditEntityDialog
-              action={updateChangeDetails}
-              idField="id"
-              id={change.id}
-              title={change.title}
-              description={change.description}
-              descriptionHtml={change.descriptionHtml}
-              entityLabel="change"
-            />
+            {isAgentUser && change.status !== "CANCELLED" && allowedStatuses?.includes("CANCELLED") ?<CancelChangeButton changeId={change.id} /> : null}
+            {canEdit ? (
+              <ChangeDetailsDialog
+                id={change.id}
+                title={change.title}
+                description={change.description}
+                descriptionHtml={change.descriptionHtml}
+              />
+            ) : null}
             <StatusBadge map={RISK_META} value={change.risk} dot />
             <StatusBadge map={CHANGE_STATUS_META} value={change.status} />
           </div>
@@ -232,40 +250,56 @@ export default async function ChangeDetailPage({
 
           {/* Plan cards */}
           <div className="mt-4 grid gap-4">
-            <EditableTextCard
-              action={updateChangeText}
-              idField="id"
+            <ChangeTextCard
               id={change.id}
               field="reason"
               label="Reason for change"
               icon={<FileText className="size-4 text-muted-foreground" />}
               value={change.reason}
               emptyText="Not documented yet."
-              editable={isAgentUser}
+              editable={canEdit}
             />
-            <EditableTextCard
-              action={updateChangeText}
-              idField="id"
+            <ChangeTextCard
               id={change.id}
               field="implementationPlan"
               label="Implementation plan"
               icon={<ClipboardList className="size-4 text-muted-foreground" />}
               value={change.implementationPlan}
               emptyText="Not documented yet."
-              editable={isAgentUser}
+              editable={canEdit}
             />
-            <EditableTextCard
-              action={updateChangeText}
-              idField="id"
+            <ChangeTextCard
               id={change.id}
               field="rollbackPlan"
               label="Rollback plan"
               icon={<RotateCcw className="size-4 text-muted-foreground" />}
               value={change.rollbackPlan}
               emptyText="Not documented yet."
-              editable={isAgentUser}
+              editable={canEdit}
             />
           </div>
+
+          {/* Closure / cancellation record */}
+          {change.outcome || change.closureNotes || change.cancelReason ? (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Flag className="size-4 text-muted-foreground" />
+                  {change.status === "CANCELLED" ? "Cancellation" : "Closure"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2 text-sm leading-relaxed">
+                {change.outcome ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Outcome</span>
+                    <StatusBadge map={CHANGE_OUTCOME_META} value={change.outcome} dot />
+                  </div>
+                ) : null}
+                {change.closureNotes ? <p className="whitespace-pre-wrap">{change.closureNotes}</p> : null}
+                {change.cancelReason ? <p className="whitespace-pre-wrap">{change.cancelReason}</p> : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* Linked records */}
           <div className="mt-6">
@@ -274,42 +308,45 @@ export default async function ChangeDetailPage({
                 <TicketIcon className="size-4 text-muted-foreground" /> Linked records
               </h2>
               {isAgentUser ? (
-                <LinkPicker
-                  action={setTicketChange}
-                  triggerLabel="Link incident"
-                  title="Link an incident"
-                  description="Attach an existing ticket to this change."
-                  hidden={{ changeId: change.id }}
-                  valueName="ticketId"
-                  options={ticketOpts}
-                  placeholder="Choose a ticket"
-                  searchPlaceholder="Search tickets…"
-                  emptyText="No unlinked tickets available."
-                />
+                <div className="flex items-center gap-2">
+                  <ChangeProblemPicker changeId={change.id} options={problemOpts} />
+                  <LinkPicker
+                    action={setTicketChange}
+                    triggerLabel="Link incident"
+                    title="Link an incident"
+                    description="Attach an existing ticket to this change."
+                    hidden={{ changeId: change.id }}
+                    valueName="ticketId"
+                    options={ticketOpts}
+                    placeholder="Choose a ticket"
+                    searchPlaceholder="Search tickets…"
+                    emptyText="No unlinked tickets available."
+                  />
+                </div>
               ) : null}
             </div>
             {(change.problem || change.tickets.length > 0 || change.assets.length > 0) ? (
               <div className="flex flex-wrap gap-2">
                 {change.problem ? (
-                  <Link href={`/problems/${change.problem.id}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                    <AlertTriangle className="size-3.5 text-amber-500" /> {problemRef(change.problem.id)} · {change.problem.title}
-                  </Link>
+                  <ChangeProblemChip
+                    changeId={change.id}
+                    problemId={change.problem.id}
+                    label={`${problemRef(change.problem.id)} · ${change.problem.title}`}
+                    editable={isAgentUser}
+                  />
                 ) : null}
                 {change.tickets.map((t) => (
-                  <span key={t.id} className="group/chip inline-flex items-center rounded-lg border text-xs transition-colors hover:border-primary/40">
-                    <Link href={`/tickets/${t.id}`} className="inline-flex items-center gap-1.5 py-1 pl-2.5 pr-1.5">
-                      <TicketIcon className="size-3.5 text-primary" /> {ticketRef(t.id, t.prefix)} · {t.title}
-                    </Link>
-                    {isAgentUser ? (
-                      <form action={setTicketChange} className="flex">
-                        <input type="hidden" name="ticketId" value={t.id} />
-                        <input type="hidden" name="changeId" value="" />
-                        <button type="submit" aria-label="Unlink" className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/chip:opacity-100">
-                          <X className="size-3.5" />
-                        </button>
-                      </form>
-                    ) : null}
-                  </span>
+                  <LinkedChip
+                    key={t.id}
+                    href={`/tickets/${t.id}`}
+                    icon={<TicketIcon className="size-3.5 text-primary" />}
+                    label={`${ticketRef(t.id, t.prefix)} · ${t.title}`}
+                    unlink={
+                      isAgentUser ? (
+                        <UnlinkButton action={setTicketChange} fields={{ ticketId: t.id, changeId: "" }} />
+                      ) : undefined
+                    }
+                  />
                 ))}
                 {change.assets.map((a) => (
                   <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
@@ -343,11 +380,16 @@ export default async function ChangeDetailPage({
             agentOptions={agentOptions}
           />
 
-          {/* Ad-hoc approvals (in addition to the CAB) */}
+          {/* Ad-hoc sign-offs (in addition to the CAB) */}
+          <p className="mt-8 rounded-lg border border-dashed bg-card/50 px-3 py-2 text-xs text-muted-foreground">
+            The sign-offs below are manual requests to individuals, separate from the CAB above.
+            They do not decide whether this change is approved.
+          </p>
           <EntityApprovals
             entityType="CHANGE"
             entityId={String(change.id)}
             entityTitle={change.title}
+            heading="Ad-hoc sign-offs"
             approvals={adHocApprovals}
             currentUserId={me?.id ?? ""}
             isAdmin={me?.role === "ADMIN"}
@@ -388,7 +430,7 @@ export default async function ChangeDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} />
+            <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} locked={locked} />
           </CardContent>
         </Card>
 
@@ -405,8 +447,13 @@ export default async function ChangeDetailPage({
           <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <Meta label="Priority" value={PRIORITY_META[change.priority]?.label ?? change.priority} />
-            {isAgentUser && isWindowEditable(change.status) ? (
-              <ChangeWindowEditor changeId={change.id} plannedStart={change.plannedStart} plannedEnd={change.plannedEnd} />
+            {canEdit && isWindowEditable(change.status) ? (
+              <ChangeWindowEditor
+                changeId={change.id}
+                plannedStart={change.plannedStart}
+                plannedEnd={change.plannedEnd}
+                requiresReason={requiresRescheduleReason(change.status)}
+              />
             ) : (
               <>
                 <Meta label="Planned start" value={change.plannedStart ? format(change.plannedStart, "PP p") : "—"} />
@@ -418,6 +465,8 @@ export default async function ChangeDetailPage({
             <Meta label="Created" value={format(change.createdAt, "PP p")} />
           </CardContent>
         </Card>
+
+        <RelatedArticlesCard className="mt-4" entityType="CHANGE" entityId={change.id} />
       </aside>
     </div>
   );

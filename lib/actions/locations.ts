@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { LOCATION_TYPES } from "@/lib/constants";
+import type { ActionResult } from "@/lib/action-result";
 
 async function requireAgent() {
   // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
@@ -94,13 +95,21 @@ export async function updateLocation(_prev: LocationState, formData: FormData): 
   return undefined;
 }
 
-export async function deleteLocation(formData: FormData) {
+export async function deleteLocation(formData: FormData): Promise<ActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return { ok: false, error: "Not authorised" };
   const id = String(formData.get("id") ?? "");
-  // detach assets & children first (SetNull not configured, so do it manually)
-  await db.asset.updateMany({ where: { locationId: id }, data: { locationId: null } });
-  await db.location.updateMany({ where: { parentId: id }, data: { parentId: null } });
-  await db.location.delete({ where: { id } }).catch(() => {});
+  const location = await db.location.findUnique({ where: { id }, select: { name: true } });
+  if (!location) return { ok: false, error: "Location not found." };
+  // Both relations are optional, so the schema's default is SetNull: assets
+  // lose their location link (the free-text note stays) and sub-locations move
+  // to the top level. Done explicitly so it is atomic and visible here.
+  await db.$transaction([
+    db.asset.updateMany({ where: { locationId: id }, data: { locationId: null } }),
+    db.location.updateMany({ where: { parentId: id }, data: { parentId: null } }),
+    db.location.delete({ where: { id } }),
+  ]);
+  await writeAudit({ userId: me.id, action: "DELETE", entity: "Location", entityId: id, summary: `Deleted location "${location.name}"` });
   revalidatePath("/locations");
+  return { ok: true };
 }

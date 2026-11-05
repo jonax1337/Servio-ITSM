@@ -27,18 +27,19 @@ export const PROBLEM_TRANSITIONS: TransitionMap = {
 };
 
 export const CHANGE_TRANSITIONS: TransitionMap = {
-  DRAFT: ["SUBMITTED"],
-  SUBMITTED: ["APPROVAL", "DRAFT", "REJECTED"],
+  DRAFT: ["SUBMITTED", "CANCELLED"],
+  SUBMITTED: ["APPROVAL", "DRAFT", "REJECTED", "CANCELLED"],
   // APPROVED is reachable ONLY via the CAB approval flow (decideApproval),
   // never a manual status edit — so it is deliberately absent here.
-  APPROVAL: ["REJECTED", "DRAFT"],
-  APPROVED: ["SCHEDULED", "IN_PROGRESS"],
-  SCHEDULED: ["IN_PROGRESS", "APPROVED"],
+  APPROVAL: ["REJECTED", "DRAFT", "CANCELLED"],
+  APPROVED: ["SCHEDULED", "IN_PROGRESS", "CANCELLED"],
+  SCHEDULED: ["IN_PROGRESS", "APPROVED", "CANCELLED"],
   IN_PROGRESS: ["REVIEW", "FAILED"],
   REVIEW: ["CLOSED", "FAILED"],
   FAILED: ["REVIEW", "CLOSED"],
-  REJECTED: ["DRAFT"],
+  REJECTED: ["DRAFT", "CANCELLED"],
   CLOSED: [],
+  CANCELLED: [], // terminal, like CLOSED
 };
 
 /**

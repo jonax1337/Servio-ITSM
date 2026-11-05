@@ -2,11 +2,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { resolveGroupId, resolveAgentId } from "@/lib/ai-tools";
-import { updateAssetField } from "@/lib/actions/assets";
+import { updateAssetField, linkTicketToAsset, unlinkTicketFromAsset } from "@/lib/actions/assets";
 import { createLocation, updateLocation, deleteLocation } from "@/lib/actions/locations";
-import { ASSET_TYPES, ASSET_STATUSES, LOCATION_TYPES } from "@/lib/constants";
+import { ASSET_TYPES, ASSET_STATUSES, LOCATION_TYPES, PREFIX, ticketRef } from "@/lib/constants";
+import type { ActionResult } from "@/lib/action-result";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, fromActionResult, parseRecordNumber } from "../helpers";
 
 /**
  * CMDB: Assets + Locations. Asset writes go direct-to-Prisma (asset.create) or
@@ -46,6 +47,44 @@ async function resolveAsset(ref: string): Promise<{ asset: { id: string; name: s
     return { error: `Multiple assets are named "${q}". Please specify the asset's tag to disambiguate.` };
   }
   return { asset: matches[0] };
+}
+
+const TICKET_REF_PREFIXES = [PREFIX.ticket, PREFIX.request];
+
+type AssetTicketLinkSpec = {
+  id: string;
+  verb: "Link" | "Unlink";
+  description: string;
+  act: (formData: FormData) => Promise<ActionResult>;
+  done: (assetName: string, ticketRef: string) => string;
+};
+
+/** A write op that links or unlinks an asset and a ticket through the asset page's own actions. */
+function assetTicketLinkOp({ id, verb, description, act, done }: AssetTicketLinkSpec): AiOperation {
+  return {
+    id,
+    group: "Assets",
+    kind: "write",
+    minRole: "AGENT",
+    description,
+    input: z.object({
+      asset: z.string().describe("the asset's name or asset tag"),
+      ticket: z.string().describe("ticket ref, e.g. 'INC-0157'"),
+    }),
+    label: (a) => `${verb} asset “${String(a.asset)}” ${verb === "Link" ? "→" : "from"} ${String(a.ticket)}`,
+    run: async (a) => {
+      const assetName = str(a.asset);
+      if (!assetName) return err("Asset name is required.");
+      const resolved = await resolveAsset(assetName);
+      if ("error" in resolved) return err(resolved.error);
+      const ticketId = parseRecordNumber(a.ticket, TICKET_REF_PREFIXES);
+      if (!ticketId) return err(`Cannot parse a ticket ref (INC-0042 / REQ-0042) from "${a.ticket}".`);
+      const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { id: true, prefix: true } });
+      if (!ticket) return err(`Ticket not found: ${a.ticket}`);
+      const res = await act(toFormData({ assetId: resolved.asset.id, ticketId: ticket.id }));
+      return fromActionResult(res, done(resolved.asset.name, ticketRef(ticket.id, ticket.prefix)));
+    },
+  };
 }
 
 export const OPERATIONS: AiOperation[] = [
@@ -174,6 +213,24 @@ export const OPERATIONS: AiOperation[] = [
       return ok(`Updated ${field} of asset "${asset.name}"`);
     },
   },
+  assetTicketLinkOp({
+    id: "asset.link_ticket",
+    verb: "Link",
+    description:
+      "Link an asset to a ticket (incident/request) it is affected by, so the ticket shows on the asset and vice versa. " +
+      "Identify the asset by its name (or tag) and the ticket by its ref. Linking twice is harmless.",
+    act: linkTicketToAsset,
+    done: (asset, ticket) => `Linked asset "${asset}" to ${ticket}`,
+  }),
+  assetTicketLinkOp({
+    id: "asset.unlink_ticket",
+    verb: "Unlink",
+    description:
+      "Remove the link between an asset and a ticket. Identify the asset by its name (or tag) and the ticket by its ref. " +
+      "Neither the asset nor the ticket is deleted.",
+    act: unlinkTicketFromAsset,
+    done: (asset, ticket) => `Unlinked asset "${asset}" from ${ticket}`,
+  }),
   {
     id: "location.create",
     group: "Locations",
@@ -295,21 +352,13 @@ export const OPERATIONS: AiOperation[] = [
       "Delete a location by name (its assets and child locations are detached, not deleted).",
     input: z.object({ name: z.string().describe("location name to delete") }),
     label: (a) => `Delete location “${String(a.name)}”`,
-    run: async (a, ctx) => {
+    run: async (a, _ctx) => {
       const name = str(a.name);
       if (!name) return err("Location name is required.");
       const target = await findLocation(name);
       if (!target) return err(`Location not found: ${name}`);
 
-      await deleteLocation(toFormData({ id: target.id }));
-      await writeAudit({
-        userId: ctx.userId,
-        action: "DELETE",
-        entity: "Location",
-        entityId: target.id,
-        summary: `Deleted location "${target.name}" via Sable`,
-      });
-      return ok(`Deleted location "${target.name}"`);
+      return fromActionResult(await deleteLocation(toFormData({ id: target.id })), `Deleted location "${target.name}"`);
     },
   },
 ];

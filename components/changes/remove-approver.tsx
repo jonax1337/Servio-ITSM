@@ -12,6 +12,7 @@ export function RemoveApprover({ approvalId, approverName }: { approvalId: strin
       title="Remove approver?"
       description={`${approverName} will be removed from this change's approvers.`}
       confirmLabel="Remove"
+      successMessage="Approver removed"
       triggerVariant="ghost"
       triggerSize="icon-sm"
       triggerLabel="Remove approver"

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
@@ -9,13 +10,39 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
-import { selectApprovers, isEligibleApprover, evaluateCab } from "@/lib/cab";
-import { isWindowEditable, plannedWindowError, submitBlockedMessage, submitBlockers } from "@/lib/change-rules";
+import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
+import {
+  approversToSeat,
+  boardSizeLimit,
+  canSeatApprovers,
+  cancelReasonError,
+  changeLockedMessage,
+  closureError,
+  fieldValueError,
+  invalidSeats,
+  isChangeLocked,
+  isClosureStatus,
+  isWindowEditable,
+  manualStatusError,
+  plannedWindowError,
+  requiresRescheduleReason,
+  rescheduleComment,
+  rescheduleError,
+  settlesApprovalBoard,
+  shouldStampActualEnd,
+  statusLabel,
+  submitBlockedMessage,
+  submitBlockers,
+  windowChanged,
+  windowLockedMessage,
+} from "@/lib/change-rules";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
   changeRef,
+  CHANGE_OUTCOME_META,
   CHANGE_TYPES,
+  problemRef,
   RISKS,
   PRIORITIES,
   IMPACT_URGENCY,
@@ -57,6 +84,12 @@ const createSchema = z.object({
 export type ActionState =
   | { error?: string; fieldErrors?: Record<string, string[]> }
   | undefined;
+
+/** What a change mutation reports back, so the page can toast success or the refusal reason. */
+export type ChangeActionResult = { ok: true } | { ok: false; error: string };
+
+const OK: ChangeActionResult = { ok: true };
+const refuse = (error: string): ChangeActionResult => ({ ok: false, error });
 
 // DB-truth guards: role/isActive freeze in the JWT at login, so every mutation
 // rehydrates them from the user row (see requireAgentUser / groups / sla-admin).
@@ -136,48 +169,61 @@ export async function createChange(
 
 const updateSchema = z.object({
   id: z.coerce.number(),
-  field: z.enum(["status", "type", "risk", "priority", "assigneeId", "groupId", "categoryId"]),
+  field: z.enum(["status", "type", "risk", "impact", "priority", "assigneeId", "groupId", "categoryId"]),
   value: z.string(),
+  // Closing/failing/cancelling record why alongside the status move.
+  outcome: optionalText,
+  closureNotes: optionalText,
+  cancelReason: optionalText,
 });
 
-export async function updateChangeField(formData: FormData) {
+type Agent = NonNullable<Awaited<ReturnType<typeof requireAgentC>>>;
+type Tx = Prisma.TransactionClient;
+
+type StatusMoveDetails = { outcome: string | null; closureNotes: string | null; cancelReason: string | null };
+
+type ChangeSnapshot = {
+  status: string;
+  type: string;
+  groupId: string | null;
+  assigneeId: string | null;
+  actualStart: Date | null;
+  actualEnd: Date | null;
+  outcome: string | null;
+  closureNotes: string | null;
+};
+
+export async function updateChangeField(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return;
+  if (!me) return refuse("Not authorised.");
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
-  const { id, field, value } = parsed.data;
+  if (!parsed.success) return refuse("Invalid request.");
+  const { id, field, value, ...details } = parsed.data;
 
   const isRelation = field.endsWith("Id");
-  const v = isRelation && (value === "none" || value === "") ? null : value;
+  const valueError = isRelation ? null : fieldValueError(field, value);
+  if (valueError) return refuse(valueError);
 
+  const current = await db.change.findUnique({
+    where: { id },
+    select: {
+      status: true, type: true, groupId: true, assigneeId: true,
+      actualStart: true, actualEnd: true, outcome: true, closureNotes: true,
+    },
+  });
+  if (!current) return refuse("Change not found.");
+
+  if (field === "status") return moveChangeStatus(me, id, current, value, details);
+  if (isChangeLocked(current.status)) return refuse(changeLockedMessage(current.status));
+
+  const v = isRelation && (value === "none" || value === "") ? null : value;
   const patch: Record<string, unknown> = { [field]: v };
-  if (field === "status") {
-    const current = await db.change.findUnique({ where: { id }, select: { status: true, actualStart: true } });
-    if (!current) return;
-    // CAB seating never happens through a manual status edit: SUBMITTED/APPROVAL
-    // seat the board via submitChangeForApproval, and APPROVED is set only when
-    // decideApproval records unanimous approval. Allowing any of these here would
-    // let a change reach the approval phase (or be marked approved) with an EMPTY
-    // board — bypassing separation-of-duties entirely. Block them, even if an
-    // admin workflow override would otherwise permit the transition.
-    if (value !== current.status && (value === "SUBMITTED" || value === "APPROVAL" || value === "APPROVED")) return;
-    // Governed lifecycle (built-in map + admin overrides + role gate). Fails
-    // closed on an unknown status (never accept an arbitrary corrupt jump).
-    if (!(await canTransitionConfigured("CHANGE", current.status, value, me.role as Role))) return;
-    // Back to DRAFT wipes the old CAB so the next submit builds a fresh one
-    // (and stale REJECTED rows don't instantly re-reject).
-    if (value === "DRAFT") await db.changeApproval.deleteMany({ where: { changeId: id } });
-    if (value === "IN_PROGRESS" && !current.actualStart) patch.actualStart = new Date();
-    if (value === "CLOSED" || value === "FAILED") patch.actualEnd = new Date();
-  }
   // The assignee must belong to the change's group (anyone when there's none).
-  if (field === "assigneeId" && v) {
-    const cur = await db.change.findUnique({ where: { id }, select: { groupId: true } });
-    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  if (field === "assigneeId" && v && current.groupId && !(await isGroupMember(current.groupId, v))) {
+    return refuse("The assignee must be a member of the change's group.");
   }
-  if (field === "groupId" && v) {
-    const cur = await db.change.findUnique({ where: { id }, select: { assigneeId: true } });
-    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
+  if (field === "groupId" && v && current.assigneeId && !(await isGroupMember(v, current.assigneeId))) {
+    patch.assigneeId = null;
   }
 
   await db.change.update({ where: { id }, data: patch });
@@ -190,6 +236,89 @@ export async function updateChangeField(formData: FormData) {
   });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
+  return OK;
+}
+
+/** Moves a change along its governed lifecycle, recording closure/cancellation details. */
+async function moveChangeStatus(
+  me: Agent,
+  id: number,
+  current: ChangeSnapshot,
+  to: string,
+  details: StatusMoveDetails,
+): Promise<ChangeActionResult> {
+  if (to === current.status) return OK;
+  // CAB seating never happens through a manual status edit: SUBMITTED/APPROVAL seat
+  // the board via submitChangeForApproval, and APPROVED is set only when decideApproval
+  // records the board's approval. Allowing any of these here would let a change reach
+  // the approval phase with an EMPTY board — bypassing separation-of-duties entirely.
+  const manualError = manualStatusError(to);
+  if (manualError) return refuse(manualError);
+  // Governed lifecycle (built-in map + admin overrides + role gate). Fails closed on
+  // an unknown status (never accept an arbitrary corrupt jump).
+  if (!(await canTransitionConfigured("CHANGE", current.status, to, me.role as Role))) {
+    return refuse(`A change cannot move from ${statusLabel(current.status)} to ${statusLabel(to)}.`);
+  }
+
+  const outcome = details.outcome ?? current.outcome;
+  const closureNotes = details.closureNotes ?? current.closureNotes;
+  const closureProblem = closureError({ toStatus: to, type: current.type, outcome, notes: closureNotes });
+  if (closureProblem) return refuse(closureProblem);
+  if (to === "CANCELLED") {
+    const cancelProblem = cancelReasonError(details.cancelReason);
+    if (cancelProblem) return refuse(cancelProblem);
+  }
+
+  const patch: Record<string, unknown> = { status: to };
+  if (isClosureStatus(to)) Object.assign(patch, { outcome, closureNotes });
+  if (to === "CANCELLED") patch.cancelReason = details.cancelReason;
+  if (to === "IN_PROGRESS" && !current.actualStart) patch.actualStart = new Date();
+  if (shouldStampActualEnd(to, current.actualEnd)) patch.actualEnd = new Date();
+
+  // Guard on the status we validated against: a concurrent approval decision or move
+  // must not be overwritten by this stale one.
+  const withdrawn = await db.$transaction(async (tx) => {
+    const moved = await tx.change.updateMany({ where: { id, status: current.status }, data: patch });
+    if (moved.count === 0) return null;
+    // Back to DRAFT wipes the old CAB so the next submit builds a fresh one
+    // (and stale REJECTED rows don't instantly re-reject).
+    if (to === "DRAFT") await tx.changeApproval.deleteMany({ where: { changeId: id } });
+    return settlesApprovalBoard(to) ? withdrawPendingApprovals(tx, id) : 0;
+  });
+  if (withdrawn === null) return refuse("The change was updated by someone else. Reload and try again.");
+
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Change",
+    entityId: id,
+    summary: describeStatusMove(to, { outcome, cancelReason: details.cancelReason, withdrawn }),
+  });
+  revalidatePath(`/changes/${id}`);
+  revalidatePath("/changes");
+  revalidatePath("/approvals");
+  return OK;
+}
+
+/** A settled board no longer needs its undecided approvers: mark their requests withdrawn so they leave every inbox. */
+async function withdrawPendingApprovals(tx: Tx, changeId: number): Promise<number> {
+  const { count } = await tx.changeApproval.updateMany({
+    where: { changeId, status: "PENDING" },
+    data: { status: "CANCELLED", decidedAt: new Date() },
+  });
+  return count;
+}
+
+function describeStatusMove(
+  to: string,
+  { outcome, cancelReason, withdrawn }: { outcome: string | null; cancelReason: string | null; withdrawn: number },
+): string {
+  if (to === "CANCELLED") {
+    const withdrawnNote = withdrawn > 0 ? ` (${withdrawn} pending approval${withdrawn === 1 ? "" : "s"} withdrawn)` : "";
+    return `Cancelled the change: ${cancelReason}${withdrawnNote}`;
+  }
+  if (isClosureStatus(to) && outcome) return `Moved to ${statusLabel(to)} (outcome: ${CHANGE_OUTCOME_META[outcome]?.label ?? outcome})`;
+  return `Moved to ${statusLabel(to)}`;
 }
 
 const decideSchema = z.object({
@@ -201,61 +330,67 @@ const decideSchema = z.object({
     .transform((v) => (v && v.trim() !== "" ? v.trim() : null)),
 });
 
-export async function decideApproval(formData: FormData) {
+/** Flips a change out of APPROVAL (guarded against a concurrent back-to-DRAFT) and withdraws the seats nobody answered. */
+async function settleBoard(tx: Tx, changeId: number, to: "APPROVED" | "REJECTED"): Promise<void> {
+  const { count } = await tx.change.updateMany({ where: { id: changeId, status: "APPROVAL" }, data: { status: to } });
+  if (count > 0) await withdrawPendingApprovals(tx, changeId);
+}
+
+/** Re-evaluates the board against its configured rule (UNANIMOUS | QUORUM | PERCENT) and approves the change once it is met. */
+async function approveIfSatisfied(tx: Tx, changeId: number) {
+  const rows = await tx.changeApproval.findMany({ where: { changeId }, select: { status: true } });
+  const cfg = await tx.change.findUnique({ where: { id: changeId }, select: { approvalRule: true, approvalThreshold: true } });
+  const tally = evaluateCab(rows.map((a) => a.status), cfg?.approvalRule, cfg?.approvalThreshold);
+  if (tally.satisfied) await settleBoard(tx, changeId, "APPROVED");
+  return tally;
+}
+
+export async function decideApproval(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return;
+  if (!me) return refuse("Not authorised.");
   const parsed = decideSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse("Invalid request.");
   const { approvalId, decision, comment } = parsed.data;
 
   // Separation of duties: only the assigned approver (or an admin) may decide,
   // and only while the approval is still pending.
   const existing = await db.changeApproval.findUnique({ where: { id: approvalId } });
-  if (!existing || existing.status !== "PENDING") return;
-  if (existing.approverId !== me.id && me.role !== "ADMIN") return;
+  if (!existing) return refuse("Approval request not found.");
+  if (existing.status !== "PENDING") return refuse("This approval request has already been decided or withdrawn.");
+  if (existing.approverId !== me.id && me.role !== "ADMIN") return refuse("Only the assigned approver can decide this request.");
   // SoD: never decide on a change you own OR created, even as ADMIN.
-  const ownerChange = await db.change.findUnique({ where: { id: existing.changeId }, select: { assigneeId: true, createdById: true } });
-  if (ownerChange?.assigneeId === me.id || ownerChange?.createdById === me.id) return;
-
-  const approval = await db.changeApproval.update({
-    where: { id: approvalId },
-    data: { status: decision, comment, decidedAt: new Date() },
+  const { changeId } = existing;
+  const ownerChange = await db.change.findUnique({
+    where: { id: changeId },
+    select: { status: true, assigneeId: true, createdById: true },
   });
+  if (ownerChange?.assigneeId === me.id || ownerChange?.createdById === me.id) {
+    return refuse("You cannot decide on a change you own or created.");
+  }
+  // Approvers may be seated while the change is still a draft; they only decide once it is submitted.
+  if (ownerChange?.status !== "APPROVAL") return refuse("This change is not awaiting approval yet.");
 
-  // Re-evaluate the board against its configured rule (UNANIMOUS | QUORUM | PERCENT).
-  const [approvals, cfg] = await Promise.all([
-    db.changeApproval.findMany({ where: { changeId: approval.changeId }, select: { status: true } }),
-    db.change.findUnique({ where: { id: approval.changeId }, select: { approvalRule: true, approvalThreshold: true } }),
-  ]);
-  const tally = evaluateCab(approvals.map((a) => a.status), cfg?.approvalRule, cfg?.approvalThreshold);
-  // Guard the status write with `status: "APPROVAL"` so a concurrent back-to-DRAFT
-  // (which wipes the board) can't be overwritten by a stale APPROVED/REJECTED.
-  if (tally.satisfied) {
-    await db.change.updateMany({
-      where: { id: approval.changeId, status: "APPROVAL" },
-      data: { status: "APPROVED" },
-    });
-  } else if (decision === "REJECTED") {
+  await db.$transaction(async (tx) => {
+    await tx.changeApproval.update({ where: { id: approvalId }, data: { status: decision, comment, decidedAt: new Date() } });
+    const tally = await approveIfSatisfied(tx, changeId);
     // A rejection ends the review only when the remaining pending seats can no
     // longer reach the required approval count (i.e. the rule is now unreachable).
-    if (tally.approved + tally.pending < tally.required) {
-      await db.change.updateMany({
-        where: { id: approval.changeId, status: "APPROVAL" },
-        data: { status: "REJECTED" },
-      });
+    if (!tally.satisfied && decision === "REJECTED" && tally.approved + tally.pending < tally.required) {
+      await settleBoard(tx, changeId, "REJECTED");
     }
-  }
+  });
 
   await writeAudit({
     userId: me.id,
     action: "UPDATE",
     entity: "Change",
-    entityId: approval.changeId,
-    summary: `Approval ${decision.toLowerCase()} on ${changeRef(approval.changeId)}`,
+    entityId: changeId,
+    summary: `Approval ${decision.toLowerCase()} on ${changeRef(changeId)}`,
   });
-  revalidatePath(`/changes/${approval.changeId}`);
+  revalidatePath(`/changes/${changeId}`);
   revalidatePath("/changes");
   revalidatePath("/approvals");
+  return OK;
 }
 
 // ── CAB governance: submit / add / remove approvers ──────────────────────────
@@ -264,13 +399,42 @@ const submitSchema = z.object({ id: z.coerce.number() });
 const addApproverSchema = z.object({ changeId: z.coerce.number(), approverId: z.string().min(1) });
 const removeApproverSchema = z.object({ approvalId: z.string().min(1) });
 
-export type SubmitResult = { ok: boolean; error?: string };
+const STALE_CHANGE_MESSAGE = "The change was updated by someone else. Reload and try again.";
 
-export async function submitChangeForApproval(formData: FormData): Promise<SubmitResult> {
+type BoardChange = {
+  id: number;
+  type: string;
+  risk: string;
+  assigneeId: string | null;
+  createdById: string | null;
+};
+
+/**
+ * The board a draft goes to approval with: seats a manager already added stay (unless the
+ * owner, creator, role or active state changed since), and the auto-selected board tops it
+ * up within the type's size limit.
+ */
+async function planCabBoard(change: BoardChange) {
+  const seats = await db.changeApproval.findMany({
+    where: { changeId: change.id },
+    select: { id: true, approverId: true, approver: { select: { role: true, isActive: true } } },
+  });
+  const seated = seats.map((s) => ({ approvalId: s.id, approverId: s.approverId, ...s.approver }));
+  const dropped = invalidSeats(seated, change, approverRolesForRisk(change.risk));
+  const droppedIds = new Set(dropped.map((d) => d.approvalId));
+  const keptIds = seated.filter((s) => !droppedIds.has(s.approvalId)).map((s) => s.approverId);
+  const addedIds = approversToSeat(await selectApprovers(change), keptIds, boardSizeLimit(change.type));
+  return { dropped, keptIds, addedIds };
+}
+
+const EMERGENCY_SUBMIT_NOTE =
+  "Emergency change — expedited ECAB approval. Post-Implementation Review (PIR) required after closure.";
+
+export async function submitChangeForApproval(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return { ok: false, error: "Not authorised" };
+  if (!me) return refuse("Not authorised.");
   const parsed = submitSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  if (!parsed.success) return refuse("Invalid request.");
   const { id } = parsed.data;
 
   const current = await db.change.findUnique({
@@ -280,112 +444,129 @@ export async function submitChangeForApproval(formData: FormData): Promise<Submi
       implementationPlan: true, rollbackPlan: true, plannedStart: true, plannedEnd: true,
     },
   });
-  if (!current) return { ok: false, error: "Change not found." };
+  if (!current) return refuse("Change not found.");
   // Only from DRAFT — this also makes a double-click idempotent (2nd submit is in APPROVAL).
   if (!canTransition(CHANGE_TRANSITIONS, current.status, "SUBMITTED", true)) {
-    return { ok: false, error: "Only a draft change can be submitted for approval." };
+    return refuse("Only a draft change can be submitted for approval.");
   }
 
   const missing = submitBlockers(current);
-  if (missing.length > 0) return { ok: false, error: submitBlockedMessage(missing) };
+  if (missing.length > 0) return refuse(submitBlockedMessage(missing));
 
   if (current.type === "STANDARD") {
     // Pre-authorized: straight to APPROVED, no CAB. (Bypasses the transition map
     // deliberately — same authorized-flow exception decideApproval uses.)
-    await db.change.update({ where: { id }, data: { status: "APPROVED" } });
+    const approved = await db.change.updateMany({ where: { id, status: current.status }, data: { status: "APPROVED" } });
+    if (approved.count === 0) return refuse(STALE_CHANGE_MESSAGE);
     await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Standard change auto-approved (pre-authorized)" });
   } else {
-    const approverIds = await selectApprovers(current);
-    if (approverIds.length === 0) {
+    const { dropped, keptIds, addedIds } = await planCabBoard(current);
+    if (keptIds.length + addedIds.length === 0) {
       // Never silently approve an unreviewed change — stay in DRAFT for a retry.
       await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "No eligible CAB approvers — submission blocked" });
-      return { ok: false, error: "No eligible CAB approvers are available for this change." };
+      return refuse("No eligible CAB approvers are available for this change.");
     }
-    await db.changeApproval.createMany({ data: approverIds.map((approverId) => ({ changeId: id, approverId })) });
-    await db.change.update({ where: { id }, data: { status: "APPROVAL" } });
-    if (current.type === "EMERGENCY") {
-      await db.changeComment.create({
-        data: { changeId: id, authorId: me.id, isInternal: true, body: "Emergency change — expedited ECAB approval. Post-Implementation Review (PIR) required after closure." },
-      });
-    }
-    for (const approverId of approverIds) {
+    const submitted = await db.$transaction(async (tx) => {
+      const moved = await tx.change.updateMany({ where: { id, status: current.status }, data: { status: "APPROVAL" } });
+      if (moved.count === 0) return false;
+      await tx.changeApproval.deleteMany({ where: { id: { in: dropped.map((d) => d.approvalId) } } });
+      await tx.changeApproval.createMany({ data: addedIds.map((approverId) => ({ changeId: id, approverId })) });
+      if (current.type === "EMERGENCY") {
+        await tx.changeComment.create({ data: { changeId: id, authorId: me.id, isInternal: true, body: EMERGENCY_SUBMIT_NOTE } });
+      }
+      return true;
+    });
+    if (!submitted) return refuse(STALE_CHANGE_MESSAGE);
+    for (const approverId of [...keptIds, ...addedIds]) {
       await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: current.title, entity: "Change", entityId: String(id) });
     }
-    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Submitted for approval" });
+    const droppedNote = dropped.length > 0 ? ` (${dropped.length} ineligible approver${dropped.length === 1 ? "" : "s"} removed)` : "";
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Submitted for approval${droppedNote}` });
   }
 
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
   revalidatePath("/approvals");
-  return { ok: true };
+  return OK;
 }
 
-export async function addChangeApprover(formData: FormData): Promise<{ ok: boolean; error?: string }> {
+const OWN_BOARD_REFUSAL = "You cannot change the approval board of a change you own or created.";
+
+/** SoD: the owner (assignee) or creator must not curate the board that judges their change. */
+function ownsChange(userId: string, change: { assigneeId: string | null; createdById: string | null }): boolean {
+  return change.assigneeId === userId || change.createdById === userId;
+}
+
+export async function addChangeApprover(formData: FormData): Promise<ChangeActionResult> {
   // Manager+ DB-truth gate — the change owner must NOT curate their own board (SoD).
   const me = await requireManagerC();
-  if (!me) return { ok: false, error: "Only managers can change the approval board." };
+  if (!me) return refuse("Only managers can change the approval board.");
   const parsed = addApproverSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  if (!parsed.success) return refuse("Invalid request.");
   const { changeId, approverId } = parsed.data;
 
-  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, risk: true, title: true } });
-  if (!change) return { ok: false, error: "Change not found." };
-  if (change.status !== "APPROVAL") return { ok: false, error: "Approvers can only be added while the change is in approval." };
+  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, type: true, risk: true, title: true } });
+  if (!change) return refuse("Change not found.");
+  if (ownsChange(me.id, change)) return refuse(OWN_BOARD_REFUSAL);
+  if (change.type === "STANDARD") return refuse("A standard change is pre-authorized and has no approval board.");
+  if (!canSeatApprovers(change.status)) return refuse("Approvers can only be added while the change is a draft or in approval.");
   // SoD — never seat the owner (assignee) or the creator.
   if (approverId === change.assigneeId || approverId === change.createdById) {
-    return { ok: false, error: "The change owner or creator cannot approve their own change." };
+    return refuse("The change owner or creator cannot approve their own change.");
   }
   if (!(await isEligibleApprover(approverId, change.risk))) {
-    return { ok: false, error: `This person's role cannot approve a ${change.risk.toLowerCase()}-risk change.` };
+    return refuse(`This person's role cannot approve a ${change.risk.toLowerCase()}-risk change.`);
   }
 
   // Idempotent (honors @@unique([changeId, approverId]) without a P2002 throw).
   const exists = await db.changeApproval.findFirst({ where: { changeId, approverId }, select: { id: true } });
-  if (exists) return { ok: true };
+  if (exists) return OK;
   await db.changeApproval.create({ data: { changeId, approverId } });
 
-  await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: change.title, entity: "Change", entityId: String(changeId) });
+  // A drafted board is told only once the change is submitted (submitChangeForApproval notifies every seat).
+  if (change.status === "APPROVAL") {
+    await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: change.title, entity: "Change", entityId: String(changeId) });
+  }
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: changeId, summary: "Added approver" });
   revalidatePath(`/changes/${changeId}`);
   revalidatePath("/approvals");
-  return { ok: true };
+  return OK;
 }
 
-export async function removeChangeApprover(formData: FormData) {
+export async function removeChangeApprover(formData: FormData): Promise<ChangeActionResult> {
   // Manager+ DB-truth gate — the owner must NOT prune their own board (SoD).
   const me = await requireManagerC();
-  if (!me) return;
+  if (!me) return refuse("Only managers can change the approval board.");
   const parsed = removeApproverSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse("Invalid request.");
   const { approvalId } = parsed.data;
 
   const row = await db.changeApproval.findUnique({
     where: { id: approvalId },
-    include: { change: { select: { id: true, status: true, assigneeId: true } } },
+    include: { change: { select: { id: true, status: true, assigneeId: true, createdById: true } } },
   });
-  if (!row) return;
-  if (row.change.status !== "APPROVAL") return;
-
-  // deleteMany (not delete+swallow): no throw when a concurrent prune already
-  // removed the seat, and the audit below only fires on a real removal.
-  const gone = await db.changeApproval.deleteMany({ where: { id: approvalId } });
-  if (gone.count === 0) return;
+  if (!row) return refuse("Approval request not found.");
+  // Pruning a pending seat can satisfy a QUORUM/PERCENT rule — never by the owner.
+  if (ownsChange(me.id, row.change)) return refuse(OWN_BOARD_REFUSAL);
+  if (!canSeatApprovers(row.change.status)) return refuse("Approvers can only be removed while the change is a draft or in approval.");
+  if (row.status !== "PENDING") return refuse("An approver who has already decided can't be removed.");
 
   // Removing a row can complete the rule (e.g. it drops the seat count under a
-  // QUORUM/PERCENT target) — recompute, but never auto-approve an empty board,
-  // and guard the status write against a concurrent back-to-DRAFT.
-  const [remaining, cfg] = await Promise.all([
-    db.changeApproval.findMany({ where: { changeId: row.change.id }, select: { status: true } }),
-    db.change.findUnique({ where: { id: row.change.id }, select: { approvalRule: true, approvalThreshold: true } }),
-  ]);
-  const tally = evaluateCab(remaining.map((a) => a.status), cfg?.approvalRule, cfg?.approvalThreshold);
-  if (tally.satisfied) {
-    await db.change.updateMany({ where: { id: row.change.id, status: "APPROVAL" }, data: { status: "APPROVED" } });
-  }
+  // QUORUM/PERCENT target) — recompute in the same transaction; an empty board never
+  // auto-approves. deleteMany (not delete): no throw when a concurrent prune already
+  // removed the seat, and the audit below only fires on a real removal.
+  const removed = await db.$transaction(async (tx) => {
+    const gone = await tx.changeApproval.deleteMany({ where: { id: approvalId, status: "PENDING" } });
+    if (gone.count === 0) return false;
+    await approveIfSatisfied(tx, row.change.id);
+    return true;
+  });
+  if (!removed) return refuse("That approval request was already decided or removed. Reload and try again.");
 
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: row.change.id, summary: "Removed approver" });
   revalidatePath(`/changes/${row.change.id}`);
   revalidatePath("/approvals");
+  return OK;
 }
 
 // ── CAB approval rule (quorum policy) ────────────────────────────────────────
@@ -403,40 +584,37 @@ const setRuleSchema = z.object({
  * before submit, or APPROVAL while the board is live), and re-evaluates whether
  * the change is now approved when the bar is lowered.
  */
-export async function setCabRule(formData: FormData) {
+export async function setCabRule(formData: FormData): Promise<ChangeActionResult> {
   // Manager+ DB-truth gate (never the owner — SoD).
   const me = await requireManagerC();
-  if (!me) return;
+  if (!me) return refuse("Only managers can change the approval rule.");
   const parsed = setRuleSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse("Invalid request.");
   const { changeId, rule } = parsed.data;
 
   const change = await db.change.findUnique({
     where: { id: changeId },
     select: { status: true, assigneeId: true, createdById: true },
   });
-  if (!change) return;
+  if (!change) return refuse("Change not found.");
   // SoD: the owner/creator can't set the rule that judges their own change.
-  if (change.assigneeId === me.id || change.createdById === me.id) return;
+  if (change.assigneeId === me.id || change.createdById === me.id) {
+    return refuse("You cannot set the approval rule on a change you own or created.");
+  }
   // Only before or during the approval phase — locked once decided.
-  if (change.status !== "DRAFT" && change.status !== "APPROVAL") return;
+  if (!canSeatApprovers(change.status)) return refuse("The approval rule can only be changed while the change is a draft or in approval.");
 
   // Threshold only applies (and is validated) for QUORUM/PERCENT; PERCENT is 1–100.
   let threshold: number | null = null;
   if (rule === "QUORUM") threshold = parsed.data.threshold ?? null;
   else if (rule === "PERCENT") threshold = Math.min(parsed.data.threshold ?? 100, 100);
 
-  await db.change.update({ where: { id: changeId }, data: { approvalRule: rule, approvalThreshold: threshold } });
-
-  // Lowering the bar (e.g. UNANIMOUS→QUORUM) may already be satisfied by existing
-  // approvals — re-evaluate so the change flips to APPROVED without another click.
-  if (change.status === "APPROVAL") {
-    const rows = await db.changeApproval.findMany({ where: { changeId }, select: { status: true } });
-    const tally = evaluateCab(rows.map((a) => a.status), rule, threshold);
-    if (tally.satisfied) {
-      await db.change.updateMany({ where: { id: changeId, status: "APPROVAL" }, data: { status: "APPROVED" } });
-    }
-  }
+  await db.$transaction(async (tx) => {
+    await tx.change.update({ where: { id: changeId }, data: { approvalRule: rule, approvalThreshold: threshold } });
+    // Lowering the bar (e.g. UNANIMOUS→QUORUM) may already be satisfied by existing
+    // approvals — re-evaluate so the change flips to APPROVED without another click.
+    if (change.status === "APPROVAL") await approveIfSatisfied(tx, changeId);
+  });
 
   await writeAudit({
     userId: me.id,
@@ -447,6 +625,7 @@ export async function setCabRule(formData: FormData) {
   });
   revalidatePath(`/changes/${changeId}`);
   revalidatePath("/approvals");
+  return OK;
 }
 
 // ── Comments & edit ──────────────────────────────────────────────────────────
@@ -464,49 +643,88 @@ export async function addChangeComment(formData: FormData) {
   revalidatePath(`/changes/${id}`);
 }
 
-export async function updateChangeDetails(formData: FormData) {
+/** A refusal when the change is missing or already a finished (closed/cancelled) record; null when it may be edited. */
+async function refusalIfUneditable(id: number): Promise<ChangeActionResult | null> {
+  const change = await db.change.findUnique({ where: { id }, select: { status: true } });
+  if (!change) return refuse("Change not found.");
+  return isChangeLocked(change.status) ? refuse(changeLockedMessage(change.status)) : null;
+}
+
+export async function updateChangeDetails(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return;
+  if (!me) return refuse("Not authorised.");
   const id = Number(formData.get("id"));
   const title = String(formData.get("title") ?? "").trim();
-  if (!id || title.length < 3) return;
+  if (!id) return refuse("Invalid request.");
+  if (title.length < 3) return refuse("Title must be at least 3 characters.");
+  const uneditable = await refusalIfUneditable(id);
+  if (uneditable) return uneditable;
   const { text: description, html: descriptionHtml } = readRichField(formData, "descriptionHtml", "description");
   await db.change.update({ where: { id }, data: { title, description, descriptionHtml } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Edited details" });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
+  return OK;
 }
 
-const windowSchema = z.object({ id: z.coerce.number(), plannedStart: optionalDate, plannedEnd: optionalDate });
+const windowSchema = z.object({
+  id: z.coerce.number(),
+  plannedStart: optionalDate,
+  plannedEnd: optionalDate,
+  reason: optionalText,
+});
 
-/** Sets or clears the planned maintenance window; the end must come after the start. */
-export async function updateChangeWindow(formData: FormData): Promise<SubmitResult> {
+/**
+ * Sets or clears the planned maintenance window; the end must come after the start.
+ * Once approved, moving the window is a reschedule: it needs a reason, which is
+ * posted to the change as an internal comment.
+ */
+export async function updateChangeWindow(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return { ok: false, error: "Not authorised" };
+  if (!me) return refuse("Not authorised.");
   const parsed = windowSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, error: "Invalid request." };
-  const { id, plannedStart, plannedEnd } = parsed.data;
+  if (!parsed.success) return refuse("Invalid request.");
+  const { id, plannedStart, plannedEnd, reason } = parsed.data;
 
   const windowError = plannedWindowError(plannedStart, plannedEnd);
-  if (windowError) return { ok: false, error: windowError };
+  if (windowError) return refuse(windowError);
 
-  const change = await db.change.findUnique({ where: { id }, select: { status: true } });
-  if (!change) return { ok: false, error: "Change not found." };
-  if (!isWindowEditable(change.status)) {
-    return { ok: false, error: "The planned window is locked once the change is in approval." };
-  }
+  const change = await db.change.findUnique({ where: { id }, select: { status: true, plannedStart: true, plannedEnd: true } });
+  if (!change) return refuse("Change not found.");
+  if (isChangeLocked(change.status)) return refuse(changeLockedMessage(change.status));
+  if (!isWindowEditable(change.status)) return refuse(windowLockedMessage(change.status));
 
-  await db.change.update({ where: { id }, data: { plannedStart, plannedEnd } });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Updated planned window" });
+  const current = { start: change.plannedStart, end: change.plannedEnd };
+  const next = { start: plannedStart, end: plannedEnd };
+  const rescheduleProblem = rescheduleError(change.status, current, next, reason);
+  if (rescheduleProblem) return refuse(rescheduleProblem);
+
+  const isReschedule = requiresRescheduleReason(change.status) && windowChanged(current, next);
+  // The window and its reschedule comment are one record: never save one without the other.
+  await db.$transaction(async (tx) => {
+    await tx.change.update({ where: { id }, data: { plannedStart, plannedEnd } });
+    if (isReschedule && reason) {
+      await tx.changeComment.create({
+        data: { changeId: id, authorId: me.id, isInternal: true, body: rescheduleComment(current, next, reason) },
+      });
+    }
+  });
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Change",
+    entityId: id,
+    summary: isReschedule ? "Rescheduled planned window" : "Updated planned window",
+  });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
-  return { ok: true };
+  return OK;
 }
 
 // ── Planning fields (reason, implementation plan, rollback plan) ─────────────
 // The change record's free-text plans, amendable at any point in the lifecycle
-// (e.g. adding a rollback plan before the CAB, or after a REVIEW). Keyed by
-// field name via EditableTextCard.
+// until the change is closed or cancelled (e.g. adding a rollback plan before the
+// CAB, or after a REVIEW). Keyed by field name via EditableTextCard.
 
 const CHANGE_TEXT_FIELDS = ["reason", "implementationPlan", "rollbackPlan"] as const;
 const changeTextSchema = z.object({
@@ -521,14 +739,61 @@ const CHANGE_TEXT_LABELS: Record<(typeof CHANGE_TEXT_FIELDS)[number], string> = 
   rollbackPlan: "rollback plan",
 };
 
-export async function updateChangeText(formData: FormData) {
+export async function updateChangeText(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
-  if (!me) return;
+  if (!me) return refuse("Not authorised.");
   const parsed = changeTextSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse("Invalid request.");
   const { id, field } = parsed.data;
+  const uneditable = await refusalIfUneditable(id);
+  if (uneditable) return uneditable;
   const value = parsed.data.value.trim() || null;
   await db.change.update({ where: { id }, data: { [field]: value } });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Updated ${CHANGE_TEXT_LABELS[field]}` });
   revalidatePath(`/changes/${id}`);
+  return OK;
+}
+
+// ── Problem link ─────────────────────────────────────────────────────────────
+
+const isRecordId = (value: number) => Number.isInteger(value) && value > 0;
+
+/**
+ * Links the change to the problem it fixes, or unlinks it with `null`. A closed or
+ * cancelled change keeps its links editable (only the descriptive fields lock).
+ */
+export async function setChangeProblem(changeId: number, problemId: number | null): Promise<ChangeActionResult> {
+  const me = await requireAgentC();
+  if (!me) return refuse("Not authorised.");
+  if (!isRecordId(changeId) || (problemId !== null && !isRecordId(problemId))) return refuse("Invalid request.");
+
+  const change = await db.change.findUnique({ where: { id: changeId }, select: { problemId: true } });
+  if (!change) return refuse("Change not found.");
+  if (change.problemId === problemId) return OK;
+  if (problemId !== null && !(await db.problem.findUnique({ where: { id: problemId }, select: { id: true } }))) {
+    return refuse("Problem not found.");
+  }
+
+  await db.change.update({ where: { id: changeId }, data: { problemId } });
+
+  const previousId = change.problemId;
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Change",
+    entityId: changeId,
+    summary: problemId ? `Linked to ${problemRef(problemId)}` : `Unlinked from ${problemRef(previousId!)}`,
+  });
+  if (previousId) {
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: previousId, summary: `Unlinked ${changeRef(changeId)}` });
+    revalidatePath(`/problems/${previousId}`);
+  }
+  if (problemId) {
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: problemId, summary: `Linked ${changeRef(changeId)}` });
+    revalidatePath(`/problems/${problemId}`);
+  }
+  revalidatePath(`/changes/${changeId}`);
+  revalidatePath("/changes");
+  revalidatePath("/problems");
+  return OK;
 }

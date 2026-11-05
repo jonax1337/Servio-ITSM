@@ -4,6 +4,7 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import type { ReactNode } from "react";
+import { readActionResult } from "@/lib/action-result";
 
 /**
  * A linked-record chip: a bordered pill linking to the record, with an unlink
@@ -35,28 +36,21 @@ export function LinkedChip({
 export function UnlinkButton({
   action,
   fields,
+  successMessage = "Unlinked",
 }: {
   // Actions may return void or a typed result ({ ok, error }) — failures are
   // surfaced as a toast instead of silently no-oping.
   action: (formData: FormData) => void | Promise<unknown>;
   fields: Record<string, string | number>;
+  successMessage?: string;
 }) {
   // Adapt to <form action>'s `Promise<void>` signature while tolerating actions
   // that return nothing at all.
   const submit = async (fd: FormData): Promise<void> => {
-    const res: unknown = await action(fd);
-    if (
-      res &&
-      typeof res === "object" &&
-      "ok" in res &&
-      (res as { ok?: unknown }).ok === false
-    ) {
-      const error =
-        "error" in res && typeof (res as { error?: unknown }).error === "string"
-          ? (res as { error: string }).error
-          : "";
-      toast.error(error || "Could not unlink record.");
-    }
+    const result = readActionResult(await action(fd));
+    if (!result) return;
+    if (result.ok) toast.success(successMessage);
+    else toast.error(result.error || "Could not unlink record.");
   };
   return (
     <form action={submit} className="flex">

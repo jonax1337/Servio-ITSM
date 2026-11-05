@@ -64,7 +64,7 @@ describe("built-in transition maps", () => {
   });
 
   it("change map: APPROVED is reachable only via CAB approval or explicit rework", () => {
-    expect(CHANGE_TRANSITIONS.DRAFT).toEqual(["SUBMITTED"]);
+    expect(CHANGE_TRANSITIONS.DRAFT).toEqual(["SUBMITTED", "CANCELLED"]);
     // No pre-approval state may jump straight to APPROVED — the CAB flow
     // (decideApproval) is the only way to get there.
     for (const from of ["DRAFT", "SUBMITTED", "APPROVAL", "REJECTED"]) {

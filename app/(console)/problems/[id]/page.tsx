@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
-  ArrowLeft, Ticket as TicketIcon, GitPullRequestArrow, Search, ShieldCheck, X,
+  ArrowLeft, Ticket as TicketIcon, GitPullRequestArrow, Search, ShieldCheck,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { RelatedArticlesCard } from "@/components/related-articles-card";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
 import { allowedTransitions } from "@/lib/workflow";
@@ -16,15 +17,16 @@ import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fie
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
-import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { EditableTextCard } from "@/components/editable-text-card";
+import { ProblemDetailsDialog, ProblemTextCard } from "@/components/problems/problem-editors";
+import { ProblemChangePicker, UnlinkChangeButton, UnlinkIncidentButton } from "@/components/problems/problem-fix-changes";
 import { LinkPicker } from "@/components/link-picker";
-import { addProblemComment, updateProblemDetails, updateProblemText } from "@/lib/actions/problems";
+import { addProblemComment } from "@/lib/actions/problems";
+import { isProblemLocked } from "@/lib/problem-rules";
 import { setTicketProblem } from "@/lib/actions/tickets";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  PROBLEM_STATUS_META, PRIORITY_META, TICKET_STATUS_META,
+  PROBLEM_STATUS_META, PRIORITY_META, TICKET_STATUS_META, CHANGE_STATUS_META,
   problemRef, ticketRef, changeRef,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -51,7 +53,7 @@ export default async function ProblemDetailPage({
   if (!Number.isFinite(problemId)) notFound();
 
   const me = await getSessionUser();
-  const [problem, options, audits, linkableTickets, approvals, customFieldDefs] = await Promise.all([
+  const [problem, options, audits, linkableTickets, linkableChanges, approvals, customFieldDefs] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
@@ -75,6 +77,12 @@ export default async function ProblemDetailPage({
       orderBy: { updatedAt: "desc" },
       take: 100,
     }),
+    db.change.findMany({
+      where: { problemId: null, status: { not: "CANCELLED" } },
+      select: { id: true, title: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    }),
     getEntityApprovals("PROBLEM", problemId),
     db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true }, orderBy: { order: "asc" } }),
   ]);
@@ -89,6 +97,9 @@ export default async function ProblemDetailPage({
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const allowedStatuses = me ? [...await allowedTransitions("PROBLEM", problem.status, me.role as Role)] : undefined;
   const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
+  const changeOpts = linkableChanges.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
+  const locked = isProblemLocked(problem.status);
+  const canEditText = isAgentUser && !locked;
 
   const comments = problem.comments.map((c) => ({
     id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
@@ -111,15 +122,14 @@ export default async function ProblemDetailPage({
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={PRIORITY_META} value={problem.priority} dot />
             <StatusBadge map={PROBLEM_STATUS_META} value={problem.status} />
-            <EditEntityDialog
-              action={updateProblemDetails}
-              idField="id"
-              id={problem.id}
-              title={problem.title}
-              description={problem.description}
-              descriptionHtml={problem.descriptionHtml}
-              entityLabel="problem"
-            />
+            {canEditText ? (
+              <ProblemDetailsDialog
+                id={problem.id}
+                title={problem.title}
+                description={problem.description}
+                descriptionHtml={problem.descriptionHtml}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -143,27 +153,23 @@ export default async function ProblemDetailPage({
           </div>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <EditableTextCard
-              action={updateProblemText}
-              idField="id"
+            <ProblemTextCard
               id={problem.id}
               field="rootCause"
               label="Root cause"
               icon={<Search className="size-4 text-muted-foreground" />}
               value={problem.rootCause}
               emptyText="Not yet identified."
-              editable={isAgentUser}
+              editable={canEditText}
             />
-            <EditableTextCard
-              action={updateProblemText}
-              idField="id"
+            <ProblemTextCard
               id={problem.id}
               field="workaround"
               label="Workaround"
               icon={<ShieldCheck className="size-4 text-muted-foreground" />}
               value={problem.workaround}
               emptyText="No workaround documented."
-              editable={isAgentUser}
+              editable={canEditText}
             />
           </div>
 
@@ -196,7 +202,7 @@ export default async function ProblemDetailPage({
                 {problem.tickets.map((t) => (
                   <div
                     key={t.id}
-                    className="group flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
+                    className="group/chip flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
                   >
                     <Link href={`/tickets/${t.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                       <span className="font-mono text-xs text-muted-foreground">
@@ -206,18 +212,7 @@ export default async function ProblemDetailPage({
                       <StatusBadge map={TICKET_STATUS_META} value={t.status} />
                     </Link>
                     {isAgentUser ? (
-                      <form action={setTicketProblem}>
-                        <input type="hidden" name="ticketId" value={t.id} />
-                        <input type="hidden" name="problemId" value="" />
-                        <button
-                          type="submit"
-                          aria-label="Unlink incident"
-                          title="Unlink incident"
-                          className="grid size-6 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </form>
+                      <UnlinkIncidentButton ticketId={t.id} />
                     ) : null}
                   </div>
                 ))}
@@ -225,20 +220,35 @@ export default async function ProblemDetailPage({
             )}
           </div>
 
-          {/* Linked changes */}
-          {problem.changes.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {problem.changes.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/changes/${c.id}`}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40"
-                >
-                  <GitPullRequestArrow className="size-3.5 text-primary" /> {changeRef(c.id)} · {c.title}
-                </Link>
-              ))}
+          {/* Fix changes */}
+          <div className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <GitPullRequestArrow className="size-4 text-muted-foreground" />
+                Fix changes · {problem.changes.length}
+              </h2>
+              {isAgentUser ? <ProblemChangePicker problemId={problem.id} options={changeOpts} /> : null}
             </div>
-          ) : null}
+            {problem.changes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No changes fix this problem yet.</p>
+            ) : (
+              <div className="overflow-hidden rounded-xl border bg-card">
+                {problem.changes.map((c) => (
+                  <div
+                    key={c.id}
+                    className="group/chip flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
+                  >
+                    <Link href={`/changes/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="font-mono text-xs text-muted-foreground">{changeRef(c.id)}</span>
+                      <span className="line-clamp-1 flex-1 text-sm font-medium">{c.title}</span>
+                      <StatusBadge map={CHANGE_STATUS_META} value={c.status} />
+                    </Link>
+                    {isAgentUser ? <UnlinkChangeButton changeId={c.id} /> : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Approvals (ad-hoc sign-off) */}
           <EntityApprovals
@@ -271,7 +281,7 @@ export default async function ProblemDetailPage({
         <Card>
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <ProblemProperties problem={problem} options={options} allowedStatuses={allowedStatuses} />
+            <ProblemProperties problem={problem} options={options} allowedStatuses={allowedStatuses} locked={locked} />
           </CardContent>
         </Card>
 
@@ -308,6 +318,8 @@ export default async function ProblemDetailPage({
             {problem.resolvedAt ? <Meta label="Resolved" value={format(problem.resolvedAt, "PP p")} /> : null}
           </CardContent>
         </Card>
+
+        <RelatedArticlesCard className="mt-4" entityType="PROBLEM" entityId={problem.id} />
       </aside>
     </div>
   );

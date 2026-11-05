@@ -171,13 +171,13 @@ Coverage by module:
 
 | Module | File | Operations (write) |
 | --- | --- | --- |
-| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link, tasks, work-log, watch, major-incident |
+| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), tasks, work-log, watch, major-incident |
 | Categories | `modules/taxonomy.ts` | category create/update |
 | Groups & Users | `modules/org.ts` | group create / auto-assign, user field (role/active — ADMIN) |
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
-| Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, location create/update/delete |
-| Knowledge base | `modules/knowledge.ts` | article create, set status, delete |
-| Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment; `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
+| Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, `asset.link_ticket` / `asset.unlink_ticket`, location create/update/delete |
+| Knowledge base | `modules/knowledge.ts` | article create, set status, delete; `article.link` / `article.unlink` (attach to a ticket, problem or change by ref) |
+| Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
 
 **Ticket to problem/change links.** `ticket.set_problem` and `ticket.set_change` (both `minRole` AGENT) take a
@@ -185,7 +185,7 @@ ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. 
 `setTicketChange`, the actions the ticket page uses, so the link appears in the UI exactly as if an agent had set it.
 The ops then read `Ticket.problemId` / `changeId` back and return `err(...)` when the action silently refused (role,
 missing target). A ref of the wrong kind (a `CHG-` ref for a problem) is rejected by `parseRecordNumber`
-(`helpers.ts`). A change's own `problemId` has no reusable server action, so Sable cannot set it yet.
+(`helpers.ts`). A change's own problem link is set with `change.set_problem` (`setChangeProblem`), same ref/`none` convention.
 
 **Refused writes.** The field-update and status ops read the record back after the action runs (`verifyFieldWrite` in `helpers.ts`) and return an error when the write was refused (workflow rule, role, or a request awaiting approval — which can only be cancelled) instead of claiming success.
 

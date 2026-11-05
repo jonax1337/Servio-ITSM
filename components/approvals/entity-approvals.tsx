@@ -39,6 +39,7 @@ export function EntityApprovals({
   entityType,
   entityId,
   entityTitle,
+  heading = "Approvals",
   approvals,
   currentUserId,
   isAdmin,
@@ -49,6 +50,8 @@ export function EntityApprovals({
   entityType: string;
   entityId: string;
   entityTitle: string;
+  /** Section heading; pages with a second approval concept (the change CAB) name this one apart. */
+  heading?: string;
   approvals: EntityApprovalRow[];
   currentUserId: string;
   isAdmin: boolean;
@@ -88,7 +91,7 @@ export function EntityApprovals({
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <ShieldCheck className="size-4 text-muted-foreground" />
-          Approvals · {approvals.length}
+          {heading} · {approvals.length}
         </h2>
         {canRequest ? (
           <Dialog open={open} onOpenChange={setOpen}>
@@ -138,7 +141,7 @@ export function EntityApprovals({
       {approvals.length === 0 ? (
         <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
           <CheckCircle2 className="size-4" />
-          No approvals requested.{canRequest ? " Request a sign-off from a colleague above." : ""}
+          No {heading.toLowerCase()} requested.{canRequest ? " Request a sign-off from a colleague above." : ""}
         </div>
       ) : (
         <div className="grid gap-3">

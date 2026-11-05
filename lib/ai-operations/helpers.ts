@@ -1,4 +1,6 @@
 import { renderMarkdown } from "@/lib/markdown";
+import { PREFIX, type ArticleLinkEntityType } from "@/lib/constants";
+import type { ActionResult } from "@/lib/action-result";
 import type { AiOpResult } from "./types";
 
 export const ok = (summary: string, data?: unknown): AiOpResult => ({ ok: true, summary, data });
@@ -14,6 +16,14 @@ export function verifyFieldWrite(stored: unknown, requested: string, success: st
   const want = requested === "none" ? "" : requested;
   if (String(stored ?? "") === want) return ok(success);
   return err("Not applied — the change was refused (workflow rule, your role, or a pending approval). Nothing was changed.");
+}
+
+/**
+ * Turn the `{ ok, error }` result of an action that reports its own refusals into an op
+ * result, so the reason the rule gave reaches the user instead of a generic failure.
+ */
+export function fromActionResult(res: ActionResult, success: string): AiOpResult {
+  return res.ok ? ok(success) : err(res.error ?? "The change was refused. Nothing was changed.");
 }
 
 /** Heuristic: does this text already contain HTML tags (vs markdown / plain)? */
@@ -73,6 +83,27 @@ export function parseRecordNumber(ref: unknown, prefixes: readonly string[]): nu
   if (m[1] && !prefixes.includes(m[1].toUpperCase())) return null;
   const n = Number(m[2]);
   return n > 0 ? n : null;
+}
+
+/** The record kinds an article can be attached to, keyed by the ref prefix people write. */
+const ARTICLE_LINK_TARGETS: Record<string, ArticleLinkEntityType> = {
+  [PREFIX.ticket]: "TICKET",
+  [PREFIX.request]: "TICKET",
+  [PREFIX.problem]: "PROBLEM",
+  [PREFIX.change]: "CHANGE",
+};
+
+/**
+ * Parse "INC-0042" / "REQ-7" / "PRB-0019" / "CHG-0025" to the record an article link
+ * points at. The prefix is required (a bare number does not say which kind of record),
+ * and an unknown prefix is rejected so an article is never attached to the wrong record.
+ */
+export function parseArticleLinkTarget(ref: unknown): { entityType: ArticleLinkEntityType; entityId: number } | null {
+  const m = String(ref ?? "").trim().match(/^([A-Za-z]+)-0*(\d+)$/);
+  if (!m) return null;
+  const entityType = ARTICLE_LINK_TARGETS[m[1].toUpperCase()];
+  const entityId = Number(m[2]);
+  return entityType && entityId > 0 ? { entityType, entityId } : null;
 }
 
 /** Shorten long free text for a compact tool result; null/blank becomes null. */

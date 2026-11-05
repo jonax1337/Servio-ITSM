@@ -42,8 +42,9 @@ export function CabRuleEditor({
     fd.set("rule", rule);
     if (needsThreshold && threshold.trim() !== "") fd.set("threshold", threshold.trim());
     start(async () => {
-      await setCabRule(fd);
-      toast.success("CAB rule updated");
+      const result = await setCabRule(fd);
+      if (result.ok) toast.success("CAB rule updated");
+      else toast.error(result.error);
     });
   };
 

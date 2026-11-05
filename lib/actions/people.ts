@@ -1,11 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
+import { AUTOMATION_EMAIL } from "@/lib/system-user";
+import { isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules";
+
+// Fresh DB row (not the possibly-stale JWT): only active ADMINs may manage people.
+async function requireAdmin() {
+  const me = await getCurrentUser();
+  return me && me.isActive && hasRole(me.role as Role, "ADMIN") ? me : null;
+}
 
 const updateSchema = z.object({
   id: z.string().min(1),
@@ -14,11 +23,10 @@ const updateSchema = z.object({
 });
 
 export async function updateUserField(formData: FormData) {
-  // Fresh DB row (not the possibly-stale JWT): only active ADMINs may change
-  // user role / activation. isVip is a lighter flag but we keep it admin-gated
-  // here too since this is the People admin surface.
-  const me = await getCurrentUser();
-  if (!me || !me.isActive || !hasRole(me.role as Role, "ADMIN")) return;
+  // Only active ADMINs may change user role / activation. isVip is a lighter
+  // flag but we keep it admin-gated here too since this is the People admin surface.
+  const me = await requireAdmin();
+  if (!me) return;
 
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
@@ -61,4 +69,131 @@ export async function updateUserField(formData: FormData) {
 async function lastActiveAdmin() {
   const count = await db.user.count({ where: { role: "ADMIN", isActive: true } });
   return count <= 1;
+}
+
+// ── Create / edit a person ───────────────────────────────────────────────────
+
+export type PersonState =
+  | { ok?: boolean; error?: string; fieldErrors?: Record<string, string[]> }
+  | undefined;
+
+const optionalText = z
+  .string()
+  .optional()
+  .transform((v) => (v?.trim() ? v.trim() : null));
+
+const profileSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: z.string().transform(normalizeEmail).refine(isEmailShape, "Enter a valid email address."),
+  jobTitle: optionalText,
+  department: optionalText,
+  phone: optionalText,
+});
+
+const createSchema = profileSchema.extend({
+  role: z.enum(ROLES),
+  password: z.string().default(""),
+});
+
+const EMAIL_TAKEN = "A person with this email already exists.";
+const EMAIL_RESERVED = "This address is reserved for the system.";
+
+const fieldError = (field: string, message: string): PersonState => ({
+  error: "Please fix the errors below.",
+  fieldErrors: { [field]: [message] },
+});
+
+/** Why `email` cannot be used for a person (other than `exceptId`), or null. */
+async function emailProblem(email: string, exceptId?: string): Promise<string | null> {
+  if (email === AUTOMATION_EMAIL) return EMAIL_RESERVED;
+  const taken = await db.user.findFirst({
+    where: { email, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+    select: { id: true },
+  });
+  return taken ? EMAIL_TAKEN : null;
+}
+
+/** True when a write failed on the unique email index (lost a race with another admin). */
+const isUniqueViolation = (e: unknown) => typeof e === "object" && e !== null && "code" in e && e.code === "P2002";
+
+export async function createPerson(_prev: PersonState, formData: FormData): Promise<PersonState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+
+  const parsed = createSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  const { password, ...profile } = parsed.data;
+
+  // No password = SSO / directory sign-in only (no reset flow exists).
+  const badPassword = password ? passwordError(password) : null;
+  if (badPassword) return fieldError("password", badPassword);
+  const emailIssue = await emailProblem(profile.email);
+  if (emailIssue) return fieldError("email", emailIssue);
+
+  let created: { id: string };
+  try {
+    created = await db.user.create({
+      data: { ...profile, passwordHash: password ? await bcrypt.hash(password, 10) : null },
+      select: { id: true },
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) return fieldError("email", EMAIL_TAKEN);
+    throw e;
+  }
+
+  await writeAudit({
+    userId: me.id,
+    action: "CREATE",
+    entity: "User",
+    entityId: created.id,
+    summary: `Created ${profile.role} ${profile.email} (${password ? "local password" : "no local password"})`,
+  });
+  revalidatePath("/people");
+  return { ok: true };
+}
+
+const PROFILE_FIELDS = ["name", "email", "jobTitle", "department", "phone"] as const;
+
+export async function updatePerson(_prev: PersonState, formData: FormData): Promise<PersonState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+
+  const id = String(formData.get("id") ?? "");
+  const target = await db.user.findUnique({ where: { id } });
+  if (!target || target.email === AUTOMATION_EMAIL) return { error: "Person not found." };
+
+  const parsed = profileSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+  const profile = parsed.data;
+
+  const changed = PROFILE_FIELDS.filter((f) => (target[f] ?? null) !== profile[f]);
+  if (changed.length === 0) return { ok: true };
+
+  if (changed.includes("email")) {
+    const emailIssue = await emailProblem(profile.email, id);
+    if (emailIssue) return fieldError("email", emailIssue);
+  }
+
+  try {
+    await db.user.update({ where: { id }, data: profile });
+  } catch (e) {
+    if (isUniqueViolation(e)) return fieldError("email", EMAIL_TAKEN);
+    throw e;
+  }
+
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "User",
+    entityId: id,
+    summary: `Edited profile: ${changed.join(", ")}`,
+    meta: changed.includes("email") ? { emailFrom: target.email, emailTo: profile.email } : undefined,
+  });
+  revalidatePath(`/people/${id}`);
+  revalidatePath("/people");
+  return { ok: true };
 }

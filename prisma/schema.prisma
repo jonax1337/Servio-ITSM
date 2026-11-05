@@ -77,6 +77,7 @@ model User {
   articlesApproved   Article[]               @relation("ArticleApprovedBy")
   changesCreated     Change[]                @relation("ChangeCreatedBy")
   articleRevisions   ArticleRevision[]
+  articleLinks       ArticleLink[]           @relation("ArticleLinkCreator")
   attachments        Attachment[]            @relation("AttachmentUploader")
   syncSource         SyncSource?             @relation(fields: [syncSourceId], references: [id])
 
@@ -483,12 +484,13 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category     Category?     @relation(fields: [categoryId], references: [id])
-  owner        User?         @relation("ServiceOwner", fields: [ownerId], references: [id])
-  sla          SLA?          @relation(fields: [slaId], references: [id])
-  group        Group?        @relation("ServiceTeam", fields: [groupId], references: [id])
+  category     Category?      @relation(fields: [categoryId], references: [id])
+  owner        User?          @relation("ServiceOwner", fields: [ownerId], references: [id])
+  sla          SLA?           @relation(fields: [slaId], references: [id])
+  group        Group?         @relation("ServiceTeam", fields: [groupId], references: [id])
   tickets      Ticket[]
   catalogItems CatalogItem[]
+  assets       ServiceAsset[]
 }
 
 model CatalogItem {
@@ -829,13 +831,16 @@ model Change {
   description        String    @default("") // plaintext twin
   descriptionHtml    String? // sanitized rich-text HTML
   type               String    @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
-  status             String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED
+  status             String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED | CANCELLED
   risk               String    @default("MEDIUM") // LOW | MEDIUM | HIGH
   priority           String    @default("MEDIUM")
   impact             String    @default("MEDIUM")
   reason             String?
   implementationPlan String?
   rollbackPlan       String?
+  outcome            String? // SUCCESSFUL | SUCCESSFUL_WITH_ISSUES | FAILED | ROLLED_BACK — set when the change is reviewed/closed
+  closureNotes       String? // post-implementation review / lessons learned
+  cancelReason       String? // why the change was cancelled (status CANCELLED)
   approvalRule       String    @default("UNANIMOUS") // UNANIMOUS | QUORUM | PERCENT — how CAB approvals resolve
   approvalThreshold  Int? // N for QUORUM, or percent for PERCENT
   customFields       String    @default("{}") // JSON object of custom-field key -> value (CustomFieldDef, entityType=CHANGE)
@@ -884,7 +889,7 @@ model ChangeApproval {
   id         String    @id @default(cuid())
   changeId   Int
   approverId String
-  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED (withdrawn)
   comment    String?
   decidedAt  DateTime?
   createdAt  DateTime  @default(now())
@@ -1010,6 +1015,7 @@ model Asset {
   relationsTo   AssetRelation[] @relation("RelationTarget")
   tickets       TicketAsset[]
   changes       ChangeAsset[]
+  services      ServiceAsset[]
 
   @@unique([syncSourceId, externalId])
   @@index([type])
@@ -1066,6 +1072,17 @@ model ChangeAsset {
   asset    Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@id([changeId, assetId])
+}
+
+/// Configuration items a Service runs on / depends on (CMDB service mapping).
+model ServiceAsset {
+  serviceId String
+  assetId   String
+  createdAt DateTime @default(now())
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, assetId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,8 +1304,28 @@ model Article {
   approvedBy  User?             @relation("ArticleApprovedBy", fields: [approvedById], references: [id])
   revisions   ArticleRevision[]
   attachments Attachment[]
+  links       ArticleLink[]
 
   @@index([status, visibility])
+}
+
+/// A polymorphic link from a knowledge article to a Ticket, Problem or Change
+/// (the article that helped resolve / explains it). Like Approval, entityId
+/// points at the entity by id without a foreign key; the Int ids of those
+/// entities are stored as-is, and links are cleaned up with the article.
+model ArticleLink {
+  id          String   @id @default(cuid())
+  articleId   String
+  entityType  String // TICKET | PROBLEM | CHANGE
+  entityId    Int
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("ArticleLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([articleId, entityType, entityId])
+  @@index([entityType, entityId])
 }
 
 // Append-only snapshot of an article's content, written on every save/publish.

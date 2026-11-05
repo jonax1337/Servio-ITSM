@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
 import { FormCustomFields } from "@/components/custom-fields/form-custom-fields";
+import { statusRequirementError } from "@/lib/problem-rules";
 import type { CustomFieldDef } from "@/lib/custom-fields";
 import type { ComboOption } from "@/components/combobox";
 import {
@@ -44,7 +45,8 @@ export function ProblemForm({
   const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
-  const statusOpts: ComboOption[] = PROBLEM_STATUSES.map((s) => ({ value: s, label: PROBLEM_STATUS_META[s].label, tone: PROBLEM_STATUS_META[s].tone, icon: PROBLEM_STATUS_META[s].icon }));
+  // A new problem has no root cause or workaround yet, so only statuses without that requirement apply.
+  const statusOpts: ComboOption[] = PROBLEM_STATUSES.filter((s) => !statusRequirementError(s, { rootCause: null, workaround: null })).map((s) => ({ value: s, label: PROBLEM_STATUS_META[s].label, tone: PROBLEM_STATUS_META[s].tone, icon: PROBLEM_STATUS_META[s].icon }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
   const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));

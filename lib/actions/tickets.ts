@@ -323,6 +323,8 @@ const TRANSITION_NOT_ALLOWED = "The status workflow doesn't allow this change.";
 const ASSIGNEE_NOT_IN_GROUP = "That agent isn't a member of the ticket's group.";
 const TICKET_NOT_FOUND = "Ticket not found.";
 const INVALID_CHANGE = "That change isn't valid for this ticket.";
+const INVALID_LINK = "That link request isn't valid.";
+const ALREADY_LINKED = "These tickets are already linked.";
 const refused = (error: string): TicketActionResult => ({ ok: false, error });
 
 type ResolvedMailTicket = {
@@ -426,27 +428,39 @@ export async function toggleWatch(formData: FormData): Promise<TicketActionResul
   return { ok: true };
 }
 
-export async function linkTicket(formData: FormData) {
+export async function linkTicket(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
   const targetId = Number(formData.get("targetId"));
   const type = String(formData.get("type") || "RELATED");
-  if (!id || !targetId || id === targetId) return;
+  if (!id || !targetId) return refused(INVALID_LINK);
+  if (id === targetId) return refused("A ticket can't be linked to itself.");
   // Validate the link type against the canonical tuple so a forged POST can't
   // write an off-list relation (same contract as updateTicketField's enum guard).
-  if (!TICKET_LINK_TYPES.includes(type as (typeof TICKET_LINK_TYPES)[number])) return;
-  if (!(await ensureCanAct(id, me))) return;
+  if (!TICKET_LINK_TYPES.includes(type as (typeof TICKET_LINK_TYPES)[number])) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(id, me))) return refused(NOT_YOUR_TICKET);
   // Validate the target ticket exists before linking to it.
   const target = await db.ticket.findUnique({ where: { id: targetId }, select: { id: true } });
-  if (!target) return;
+  if (!target) return refused(TICKET_NOT_FOUND);
+  // A pair is linked once, whichever side created it: the ticket page shows the
+  // link on both ends, so a second row in the opposite direction would read as a
+  // contradictory duplicate ("Blocks #B" and "Blocked by #B" on the same page).
+  const inverse = await db.ticketLink.findUnique({
+    where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
+    select: { id: true },
+  });
+  if (inverse) return refused(ALREADY_LINKED);
   await db.ticketLink.upsert({
     where: { ticketId_linkedTicketId: { ticketId: id, linkedTicketId: targetId } },
     create: { ticketId: id, linkedTicketId: targetId, type },
     update: { type },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Linked to ${ticketRef(targetId)}` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: targetId, summary: `Linked from ${ticketRef(id)}` });
   revalidatePath(`/tickets/${id}`);
+  revalidatePath(`/tickets/${targetId}`);
+  return { ok: true };
 }
 
 export async function unlinkTicket(formData: FormData): Promise<TicketActionResult> {
@@ -454,13 +468,18 @@ export async function unlinkTicket(formData: FormData): Promise<TicketActionResu
   if (!me) return { ok: false, error: "Not authorised." };
   const linkId = String(formData.get("linkId"));
   if (!linkId) return { ok: false, error: "Missing link." };
-  // Derive the ticket from the link row itself — trusting a client-posted
-  // (or absent) ticketId would skip authorization entirely.
-  const link = await db.ticketLink.findUnique({ where: { id: linkId }, select: { ticketId: true } });
+  // Derive both ends from the link row itself — trusting a client-posted (or
+  // absent) ticketId would skip authorization entirely. The link is shown on
+  // both tickets, so being allowed to act on either end is enough to remove it.
+  const link = await db.ticketLink.findUnique({ where: { id: linkId }, select: { ticketId: true, linkedTicketId: true } });
   if (!link) return { ok: false, error: "Link not found." };
-  if (!(await ensureCanAct(link.ticketId, me))) return { ok: false, error: "You can't act on this ticket." };
+  const mayAct = (await ensureCanAct(link.ticketId, me)) || (await ensureCanAct(link.linkedTicketId, me));
+  if (!mayAct) return { ok: false, error: "You can't act on either linked ticket." };
   await db.ticketLink.delete({ where: { id: linkId } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: link.ticketId, summary: `Unlinked from ${ticketRef(link.linkedTicketId)}` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: link.linkedTicketId, summary: `Unlinked from ${ticketRef(link.ticketId)}` });
   revalidatePath(`/tickets/${link.ticketId}`);
+  revalidatePath(`/tickets/${link.linkedTicketId}`);
   return { ok: true };
 }
 
@@ -626,32 +645,37 @@ export async function setTicketResolution(formData: FormData): Promise<TicketAct
 
 // ── Unlink relations ─────────────────────────────────────────────────────────
 
-export async function unlinkAsset(formData: FormData) {
+export async function unlinkAsset(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const ticketId = Number(formData.get("ticketId"));
   const assetId = String(formData.get("assetId") ?? "");
-  if (!ticketId || !assetId) return;
-  if (!(await ensureCanAct(ticketId, me))) return;
+  if (!ticketId || !assetId) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(ticketId, me))) return refused(NOT_YOUR_TICKET);
   // Existence pre-check: an already-removed row is a benign no-op (not a P2025
   // 500), while a real DB failure now propagates instead of lying about success.
   const row = await db.ticketAsset.findUnique({ where: { ticketId_assetId: { ticketId, assetId } }, select: { ticketId: true } });
-  if (!row) return;
+  if (!row) return { ok: true };
   await db.ticketAsset.delete({ where: { ticketId_assetId: { ticketId: row.ticketId, assetId } } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Unlinked an asset" });
   revalidatePath(`/tickets/${row.ticketId}`);
+  revalidatePath(`/assets/${assetId}`);
+  return { ok: true };
 }
 
-export async function unlinkRelation(formData: FormData) {
+export async function unlinkRelation(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const ticketId = Number(formData.get("ticketId"));
   const kind = String(formData.get("kind") ?? "");
-  if (!ticketId || !["problem", "change"].includes(kind)) return;
-  if (!(await ensureCanAct(ticketId, me))) return;
+  if (!ticketId || !["problem", "change"].includes(kind)) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(ticketId, me))) return refused(NOT_YOUR_TICKET);
   await db.ticket.update({ where: { id: ticketId }, data: kind === "problem" ? { problemId: null } : { changeId: null } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: `Unlinked from ${kind}` });
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/problems");
   revalidatePath("/changes");
+  return { ok: true };
 }
 
 /**
@@ -659,16 +683,16 @@ export async function unlinkRelation(formData: FormData) {
  * either side: the ticket detail page passes its own ticketId + a chosen problemId;
  * the problem detail page passes its own problemId + a chosen ticketId.
  */
-export async function setTicketProblem(formData: FormData) {
+export async function setTicketProblem(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const ticketId = Number(formData.get("ticketId"));
   const raw = String(formData.get("problemId") ?? "").trim();
   const problemId = raw && raw !== "none" ? Number(raw) : null;
-  if (!ticketId) return;
-  if (!(await ensureCanAct(ticketId, me))) return;
+  if (!ticketId || Number.isNaN(problemId)) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(ticketId, me))) return refused(NOT_YOUR_TICKET);
   // Validate the target problem exists before linking.
-  if (problemId && !(await db.problem.findUnique({ where: { id: problemId }, select: { id: true } }))) return;
+  if (problemId && !(await db.problem.findUnique({ where: { id: problemId }, select: { id: true } }))) return refused("Problem not found.");
   await db.ticket.update({ where: { id: ticketId }, data: { problemId } });
   await writeAudit({
     userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
@@ -677,19 +701,20 @@ export async function setTicketProblem(formData: FormData) {
   revalidatePath(`/tickets/${ticketId}`);
   if (problemId) revalidatePath(`/problems/${problemId}`);
   revalidatePath("/problems");
+  return { ok: true };
 }
 
 /** Attach/detach a ticket to a Change. Symmetric to setTicketProblem. */
-export async function setTicketChange(formData: FormData) {
+export async function setTicketChange(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const ticketId = Number(formData.get("ticketId"));
   const raw = String(formData.get("changeId") ?? "").trim();
   const changeId = raw && raw !== "none" ? Number(raw) : null;
-  if (!ticketId) return;
-  if (!(await ensureCanAct(ticketId, me))) return;
+  if (!ticketId || Number.isNaN(changeId)) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(ticketId, me))) return refused(NOT_YOUR_TICKET);
   // Validate the target change exists before linking.
-  if (changeId && !(await db.change.findUnique({ where: { id: changeId }, select: { id: true } }))) return;
+  if (changeId && !(await db.change.findUnique({ where: { id: changeId }, select: { id: true } }))) return refused("Change not found.");
   await db.ticket.update({ where: { id: ticketId }, data: { changeId } });
   await writeAudit({
     userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId,
@@ -698,18 +723,19 @@ export async function setTicketChange(formData: FormData) {
   revalidatePath(`/tickets/${ticketId}`);
   if (changeId) revalidatePath(`/changes/${changeId}`);
   revalidatePath("/changes");
+  return { ok: true };
 }
 
 /** Link an asset (CMDB configuration item) to a ticket. */
-export async function linkAsset(formData: FormData) {
+export async function linkAsset(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
   const ticketId = Number(formData.get("ticketId"));
   const assetId = String(formData.get("assetId") ?? "").trim();
-  if (!ticketId || !assetId) return;
-  if (!(await ensureCanAct(ticketId, me))) return;
+  if (!ticketId || !assetId) return refused(INVALID_LINK);
+  if (!(await ensureCanAct(ticketId, me))) return refused(NOT_YOUR_TICKET);
   // Validate the target asset exists before linking.
-  if (!(await db.asset.findUnique({ where: { id: assetId }, select: { id: true } }))) return;
+  if (!(await db.asset.findUnique({ where: { id: assetId }, select: { id: true } }))) return refused("Asset not found.");
   await db.ticketAsset.upsert({
     where: { ticketId_assetId: { ticketId, assetId } },
     create: { ticketId, assetId },
@@ -718,6 +744,7 @@ export async function linkAsset(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Linked an asset" });
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath(`/assets/${assetId}`);
+  return { ok: true };
 }
 
 // ── Tasks ──────────────────────────────────────────────────────────────────

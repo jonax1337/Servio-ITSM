@@ -6,6 +6,7 @@ import {
   setTicketResolution,
   escalateTicket,
   linkTicket,
+  unlinkTicket,
   addTask,
   addWorkLog,
   toggleWatch,
@@ -29,7 +30,7 @@ import {
   ticketRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite, fromActionResult } from "../helpers";
 
 /**
  * Tickets. Reference module shape — export `OPERATIONS: AiOperation[]`, one entry
@@ -320,8 +321,42 @@ export const OPERATIONS: AiOperation[] = [
       if (!target) return err(`Target ticket not found: ${a.target}`);
       if (target.id === ticket.id) return err("A ticket cannot be linked to itself.");
       const relation = coerceEnum(a.relation, ["RELATED", "DUPLICATE", "BLOCKS", "CAUSED_BY"]) ?? "RELATED";
-      await linkTicket(toFormData({ id: ticket.id, targetId: target.id, type: relation }));
-      return ok(`Linked ${ticketRef(ticket.id, ticket.type)} to ${ticketRef(target.id, target.type)} (${relation})`);
+      return fromActionResult(
+        await linkTicket(toFormData({ id: ticket.id, targetId: target.id, type: relation })),
+        `Linked ${ticketRef(ticket.id, ticket.type)} to ${ticketRef(target.id, target.type)} (${relation})`,
+      );
+    },
+  },
+  {
+    id: "ticket.unlink",
+    group: "Tickets",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Remove the link between two tickets (whichever of them is the source). Give both ticket refs or numbers. " +
+      "To detach a ticket from a problem or change use ticket.set_problem / ticket.set_change with target 'none'.",
+    input: z.object({
+      ref: z.string().describe("one ticket's ref or number"),
+      target: z.string().describe("the other ticket's ref or number"),
+    }),
+    label: (a) => `Unlink ${a.ref} ↔ ${a.target}`,
+    run: async (a) => {
+      const ticket = await resolveTicket(a.ref);
+      if (!ticket) return err(`Ticket not found: ${a.ref}`);
+      const target = await resolveTicket(a.target);
+      if (!target) return err(`Target ticket not found: ${a.target}`);
+      const names = `${ticketRef(ticket.id, ticket.type)} and ${ticketRef(target.id, target.type)}`;
+      const link = await db.ticketLink.findFirst({
+        where: {
+          OR: [
+            { ticketId: ticket.id, linkedTicketId: target.id },
+            { ticketId: target.id, linkedTicketId: ticket.id },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!link) return err(`${names} are not linked.`);
+      return fromActionResult(await unlinkTicket(toFormData({ linkId: link.id })), `Unlinked ${names}`);
     },
   },
   {

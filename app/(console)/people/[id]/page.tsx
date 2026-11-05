@@ -12,9 +12,11 @@ import {
   Server,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { requireUser, hasRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { UserProperties } from "@/components/people/user-properties";
+import { PersonDialog } from "@/components/people/person-dialog";
 import { UserAvatar } from "@/components/user-avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -49,12 +51,14 @@ export default async function PersonDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await requireUser();
 
   const [user, openTickets, ownedAssets] = await Promise.all([
     db.user.findUnique({
       where: { id },
       include: {
         memberships: { include: { group: true } },
+        syncSource: { select: { name: true } },
       },
     }),
     // Tickets this person has open as the REQUESTER — "what they have open".
@@ -86,6 +90,15 @@ export default async function PersonDetailPage({
           </LinkButton>
           <span className="text-sm text-muted-foreground">People</span>
           <div className="ml-auto flex items-center gap-2">
+            {hasRole(me.role, "ADMIN") ? (
+              <PersonDialog
+                person={{
+                  id: user.id, name: user.name, email: user.email,
+                  phone: user.phone, jobTitle: user.jobTitle, department: user.department,
+                }}
+                syncSourceName={user.syncSource?.name ?? null}
+              />
+            ) : null}
             <StatusBadge map={ROLE_META} value={user.role} />
             <span className="inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
               <span

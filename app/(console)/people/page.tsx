@@ -3,6 +3,7 @@ import { Users } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { requireUser, hasRole } from "@/lib/session";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -11,6 +12,7 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { UserAvatar } from "@/components/user-avatar";
+import { PersonDialog } from "@/components/people/person-dialog";
 import { AUTOMATION_EMAIL } from "@/lib/system-user";
 import {
   Table,
@@ -31,6 +33,7 @@ export default async function PeoplePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  const me = await requireUser();
   const sp = await searchParams;
   const page = getPage(sp);
   const q = getParam(sp, "q");
@@ -87,7 +90,9 @@ export default async function PeoplePage({
         icon={Users}
         title="People"
         description="Agents, managers and end users across your organisation."
-      />
+      >
+        {hasRole(me.role, "ADMIN") ? <PersonDialog /> : null}
+      </PageHeader>
 
       <PageBody className="grid gap-4">
         <ListToolbar filters={filters} searchPlaceholder="Search name or email…" />

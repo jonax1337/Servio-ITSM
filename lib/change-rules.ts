@@ -1,6 +1,23 @@
-/** Pure business rules for changes, shared by the server actions and their tests. */
+/** Pure business rules for changes, shared by the server actions, the UI and their tests. */
+
+import { format } from "date-fns";
+import {
+  CHANGE_OUTCOMES,
+  CHANGE_STATUSES,
+  CHANGE_STATUS_META,
+  CHANGE_TYPES,
+  IMPACT_URGENCY,
+  PRIORITIES,
+  RISKS,
+} from "@/lib/constants";
+
+export const statusLabel = (status: string) => CHANGE_STATUS_META[status]?.label ?? status;
+
+// ── Planned window ───────────────────────────────────────────────────────────
 
 export const WINDOW_ORDER_ERROR = "Planned end must be after the planned start.";
+
+export type PlannedWindow = { start: Date | null; end: Date | null };
 
 /** Error message when the window is inverted or empty; null when valid or incomplete. */
 export function plannedWindowError(start: Date | null, end: Date | null): string | null {
@@ -8,12 +25,57 @@ export function plannedWindowError(start: Date | null, end: Date | null): string
   return end.getTime() > start.getTime() ? null : WINDOW_ORDER_ERROR;
 }
 
-/** Statuses in which the planned window may still change: before the CAB has seated or decided. */
-const WINDOW_EDITABLE_STATUSES: readonly string[] = ["DRAFT", "SUBMITTED", "REJECTED"];
+/** Once the CAB has approved, moving the window is a reschedule and needs a reason. */
+const RESCHEDULE_STATUSES: readonly string[] = ["APPROVED", "SCHEDULED"];
+
+/** Statuses in which the planned window may change: before the CAB decides, or as a reasoned reschedule. */
+const WINDOW_EDITABLE_STATUSES: readonly string[] = ["DRAFT", "SUBMITTED", "REJECTED", ...RESCHEDULE_STATUSES];
 
 export function isWindowEditable(status: string): boolean {
   return WINDOW_EDITABLE_STATUSES.includes(status);
 }
+
+export function requiresRescheduleReason(status: string): boolean {
+  return RESCHEDULE_STATUSES.includes(status);
+}
+
+const sameInstant = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+export function windowChanged(current: PlannedWindow, next: PlannedWindow): boolean {
+  return !sameInstant(current.start, next.start) || !sameInstant(current.end, next.end);
+}
+
+const DISPLAY_DATE = "PP p";
+
+export function formatPlannedWindow({ start, end }: PlannedWindow): string {
+  if (start && end) return `${format(start, DISPLAY_DATE)} – ${format(end, DISPLAY_DATE)}`;
+  if (start) return `from ${format(start, DISPLAY_DATE)}`;
+  if (end) return `until ${format(end, DISPLAY_DATE)}`;
+  return "not set";
+}
+
+/** Why a window edit must be refused in this status, or null when it may go ahead. */
+export function rescheduleError(
+  status: string,
+  current: PlannedWindow,
+  next: PlannedWindow,
+  reason: string | null,
+): string | null {
+  if (!requiresRescheduleReason(status) || !windowChanged(current, next)) return null;
+  if (!next.start || !next.end) return "An approved change must keep its planned window; move the dates instead of clearing them.";
+  if (!reason?.trim()) return "Add a short reason to reschedule an approved change.";
+  return null;
+}
+
+export function rescheduleComment(current: PlannedWindow, next: PlannedWindow, reason: string): string {
+  return `Window rescheduled from ${formatPlannedWindow(current)} to ${formatPlannedWindow(next)}: ${reason.trim()}`;
+}
+
+export function windowLockedMessage(status: string): string {
+  return `The planned window can't be changed while the change is ${statusLabel(status).toLowerCase()}.`;
+}
+
+// ── Submit prerequisites ─────────────────────────────────────────────────────
 
 export type SubmitCandidate = {
   type: string;
@@ -39,4 +101,141 @@ export function submitBlockers(change: SubmitCandidate): string[] {
 export function submitBlockedMessage(missing: string[]): string {
   const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}` : missing[0];
   return `Cannot submit for approval: add ${list} first.`;
+}
+
+// ── CAB board ────────────────────────────────────────────────────────────────
+
+/** The board may be curated while it is being assembled (draft) or is live (approval). */
+const BOARD_SEATING_STATUSES: readonly string[] = ["DRAFT", "APPROVAL"];
+
+export function canSeatApprovers(status: string): boolean {
+  return BOARD_SEATING_STATUSES.includes(status);
+}
+
+/** An expedited emergency board (ECAB) never exceeds this many seats, manual ones included. */
+const EMERGENCY_BOARD_SIZE = 2;
+
+export function boardSizeLimit(type: string): number {
+  return type === "EMERGENCY" ? EMERGENCY_BOARD_SIZE : Number.POSITIVE_INFINITY;
+}
+
+/** Auto-selected approvers to add on top of the seats already filled, without duplicates and within the board size limit. */
+export function approversToSeat(selected: string[], alreadySeated: string[], limit = Number.POSITIVE_INFINITY): string[] {
+  const seated = new Set(alreadySeated);
+  const room = Math.max(0, limit - seated.size);
+  return selected.filter((id) => !seated.has(id)).slice(0, room);
+}
+
+export type SeatedApprover = { approvalId: string; approverId: string; role: string; isActive: boolean };
+
+/**
+ * Seats added while drafting that can no longer sit on the board: the approver became the
+ * change's owner or creator (separation of duties), was deactivated, or lost the role the
+ * change's risk demands.
+ */
+export function invalidSeats(
+  seats: SeatedApprover[],
+  change: { assigneeId: string | null; createdById: string | null },
+  eligibleRoles: readonly string[],
+): SeatedApprover[] {
+  return seats.filter(
+    (seat) =>
+      seat.approverId === change.assigneeId ||
+      seat.approverId === change.createdById ||
+      !seat.isActive ||
+      !eligibleRoles.includes(seat.role),
+  );
+}
+
+/** Once the board has decided (or the change is called off), approvers who never answered have nothing left to decide. */
+const BOARD_SETTLED_STATUSES: readonly string[] = ["APPROVED", "REJECTED", "CANCELLED"];
+
+export function settlesApprovalBoard(status: string): boolean {
+  return BOARD_SETTLED_STATUSES.includes(status);
+}
+
+// ── Lifecycle moves ──────────────────────────────────────────────────────────
+
+/** Statuses set only by the approval workflow; a manual edit would bypass separation of duties. */
+const APPROVAL_FLOW_STATUSES: readonly string[] = ["SUBMITTED", "APPROVAL", "APPROVED"];
+
+export function manualStatusError(to: string): string | null {
+  return APPROVAL_FLOW_STATUSES.includes(to)
+    ? `${statusLabel(to)} is set by the approval workflow. Use "Submit for approval" instead.`
+    : null;
+}
+
+/** A closed or cancelled change is a finished record: comments and links stay open, everything else is read-only. */
+const LOCKED_STATUSES: readonly string[] = ["CLOSED", "CANCELLED"];
+
+export function isChangeLocked(status: string): boolean {
+  return LOCKED_STATUSES.includes(status);
+}
+
+export function changeLockedMessage(status: string): string {
+  return `This change is ${statusLabel(status).toLowerCase()} and can no longer be edited. Comments and links can still be added.`;
+}
+
+/** Moving into these statuses records how the implementation went. */
+const CLOSURE_STATUSES: readonly string[] = ["CLOSED", "FAILED"];
+const FAILURE_OUTCOMES: readonly string[] = ["FAILED", "ROLLED_BACK"];
+
+export function isClosureStatus(status: string): boolean {
+  return CLOSURE_STATUSES.includes(status);
+}
+
+export function allowedOutcomes(toStatus: string): readonly string[] {
+  return toStatus === "FAILED" ? FAILURE_OUTCOMES : CHANGE_OUTCOMES;
+}
+
+export type ClosureInput = {
+  toStatus: string;
+  type: string;
+  outcome: string | null;
+  notes: string | null;
+};
+
+/** Why a move into CLOSED/FAILED lacks its outcome or post-implementation review; null when complete. */
+export function closureError({ toStatus, type, outcome, notes }: ClosureInput): string | null {
+  if (!isClosureStatus(toStatus)) return null;
+  if (!outcome) return "Choose an outcome before closing the change.";
+  if (!allowedOutcomes(toStatus).includes(outcome)) {
+    return toStatus === "FAILED"
+      ? "A failed change needs the outcome Failed or Rolled back."
+      : "Choose a valid outcome.";
+  }
+  if (!notes?.trim()) {
+    return type === "EMERGENCY"
+      ? "Emergency changes need a post-implementation review (closure notes) first."
+      : "Add closure notes (post-implementation review or lessons learned).";
+  }
+  return null;
+}
+
+export function cancelReasonError(reason: string | null): string | null {
+  return reason?.trim() ? null : "Give a reason for cancelling the change.";
+}
+
+/** The real end of the implementation is stamped when work stops, not only at closure. */
+const WORK_ENDED_STATUSES: readonly string[] = ["REVIEW", "FAILED", "CLOSED"];
+
+export function shouldStampActualEnd(toStatus: string, actualEnd: Date | null): boolean {
+  return !actualEnd && WORK_ENDED_STATUSES.includes(toStatus);
+}
+
+// ── Field values ─────────────────────────────────────────────────────────────
+
+const ENUM_FIELD_VALUES: Record<string, readonly string[]> = {
+  status: CHANGE_STATUSES,
+  type: CHANGE_TYPES,
+  risk: RISKS,
+  priority: PRIORITIES,
+  impact: IMPACT_URGENCY,
+};
+
+/** Error for a value outside the field's enum; null for valid values and for fields that are not enums. */
+export function fieldValueError(field: string, value: string): string | null {
+  const allowed = ENUM_FIELD_VALUES[field];
+  if (!allowed || allowed.includes(value)) return null;
+  return `"${value}" is not a valid ${field}. Allowed: ${allowed.join(", ")}.`;
 }

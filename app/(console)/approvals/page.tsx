@@ -28,7 +28,8 @@ export default async function ApprovalsPage() {
       include: { ticket: { include: { requester: true, catalogItem: true } }, approver: true },
     }),
     db.changeApproval.findMany({
-      where: { status: "PENDING", ...scope },
+      // Seats added while drafting only become decidable once the change is submitted.
+      where: { status: "PENDING", ...scope, change: { status: "APPROVAL" } },
       orderBy: { createdAt: "asc" },
       include: { change: { include: { assignee: true } }, approver: true },
     }),

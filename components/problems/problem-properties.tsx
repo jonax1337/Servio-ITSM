@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { toast } from "sonner";
 import { updateProblemField } from "@/lib/actions/problems";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import {
@@ -22,7 +23,7 @@ function initials(s: string) {
 }
 
 function Prop({
-  label, problemId, field, value, options, searchable, placeholder,
+  label, problemId, field, value, options, searchable, placeholder, disabled,
 }: {
   label: string;
   problemId: number;
@@ -31,6 +32,7 @@ function Prop({
   options: ComboOption[];
   searchable?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [pending, start] = useTransition();
   return (
@@ -40,6 +42,7 @@ function Prop({
         options={options}
         value={value ?? "none"}
         pending={pending}
+        disabled={disabled}
         placeholder={placeholder}
         searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
         onChange={(v) => {
@@ -47,7 +50,11 @@ function Prop({
           fd.set("id", String(problemId));
           fd.set("field", field);
           fd.set("value", v);
-          start(() => updateProblemField(fd));
+          start(async () => {
+            const res = await updateProblemField(fd);
+            if (res.ok) toast.success(`${label} updated`);
+            else toast.error(res.error);
+          });
         }}
       />
     </div>
@@ -58,6 +65,7 @@ export function ProblemProperties({
   problem,
   options,
   allowedStatuses,
+  locked,
 }: {
   problem: {
     id: number;
@@ -71,6 +79,8 @@ export function ProblemProperties({
   options: FormOptions;
   /** Statuses reachable from the current one under the workflow; others grey out. */
   allowedStatuses?: string[];
+  /** A closed problem keeps status, assignee and group editable; the rest is read-only until reopened. */
+  locked?: boolean;
 }) {
   const allowed = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = PROBLEM_STATUSES.map((s) => ({
@@ -99,11 +109,12 @@ export function ProblemProperties({
   return (
     <div className="grid gap-3">
       <Prop label="Status" problemId={problem.id} field="status" value={problem.status} options={statusOpts} />
-      <Prop label="Priority" problemId={problem.id} field="priority" value={problem.priority} options={prioOpts} />
-      <Prop label="Impact" problemId={problem.id} field="impact" value={problem.impact} options={levelOpts} />
+      <Prop label="Priority" problemId={problem.id} field="priority" value={problem.priority} options={prioOpts} disabled={locked} />
+      <Prop label="Impact" problemId={problem.id} field="impact" value={problem.impact} options={levelOpts} disabled={locked} />
       <Prop label="Assignee" problemId={problem.id} field="assigneeId" value={problem.assigneeId} options={agentOpts} searchable placeholder="Unassigned" />
       <Prop label="Group" problemId={problem.id} field="groupId" value={problem.groupId} options={groupOpts} searchable placeholder="No group" />
-      <Prop label="Category" problemId={problem.id} field="categoryId" value={problem.categoryId} options={catOpts} searchable placeholder="No category" />
+      <Prop label="Category" problemId={problem.id} field="categoryId" value={problem.categoryId} options={catOpts} searchable placeholder="No category" disabled={locked} />
+      {locked ? <p className="text-xs text-muted-foreground">Closed. Reopen the problem to edit priority, impact and category.</p> : null}
     </div>
   );
 }

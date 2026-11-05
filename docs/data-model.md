@@ -110,9 +110,9 @@ The derived clock state
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `approvalRule` (`UNANIMOUS`/`QUORUM`/`PERCENT` — how CAB approvals resolve) + `approvalThreshold` (N for `QUORUM`, percent for `PERCENT`), `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `problemId`; has approvals, affected assets (CIs), tickets, comments |
+| `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (11-state lifecycle incl. terminal `CANCELLED`), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `outcome` (`SUCCESSFUL`/`SUCCESSFUL_WITH_ISSUES`/`FAILED`/`ROLLED_BACK`), `closureNotes` (post-implementation review / lessons learned), `cancelReason`, `approvalRule` (`UNANIMOUS`/`QUORUM`/`PERCENT` — how CAB approvals resolve) + `approvalThreshold` (N for `QUORUM`, percent for `PERCENT`), `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `problemId`; has approvals, affected assets (CIs), tickets, comments |
 | `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId` |
-| `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status`, `comment`, `decidedAt` |
+| `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status` (`PENDING`/`APPROVED`/`REJECTED`, or `CANCELLED` when the seat is withdrawn because the board settled or the change was cancelled), `comment`, `decidedAt` |
 
 ### CMDB / assets
 
@@ -121,6 +121,7 @@ The derived clock state
 | `Asset` | Configuration item (hardware, VM, cloud, software) | `assetTag` (unique), `name`, `type` (12 values), `status`, hardware detail (`serial`, `model`, `manufacturer`, `ipAddress`, `macAddress`, `os`, `cpu`, `ramGb`, `storageGb`), lifecycle (`cost`, `purchaseDate`, `warrantyEnd`), `ownerId`, `groupId`, `locationId`, `syncSourceId`/`externalId`, `lastSeenAt`; relations to tickets, changes, and asset-to-asset relations |
 | `AssetRelation` | Directed dependency edge between two assets | `(sourceId, targetId, type)` unique; `type` (`DEPENDS_ON`/`CONNECTS_TO`/`RUNS_ON`/`HOSTS`/`PART_OF`/`BACKS_UP`) |
 | `TicketAsset` | Ticket ↔ affected-asset join | composite PK `(ticketId, assetId)` |
+| `ServiceAsset` | Service ↔ supporting-CI join (CMDB service mapping) | composite PK `(serviceId, assetId)`, `createdAt` |
 | `ChangeAsset` | Change ↔ affected-CI join (attach/detach via `lib/actions/change-assets.ts`; feeds automated impact/risk) | composite PK `(changeId, assetId)` |
 
 ### Locations
@@ -138,6 +139,7 @@ The derived clock state
 | `Service` | Operational business service (service health) | `name` (unique), `status` (`OPERATIONAL`/`DEGRADED`/`OUTAGE`/`MAINTENANCE`/`RETIRED`), `criticality`, `categoryId`, `ownerId`, `slaId` |
 | `CatalogItem` | Requestable self-service catalog entry (portal form) | `name`, `formSchema` (JSON field defs as TEXT), `requiresApproval` + `approverId`, `estimatedDays`, `isPublished`, `order`; spawns tickets |
 | `Article` | Knowledge-base article | `slug` (unique), `body` + `bodyFormat` (`markdown`/`plain`), `status` (`DRAFT`/`REVIEW`/`PUBLISHED`/`RETIRED`), `visibility` (`INTERNAL`/`PUBLIC`), `published` (denormalized mirror), `views`, `categoryId`, `authorId`; has revisions & attachments |
+| `ArticleLink` | Polymorphic link from an article to a Ticket/Problem/Change (no FK on `entityId`, like `Approval`); cascades with the article | `(articleId, entityType, entityId)` unique; `createdById` (SetNull) |
 | `ArticleRevision` | Append-only content snapshot per save/publish | `(articleId, version)` unique; `title`, `excerpt`, `body`, `note`, `editorId` |
 
 > **Note:** `Service` (operational health) and `CatalogItem` (requestable form) are distinct models. The seed
@@ -237,7 +239,9 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT` |
 | `PROBLEM_STATUSES` | `Problem.status` | `NEW`, `INVESTIGATING`, `KNOWN_ERROR`, `RESOLVED`, `CLOSED` |
 | `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
-| `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `SUBMITTED`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED` |
+| `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `SUBMITTED`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED`, `CANCELLED` |
+| `CHANGE_OUTCOMES` | `Change.outcome` | `SUCCESSFUL`, `SUCCESSFUL_WITH_ISSUES`, `FAILED`, `ROLLED_BACK` |
+| `ARTICLE_LINK_ENTITY_TYPES` | `ArticleLink.entityType` | `TICKET`, `PROBLEM`, `CHANGE` |
 | `RISKS` | `Change.risk` | `LOW`, `MEDIUM`, `HIGH` |
 | `CAB_APPROVAL_RULES` | `Change.approvalRule` | `UNANIMOUS`, `QUORUM`, `PERCENT` |
 | `ESCALATION_ACTIONS` | `EscalationStep.action` | `NOTIFY`, `REASSIGN`, `BUMP_PRIORITY` |

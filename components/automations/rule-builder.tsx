@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Plus, Trash2, Loader2, Save, Zap, Pencil } from "lucide-react";
+import { Plus, Trash2, Loader2, Save, Zap, Pencil, TriangleAlert } from "lucide-react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { createRule, updateRule, type RuleState } from "@/lib/actions/automations";
 import {
   TRIGGERS, MATCH_TYPES, CONDITION_FIELDS, OPERATORS, ACTION_TYPES,
@@ -69,6 +70,21 @@ function actionValuePlaceholder(type: string): string {
   }
 }
 
+/** Lower-cased trigger label for the "runs on every ..." warning. */
+function triggerLabel(trigger: string): string {
+  const label = TRIGGERS.find((t) => t.value === trigger)?.label ?? trigger;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+function FieldErrors({ messages }: { messages?: string[] }) {
+  if (!messages?.length) return null;
+  return (
+    <ul className="grid gap-0.5 text-xs text-destructive">
+      {messages.map((m) => <li key={m}>{m}</li>)}
+    </ul>
+  );
+}
+
 function ValuePicker({
   kind, value, onChange, placeholder,
 }: {
@@ -106,11 +122,15 @@ export function RuleBuilder({
   const [conditions, setConditions] = useState<Condition[]>(rule?.conditions ?? []);
   const [actions, setActions] = useState<AutomationAction[]>(rule?.actions ?? [{ type: "assign", value: "" }]);
 
-  // close on successful submit (state stays undefined on success)
-  const submit = async (fd: FormData) => {
-    await action(fd);
-    setOpen(false);
-  };
+  const submit = useFormSubmit(action);
+  const fe = state?.fieldErrors ?? {};
+
+  // Close once, when a new successful result arrives.
+  const [seenState, setSeenState] = useState(state);
+  if (state !== seenState) {
+    setSeenState(state);
+    if (state?.ok) setOpen(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -125,7 +145,7 @@ export function RuleBuilder({
           <DialogDescription>Run actions automatically when a ticket matches your conditions.</DialogDescription>
         </DialogHeader>
 
-        <form action={submit} className="grid gap-5">
+        <form method="post" onSubmit={submit} className="grid gap-5">
           {rule ? <input type="hidden" name="id" value={rule.id} /> : null}
           <input type="hidden" name="conditions" value={JSON.stringify(conditions.filter((c) => c.field))} />
           <input type="hidden" name="actions" value={JSON.stringify(actions.filter((a) => a.type))} />
@@ -138,6 +158,7 @@ export function RuleBuilder({
             <div className="grid gap-1.5 sm:col-span-2">
               <Label>Rule name</Label>
               <Input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Auto-assign VPN incidents" required />
+              <FieldErrors messages={fe.name} />
             </div>
             <div className="grid gap-1.5">
               <Label>Trigger</Label>
@@ -163,8 +184,15 @@ export function RuleBuilder({
                 <Plus className="size-4" /> Add condition
               </Button>
             </div>
+            <FieldErrors messages={fe.conditions} />
             {conditions.length === 0 ? (
-              <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">No conditions — the rule runs for every {trig === "TICKET_CREATED" ? "new" : "updated"} ticket.</p>
+              <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  <strong>No conditions.</strong> This rule runs on every matching trigger ({triggerLabel(trig)}),
+                  so its actions apply to all of those tickets.
+                </span>
+              </p>
             ) : (
               conditions.map((c, i) => {
                 const vk = ["empty", "not_empty"].includes(c.op) ? "none" : conditionValueOptions(c.field, options);
@@ -192,6 +220,7 @@ export function RuleBuilder({
                 <Plus className="size-4" /> Add action
               </Button>
             </div>
+            <FieldErrors messages={fe.actions} />
             {actions.map((a, i) => {
               const vk = actionValueOptions(a.type, options);
               return (

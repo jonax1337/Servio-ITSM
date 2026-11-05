@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getCurrentUser, hasRole, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { TRIGGERS, MATCH_TYPES } from "@/lib/automation-defs";
+import { parseRule, referencedIds, type ParsedRule } from "@/lib/automation-rules";
 
 // DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
 // demoted/deactivated manager loses write access immediately.
@@ -19,28 +20,56 @@ const schema = z.object({
   description: z.string().optional().transform((v) => (v?.trim() ? v.trim() : null)),
   trigger: z.enum(TRIGGERS.map((t) => t.value) as [string, ...string[]]),
   matchType: z.enum(MATCH_TYPES.map((t) => t.value) as [string, ...string[]]),
-  conditions: z.string().default("[]"),
-  actions: z.string().default("[]"),
   isActive: z.string().optional(),
 });
 
-export type RuleState = { error?: string } | undefined;
+export type RuleState =
+  | { ok?: boolean; error?: string; fieldErrors?: Record<string, string[]> }
+  | undefined;
 
-function normalizeJson(s: string) {
-  try {
-    const a = JSON.parse(s);
-    return JSON.stringify(Array.isArray(a) ? a : []);
-  } catch {
-    return "[]";
+type ValidRule = Extract<ParsedRule, { ok: true }>;
+
+/** Checks the rule form's posted fields; returns the normalised rule or the state to send back. */
+async function validateRuleForm(
+  formData: FormData,
+): Promise<{ ok: true; fields: z.infer<typeof schema>; rule: ValidRule } | { ok: false; state: RuleState }> {
+  const parsed = schema.safeParse(Object.fromEntries(formData));
+  const rule = parseRule(String(formData.get("conditions") ?? "[]"), String(formData.get("actions") ?? "[]"));
+  const fieldErrors: Record<string, string[]> = parsed.success ? {} : parsed.error.flatten().fieldErrors;
+  if (!rule.ok) {
+    if (rule.errors.conditions.length > 0) fieldErrors.conditions = rule.errors.conditions;
+    if (rule.errors.actions.length > 0) fieldErrors.actions = rule.errors.actions;
+  } else {
+    const missing = await unresolvedReferences(rule.actions);
+    if (missing.length > 0) fieldErrors.actions = missing;
   }
+  if (!parsed.success || !rule.ok || Object.keys(fieldErrors).length > 0) {
+    return { ok: false, state: { error: "Please fix the errors below.", fieldErrors } };
+  }
+  return { ok: true, fields: parsed.data, rule };
+}
+
+/** Messages for actions pointing at an agent or group that no longer exists. */
+async function unresolvedReferences(actions: ValidRule["actions"]): Promise<string[]> {
+  const { agentIds, groupIds } = referencedIds(actions);
+  const [users, groups] = await Promise.all([
+    db.user.findMany({ where: { id: { in: agentIds } }, select: { id: true, role: true, isActive: true } }),
+    db.group.findMany({ where: { id: { in: groupIds } }, select: { id: true } }),
+  ]);
+  const usableAgents = new Set(users.filter((u) => u.isActive && isAgent(u.role as Role)).map((u) => u.id));
+  const knownGroups = new Set(groups.map((g) => g.id));
+  const problems: string[] = [];
+  if (agentIds.some((id) => !usableAgents.has(id))) problems.push("An action refers to an agent who is not active.");
+  if (groupIds.some((id) => !knownGroups.has(id))) problems.push("An action refers to a group that no longer exists.");
+  return problems;
 }
 
 export async function createRule(_prev: RuleState, formData: FormData): Promise<RuleState> {
   const me = await requireManager();
   if (!me) return { error: "Not authorised" };
-  const parsed = schema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid rule" };
-  const d = parsed.data;
+  const checked = await validateRuleForm(formData);
+  if (!checked.ok) return checked.state;
+  const d = checked.fields;
   const count = await db.automationRule.count();
   const rule = await db.automationRule.create({
     data: {
@@ -48,15 +77,15 @@ export async function createRule(_prev: RuleState, formData: FormData): Promise<
       description: d.description,
       trigger: d.trigger,
       matchType: d.matchType,
-      conditions: normalizeJson(d.conditions),
-      actions: normalizeJson(d.actions),
+      conditions: JSON.stringify(checked.rule.conditions),
+      actions: JSON.stringify(checked.rule.actions),
       isActive: d.isActive !== "false",
       order: count,
     },
   });
   await writeAudit({ userId: me.id, action: "CREATE", entity: "AutomationRule", entityId: rule.id, summary: `Created automation "${rule.name}"` });
   revalidatePath("/automations");
-  return undefined;
+  return { ok: true };
 }
 
 export async function updateRule(_prev: RuleState, formData: FormData): Promise<RuleState> {
@@ -64,9 +93,9 @@ export async function updateRule(_prev: RuleState, formData: FormData): Promise<
   if (!me) return { error: "Not authorised" };
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing id" };
-  const parsed = schema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid rule" };
-  const d = parsed.data;
+  const checked = await validateRuleForm(formData);
+  if (!checked.ok) return checked.state;
+  const d = checked.fields;
   await db.automationRule.update({
     where: { id },
     data: {
@@ -74,14 +103,13 @@ export async function updateRule(_prev: RuleState, formData: FormData): Promise<
       description: d.description,
       trigger: d.trigger,
       matchType: d.matchType,
-      conditions: normalizeJson(d.conditions),
-      actions: normalizeJson(d.actions),
-      isActive: d.isActive !== "false",
+      conditions: JSON.stringify(checked.rule.conditions),
+      actions: JSON.stringify(checked.rule.actions),
     },
   });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "AutomationRule", entityId: id, summary: `Updated automation "${d.name}"` });
   revalidatePath("/automations");
-  return undefined;
+  return { ok: true };
 }
 
 export async function toggleRule(formData: FormData) {

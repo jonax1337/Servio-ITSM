@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { BookOpen } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/session";
+import { hasRole, requireRole } from "@/lib/session";
+import { FOUR_EYES_EDIT_HINT, statusAfterEdit } from "@/lib/article-rules";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArticleEditor } from "@/components/knowledge/article-editor";
@@ -18,7 +19,7 @@ export default async function EditArticlePage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  await requireRole("AGENT");
+  const me = await requireRole("AGENT");
   const { slug } = await params;
   const [article, categories] = await Promise.all([
     db.article.findUnique({ where: { slug }, include: { attachments: { orderBy: { createdAt: "desc" } } } }),
@@ -27,6 +28,7 @@ export default async function EditArticlePage({
   if (!article) notFound();
 
   const maxUploadMb = await getMaxUploadMb();
+  const sendsBackToReview = statusAfterEdit(article.status, hasRole(me.role, "MANAGER")) !== article.status;
 
   return (
     <>
@@ -36,6 +38,11 @@ export default async function EditArticlePage({
         description="Each save creates a new revision in the article history."
       />
       <PageBody>
+        {sendsBackToReview ? (
+          <p className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
+            {FOUR_EYES_EDIT_HINT}
+          </p>
+        ) : null}
         <Card className="mx-auto max-w-5xl">
           <CardContent>
             <ArticleEditor

@@ -6,8 +6,10 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
-import { writeAudit } from "@/lib/audit";
+import { writeAudit, notify } from "@/lib/audit";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
+import { canMoveArticle, statusAfterEdit } from "@/lib/article-rules";
+import type { ActionResult } from "@/lib/action-result";
 
 export type ArticleState = {
   error?: string;
@@ -76,6 +78,25 @@ function parse(formData: FormData): ParsedArticle {
   return { success: true, data: parsed.data, body };
 }
 
+/** Tell the managers (except `actorId`) that an article is waiting for their review. */
+async function notifyReviewers(article: { id: string; title: string }, actorId: string) {
+  const managers = await db.user.findMany({
+    where: { role: { in: ["MANAGER", "ADMIN"] }, isActive: true, id: { not: actorId } },
+    select: { id: true },
+  });
+  await Promise.all(
+    managers.map((m) =>
+      notify(m.id, {
+        type: "INFO",
+        title: "Article awaiting review",
+        body: article.title,
+        entity: "Article",
+        entityId: article.id,
+      }),
+    ),
+  );
+}
+
 const cleanCategory = (v: string) => (v && v !== "none" ? v : null);
 
 /** Prisma unique-constraint violation (e.g. slug or (articleId, version)). */
@@ -135,7 +156,7 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
   if (!me) return { error: "You need agent access to edit articles." };
 
   const id = String(formData.get("id") ?? "");
-  const article = await db.article.findUnique({ where: { id }, select: { id: true, slug: true } });
+  const article = await db.article.findUnique({ where: { id }, select: { id: true, slug: true, status: true } });
   if (!article) return { error: "Article not found." };
 
   const parsed = parse(formData);
@@ -144,6 +165,11 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
   }
   const { title, excerpt, categoryId, visibility } = parsed.data;
   const body = parsed.body;
+
+  // Editing a published article below MANAGER needs a second pair of eyes: it
+  // goes back to review (and off the portal) until a manager publishes it again.
+  const nextStatus = statusAfterEdit(article.status, hasRole(me.role, "MANAGER"));
+  const sentBackToReview = nextStatus !== article.status;
 
   // Recompute the next revision number each attempt; retry if a concurrent edit
   // grabbed the same version (violates @@unique([articleId, version])).
@@ -160,6 +186,7 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
           bodyFormat: "html",
           visibility,
           categoryId: cleanCategory(categoryId),
+          ...(sentBackToReview ? { status: nextStatus, published: false } : {}),
           revisions: {
             create: {
               version: revisionCount + 1,
@@ -167,7 +194,7 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
               excerpt: excerpt || null,
               body,
               editorId: me.id,
-              note: "Edited",
+              note: sentBackToReview ? "Edited (sent back to review)" : "Edited",
             },
           },
         },
@@ -180,25 +207,37 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
   }
   if (!saved) return { error: "Save conflicted with a concurrent edit, please retry." };
 
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Article", entityId: id, summary: `Edited article "${title}"` });
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Article",
+    entityId: id,
+    summary: sentBackToReview ? `Edited published article "${title}" → sent back to review` : `Edited article "${title}"`,
+  });
+  if (sentBackToReview) await notifyReviewers({ id, title }, me.id);
   revalidatePath("/knowledge");
   revalidatePath(`/knowledge/${article.slug}`);
+  revalidatePath("/portal/knowledge");
   revalidatePath(`/portal/knowledge/${article.slug}`);
   redirect(`/knowledge/${article.slug}`);
 }
 
-export async function changeArticleStatus(formData: FormData) {
+/** Move an article through its lifecycle; refusals come back as `{ ok: false, error }`. */
+export async function setArticleStatus(formData: FormData): Promise<ActionResult> {
   const me = await requireAgent();
-  if (!me) throw new Error("You need agent access to change an article's status.");
+  if (!me) return { ok: false, error: "You need agent access to change an article's status." };
 
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!ARTICLE_STATUSES.includes(status as (typeof ARTICLE_STATUSES)[number])) {
-    throw new Error("Unknown article status.");
+    return { ok: false, error: "Unknown article status." };
   }
 
   const article = await db.article.findUnique({ where: { id } });
-  if (!article) throw new Error("Article not found.");
+  if (!article) return { ok: false, error: "Article not found." };
+  if (!canMoveArticle(article.status, status)) {
+    return { ok: false, error: `An article can't move from ${article.status} to ${status}.` };
+  }
 
   const publishing = status === "PUBLISHED";
 
@@ -209,10 +248,10 @@ export async function changeArticleStatus(formData: FormData) {
   if (publishing) {
     const row = await getCurrentUser();
     if (!row || !row.isActive || !hasRole(row.role as Role, "MANAGER")) {
-      throw new Error("Publishing an article requires manager approval.");
+      return { ok: false, error: "Publishing an article requires manager approval." };
     }
     if (article.authorId && article.authorId === row.id) {
-      throw new Error("An article must be published by a different reviewer than its author.");
+      return { ok: false, error: "An article must be published by a different reviewer than its author." };
     }
   }
 
@@ -230,10 +269,18 @@ export async function changeArticleStatus(formData: FormData) {
   });
 
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Article", entityId: id, summary: `Article status → ${status}` });
+  if (status === "REVIEW") await notifyReviewers(article, me.id);
   revalidatePath("/knowledge");
   revalidatePath(`/knowledge/${article.slug}`);
   revalidatePath("/portal/knowledge");
   revalidatePath(`/portal/knowledge/${article.slug}`);
+  return { ok: true };
+}
+
+/** Throwing form of {@link setArticleStatus} for callers that report failures as exceptions (Sable). */
+export async function changeArticleStatus(formData: FormData) {
+  const result = await setArticleStatus(formData);
+  if (!result.ok) throw new Error(result.error);
 }
 
 /**

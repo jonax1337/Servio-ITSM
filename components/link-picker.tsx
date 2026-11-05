@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { readActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -14,6 +16,8 @@ import { Combobox, type ComboOption } from "@/components/combobox";
  * Action with a set of fixed hidden fields plus the chosen value(s).
  *
  * Reused across ticket ↔ problem/change/asset linking and the CMDB asset graph.
+ * An action that returns `{ ok, error }` gets its refusal toasted (the dialog stays
+ * open so the choice isn't lost) and, with `successMessage`, its success toasted.
  */
 export function LinkPicker({
   action,
@@ -30,8 +34,9 @@ export function LinkPicker({
   typeName,
   typeOptions,
   typeDefault,
+  successMessage,
 }: {
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => unknown | Promise<unknown>;
   triggerLabel: string;
   title: string;
   description?: string;
@@ -46,6 +51,7 @@ export function LinkPicker({
   typeName?: string;
   typeOptions?: ComboOption[];
   typeDefault?: string;
+  successMessage?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState("");
@@ -70,7 +76,12 @@ export function LinkPicker({
           ) : (
             <form
               action={async (fd) => {
-                await action(fd);
+                const result = readActionResult(await action(fd));
+                if (result && !result.ok) {
+                  toast.error(result.error || "Could not link record.");
+                  return;
+                }
+                if (result && successMessage) toast.success(successMessage);
                 setOpen(false);
                 setTarget("");
               }}

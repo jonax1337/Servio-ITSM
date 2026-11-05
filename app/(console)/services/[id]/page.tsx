@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Timer, Ticket as TicketIcon } from "lucide-react";
+import { ArrowLeft, Timer, Ticket as TicketIcon, ShoppingBag } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
 import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, ToneBadge } from "@/components/status-badge";
 import { ServiceProperties } from "@/components/services/service-properties";
 import { ServiceEditDialog } from "@/components/services/service-edit-dialog";
 import { DeleteServiceButton } from "@/components/services/delete-service-button";
+import { ServiceAssets } from "@/components/services/service-assets";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -53,6 +54,11 @@ export default async function ServiceDetailPage({
         owner: true,
         category: true,
         sla: true,
+        assets: {
+          orderBy: { createdAt: "asc" },
+          select: { asset: { select: { id: true, name: true, status: true } } },
+        },
+        catalogItems: { orderBy: { name: "asc" }, select: { id: true, name: true, isPublished: true } },
         tickets: {
           where: { status: { in: [...OPEN_TICKET_STATUSES] } },
           include: { assignee: true },
@@ -68,6 +74,14 @@ export default async function ServiceDetailPage({
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const approvals = await getEntityApprovals("SERVICE", service.id);
+  const supportingCis = service.assets.map((row) => row.asset);
+  const availableAssets = isAgentUser
+    ? await db.asset.findMany({
+        where: { id: { notIn: supportingCis.map((a) => a.id) } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
 
   return (
     <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
@@ -152,6 +166,39 @@ export default async function ServiceDetailPage({
               </div>
             )}
           </div>
+
+          <ServiceAssets
+            serviceId={service.id}
+            assets={supportingCis}
+            options={availableAssets.map((a) => ({ value: a.id, label: a.name }))}
+            canEdit={isAgentUser}
+          />
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <ShoppingBag className="size-4 text-muted-foreground" />
+                Catalog items · {service.catalogItems.length}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-2">
+              {service.catalogItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No catalog items reference this service.</p>
+              ) : (
+                service.catalogItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.name}</span>
+                    <ToneBadge meta={item.isPublished ? { label: "Published", tone: "success" } : { label: "Unpublished", tone: "neutral" }} dot />
+                  </div>
+                ))
+              )}
+              {canManage ? (
+                <Link href="/catalog" className="text-xs text-muted-foreground hover:text-primary">
+                  Manage the service catalog
+                </Link>
+              ) : null}
+            </CardContent>
+          </Card>
 
           {/* Approvals (ad-hoc sign-off) */}
           <EntityApprovals

@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { readActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -15,6 +17,8 @@ type BtnSize = VariantProps<typeof buttonVariants>["size"];
 /**
  * A trigger button that opens a confirmation dialog before running a
  * (destructive) server action. Pass the action and any hidden form fields.
+ * An action returning `{ ok, error }` has its refusal toasted, and its success
+ * toasted when `successMessage` is given.
  */
 export function ConfirmButton({
   action,
@@ -28,6 +32,7 @@ export function ConfirmButton({
   triggerSize = "icon-sm",
   triggerClassName,
   triggerLabel,
+  successMessage,
   children,
 }: {
   action: (formData: FormData) => unknown | Promise<unknown>;
@@ -41,6 +46,7 @@ export function ConfirmButton({
   triggerSize?: BtnSize;
   triggerClassName?: string;
   triggerLabel?: string;
+  successMessage?: string;
   children?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +59,9 @@ export function ConfirmButton({
       // finally closes deterministically on success OR error; a redirect thrown
       // by the action (e.g. deleteArticle) still propagates after closing.
       try {
-        await action(fd);
+        const result = readActionResult(await action(fd));
+        if (result && !result.ok) toast.error(result.error || "Action failed.");
+        else if (result && successMessage) toast.success(successMessage);
       } finally {
         setOpen(false);
       }

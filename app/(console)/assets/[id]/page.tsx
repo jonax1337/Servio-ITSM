@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Ticket as TicketIcon, Network, HardDrive, X } from "lucide-react";
+import { ArrowLeft, Ticket as TicketIcon, Network, HardDrive, X, GitPullRequestArrow } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, isAgent, type Role } from "@/lib/session";
@@ -11,7 +11,12 @@ import { AssetProperties } from "@/components/assets/asset-properties";
 import { AssetEditDialog } from "@/components/assets/asset-edit-dialog";
 import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
 import { LinkPicker } from "@/components/link-picker";
-import { addAssetRelation, deleteAssetRelation } from "@/lib/actions/assets";
+import {
+  addAssetRelation, deleteAssetRelation, linkTicketToAsset, unlinkTicketFromAsset,
+  addAssetToChange, removeAssetFromChange,
+} from "@/lib/actions/assets";
+import { canAttachToChange, SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
+import { UnlinkButton } from "@/components/linked-records";
 import { EntityHistory, HistoryHeading } from "@/components/history/entity-history";
 import { ImpactGraph } from "@/components/assets/impact-graph";
 import { ConfirmButton } from "@/components/confirm-dialog";
@@ -23,8 +28,11 @@ import {
   ASSET_RELATION_META,
   ASSET_RELATION_TYPES,
   TICKET_STATUS_META,
+  CHANGE_STATUS_META,
+  SERVICE_STATUS_META,
   metaFor,
   ticketRef,
+  changeRef,
 } from "@/lib/constants";
 import { format } from "date-fns";
 
@@ -51,7 +59,7 @@ export default async function AssetDetailPage({
   const { id } = await params;
 
   const me = await getSessionUser();
-  const [asset, options, locations, otherAssets] = await Promise.all([
+  const [asset, options, locations, otherAssets, openTickets, openChanges] = await Promise.all([
     db.asset.findUnique({
       where: { id },
       include: {
@@ -62,6 +70,8 @@ export default async function AssetDetailPage({
         relationsFrom: { include: { target: true } },
         relationsTo: { include: { source: true } },
         tickets: { include: { ticket: true } },
+        changes: { include: { change: { select: { id: true, title: true, status: true } } } },
+        services: { select: { service: { select: { id: true, name: true, status: true } } } },
       },
     }),
     getFormOptions(),
@@ -72,6 +82,18 @@ export default async function AssetDetailPage({
       orderBy: { name: "asc" },
       take: 300,
     }),
+    db.ticket.findMany({
+      where: { status: { notIn: ["CLOSED", "CANCELLED"] } },
+      select: { id: true, title: true, prefix: true },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    }),
+    db.change.findMany({
+      where: { status: { notIn: [...SETTLED_CHANGE_STATUSES] } },
+      select: { id: true, title: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    }),
   ]);
   if (!asset) notFound();
 
@@ -80,6 +102,16 @@ export default async function AssetDetailPage({
   const isAgentUser = !!me && isAgent(me.role as Role);
   const relationTargetOpts = otherAssets.map((a) => ({ value: a.id, label: a.assetTag ? `${a.name} · ${a.assetTag}` : a.name }));
   const relationTypeOpts = ASSET_RELATION_TYPES.map((t) => ({ value: t, label: ASSET_RELATION_META[t].label, tone: ASSET_RELATION_META[t].tone }));
+
+  const linkedTicketIds = new Set(asset.tickets.map((t) => t.ticketId));
+  const ticketOpts = openTickets
+    .filter((t) => !linkedTicketIds.has(t.id))
+    .map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
+  const linkedChangeIds = new Set(asset.changes.map((c) => c.changeId));
+  const changeOpts = openChanges
+    .filter((c) => !linkedChangeIds.has(c.id))
+    .map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
+  const canAddToChange = canAttachToChange(asset.status);
 
   const editOptions = {
     locations: locations.map((l) => ({ value: l.id, label: l.name })),
@@ -194,6 +226,7 @@ export default async function AssetDetailPage({
                   typeName="type"
                   typeOptions={relationTypeOpts}
                   typeDefault="DEPENDS_ON"
+                  successMessage="Relationship added"
                 />
               ) : null}
             </div>
@@ -240,10 +273,28 @@ export default async function AssetDetailPage({
 
           {/* Linked tickets */}
           <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <TicketIcon className="size-4 text-muted-foreground" />
-              Linked tickets · {asset.tickets.length}
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <TicketIcon className="size-4 text-muted-foreground" />
+                Linked tickets · {asset.tickets.length}
+              </h2>
+              {isAgentUser ? (
+                <LinkPicker
+                  action={linkTicketToAsset}
+                  triggerLabel="Link ticket"
+                  title="Link a ticket"
+                  description="Attach a ticket that involves this configuration item."
+                  hidden={{ assetId: asset.id }}
+                  valueName="ticketId"
+                  options={ticketOpts}
+                  placeholder="Choose a ticket"
+                  searchPlaceholder="Search tickets…"
+                  emptyText="No more open tickets to link."
+                  submitLabel="Link ticket"
+                  successMessage="Ticket linked"
+                />
+              ) : null}
+            </div>
             {asset.tickets.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No tickets linked to this asset.
@@ -251,22 +302,92 @@ export default async function AssetDetailPage({
             ) : (
               <div className="grid gap-2">
                 {asset.tickets.map((ta) => (
-                  <Link
+                  <div
                     key={ta.ticketId}
-                    href={`/tickets/${ta.ticketId}`}
-                    className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
+                    className="group/chip flex items-center rounded-lg border bg-card text-sm hover:border-primary/40"
                   >
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(ta.ticket.id, ta.ticket.prefix)}
-                    </span>
-                    <span className="line-clamp-1 flex-1 font-medium">
-                      {ta.ticket.title}
-                    </span>
-                    <StatusBadge
-                      map={TICKET_STATUS_META}
-                      value={ta.ticket.status}
-                    />
-                  </Link>
+                    <Link href={`/tickets/${ta.ticketId}`} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {ticketRef(ta.ticket.id, ta.ticket.prefix)}
+                      </span>
+                      <span className="line-clamp-1 flex-1 font-medium">
+                        {ta.ticket.title}
+                      </span>
+                      <StatusBadge
+                        map={TICKET_STATUS_META}
+                        value={ta.ticket.status}
+                      />
+                    </Link>
+                    {isAgentUser ? (
+                      <UnlinkButton
+                        action={unlinkTicketFromAsset}
+                        fields={{ assetId: asset.id, ticketId: ta.ticketId }}
+                        successMessage="Ticket unlinked"
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Changes affecting this asset */}
+          <div className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <GitPullRequestArrow className="size-4 text-muted-foreground" />
+                Changes affecting this asset · {asset.changes.length}
+              </h2>
+              {isAgentUser && canAddToChange ? (
+                <LinkPicker
+                  action={addAssetToChange}
+                  triggerLabel="Add to change"
+                  title="Add to a change"
+                  description="Mark this configuration item as affected by a change."
+                  hidden={{ assetId: asset.id }}
+                  valueName="changeId"
+                  options={changeOpts}
+                  placeholder="Choose a change"
+                  searchPlaceholder="Search changes…"
+                  emptyText="No open changes available."
+                  submitLabel="Add to change"
+                  successMessage="Added to change"
+                />
+              ) : null}
+            </div>
+            {isAgentUser && !canAddToChange ? (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Retired or disposed assets can&apos;t be added to new changes.
+              </p>
+            ) : null}
+            {asset.changes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No changes affect this asset.
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                {asset.changes.map((ca) => (
+                  <div
+                    key={ca.changeId}
+                    className="group/chip flex items-center rounded-lg border bg-card text-sm hover:border-primary/40"
+                  >
+                    <Link href={`/changes/${ca.changeId}`} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {changeRef(ca.change.id)}
+                      </span>
+                      <span className="line-clamp-1 flex-1 font-medium">
+                        {ca.change.title}
+                      </span>
+                      <StatusBadge map={CHANGE_STATUS_META} value={ca.change.status} />
+                    </Link>
+                    {isAgentUser ? (
+                      <UnlinkButton
+                        action={removeAssetFromChange}
+                        fields={{ assetId: asset.id, changeId: ca.changeId }}
+                        successMessage="Removed from change"
+                      />
+                    ) : null}
+                  </div>
                 ))}
               </div>
             )}
@@ -320,6 +441,26 @@ export default async function AssetDetailPage({
 
         <Card className="mt-4">
           <CardHeader>
+            <CardTitle className="text-sm">Services · {asset.services.length}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            {asset.services.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Not part of any service.</p>
+            ) : (
+              asset.services.map(({ service }) => (
+                <div key={service.id} className="flex items-center gap-2">
+                  <Link href={`/services/${service.id}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-primary">
+                    {service.name}
+                  </Link>
+                  <StatusBadge map={SERVICE_STATUS_META} value={service.status} />
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="mt-4">
+          <CardHeader>
             <CardTitle className="text-sm"><HistoryHeading /></CardTitle>
           </CardHeader>
           <CardContent>
@@ -345,6 +486,7 @@ function RelationUnlink({ relationId, assetId }: { relationId: string; assetId: 
     <ConfirmButton
       action={deleteAssetRelation}
       fields={{ relationId, assetId }}
+      successMessage="Relationship removed"
       title="Remove relationship?"
       description="This relationship will be removed from the asset graph."
       confirmLabel="Remove"

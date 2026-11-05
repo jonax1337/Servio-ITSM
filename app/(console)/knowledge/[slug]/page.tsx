@@ -1,13 +1,15 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Eye, FolderOpen, User as UserIcon, Pencil, History, Send, CheckCircle2, Undo2, Archive, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Eye, FolderOpen, User as UserIcon, Pencil, History, Send, CheckCircle2, Undo2, Archive, Trash2, Link2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { hasRole, requireRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
-import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
+import { StatusBadge, ToneBadge } from "@/components/status-badge";
 import { renderMarkdown, sanitizeCommentHtml } from "@/lib/markdown";
-import { changeArticleStatus, deleteArticle } from "@/lib/actions/knowledge";
+import { deleteArticle } from "@/lib/actions/knowledge";
+import { ArticleStatusButton } from "@/components/knowledge/article-status-button";
+import { getArticleLinkedRecords } from "@/lib/data/related-articles";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { ArticleHistoryDialog, type ArticleRevisionRow } from "@/components/knowledge/article-history-dialog";
 import { ARTICLE_STATUS_META, ARTICLE_VISIBILITY_META } from "@/lib/constants";
@@ -23,21 +25,6 @@ export async function generateMetadata({
   const { slug } = await params;
   const article = await db.article.findUnique({ where: { slug }, select: { title: true } });
   return { title: article ? article.title : "Article" };
-}
-
-function StatusButton({ id, to, children, variant = "outline" }: {
-  id: string;
-  to: string;
-  children: React.ReactNode;
-  variant?: "default" | "outline" | "ghost" | "destructive";
-}) {
-  return (
-    <form action={changeArticleStatus}>
-      <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="status" value={to} />
-      <Button type="submit" size="sm" variant={variant}>{children}</Button>
-    </form>
-  );
 }
 
 export default async function ArticlePage({
@@ -61,6 +48,7 @@ export default async function ArticlePage({
     },
   });
   if (!article) notFound();
+  const linkedRecords = await getArticleLinkedRecords(article.id);
 
   const authorName = article.author?.name ?? article.author?.email ?? null;
   const canPublish = hasRole(me.role, "MANAGER") && article.authorId !== me.id;
@@ -92,19 +80,19 @@ export default async function ArticlePage({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Lifecycle transitions */}
           {(s === "DRAFT" || s === "RETIRED") ? (
-            <StatusButton id={article.id} to="REVIEW"><Send className="size-3.5" /> Submit for review</StatusButton>
+            <ArticleStatusButton id={article.id} to="REVIEW" successMessage="Submitted for review"><Send className="size-3.5" /> Submit for review</ArticleStatusButton>
           ) : null}
-          {(s === "REVIEW") ? (
-            <StatusButton id={article.id} to="DRAFT"><Undo2 className="size-3.5" /> Back to draft</StatusButton>
+          {(s === "REVIEW" || s === "RETIRED") ? (
+            <ArticleStatusButton id={article.id} to="DRAFT" successMessage="Moved back to draft"><Undo2 className="size-3.5" /> {s === "RETIRED" ? "Revise as draft" : "Back to draft"}</ArticleStatusButton>
           ) : null}
-          {/* Publishing is an editorial sign-off: MANAGER+ and never the author (enforced in changeArticleStatus). */}
+          {/* Publishing is an editorial sign-off: MANAGER+ and never the author (enforced in setArticleStatus). */}
           {(s === "DRAFT" || s === "REVIEW" || s === "RETIRED") && canPublish ? (
-            <StatusButton id={article.id} to="PUBLISHED" variant="default"><CheckCircle2 className="size-3.5" /> Publish</StatusButton>
+            <ArticleStatusButton id={article.id} to="PUBLISHED" variant="default" successMessage="Article published"><CheckCircle2 className="size-3.5" /> Publish</ArticleStatusButton>
           ) : null}
           {(s === "PUBLISHED") ? (
             <>
-              <StatusButton id={article.id} to="DRAFT"><Undo2 className="size-3.5" /> Unpublish</StatusButton>
-              <StatusButton id={article.id} to="RETIRED"><Archive className="size-3.5" /> Retire</StatusButton>
+              <ArticleStatusButton id={article.id} to="DRAFT" successMessage="Article unpublished"><Undo2 className="size-3.5" /> Unpublish</ArticleStatusButton>
+              <ArticleStatusButton id={article.id} to="RETIRED" successMessage="Article retired"><Archive className="size-3.5" /> Retire</ArticleStatusButton>
             </>
           ) : null}
 
@@ -155,6 +143,32 @@ export default async function ArticlePage({
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
+
+        <section className="mt-6">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <Link2 className="size-4 text-muted-foreground" />
+            Linked records · {linkedRecords.length}
+          </h2>
+          {linkedRecords.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Not linked to any ticket, problem or change yet. Link it from the record&apos;s page.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              {linkedRecords.map((r) => (
+                <Link
+                  key={r.key}
+                  href={r.href}
+                  className="group flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-muted/40"
+                >
+                  <span className="w-[76px] shrink-0 font-mono text-xs text-muted-foreground">{r.ref}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium group-hover:text-primary">{r.title}</span>
+                  <ToneBadge meta={r.statusMeta} dot />
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

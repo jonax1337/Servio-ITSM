@@ -7,6 +7,7 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { LocationDialog } from "@/components/locations/location-dialog";
+import { DeleteLocationButton } from "@/components/locations/delete-location-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -49,13 +50,21 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
             </span>
           ) : null}
         </div>
-        <LocationDialog
-          parents={parents}
-          location={{
-            id: location.id, name: location.name, type: location.type, parentId: location.parentId,
-            address: location.address, city: location.city, country: location.country, notes: location.notes,
-          }}
-        />
+        <div className="flex items-center gap-2">
+          <LocationDialog
+            parents={parents}
+            location={{
+              id: location.id, name: location.name, type: location.type, parentId: location.parentId,
+              address: location.address, city: location.city, country: location.country, notes: location.notes,
+            }}
+          />
+          <DeleteLocationButton
+            id={location.id}
+            name={location.name}
+            assetCount={location.assets.length}
+            childCount={location.children.length}
+          />
+        </div>
       </div>
 
       <h1 className="font-display text-2xl font-semibold tracking-tight">{location.name}</h1>

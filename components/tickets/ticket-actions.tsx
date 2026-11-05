@@ -156,7 +156,19 @@ export function TicketActions({
             <DialogTitle>Link ticket</DialogTitle>
             <DialogDescription>Connect this ticket to another related ticket.</DialogDescription>
           </DialogHeader>
-          <form action={linkTicket} className="grid gap-3">
+          <form
+            action={async (fd) => {
+              const res = await linkTicket(fd);
+              if (!res.ok) {
+                toast.error(res.error ?? "Could not link ticket.");
+                return;
+              }
+              toast.success("Ticket linked");
+              setLinkOpen(false);
+              setLinkTarget("");
+            }}
+            className="grid gap-3"
+          >
             <input type="hidden" name="id" value={ticketId} />
             <Combobox name="type" options={LINK_TYPES} value={linkType} onChange={(v) => setLinkType(v || "RELATED")} placeholder="Link type" searchPlaceholder="Search link types…" />
             <Combobox options={opts} value={linkTarget} onChange={setLinkTarget} name="targetId" placeholder="Choose a ticket" searchPlaceholder="Search tickets…" />

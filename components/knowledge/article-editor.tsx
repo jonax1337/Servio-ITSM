@@ -111,9 +111,11 @@ export function ArticleEditor({
           defaultHTML={defaultHTML}
         />
         {fe.body ? <p className="text-xs text-destructive">{fe.body[0]}</p> : null}
-        <p className="text-xs text-muted-foreground">
-          New articles start as a <strong>Draft</strong> — publish from the article page once ready.
-        </p>
+        {defaults.id ? null : (
+          <p className="text-xs text-muted-foreground">
+            New articles start as a <strong>Draft</strong> — publish from the article page once ready.
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">

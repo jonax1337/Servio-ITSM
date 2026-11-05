@@ -9,6 +9,7 @@ import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
+import { fieldLockError, resolvedAtPatch, statusRequirementError, textEditError } from "@/lib/problem-rules";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
   PROBLEM_STATUSES,
@@ -52,6 +53,10 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   }
   const data = parsed.data;
 
+  // A problem is born undocumented, so it cannot start in a status that requires documentation.
+  const undocumented = statusRequirementError(data.status, { rootCause: null, workaround: null });
+  if (undocumented) return { error: undocumented };
+
   // Enforce required, currently-visible custom fields (same contract as tickets):
   // abort the create when a required field is missing rather than persisting an
   // incomplete record.
@@ -62,7 +67,7 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   }
 
   const problem = await db.problem.create({
-    data: { ...data, ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}) },
+    data: { ...data, ...resolvedAtPatch(data.status, new Date(), null), ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}) },
   });
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Problem", entityId: problem.id, summary: `Created problem "${problem.title}"` });
@@ -83,39 +88,61 @@ const updateSchema = z.object({
   value: z.string(),
 });
 
-export async function updateProblemField(formData: FormData) {
+export type ProblemActionResult = { ok: true } | { ok: false; error: string };
+
+const OK: ProblemActionResult = { ok: true };
+const refuse = (error: string): ProblemActionResult => ({ ok: false, error });
+const NOT_AUTHORISED = "Not authorised.";
+const INVALID_REQUEST = "That change isn't valid for this problem.";
+const NOT_FOUND = "Problem not found.";
+const CHANGED_MEANWHILE = "This problem was changed by someone else. Reload and try again.";
+
+export async function updateProblemField(formData: FormData): Promise<ProblemActionResult> {
   const me = await getSessionUser();
-  if (!me || !isAgent(me.role as Role)) return;
+  if (!me || !isAgent(me.role as Role)) return refuse(NOT_AUTHORISED);
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse(INVALID_REQUEST);
   const { id, field, value } = parsed.data;
+
+  const current = await db.problem.findUnique({
+    where: { id },
+    select: { status: true, resolvedAt: true, rootCause: true, workaround: true, groupId: true, assigneeId: true },
+  });
+  if (!current) return refuse(NOT_FOUND);
+  const locked = fieldLockError(current.status, field);
+  if (locked) return refuse(locked);
 
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
 
   const patch: Record<string, unknown> = { [field]: v };
   if (field === "status") {
-    const current = await db.problem.findUnique({ where: { id }, select: { status: true } });
-    if (!current) return;
     // Enforce the configured lifecycle (built-in map + admin overrides + role).
-    if (!(await canTransitionConfigured("PROBLEM", current.status, value, me.role as Role))) return;
-    if (value === "RESOLVED" || value === "CLOSED") patch.resolvedAt = new Date();
-    if (value === "NEW" || value === "INVESTIGATING" || value === "KNOWN_ERROR") patch.resolvedAt = null;
+    if (!(await canTransitionConfigured("PROBLEM", current.status, value, me.role as Role))) {
+      return refuse("That status change isn't allowed from the current status.");
+    }
+    const missing = statusRequirementError(value, current);
+    if (missing) return refuse(missing);
+    Object.assign(patch, resolvedAtPatch(value, new Date(), current.resolvedAt));
   }
   // The assignee must belong to the problem's group (anyone when there's none).
-  if (field === "assigneeId" && v) {
-    const cur = await db.problem.findUnique({ where: { id }, select: { groupId: true } });
-    if (cur?.groupId && !(await isGroupMember(cur.groupId, v))) return;
+  if (field === "assigneeId" && v && current.groupId && !(await isGroupMember(current.groupId, v))) {
+    return refuse("The assignee must be a member of the problem's group.");
   }
-  if (field === "groupId" && v) {
-    const cur = await db.problem.findUnique({ where: { id }, select: { assigneeId: true } });
-    if (cur?.assigneeId && !(await isGroupMember(v, cur.assigneeId))) patch.assigneeId = null;
+  if (field === "groupId" && v && current.assigneeId && !(await isGroupMember(v, current.assigneeId))) {
+    patch.assigneeId = null;
   }
 
-  await db.problem.update({ where: { id }, data: patch });
+  // Write only if the state the checks above read is still current.
+  const { count } = await db.problem.updateMany({
+    where: { id, status: current.status, rootCause: current.rootCause, workaround: current.workaround },
+    data: patch,
+  });
+  if (count === 0) return refuse(CHANGED_MEANWHILE);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: `Updated ${field}` });
   revalidatePath(`/problems/${id}`);
   revalidatePath("/problems");
+  return OK;
 }
 
 // ── Comments & edit ──────────────────────────────────────────────────────────
@@ -138,17 +165,24 @@ export async function addProblemComment(formData: FormData) {
   revalidatePath(`/problems/${id}`);
 }
 
-export async function updateProblemDetails(formData: FormData) {
+export async function updateProblemDetails(formData: FormData): Promise<ProblemActionResult> {
   const me = await requireAgentP();
-  if (!me) return;
+  if (!me) return refuse(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
   const title = String(formData.get("title") ?? "").trim();
-  if (!id || title.length < 3) return;
+  if (!id) return refuse(INVALID_REQUEST);
+  if (title.length < 3) return refuse("Title must be at least 3 characters.");
+  const current = await db.problem.findUnique({ where: { id }, select: { status: true } });
+  if (!current) return refuse(NOT_FOUND);
+  const locked = fieldLockError(current.status, "title");
+  if (locked) return refuse(locked);
   const { text: description, html: descriptionHtml } = readRichField(formData, "descriptionHtml", "description");
-  await db.problem.update({ where: { id }, data: { title, description, descriptionHtml } });
+  const { count } = await db.problem.updateMany({ where: { id, status: current.status }, data: { title, description, descriptionHtml } });
+  if (count === 0) return refuse(CHANGED_MEANWHILE);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: "Edited details" });
   revalidatePath(`/problems/${id}`);
   revalidatePath("/problems");
+  return OK;
 }
 
 // ── Investigation fields (root cause, workaround) ────────────────────────────
@@ -167,14 +201,25 @@ const TEXT_LABELS: Record<(typeof TEXT_FIELDS)[number], string> = {
   workaround: "workaround",
 };
 
-export async function updateProblemText(formData: FormData) {
+export async function updateProblemText(formData: FormData): Promise<ProblemActionResult> {
   const me = await requireAgentP();
-  if (!me) return;
+  if (!me) return refuse(NOT_AUTHORISED);
   const parsed = textSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse(INVALID_REQUEST);
   const { id, field } = parsed.data;
   const value = parsed.data.value.trim() || null;
-  await db.problem.update({ where: { id }, data: { [field]: value } });
+
+  const current = await db.problem.findUnique({ where: { id }, select: { status: true } });
+  if (!current) return refuse(NOT_FOUND);
+  const locked = fieldLockError(current.status, field);
+  if (locked) return refuse(locked);
+  // Clearing the text the current status depends on would undo that status's gate.
+  const missing = textEditError(current.status, field, value);
+  if (missing) return refuse(missing);
+
+  const { count } = await db.problem.updateMany({ where: { id, status: current.status }, data: { [field]: value } });
+  if (count === 0) return refuse(CHANGED_MEANWHILE);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Problem", entityId: id, summary: `Updated ${TEXT_LABELS[field]}` });
   revalidatePath(`/problems/${id}`);
+  return OK;
 }

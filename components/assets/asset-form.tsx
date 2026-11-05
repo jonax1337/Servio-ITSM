@@ -40,7 +40,12 @@ function Field({
 
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
-export function AssetForm({ options }: { options: FormOptions }) {
+export function AssetForm({
+  options, locations,
+}: {
+  options: FormOptions;
+  locations: { value: string; label: string }[];
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     createAsset,
     undefined,
@@ -52,6 +57,7 @@ export function AssetForm({ options }: { options: FormOptions }) {
   const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({ value: s, label: ASSET_STATUS_META[s].label, tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon }));
   const ownerOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
+  const locationOpts: ComboOption[] = locations.map((l) => ({ value: l.value, label: l.label }));
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">
@@ -84,8 +90,11 @@ export function AssetForm({ options }: { options: FormOptions }) {
         <Field label="Manufacturer" error={fe.manufacturer}>
           <Input name="manufacturer" placeholder="e.g. Dell" />
         </Field>
-        <Field label="Location" error={fe.location}>
-          <Input name="location" placeholder="e.g. DC1 · Rack 12" />
+        <Field label="Location" error={fe.locationId}>
+          <ComboField name="locationId" options={locationOpts} includeNone noneLabel="No location" placeholder="No location" />
+        </Field>
+        <Field label="Location note" error={fe.location}>
+          <Input name="location" placeholder="e.g. Rack 3 / U12" />
         </Field>
         <Field label="IP address" error={fe.ipAddress}>
           <Input name="ipAddress" placeholder="e.g. 10.0.4.21" />

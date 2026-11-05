@@ -6,6 +6,7 @@ import {
   Flame, Link2, GitMerge, CheckCircle2, Users,
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { RelatedArticlesCard } from "@/components/related-articles-card";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
 import { loadBusinessCalendar, slaSnapshot } from "@/lib/sla";
@@ -28,6 +29,8 @@ import { TicketActions } from "@/components/tickets/ticket-actions";
 import { MacroPicker } from "@/components/tickets/macro-picker";
 import { LinkPicker } from "@/components/link-picker";
 import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
+import { ticketLinkEntries } from "@/lib/ticket-link-labels";
+import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { FormAnswers } from "@/components/tickets/form-answers";
@@ -86,6 +89,7 @@ export default async function TicketDetailPage({
         worklogs: { include: { user: true }, orderBy: { loggedAt: "desc" } },
         attachments: { orderBy: { createdAt: "desc" } },
         linksFrom: { include: { linked: true } },
+        linksTo: { include: { ticket: true } },
         tasks: { orderBy: { createdAt: "asc" } },
       },
     }),
@@ -108,7 +112,7 @@ export default async function TicketDetailPage({
       take: 100,
     }),
     db.change.findMany({
-      where: { status: { notIn: ["CLOSED", "REJECTED", "FAILED"] } },
+      where: { status: { notIn: [...SETTLED_CHANGE_STATUSES] } },
       select: { id: true, title: true },
       orderBy: { updatedAt: "desc" },
       take: 100,
@@ -170,6 +174,7 @@ export default async function TicketDetailPage({
     } catch { /* malformed macro → 0 actions */ }
     return { id: m.id, name: m.name, description: m.description, isShared: m.isShared, actionCount };
   });
+  const linkedTickets = ticketLinkEntries(ticket.linksFrom, ticket.linksTo);
   const linkedAssetIds = new Set(ticket.assets.map((a) => a.assetId));
   const problemOpts = problemChoices.map((p) => ({ value: String(p.id), label: `${problemRef(p.id)} · ${p.title}` }));
   const changeOpts = changeChoices.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
@@ -340,6 +345,7 @@ export default async function TicketDetailPage({
                     placeholder="Choose a problem"
                     searchPlaceholder="Search problems…"
                     emptyText="No open problems to link."
+                    successMessage="Problem linked"
                   />
                   <LinkPicker
                     action={setTicketChange}
@@ -352,6 +358,7 @@ export default async function TicketDetailPage({
                     placeholder="Choose a change"
                     searchPlaceholder="Search changes…"
                     emptyText="No open changes to link."
+                    successMessage="Change linked"
                   />
                   <LinkPicker
                     action={linkAsset}
@@ -364,11 +371,12 @@ export default async function TicketDetailPage({
                     placeholder="Choose an asset"
                     searchPlaceholder="Search assets…"
                     emptyText="No more assets to link."
+                    successMessage="Asset linked"
                   />
                 </div>
               ) : null}
             </div>
-          {(ticket.problem || ticket.change || ticket.assets.length > 0 || ticket.linksFrom.length > 0) ? (
+          {(ticket.problem || ticket.change || ticket.assets.length > 0 || linkedTickets.length > 0) ? (
             <div className="flex flex-wrap gap-2">
               {ticket.problem ? (
                 <Chip href={`/problems/${ticket.problem.id}`} icon={<AlertTriangle className={`size-3.5 ${TONE_TEXT_CLASSES.warning}`} />} label={`${problemRef(ticket.problem.id)} · ${ticket.problem.title}`}
@@ -378,9 +386,9 @@ export default async function TicketDetailPage({
                 <Chip href={`/changes/${ticket.change.id}`} icon={<GitPullRequestArrow className="size-3.5 text-primary" />} label={changeRef(ticket.change.id)}
                   unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "change" }} />} />
               ) : null}
-              {ticket.linksFrom.map((l) => (
-                <Chip key={l.id} href={`/tickets/${l.linkedTicketId}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${ticketRef(l.linked.id, l.linked.prefix)} · ${l.linked.title}`}
-                  unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.id, ticketId: ticket.id }} />} />
+              {linkedTickets.map((l) => (
+                <Chip key={l.linkId} href={`/tickets/${l.ticket.id}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${l.label} ${ticketRef(l.ticket.id, l.ticket.prefix)} · ${l.ticket.title}`}
+                  unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.linkId }} />} />
               ))}
               {ticket.assets.map((a) => (
                 <Chip key={a.assetId} href={`/assets/${a.assetId}`} icon={<Server className={`size-3.5 ${TONE_TEXT_CLASSES.indigo}`} />} label={a.asset.name}
@@ -544,6 +552,8 @@ export default async function TicketDetailPage({
           isAdmin={me?.role === "ADMIN"}
         />
 
+
+        <RelatedArticlesCard className="mt-4" entityType="TICKET" entityId={ticket.id} />
       </aside>
 
       {/* Onyx lives in the global window (FAB / SableProvider) — it detects this

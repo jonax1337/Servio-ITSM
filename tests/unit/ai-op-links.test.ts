@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { clip, parseRecordNumber, verifyFieldWrite } from "@/lib/ai-operations/helpers";
+import {
+  clip,
+  fromActionResult,
+  parseArticleLinkTarget,
+  parseRecordNumber,
+  verifyFieldWrite,
+} from "@/lib/ai-operations/helpers";
 
 describe("parseRecordNumber", () => {
   it("accepts a prefixed ref, any case, with or without zero padding", () => {
@@ -45,6 +51,47 @@ describe("link verification (verifyFieldWrite on the stored relation id)", () =>
   it("confirms an unlink only when the relation is gone", () => {
     expect(verifyFieldWrite(null, "none", "Unlinked").ok).toBe(true);
     expect(verifyFieldWrite(19, "none", "Unlinked").ok).toBe(false);
+  });
+});
+
+describe("parseArticleLinkTarget", () => {
+  it("maps each ref prefix to its record kind, any case and zero padding", () => {
+    expect(parseArticleLinkTarget("INC-0042")).toEqual({ entityType: "TICKET", entityId: 42 });
+    expect(parseArticleLinkTarget("req-7")).toEqual({ entityType: "TICKET", entityId: 7 });
+    expect(parseArticleLinkTarget(" PRB-0019 ")).toEqual({ entityType: "PROBLEM", entityId: 19 });
+    expect(parseArticleLinkTarget("chg-0025")).toEqual({ entityType: "CHANGE", entityId: 25 });
+  });
+
+  it("requires a prefix, because a bare number does not name a record kind", () => {
+    expect(parseArticleLinkTarget("42")).toBeNull();
+  });
+
+  it("rejects unknown prefixes, zero, trailing text and blanks", () => {
+    expect(parseArticleLinkTarget("KB-12")).toBeNull();
+    expect(parseArticleLinkTarget("CHG-0")).toBeNull();
+    expect(parseArticleLinkTarget("CHG-7 please")).toBeNull();
+    expect(parseArticleLinkTarget("")).toBeNull();
+    expect(parseArticleLinkTarget(undefined)).toBeNull();
+  });
+});
+
+// Actions that report their own refusals: the rule's reason must reach the user.
+describe("fromActionResult", () => {
+  it("reports success with the given summary", () => {
+    expect(fromActionResult({ ok: true }, "Closed CHG-0025")).toEqual({ ok: true, summary: "Closed CHG-0025", data: undefined });
+  });
+
+  it("passes the refusal reason through", () => {
+    expect(fromActionResult({ ok: false, error: "Choose an outcome before closing the change." }, "Closed")).toEqual({
+      ok: false,
+      error: "Choose an outcome before closing the change.",
+    });
+  });
+
+  it("falls back to a generic refusal when the action gave no reason", () => {
+    const res = fromActionResult({ ok: false }, "Closed");
+    expect(res).toMatchObject({ ok: false });
+    expect(res.ok === false && res.error).toMatch(/Nothing was changed/);
   });
 });
 

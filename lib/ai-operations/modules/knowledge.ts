@@ -4,9 +4,10 @@ import { writeAudit } from "@/lib/audit";
 import { resolveCategoryId } from "@/lib/ai-tools";
 import { renderMarkdown } from "@/lib/markdown";
 import { changeArticleStatus } from "@/lib/actions/knowledge";
+import { linkArticle, unlinkArticle } from "@/lib/actions/article-links";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, fromActionResult, parseArticleLinkTarget } from "../helpers";
 
 /**
  * Knowledge Base articles. Reference module shape: export `OPERATIONS`, one entry
@@ -81,6 +82,16 @@ async function resolveArticle(ref: {
   }
   return { article: matches[0] };
 }
+
+const ARTICLE_SELECTOR = {
+  id: z.string().optional().describe("the article's id (most precise)"),
+  slug: z.string().optional().describe("the article's slug (unique)"),
+  title: z.string().optional().describe("the article's EXACT title (must match a single article)"),
+};
+const RECORD_REF = z.string().describe("ticket, problem or change ref, e.g. 'INC-0042', 'PRB-0019' or 'CHG-0025'");
+const UNPARSABLE_RECORD = (ref: unknown) =>
+  `Cannot parse a record ref from "${ref}". Use INC-0042, REQ-0042, PRB-0019 or CHG-0025.`;
+const articleLabel = (a: Record<string, unknown>) => str(a.title) ?? str(a.slug) ?? str(a.id) ?? "";
 
 export const OPERATIONS: AiOperation[] = [
   {
@@ -205,6 +216,52 @@ export const OPERATIONS: AiOperation[] = [
 
       await writeAudit({ userId: ctx.userId, action: "DELETE", entity: "Article", entityId: article.id, summary: `Deleted article "${article.title}" via Sable` });
       return ok(`Deleted article "${article.title}" (${article.id})`);
+    },
+  },
+  {
+    id: "article.link",
+    group: "Knowledge",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Attach a Knowledge Base article to a ticket, problem or change so agents see it on that record. Identify the article by id, slug or EXACT title, " +
+      "and the record by its ref (INC-0042, REQ-0042, PRB-0019, CHG-0025). Only published articles, or your own drafts, can be linked. Linking twice is harmless.",
+    input: z.object({ ...ARTICLE_SELECTOR, record: RECORD_REF }),
+    label: (a) => `Link article “${articleLabel(a)}” → ${a.record}`,
+    run: async (a) => {
+      const target = parseArticleLinkTarget(a.record);
+      if (!target) return err(UNPARSABLE_RECORD(a.record));
+      const resolved = await resolveArticle({ id: str(a.id), slug: str(a.slug), title: str(a.title) });
+      if ("error" in resolved) return err(resolved.error);
+      const { article } = resolved;
+      const res = await linkArticle(toFormData({ articleId: article.id, ...target }));
+      return fromActionResult(res, `Linked article "${article.title}" to ${String(a.record).trim().toUpperCase()}`);
+    },
+  },
+  {
+    id: "article.unlink",
+    group: "Knowledge",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Remove a Knowledge Base article from a ticket, problem or change it was attached to. Identify the article by id, slug or EXACT title, " +
+      "and the record by its ref (INC-0042, REQ-0042, PRB-0019, CHG-0025). The article itself is not deleted.",
+    input: z.object({ ...ARTICLE_SELECTOR, record: RECORD_REF }),
+    label: (a) => `Unlink article “${articleLabel(a)}” from ${a.record}`,
+    run: async (a) => {
+      const target = parseArticleLinkTarget(a.record);
+      if (!target) return err(UNPARSABLE_RECORD(a.record));
+      const resolved = await resolveArticle({ id: str(a.id), slug: str(a.slug), title: str(a.title) });
+      if ("error" in resolved) return err(resolved.error);
+      const { article } = resolved;
+      const record = String(a.record).trim().toUpperCase();
+      const link = await db.articleLink.findUnique({
+        where: { articleId_entityType_entityId: { articleId: article.id, ...target } },
+        select: { id: true },
+      });
+      if (!link) return err(`Article "${article.title}" is not linked to ${record}.`);
+      const res = await unlinkArticle(toFormData({ id: link.id }));
+      return fromActionResult(res, `Unlinked article "${article.title}" from ${record}`);
     },
   },
 ];

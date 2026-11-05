@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-import { updateProblemField, addProblemComment } from "@/lib/actions/problems";
-import { updateChangeField, addChangeComment } from "@/lib/actions/changes";
+import { updateProblemField, updateProblemText, addProblemComment } from "@/lib/actions/problems";
+import { updateChangeField, addChangeComment, setChangeProblem } from "@/lib/actions/changes";
 import { setTicketProblem, setTicketChange } from "@/lib/actions/tickets";
 import {
   resolveGroupId,
@@ -17,10 +17,12 @@ import {
   PROBLEM_STATUSES,
   CHANGE_TYPES,
   CHANGE_STATUSES,
+  CHANGE_OUTCOMES,
   RISKS,
   problemRef,
   changeRef,
   ticketRef,
+  type ArticleLinkEntityType,
 } from "@/lib/constants";
 import type { AiOperation, AiOpResult } from "../types";
 import {
@@ -31,6 +33,7 @@ import {
   coerceEnum,
   richHtml,
   verifyFieldWrite,
+  fromActionResult,
   parseRecordNumber,
   clip,
 } from "../helpers";
@@ -58,6 +61,34 @@ type LinkTarget = { name: "problem" | "change"; prefix: string; field: "problemI
 const PROBLEM_LINK: LinkTarget = { name: "problem", prefix: "PRB", field: "problemId" };
 const CHANGE_LINK: LinkTarget = { name: "change", prefix: "CHG", field: "changeId" };
 
+/** A link target ref as an id, `null` for "none" (unlink), or `undefined` when it is neither. */
+function parseLinkTarget(target: unknown, link: LinkTarget): number | null | undefined {
+  const raw = str(target)?.toLowerCase() ?? "";
+  if (raw === "none") return null;
+  return parseRecordNumber(raw, [link.prefix]) ?? undefined;
+}
+
+const unparsableTarget = (link: LinkTarget, target: unknown) =>
+  err(`Cannot parse a ${link.name} ref (${link.prefix}-0019) from "${target}", or use "none" to unlink.`);
+
+/** The knowledge articles attached to a problem or change, for the read tools. */
+async function linkedArticles(entityType: ArticleLinkEntityType, entityId: number) {
+  const links = await db.articleLink.findMany({
+    where: { entityType, entityId },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: { article: { select: { title: true, slug: true, status: true } } },
+  });
+  return links.map((l) => l.article);
+}
+
+async function resolveChangeId(ref: unknown): Promise<{ id: number } | { error: string }> {
+  const id = parseRecordNumber(ref, [CHANGE_LINK.prefix]);
+  if (!id) return { error: `Cannot parse a change number from "${ref}".` };
+  const change = await db.change.findUnique({ where: { id }, select: { id: true } });
+  return change ?? { error: `Change not found: ${ref}` };
+}
+
 /**
  * Link (or, with target "none", unlink) a ticket and a problem/change through the
  * same server action the ticket page uses. That action returns silently when it
@@ -69,14 +100,11 @@ async function setTicketLink(a: Record<string, unknown>, link: LinkTarget): Prom
   const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: { id: true, prefix: true } });
   if (!ticket) return err(`Ticket not found: ${a.ref}`);
 
-  const raw = str(a.target)?.toLowerCase() ?? "";
-  const unlink = raw === "none";
-  const targetId = unlink ? null : parseRecordNumber(raw, [link.prefix]);
-  if (!unlink && !targetId) {
-    return err(`Cannot parse a ${link.name} ref (${link.prefix}-0019) from "${a.target}", or use "none" to unlink.`);
-  }
+  const targetId = parseLinkTarget(a.target, link);
+  if (targetId === undefined) return unparsableTarget(link, a.target);
+  const unlink = targetId === null;
   if (!unlink) {
-    const lookup = { where: { id: targetId! }, select: { id: true } };
+    const lookup = { where: { id: targetId }, select: { id: true } };
     const found = link.name === "problem" ? await db.problem.findUnique(lookup) : await db.change.findUnique(lookup);
     if (!found) return err(`${link.name === "problem" ? "Problem" : "Change"} not found: ${a.target}`);
   }
@@ -90,8 +118,34 @@ async function setTicketLink(a: Record<string, unknown>, link: LinkTarget): Prom
   return verifyFieldWrite(
     after?.[link.field],
     unlink ? "none" : String(targetId),
-    unlink ? `Unlinked ${ref} from its ${link.name}` : `Linked ${ref} to ${targetRef(targetId!)}`,
+    unlink ? `Unlinked ${ref} from its ${link.name}` : `Linked ${ref} to ${targetRef(targetId)}`,
   );
+}
+
+/** A write op that sets one of a problem's analysis texts through the same action the problem page uses. */
+function problemTextOp(field: "rootCause" | "workaround", id: string, name: string, about: string): AiOperation {
+  return {
+    id,
+    group: "Problems",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      `Record the ${name} of a Problem (replaces the current text). A known error needs a workaround and a resolved problem needs a root cause, ` +
+      "so document them here before moving the problem on. Closed problems are read-only.",
+    input: z.object({
+      ref: z.string().describe("problem ref, e.g. 'PRB-0019'"),
+      text: z.string().min(1).describe(about),
+    }),
+    label: (a) => `Set ${name} of ${a.ref}`,
+    run: async (a) => {
+      const problemId = parseRecordNumber(a.ref, [PROBLEM_LINK.prefix]);
+      if (!problemId) return err(`Cannot parse a problem number from "${a.ref}".`);
+      const text = str(a.text);
+      if (!text) return err(`The ${name} text is required.`);
+      const res = await updateProblemText(toFormData({ id: problemId, field, value: text }));
+      return fromActionResult(res, `Updated the ${name} of ${problemRef(problemId)}`);
+    },
+  };
 }
 
 export const OPERATIONS: AiOperation[] = [
@@ -214,7 +268,8 @@ export const OPERATIONS: AiOperation[] = [
       }
 
       // updateProblemField re-validates, writes its own audit entry and revalidates.
-      await updateProblemField(toFormData({ id: problem.id, field: realField, value: realValue }));
+      const res = await updateProblemField(toFormData({ id: problem.id, field: realField, value: realValue }));
+      if (!res.ok) return err(res.error);
       const after = (await db.problem.findUnique({ where: { id: problem.id } })) as Record<string, unknown> | null;
       return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${problemRef(problem.id)}`);
     },
@@ -318,11 +373,12 @@ export const OPERATIONS: AiOperation[] = [
     kind: "write",
     minRole: "AGENT",
     description:
-      "Change one field on a Change. Field is one of: status, type, risk, priority, team, category, assignee. " +
-      "Use a human value/name (e.g. status 'SCHEDULED', type 'EMERGENCY', team 'Infrastructure', assignee 'Nora K').",
+      "Change one field on a Change. Field is one of: status, type, risk, priority, impact, team, category, assignee. " +
+      "Use a human value/name (e.g. status 'SCHEDULED', type 'EMERGENCY', team 'Infrastructure', assignee 'Nora K'). " +
+      "To close a change use change.close (outcome and closure notes are required); to cancel one use change.cancel (a reason is required).",
     input: z.object({
       ref: z.string().describe("change ref or number, e.g. 'CHG-7' or '7'"),
-      field: z.enum(["status", "type", "risk", "priority", "team", "category", "assignee"]),
+      field: z.enum(["status", "type", "risk", "priority", "impact", "team", "category", "assignee"]),
       value: z.string().describe("target value or name"),
     }),
     label: (a) => `Set ${a.field} = “${a.value}” on ${a.ref}`,
@@ -370,12 +426,17 @@ export const OPERATIONS: AiOperation[] = [
         const up = coerceEnum(value, PRIORITIES);
         if (!up) return err(`Invalid priority "${value}". Allowed: ${PRIORITIES.join(", ")}.`);
         realValue = up;
+      } else if (field === "impact") {
+        const up = coerceEnum(value, IMPACT_URGENCY);
+        if (!up) return err(`Invalid impact "${value}". Allowed: ${IMPACT_URGENCY.join(", ")}.`);
+        realValue = up;
       } else {
         return err(`Unsupported field: ${field}.`);
       }
 
       // updateChangeField re-validates, writes its own audit entry and revalidates.
-      await updateChangeField(toFormData({ id: change.id, field: realField, value: realValue }));
+      const res = await updateChangeField(toFormData({ id: change.id, field: realField, value: realValue }));
+      if (!res.ok) return err(res.error);
       const after = (await db.change.findUnique({ where: { id: change.id } })) as Record<string, unknown> | null;
       return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${changeRef(change.id)}`);
     },
@@ -407,6 +468,82 @@ export const OPERATIONS: AiOperation[] = [
       return ok(`Added ${internal ? "an internal note" : "a comment"} to ${changeRef(change.id)}`);
     },
   },
+  {
+    id: "change.set_problem",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Link a Change to the Problem it fixes, or unlink it. Pass the change ref and the problem ref; " +
+      "use target 'none' to remove the change's current problem link. A change has at most one problem.",
+    input: z.object({
+      ref: z.string().describe("change ref, e.g. 'CHG-0025'"),
+      target: z.string().describe("problem ref, e.g. 'PRB-0019', or 'none' to unlink"),
+    }),
+    label: (a) => (str(a.target)?.toLowerCase() === "none" ? `Unlink ${a.ref} from its problem` : `Link ${a.ref} → ${a.target}`),
+    run: async (a) => {
+      const change = await resolveChangeId(a.ref);
+      if ("error" in change) return err(change.error);
+      const problemId = parseLinkTarget(a.target, PROBLEM_LINK);
+      if (problemId === undefined) return unparsableTarget(PROBLEM_LINK, a.target);
+      const res = await setChangeProblem(change.id, problemId);
+      return fromActionResult(
+        res,
+        problemId === null
+          ? `Unlinked ${changeRef(change.id)} from its problem`
+          : `Linked ${changeRef(change.id)} to ${problemRef(problemId)}`,
+      );
+    },
+  },
+  {
+    id: "change.close",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Close a Change once it has been implemented and reviewed. Requires the outcome (SUCCESSFUL, SUCCESSFUL_WITH_ISSUES, FAILED or ROLLED_BACK) " +
+      "and closure notes (the post-implementation review or lessons learned). The change must be in a status that may move to CLOSED.",
+    input: z.object({
+      ref: z.string().describe("change ref, e.g. 'CHG-0025'"),
+      outcome: z.enum(CHANGE_OUTCOMES).describe("how the implementation went"),
+      closureNotes: z.string().min(1).describe("post-implementation review / lessons learned"),
+    }),
+    label: (a) => `Close ${a.ref} (${a.outcome})`,
+    run: async (a) => {
+      const change = await resolveChangeId(a.ref);
+      if ("error" in change) return err(change.error);
+      const outcome = coerceEnum(a.outcome, CHANGE_OUTCOMES);
+      if (!outcome) return err(`Invalid outcome "${a.outcome}". Allowed: ${CHANGE_OUTCOMES.join(", ")}.`);
+      const closureNotes = str(a.closureNotes);
+      if (!closureNotes) return err("Closure notes are required.");
+      const res = await updateChangeField(toFormData({ id: change.id, field: "status", value: "CLOSED", outcome, closureNotes }));
+      return fromActionResult(res, `Closed ${changeRef(change.id)} (outcome: ${outcome})`);
+    },
+  },
+  {
+    id: "change.cancel",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Cancel a Change that will not be implemented. A reason is required. Pending approval requests are withdrawn. " +
+      "A closed or already cancelled change cannot be cancelled.",
+    input: z.object({
+      ref: z.string().describe("change ref, e.g. 'CHG-0025'"),
+      reason: z.string().min(1).describe("why the change is cancelled"),
+    }),
+    label: (a) => `Cancel ${a.ref}`,
+    run: async (a) => {
+      const change = await resolveChangeId(a.ref);
+      if ("error" in change) return err(change.error);
+      const cancelReason = str(a.reason);
+      if (!cancelReason) return err("A reason for cancelling is required.");
+      const res = await updateChangeField(toFormData({ id: change.id, field: "status", value: "CANCELLED", cancelReason }));
+      return fromActionResult(res, `Cancelled ${changeRef(change.id)}`);
+    },
+  },
+  problemTextOp("rootCause", "problem.set_root_cause", "root cause", "the analysed root cause of the problem"),
+  problemTextOp("workaround", "problem.set_workaround", "workaround", "the documented workaround for the problem"),
   {
     id: "ticket.set_problem",
     group: "Problems",
@@ -444,7 +581,7 @@ export const OPERATIONS: AiOperation[] = [
     minRole: "AGENT",
     description:
       "Get ONE Problem in full by ref ('PRB-0019' or '19'): status, priority, impact, root cause, workaround, team, assignee, " +
-      "description, linked incidents/tickets, changes that reference it and the latest comments.",
+      "description, linked incidents/tickets, linked knowledge articles, changes that reference it and the latest comments.",
     input: z.object({ ref: z.string().describe("problem ref or number") }),
     run: async (a) => {
       const id = parseRecordNumber(a.ref, [PROBLEM_LINK.prefix]);
@@ -465,6 +602,7 @@ export const OPERATIONS: AiOperation[] = [
         },
       });
       if (!p) return err(`Problem not found: ${a.ref}`);
+      const articles = await linkedArticles("PROBLEM", p.id);
       return ok(`${problemRef(p.id)} — ${p.title}`, {
         ok: true,
         problem: {
@@ -483,6 +621,7 @@ export const OPERATIONS: AiOperation[] = [
           description: clip(p.description),
           linkedTickets: ticketLinks(p.tickets),
           linkedChanges: p.changes.map((c) => ({ ref: changeRef(c.id), title: c.title, status: c.status })),
+          linkedArticles: articles,
           latestComments: p.comments.map((c) => ({
             by: c.author.name,
             internal: c.isInternal,
@@ -501,7 +640,7 @@ export const OPERATIONS: AiOperation[] = [
     description:
       "Get ONE Change in full by ref ('CHG-0025' or '25'): type, risk, priority, impact, status, planned/actual start and end, " +
       "reason, implementation plan, rollback (backout) plan, CAB approval rule and each approver's decision with comment, " +
-      "linked problem and tickets, assignee, team and the latest comments. Use it before reasoning about a change.",
+      "linked problem, tickets and knowledge articles, outcome and closure notes (or cancellation reason), assignee, team and the latest comments. Use it before reasoning about a change.",
     input: z.object({ ref: z.string().describe("change ref or number") }),
     run: async (a) => {
       const id = parseRecordNumber(a.ref, [CHANGE_LINK.prefix]);
@@ -527,6 +666,7 @@ export const OPERATIONS: AiOperation[] = [
         },
       });
       if (!c) return err(`Change not found: ${a.ref}`);
+      const articles = await linkedArticles("CHANGE", c.id);
       return ok(`${changeRef(c.id)} — ${c.title}`, {
         ok: true,
         change: {
@@ -549,6 +689,9 @@ export const OPERATIONS: AiOperation[] = [
           description: clip(c.description),
           implementationPlan: clip(c.implementationPlan, 1500) ?? "not recorded",
           rollbackPlan: clip(c.rollbackPlan, 1500) ?? "not recorded",
+          outcome: c.outcome,
+          closureNotes: clip(c.closureNotes, 1500),
+          cancelReason: clip(c.cancelReason),
           approvalRule: c.approvalThreshold ? `${c.approvalRule} (${c.approvalThreshold})` : c.approvalRule,
           approvals: c.approvals.map((x) => ({
             approver: x.approver.name,
@@ -558,6 +701,7 @@ export const OPERATIONS: AiOperation[] = [
           })),
           linkedProblem: c.problem ? { ref: problemRef(c.problem.id), title: c.problem.title, status: c.problem.status } : null,
           linkedTickets: ticketLinks(c.tickets),
+          linkedArticles: articles,
           latestComments: c.comments.map((x) => ({
             by: x.author.name,
             internal: x.isInternal,

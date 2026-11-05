@@ -6,7 +6,7 @@ import {
   Sparkle, CircleDot, Clock, PauseCircle, CheckCircle2, CircleCheck, XCircle, Ban,
   AlertTriangle, Wrench, Search, ShieldAlert,
   FileEdit, Send, ThumbsUp, CalendarClock, PlayCircle,
-  TriangleAlert, CircleSlash, Crown,
+  TriangleAlert, CircleSlash, Crown, Undo2,
   MapPin, Building2, Layers, DoorClosed, Server, Rows3,
   Lock, Globe,
 } from "lucide-react";
@@ -223,6 +223,7 @@ export const CHANGE_STATUSES = [
   "CLOSED",
   "REJECTED",
   "FAILED",
+  "CANCELLED",
 ] as const;
 export const CHANGE_STATUS_META: Record<string, Meta> = {
   DRAFT: { label: "Draft", tone: "neutral", icon: FileEdit },
@@ -235,6 +236,21 @@ export const CHANGE_STATUS_META: Record<string, Meta> = {
   CLOSED: { label: "Closed", tone: "success", icon: CircleCheck },
   REJECTED: { label: "Rejected", tone: "danger", icon: XCircle },
   FAILED: { label: "Failed", tone: "danger", icon: TriangleAlert },
+  CANCELLED: { label: "Cancelled", tone: "neutral", icon: CircleSlash },
+};
+
+// Result of an implemented Change, recorded at review/closure (Change.outcome).
+export const CHANGE_OUTCOMES = [
+  "SUCCESSFUL",
+  "SUCCESSFUL_WITH_ISSUES",
+  "FAILED",
+  "ROLLED_BACK",
+] as const;
+export const CHANGE_OUTCOME_META: Record<string, Meta> = {
+  SUCCESSFUL: { label: "Successful", tone: "success", icon: CheckCircle2 },
+  SUCCESSFUL_WITH_ISSUES: { label: "Successful with issues", tone: "warning", icon: TriangleAlert },
+  FAILED: { label: "Failed", tone: "danger", icon: XCircle },
+  ROLLED_BACK: { label: "Rolled back", tone: "purple", icon: Undo2 },
 };
 
 export const RISKS = ["LOW", "MEDIUM", "HIGH"] as const;
@@ -266,6 +282,10 @@ export const APPROVAL_ENTITY_META: Record<ApprovalEntityType, { label: string; p
   CHANGE: { label: "Change", path: "/changes" },
   SERVICE: { label: "Service", path: "/services" },
 };
+
+// Entities a knowledge article can be linked to (see the ArticleLink model).
+export const ARTICLE_LINK_ENTITY_TYPES = ["TICKET", "PROBLEM", "CHANGE"] as const;
+export type ArticleLinkEntityType = (typeof ARTICLE_LINK_ENTITY_TYPES)[number];
 
 // ---- Service --------------------------------------------------------------
 export const SERVICE_STATUSES = [

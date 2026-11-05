@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { SERVICE_STATUSES, CRITICALITIES } from "@/lib/constants";
+import type { ActionResult } from "@/lib/action-result";
 
 async function requireAgent() {
   // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
@@ -160,6 +161,60 @@ export async function updateService(
   });
   revalidatePath(`/services/${id}`);
   revalidatePath("/services");
+}
+
+// ── Supporting CIs (service ↔ asset) ─────────────────────────────────────────
+
+const NOT_AUTHORISED = "You are not signed in as an agent.";
+const refused = (error: string): ActionResult => ({ ok: false, error });
+
+/** Attach an asset to a service as a supporting configuration item. Idempotent. */
+export async function linkServiceAsset(formData: FormData): Promise<ActionResult> {
+  const me = await requireAgent();
+  if (!me) return refused(NOT_AUTHORISED);
+  const serviceId = String(formData.get("serviceId") ?? "").trim();
+  const assetId = String(formData.get("assetId") ?? "").trim();
+  if (!serviceId || !assetId) return refused("Choose an asset.");
+
+  const [service, asset] = await Promise.all([
+    db.service.findUnique({ where: { id: serviceId }, select: { name: true } }),
+    db.asset.findUnique({ where: { id: assetId }, select: { name: true } }),
+  ]);
+  if (!service) return refused("Service not found.");
+  if (!asset) return refused("Asset not found.");
+
+  await db.serviceAsset.upsert({
+    where: { serviceId_assetId: { serviceId, assetId } },
+    create: { serviceId, assetId },
+    update: {},
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: serviceId, summary: `Added supporting CI "${asset.name}"` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Asset", entityId: assetId, summary: `Added to service "${service.name}"` });
+  revalidatePath(`/services/${serviceId}`);
+  revalidatePath(`/assets/${assetId}`);
+  return { ok: true };
+}
+
+export async function unlinkServiceAsset(formData: FormData): Promise<ActionResult> {
+  const me = await requireAgent();
+  if (!me) return refused(NOT_AUTHORISED);
+  const serviceId = String(formData.get("serviceId") ?? "").trim();
+  const assetId = String(formData.get("assetId") ?? "").trim();
+  if (!serviceId || !assetId) return refused("Missing link.");
+
+  const row = await db.serviceAsset.findUnique({
+    where: { serviceId_assetId: { serviceId, assetId } },
+    select: { service: { select: { name: true } }, asset: { select: { name: true } } },
+  });
+  // An already-removed row is a benign no-op.
+  if (!row) return { ok: true };
+
+  await db.serviceAsset.delete({ where: { serviceId_assetId: { serviceId, assetId } } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: serviceId, summary: `Removed supporting CI "${row.asset.name}"` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Asset", entityId: assetId, summary: `Removed from service "${row.service.name}"` });
+  revalidatePath(`/services/${serviceId}`);
+  revalidatePath(`/assets/${assetId}`);
+  return { ok: true };
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────────

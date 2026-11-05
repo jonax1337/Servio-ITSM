@@ -88,7 +88,7 @@ The core incident/request module and the richest one in the codebase.
 | Actions | `lib/actions/tickets.ts` |
 | Components | `components/tickets/` |
 
-Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, `macro-picker` (apply a canned macro in one click), plus the reusable `link-picker` (attach problems/changes/assets), `saved-views-bar`, and `ticket-tasks` (sidebar checklist — actions `addTask`/`toggleTask`/`deleteTask`). Create forms (`ticket-form`, `problem-form`, `change-form`) include admin-defined custom fields (`components/custom-fields/form-custom-fields`).
+Actions include `createTicket`, `updateTicketField` (incl. switching `type` — the ref prefix stays fixed), `updateTicketDetails`, `addTicketComment`, `escalateTicket`, `toggleMajorIncident`, `toggleWatch`, `addParticipant`, `linkTicket`/`unlinkTicket`, `mergeTicket`, cross-entity linking (`setTicketProblem`, `setTicketChange`, `linkAsset`/`unlinkAsset`, `unlinkRelation`; the ticket page lists links in both directions, labelled from the viewing side — "Blocks" vs "Blocked by" — via `lib/ticket-link-labels.ts`), `setTicketResolution`, `setTicketPending`, `setTicketDueDate`, `forwardTicketExternal`, and work-log entries (`addWorkLog`, `deleteWorkLog`). Key components: `ticket-form`, `ticket-properties` (staged edits incl. type + due date), `ticket-actions`, `work-log`, `resolution-dialog`, `pending-reason-dialog`, `due-date-picker`, `sla-badge`, `form-answers`, `macro-picker` (apply a canned macro in one click), plus the reusable `link-picker` (attach problems/changes/assets), `saved-views-bar`, and `ticket-tasks` (sidebar checklist — actions `addTask`/`toggleTask`/`deleteTask`). Create forms (`ticket-form`, `problem-form`, `change-form`) include admin-defined custom fields (`components/custom-fields/form-custom-fields`).
 
 **Cross-field search & CSV export:** the tickets list uses `lib/search.ts` (`ticketSearchWhere`/`applyTicketSearch`) for a free-text `q` that spans title, description, comment bodies, requester name/email, and custom-field values (plus a bare-number match on the ticket id) — SQLite-portable, ANDed onto the existing filters. The same helper backs the global `/api/search` route. An **Export CSV** button on the list (and dashboard) hits `GET /api/export?type=tickets` (AGENT+), built on the shared `lib/csv.ts` (`toCsv`/`csvResponse`).
 
@@ -103,8 +103,9 @@ Actions include `createTicket`, `updateTicketField` (incl. switching `type` — 
 | | |
 | --- | --- |
 | Routes | `app/(console)/problems/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/problems.ts` — `createProblem`, `updateProblemField`, `updateProblemDetails`, `addProblemComment` |
-| Components | `components/problems/` — `problem-form`, `problem-properties`, `create-problem-dialog` |
+| Actions | `lib/actions/problems.ts` — `createProblem`, `updateProblemField`, `updateProblemDetails`, `updateProblemText` (root cause / workaround), `addProblemComment`; a change is linked to a problem with `setChangeProblem` (`lib/actions/changes.ts`) |
+| Components | `components/problems/` — `problem-form`, `problem-properties`, `problem-editors`, `problem-fix-changes` (the "Fix changes" card), `create-problem-dialog` |
+| Rules | `lib/problem-rules.ts` — a known error needs a workaround and a resolved problem a root cause (also on create, so those statuses are not offered there); a `CLOSED` problem's title, description, root cause, workaround, priority, impact and category are read-only until it is reopened (comments, links, assignment and status stay editable); `resolvedAt` is stamped on resolve, kept when a resolved problem is closed, stamped when an unresolved one is closed directly, cleared on reopen. Writes are guarded by the status read, so a concurrent change is refused instead of overwritten. |
 
 ### Changes
 Includes a built-in approval workflow.
@@ -112,10 +113,12 @@ Includes a built-in approval workflow.
 | | |
 | --- | --- |
 | Routes | `app/(console)/changes/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval`, `setCabRule` (CAB quorum/percent rule); `lib/actions/change-assets.ts` — `attachAffectedCi`/`detachAffectedCi` |
-| Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval`; affected-CI panel with automated impact/risk |
+| Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `updateChangeWindow`, `updateChangeText`, `setChangeProblem`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval`, `setCabRule` (CAB quorum/percent rule); `lib/actions/change-assets.ts` — `attachAffectedCi`/`detachAffectedCi` |
+| Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval`, `change-window-editor`, `change-editors`, `change-problem-link`, `closure-dialog`, `cancel-change`; affected-CI panel with automated impact/risk |
 
 **Change rules** (`lib/change-rules.ts`): the planned end must be after the start; submitting for CAB requires an implementation plan, a rollback plan and a planned window (`STANDARD` changes are exempt) and reports what is missing; the window (`updateChangeWindow`, `change-window-editor`) is editable only in `DRAFT`/`SUBMITTED`/`REJECTED`, i.e. before approval. The change and problem lists search by ref (`lib/ref-search.ts`: `CHG-0025`, `#25`, `25`) as well as title.
+
+**Lifecycle (`lib/change-rules.ts`):** in `APPROVED`/`SCHEDULED` the window can still move, but only with a reason, which is posted as a comment (`rescheduleError`/`rescheduleComment`) — the dates cannot be cleared. `SUBMITTED`/`APPROVAL`/`APPROVED` are set by the approval workflow, never by a manual status edit (`manualStatusError`). Moving to `CLOSED` or `FAILED` needs an `outcome` (`CHANGE_OUTCOMES`; `FAILED` accepts only Failed / Rolled back) and `closureNotes` (post-implementation review; the message is stricter for `EMERGENCY`), collected in `closure-dialog` (`closureError`). `CANCELLED` needs a `cancelReason` (`cancel-change`) and settles the approval board: unanswered seats become `CANCELLED` (`settlesApprovalBoard`). `actualEnd` is stamped when work stops (`REVIEW`/`FAILED`/`CLOSED`). `CLOSED` and `CANCELLED` changes are locked (`isChangeLocked`): everything is read-only except comments and links. A change links to at most one problem via `setChangeProblem` (also reachable from the problem's "Fix changes" card).
 
 **CAB quorum & affected CIs:** a change carries an `approvalRule` (`UNANIMOUS` / `QUORUM` / `PERCENT`) + `approvalThreshold`; `lib/cab.ts` (`evaluateCab`) tallies seated approvals against the rule and reports whether the board is satisfied, and `setCabRule` (MANAGER+) can lower the bar mid-flight. The affected-CI panel attaches `ChangeAsset` rows and surfaces blast-radius impact from `lib/cmdb-graph.ts` (`computeImpact`).
 
@@ -142,8 +145,8 @@ The service portfolio (business/technical services tickets are filed against).
 | | |
 | --- | --- |
 | Routes | `app/(console)/services/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/services.ts` — `createService`, `updateServiceField` |
-| Components | `components/services/` — `service-form`, `service-properties`, `create-service-dialog` |
+| Actions | `lib/actions/services.ts` — `createService`, `updateServiceField`, `updateService`, `linkServiceAsset`/`unlinkServiceAsset` (supporting CIs, `ServiceAsset`; audited on both the service and the asset), `deleteService` |
+| Components | `components/services/` — `service-form`, `service-properties`, `service-assets`, `create-service-dialog` |
 
 ### Service Catalog (admin)
 The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-style admin page — no `[id]`/`new` routes; items are edited inline.
@@ -161,8 +164,10 @@ Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`)
 | | |
 | --- | --- |
 | Routes | `app/(console)/assets/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/assets.ts` — `createAsset`, `updateAssetField`, `updateAsset` |
+| Actions | `lib/actions/assets.ts` — `createAsset`, `updateAssetField`, `updateAsset`, `deleteAsset`, `addAssetRelation`/`deleteAssetRelation`, `linkTicketToAsset`/`unlinkTicketFromAsset`, `addAssetToChange`/`removeAssetFromChange` |
 | Components | `components/assets/` — `asset-form`, `asset-properties`, `asset-edit-dialog`, `impact-graph` (blast-radius panel) |
+
+**Linking from the asset page:** the detail page links tickets (`TicketAsset`, subject to the ticket's group membership check) and changes (`ChangeAsset`) and lists the services the CI supports (managed on the service page). Retired/disposed assets cannot be added to a change (`lib/asset-link-rules.ts`); already-made or already-removed links are benign no-ops. The actions return `{ ok, error }` (`lib/action-result.ts`) so refusals reach the UI and Sable.
 
 **Impact analysis:** `lib/cmdb-graph.ts` (`computeImpact`) walks `AssetRelation` edges from a root CI (up/downstream, depth-bounded) to compute a blast radius; the asset detail page renders it via `impact-graph`, and Changes reuse it for affected-CI impact/risk.
 
@@ -173,7 +178,9 @@ Created/edited via dialog (no `new/` route).
 | --- | --- |
 | Routes | `app/(console)/locations/page.tsx`, `[id]/page.tsx` |
 | Actions | `lib/actions/locations.ts` — `createLocation`, `updateLocation`, `deleteLocation` |
-| Components | `components/locations/location-dialog` |
+| Components | `components/locations/` — `location-dialog`, `delete-location-button` |
+
+`deleteLocation` returns an `ActionResult` and detaches rather than blocks: assets lose their `locationId` (the free-text note stays) and sub-locations move to the top level, in one transaction. Sable's `location.delete` reuses it.
 
 ### Categories
 Ticket/problem/change categorisation tree.
@@ -190,8 +197,9 @@ The only console module keyed by `slug` instead of `[id]`, with a dedicated edit
 | | |
 | --- | --- |
 | Routes | `app/(console)/knowledge/page.tsx`, `[slug]/page.tsx`, `[slug]/edit/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/knowledge.ts` — `createArticle`, `updateArticle`, `changeArticleStatus`, `deleteArticle`, `restoreArticleRevision` |
-| Components | `components/knowledge/article-editor` (uses the shared `components/ui/rich-text-editor`), `components/knowledge/article-history-dialog` (browse `ArticleRevision` history, non-destructive restore — restoring writes a new revision instead of deleting/rewriting) |
+| Actions | `lib/actions/knowledge.ts` — `createArticle`, `updateArticle`, `setArticleStatus`/`changeArticleStatus`, `deleteArticle`, `restoreArticleRevision`; `lib/actions/article-links.ts` — `linkArticle`/`unlinkArticle` |
+| Components | `components/knowledge/article-editor` (uses the shared `components/ui/rich-text-editor`), `components/knowledge/article-history-dialog` (browse `ArticleRevision` history, non-destructive restore — restoring writes a new revision instead of deleting/rewriting), `article-status-button`, `related-articles` / `components/related-articles-card` (articles attached to a ticket, problem or change; data from `lib/data/related-articles.ts`) |
+| Rules | `lib/article-rules.ts` — allowed status moves (`DRAFT→REVIEW/PUBLISHED`, `REVIEW→DRAFT/PUBLISHED`, `PUBLISHED→DRAFT/RETIRED`, `RETIRED→DRAFT/REVIEW/PUBLISHED`); editing a `PUBLISHED` article below MANAGER sends it back to `REVIEW` (four-eyes) while a manager's edit keeps it published; only published articles, or the user's own drafts, can be linked |
 
 ---
 
@@ -207,13 +215,14 @@ Groups are the unit of assignment/auto-routing (they replaced Queues). Includes 
 | Components | `components/groups/` — `group-form`, `create-group-dialog`, `auto-assign-control` |
 
 ### People
-User directory. Read-heavy; users are typically provisioned via syncs, so there is no `new/` route.
+User directory. Users are typically provisioned via syncs; ADMINs can also add and edit people manually through a dialog (no `new/` route). Fields owned by a sync source may be overwritten on the next sync, and the detail page says so. Users have no location field (the `User` model has no location column).
 
 | | |
 | --- | --- |
 | Routes | `app/(console)/people/page.tsx`, `[id]/page.tsx` |
-| Actions | `lib/actions/people.ts` — `updateUserField` |
-| Components | `components/people/user-properties` |
+| Actions | `lib/actions/people.ts` — `createPerson`, `updatePerson` (ADMIN, audited), `updateUserField` |
+| Rules | `lib/person-rules.ts` — pure email normalisation/shape and initial-password checks (min 12 chars, max 72 bytes) |
+| Components | `components/people/` — `person-dialog`, `user-properties` |
 
 ### Dashboards
 
@@ -240,6 +249,7 @@ Rule engine (trigger → conditions → actions), MANAGER+.
 | Route | `app/(console)/automations/page.tsx` |
 | Actions | `lib/actions/automations.ts` — `createRule`, `updateRule`, `toggleRule`, `deleteRule` |
 | Engine | `lib/automations.ts` — `runAutomations(trigger, ticketId)` (direct DB writes, never user actions, so it can't recurse) |
+| Validation | `lib/automation-rules.ts` — server-side check that every condition and action carries a valid value; field errors go back to the form. A rule with no conditions is allowed and the form warns that it runs on every matching trigger |
 | Components | `components/automations/` — `rule-builder`, `toggle-switch` |
 
 Internal-note actions are authored by a pseudo **"Automation"** system account (inactive, no login) via `getAutomationUserId()` in `lib/system-user.ts`, so automated comments are clearly attributed to the system rather than an admin.

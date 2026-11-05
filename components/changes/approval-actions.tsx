@@ -17,7 +17,11 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
     fd.set("decision", decision);
     if (comment.trim()) fd.set("comment", comment.trim());
     start(async () => {
-      await decideApproval(fd);
+      const res = await decideApproval(fd);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
       setComment("");
       toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
     });
