@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -123,15 +124,15 @@ export function useSable(): SableContextValue {
 export function SableProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [state, setState] = useState<SableState>("closed");
-  // Restore the last conversation + open state from a previous session.
-  const [conversationId, setConversationId] = useState<string | null>(() => readLS(LS_CONV) || null);
-  const [lastOpen, setLastOpen] = useState<SableOpenState>(
-    () => (readLS(LS_STATE) === "max" ? "max" : "min"),
-  );
+  // The last conversation, open state and project are restored from the previous
+  // session AFTER mount (see below): reading localStorage while rendering would make
+  // the client's first render differ from the server's and break hydration.
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [lastOpen, setLastOpen] = useState<SableOpenState>("min");
   const [scope, setScope] = useState<AssistantScope>("GENERAL");
   const [contextOverride, setContextOverride] = useState<{ ticketId?: number } | undefined>(undefined);
   // The Sable Project the window is pinned to, restored from a previous session.
-  const [projectId, setProjectId] = useState<string | null>(() => readLS(LS_PROJECT) || null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   // The active project's name — session-only (only the id is persisted). Resolved
   // lazily by callers (rail lookup) via setProject(id, name).
   const [projectName, setProjectName] = useState<string | null>(null);
@@ -139,6 +140,15 @@ export function SableProvider({ children }: { children: ReactNode }) {
   // the chat). Not persisted: it lives only for the current window session.
   const [canvasDoc, setCanvasDoc] = useState<SableCanvasDoc | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
+
+  useEffect(() => {
+    // One-time sync from localStorage after hydration (see the state declarations above).
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setConversationId(readLS(LS_CONV) || null);
+    setLastOpen(readLS(LS_STATE) === "max" ? "max" : "min");
+    setProjectId(readLS(LS_PROJECT) || null);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
   // Ticket context derived from the URL, e.g. /tickets/123 (not the list).
   const pathTicketId = useMemo(() => {

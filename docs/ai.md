@@ -89,6 +89,21 @@ Chat runs through **`app/api/assistant/chat/route.ts`** (`POST`, AGENT+). It is
 **server-authoritative**: assistant-ui/`useChat` posts the full `messages[]` array, but the route
 ignores that history and **rebuilds context from the DB**, then streams the reply.
 
+**Answers outlive the request.** The agent run has its own abort controller and is pumped into an
+in-memory registry (`lib/sable-active-runs.ts`; one self-hosted process, so no Redis). The run is
+reserved (`beginRun`, after a cheap owner check) **before** the question is saved and gets its
+stream later, so whoever sees the question can always rejoin or stop its answer. One answer per
+conversation at a time: a second POST while one runs gets `409`. The POST response is just one
+subscriber: leaving the chat, closing the window or reloading only drops it.
+`getConversation` reports `resumable` while the last stored message is the user's and a run is
+registered; the thread then calls `resumeStream()`, and
+**`app/api/assistant/chat/[id]/stream/route.ts`** `GET` replays everything streamed so far and
+follows live (204 when nothing runs; a finished run stays replayable for 60 s). The Stop button
+(and Escape in the composer) calls `DELETE` on the same route, which aborts the run; `pipeAgentRun` stops recording at that
+moment, so the saved partial answer is what the user saw. Runs are per user: another user's run is
+neither visible nor stoppable. Deleting a conversation stops its run, and a run nobody stops ends
+after 15 minutes. The portal chat keeps the request-bound behaviour.
+
 The pre-model logic is shared, non-`"use server"` code in **`lib/assistant-core.ts`**:
 
 - `getActingAgent()` — the acting user with a **fresh** role from the DB (never the stale JWT).

@@ -64,6 +64,7 @@ import {
   type ComponentType,
   type FC,
   type PropsWithChildren,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -112,6 +113,11 @@ export type ThreadProps = {
    * project, so the context lives in the composer instead of a header/breadcrumb.
    */
   composerChip?: ReactNode | undefined;
+  /**
+   * Called when the user presses Stop. Where answers outlive the request (Sable
+   * console), closing the connection alone would not end the run, so this ends it.
+   */
+  onStop?: (() => void) | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
@@ -120,6 +126,7 @@ const ThreadSuggestionsContext = createContext<readonly string[]>(EMPTY_SUGGESTI
 const ThreadEditableContext = createContext<boolean>(true);
 const ThreadOverviewContext = createContext<ReactNode>(null);
 const ComposerChipContext = createContext<ReactNode>(null);
+const StopContext = createContext<(() => void) | undefined>(undefined);
 
 // Group read-tool calls into a collapsed "N tool calls" group, but keep Sable's
 // approve-first `propose_*` cards AND `draft_document`'s artifact card STANDALONE
@@ -166,6 +173,7 @@ export const Thread: FC<ThreadProps> = ({
   editable = true,
   overview = null,
   composerChip = null,
+  onStop,
 }) => {
   const isEmpty = useAuiState(isNewChatView);
 
@@ -175,7 +183,9 @@ export const Thread: FC<ThreadProps> = ({
         <ThreadSuggestionsContext.Provider value={suggestions}>
           <ThreadOverviewContext.Provider value={overview}>
             <ComposerChipContext.Provider value={composerChip}>
-              <ThreadRoot isEmpty={isEmpty} />
+              <StopContext.Provider value={onStop}>
+                <ThreadRoot isEmpty={isEmpty} />
+              </StopContext.Provider>
             </ComposerChipContext.Provider>
           </ThreadOverviewContext.Provider>
         </ThreadSuggestionsContext.Provider>
@@ -313,9 +323,16 @@ const ThreadSuggestions: FC = () => {
 
 const Composer: FC = () => {
   const chip = useContext(ComposerChipContext);
+  const onStop = useContext(StopContext);
+  const running = useAuiState((s) => s.thread.isRunning);
+  // Escape cancels a running answer in the input (assistant-ui's cancelOnEscape)
+  // without any click, so the Stop handler has to hear it as well.
+  const stopOnEscape = (e: KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === "Escape" && running && !e.nativeEvent.isComposing) onStop?.();
+  };
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
-      <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
+      <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col" onKeyDownCapture={stopOnEscape}>
         <ComposerPrimitive.AttachmentDropzone render={<div data-slot="aui_composer-shell" className="border-border/60 data-[dragging=true]:border-ring focus-within:border-border dark:border-muted-foreground/15 dark:focus-within:border-muted-foreground/30 flex w-full flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_4px_16px_-8px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] focus-within:shadow-[0_6px_24px_-8px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.05)] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))] dark:shadow-none" />}>{chip ? (
                         <AuiIf condition={(s) => !isNewChatView(s)}>
                           <div className="flex px-0.5 pt-0.5">{chip}</div>
@@ -335,6 +352,7 @@ const Composer: FC = () => {
 };
 
 const ComposerAction: FC = () => {
+  const onStop = useContext(StopContext);
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <ComposerAddAttachment />
@@ -351,7 +369,9 @@ const ComposerAction: FC = () => {
           <ComposerPrimitive.Send render={<TooltipIconButton tooltip="Send message" side="bottom" type="button" variant="default" size="icon" className="aui-composer-send size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label="Send message" />}><ArrowUpIcon className="aui-composer-send-icon size-4.5" /></ComposerPrimitive.Send>
         </AuiIf>
         <AuiIf condition={(s) => s.thread.isRunning}>
-          <ComposerPrimitive.Cancel render={<Button type="button" variant="default" size="icon" className="aui-composer-cancel size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label="Stop generating" />}><SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" /></ComposerPrimitive.Cancel>
+          <span className="contents" onClickCapture={onStop}>
+            <ComposerPrimitive.Cancel render={<Button type="button" variant="default" size="icon" className="aui-composer-cancel size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label="Stop generating" />}><SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" /></ComposerPrimitive.Cancel>
+          </span>
         </AuiIf>
       </div>
     </div>

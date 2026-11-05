@@ -368,7 +368,13 @@ export async function pipeAgentRun(
     sink.writer.write(chunk);
   };
   try {
-    for await (const chunk of run) emit(chunk);
+    for await (const chunk of run) {
+      // Stop means stop now: the agent process may take seconds to wind down, and
+      // anything it still produces would be saved although the user never saw it.
+      if (sink.abortSignal?.aborted) break;
+      emit(chunk);
+    }
+    [...openBlocks.values()].forEach(emit);
   } catch (e) {
     [...openBlocks.values()].forEach(emit);
     if (sink.abortSignal?.aborted) return;

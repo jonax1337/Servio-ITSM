@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Boxes, Loader2 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
+import { useChatRuntime, AssistantChatTransport, useAISDKChat } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
 import { SableToolUI, SableConversationContext, RESTORED_PROPOSAL_TOOL } from "./sable-tool-ui";
@@ -137,6 +137,7 @@ export function SableThread({
   onActivity?: () => void;
 }) {
   const [initial, setInitial] = useState<UIMessage<SableMetadata>[]>([]);
+  const [resumable, setResumable] = useState(false);
   const [hydrating, setHydrating] = useState<boolean>(Boolean(conversationId));
 
   useEffect(() => {
@@ -144,7 +145,9 @@ export function SableThread({
     let ignore = false;
     getConversation(conversationId)
       .then((res) => {
-        if (!ignore && res.ok) setInitial(hydrate(res.conversation.messages));
+        if (ignore || !res.ok) return;
+        setInitial(hydrate(res.conversation.messages));
+        setResumable(res.conversation.resumable);
       })
       .finally(() => {
         if (!ignore) setHydrating(false);
@@ -169,6 +172,7 @@ export function SableThread({
       scope={scope}
       context={context}
       initialMessages={initial}
+      resumable={resumable}
       overview={overview}
       projectName={projectName}
       onOpenOverview={onOpenOverview}
@@ -183,6 +187,7 @@ function ThreadRuntime({
   scope,
   context,
   initialMessages,
+  resumable,
   overview,
   projectName,
   onOpenOverview,
@@ -193,6 +198,8 @@ function ThreadRuntime({
   scope: AssistantScope;
   context?: { ticketId?: number; projectId?: string };
   initialMessages: UIMessage<SableMetadata>[];
+  /** The conversation's last answer is still streaming on the server: rejoin it on mount. */
+  resumable: boolean;
   overview?: ReactNode;
   projectName?: string | null;
   onOpenOverview?: () => void;
@@ -228,11 +235,20 @@ function ThreadRuntime({
       new AssistantChatTransport<UIMessage<SableMetadata>>({
         api: "/api/assistant/chat",
         prepareSendMessagesRequest: prepareRequest,
+        // Rejoin by OUR conversation id (the runtime's own chat id is client-local).
+        prepareReconnectToStreamRequest: () => ({ api: runStreamUrl(convIdRef.current) }),
       }),
     [prepareRequest],
   );
 
   const adapters = useSableChatAdapters();
+
+  // Answers outlive the request, so Stop must end the run on the server, not just this connection.
+  const stopRun = useCallback(() => {
+    const cid = convIdRef.current;
+    if (!cid) return;
+    void fetch(runStreamUrl(cid), { method: "DELETE" }).catch((e) => console.error("[sable] stop failed", e));
+  }, []);
 
   const runtime = useChatRuntime<UIMessage<SableMetadata>>({
     transport,
@@ -281,7 +297,9 @@ function ThreadRuntime({
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AssistantRuntimeProvider runtime={runtime}>
         <SableConversationContext.Provider value={convId ?? ""}>
+          {resumable ? <ResumeRun /> : null}
           <Thread
+            onStop={stopRun}
             components={THREAD_COMPONENTS}
             suggestions={STARTER_SUGGESTIONS}
             editable={false}
@@ -292,4 +310,21 @@ function ThreadRuntime({
       </AssistantRuntimeProvider>
     </div>
   );
+}
+
+/** Where a conversation's running answer is rejoined (GET) or stopped (DELETE). */
+function runStreamUrl(conversationId: string | null): string {
+  return `/api/assistant/chat/${encodeURIComponent(conversationId ?? "")}/stream`;
+}
+
+/** Rejoins the answer still streaming on the server once, when the chat is opened again. */
+function ResumeRun() {
+  const chat = useAISDKChat();
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!chat || resumed.current) return;
+    resumed.current = true;
+    void chat.resumeStream().catch((e: unknown) => console.error("[sable] could not rejoin the answer", e));
+  }, [chat]);
+  return null;
 }

@@ -225,6 +225,28 @@ describe("pipeAgentRun", () => {
     expect(transcript.text).toBe("hi");
   });
 
+  it("keeps nothing the agent produces after Stop, and closes the open block", async () => {
+    const written: AgentChunk[] = [];
+    const transcript = new AgentTranscript();
+    const stop = new AbortController();
+    async function* run(): AsyncGenerator<AgentChunk> {
+      yield { type: "text-start", id: "a" };
+      yield { type: "text-delta", id: "a", delta: "Seen" };
+      stop.abort();
+      yield { type: "text-delta", id: "a", delta: " never seen" };
+    }
+
+    await pipeAgentRun(run(), {
+      writer: { write: (c) => written.push(c) },
+      transcript,
+      fallbackError: "fallback",
+      abortSignal: stop.signal,
+    });
+
+    expect(transcript.text).toBe("Seen");
+    expect(written.at(-1)).toEqual({ type: "text-end", id: "a" });
+  });
+
   it("shows a mid-run failure as a final text part after closing the open block", async () => {
     const written: AgentChunk[] = [];
     const transcript = new AgentTranscript();

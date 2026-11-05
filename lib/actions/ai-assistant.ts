@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { hasRun, stopRun } from "@/lib/sable-active-runs";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { runOperation } from "@/lib/ai-operations/tools";
 import { AI_SCOPES, ticketRef, problemRef, changeRef } from "@/lib/constants";
@@ -127,6 +128,8 @@ export type ConversationDetail = {
   scope: AssistantScope;
   archived: boolean;
   messages: AssistantMessage[];
+  /** Sable's answer to the last message is still streaming (or not yet saved): rejoin it. */
+  resumable: boolean;
 };
 
 export type ApplyResult = { ok: boolean; applied?: string; error?: string };
@@ -383,6 +386,8 @@ export async function getConversation(
       messages: row.messages.map(toAssistantMessage).map((m) =>
         m.proposals ? { ...m, proposals: m.proposals.map(withDecision) } : m,
       ),
+      // Only while the answer is not in the transcript yet, so a replay never doubles it.
+      resumable: row.messages.at(-1)?.role === "user" && hasRun(row.id),
     },
   };
 }
@@ -436,6 +441,7 @@ export async function deleteConversation(id: string): Promise<{ ok: boolean; err
   });
   if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
 
+  stopRun(id, me.id); // nobody could reach its answer any more
   await db.aiConversation.delete({ where: { id } }); // AiMessage cascades
   return { ok: true };
 }

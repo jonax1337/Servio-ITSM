@@ -4,6 +4,7 @@ import {
   type ToolSet,
   type UIMessage,
 } from "ai";
+import { beginRun } from "@/lib/sable-active-runs";
 import { db } from "@/lib/db";
 import { renderMarkdown } from "@/lib/markdown";
 import { aiConfigured, streamAiChat } from "@/lib/ai";
@@ -269,6 +270,17 @@ export async function POST(req: Request) {
     return new Response("Nothing to send.", { status: 400 });
   }
 
+  // Reserve the run BEFORE the question is saved: from then on a client that sees
+  // the question can rejoin or stop its answer (lib/sable-active-runs). The owner
+  // check comes first so nobody can reserve, and so block, another user's chat.
+  const owner = await db.aiConversation.findUnique({ where: { id: conversationId }, select: { userId: true } });
+  if (owner?.userId !== me.id) return new Response("Not authorised", { status: 403 });
+  // The run outlives this request: leaving or reloading the chat only drops this
+  // subscriber; the Stop button aborts it explicitly.
+  const runAbort = new AbortController();
+  const pending = beginRun(conversationId, me.id, runAbort);
+  if (!pending) return new Response("Sable is still answering in this chat.", { status: 409 });
+
   let prepared: PreparedTurn;
   try {
     prepared = await prepareAssistantTurn({
@@ -279,6 +291,7 @@ export async function POST(req: Request) {
       context,
     });
   } catch (e) {
+    pending.discard();
     const msg = e instanceof Error ? e.message : "Could not prepare the chat.";
     return new Response(msg, { status: msg === "Not authorised" ? 403 : 400 });
   }
@@ -286,7 +299,13 @@ export async function POST(req: Request) {
   // Stage the turn's uploads as real (unparented) attachments so their ids can be
   // injected into a ticket.create/comment proposal and survive to approval time.
   // Anything not taken by a proposal is cleaned up once the turn resolves.
-  const stagedIds = uploads.length ? await stageDataUrls(me.id, uploads) : [];
+  let stagedIds: string[];
+  try {
+    stagedIds = uploads.length ? await stageDataUrls(me.id, uploads) : [];
+  } catch (e) {
+    pending.discard();
+    throw e;
+  }
   const staged = withStagedAttachments(prepared.tools, prepared.writeToolToOpId, stagedIds);
 
   const stream = createUIMessageStream<UIMessage<SableMetadata>>({
@@ -301,9 +320,9 @@ export async function POST(req: Request) {
         remoteMcp: remoteMcp ?? undefined,
         audience: "console",
         maxSteps: 10,
-        abortSignal: req.signal,
+        abortSignal: runAbort.signal,
       });
-      await pipeAgentRun(run, { writer, transcript, fallbackError: FALLBACK_ERROR, abortSignal: req.signal });
+      await pipeAgentRun(run, { writer, transcript, fallbackError: FALLBACK_ERROR, abortSignal: runAbort.signal });
 
       const toolCalls = transcript.toolCalls;
       stampStagedIds(toolCalls, prepared.writeToolToOpId, stagedIds);
@@ -326,5 +345,5 @@ export async function POST(req: Request) {
     },
     onError: (e) => (e instanceof Error ? e.message : FALLBACK_ERROR),
   });
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream: pending.attach(stream) });
 }
