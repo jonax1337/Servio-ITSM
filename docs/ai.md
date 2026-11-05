@@ -132,12 +132,12 @@ Streaming itself — **one agent harness for every provider**:
 - When the run ends, the route emits the `cited_sources` part and the `proposals` metadata and
   persists the assistant turn. A failure mid-run becomes a final `⚠️` text part.
 
-`lib/ai.ts` exposes `streamAiChat` (live chunks) next to `generateAiChat` / `generateAiText` /
-`generateAiObject`, which run the same harness to completion.
+`lib/ai.ts` exposes `streamAiChat` (live chunks) next to `generateAiText` / `generateAiObject`,
+which run the same harness to completion.
 
 > **Server actions.** `lib/actions/ai-assistant.ts` keeps the conversation/folder CRUD and
-> `applyAssistantProposal` (below). Its legacy `sendMessage` server action still exists but is
-> **retired for the console** — the streaming route is the live path.
+> `applyAssistantProposal` / `dismissAssistantProposal` (below); chat turns only go through the
+> streaming route.
 
 ---
 

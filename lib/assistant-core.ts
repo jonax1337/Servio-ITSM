@@ -2,8 +2,7 @@
  * Shared, non-"use server" core for the Sable agent console assistant.
  *
  * This module holds the pieces the streaming route handler
- * (`app/api/assistant/chat/route.ts`) and the legacy `sendMessage` server action
- * both need: identity resolution, scope coercion, multimodal attachment
+ * (`app/api/assistant/chat/route.ts`) needs: identity resolution, scope coercion, multimodal attachment
  * assembly, the system prompts, proposal derivation, and `prepareAssistantTurn`
  * (everything up to — but not including — the model call).
  *
@@ -365,9 +364,7 @@ export type PreparedTurn = {
 
 /**
  * Authorise the conversation, persist the user turn, auto-title, load bounded
- * history, and assemble system + messages + tools. Mirrors the pre-model logic
- * of the legacy `sendMessage` server action so the streaming route produces
- * identical context. Throws on auth/config errors (the caller maps to an HTTP
+ * history, and assemble system + messages + tools. Throws on auth/config errors (the caller maps to an HTTP
  * status); the assistant turn itself is persisted by the caller after streaming.
  */
 export async function prepareAssistantTurn(input: {

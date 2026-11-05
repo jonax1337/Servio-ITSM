@@ -225,36 +225,6 @@ export async function generateAiText(input: { system?: string; prompt: string })
 }
 
 /**
- * Multi-step chat with tools (the agent loop), run to completion. Returns the
- * answer text, the tool calls it made, their outputs and the thinking.
- */
-export async function generateAiChat(input: {
-  system?: string;
-  messages: ModelMessage[];
-  tools?: ToolSet;
-  maxSteps?: number;
-}): Promise<{
-  text: string;
-  toolCalls: { name: string; input: unknown }[];
-  toolResults: { name: string; output: unknown }[];
-  reasoning?: string;
-}> {
-  const transcript = await runAgent({
-    system: input.system,
-    messages: input.messages,
-    aiSdkTools: input.tools ?? {},
-    maxTurns: input.maxSteps,
-    thinking: true,
-  });
-  return {
-    text: transcript.text,
-    toolCalls: transcript.toolCalls,
-    toolResults: transcript.toolResults,
-    reasoning: transcript.reasoning,
-  };
-}
-
-/**
  * The agent loop as a LIVE stream of UI chunks (thinking, tool calls, tool
  * results, text) for the chat route handlers. The backend is released when the
  * stream ends or the consumer stops iterating.

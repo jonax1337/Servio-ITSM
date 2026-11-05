@@ -175,7 +175,7 @@ function collectSources(
   return deduped;
 }
 
-/** Persist the finished assistant turn (mirrors the legacy sendMessage write). */
+/** Persist the finished assistant turn. */
 async function persistAssistant(
   convId: string,
   text: string,

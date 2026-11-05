@@ -27,7 +27,7 @@ export type ProposalIdentity = { operationId: string; args: unknown; toolCallId?
 const MARK_ATTEMPTS = 3;
 
 /** The identity of a proposal's content: its operation plus its args as the operation's schema parses them. */
-export function proposalSignature(operationId: string, args: unknown): string {
+function proposalSignature(operationId: string, args: unknown): string {
   const parsed = findOperation(operationId)?.input.safeParse(args ?? {});
   return signOperation(operationId, parsed?.success ? parsed.data : args);
 }
