@@ -54,11 +54,13 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
           running={running}
         />
         {!running ? (
-          <BrandedResult
-            toolName={props.toolName}
-            result={props.result}
-            args={props.args as Record<string, unknown> | undefined}
-          />
+          <div className="aui-tool-detail empty:hidden">
+            <BrandedResult
+              toolName={props.toolName}
+              result={props.result}
+              args={props.args as Record<string, unknown> | undefined}
+            />
+          </div>
         ) : null}
       </div>
     );

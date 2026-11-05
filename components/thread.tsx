@@ -45,6 +45,7 @@ import {
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  BrainIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -542,20 +543,27 @@ const AgentChain: FC<PropsWithChildren<{ steps: number; running: boolean }>> = (
       <ToolGroupTrigger count={steps} label={label} active={running} />
       <ToolGroupContent>
         <ChainContext.Provider value={true}>
-          <ol className="border-muted-foreground/30 ms-1.5 flex flex-col gap-1.5 border-s ps-4">{children}</ol>
+          <ol className="flex flex-col pt-1">{children}</ol>
         </ChainContext.Provider>
       </ToolGroupContent>
     </ToolGroupRoot>
   );
 };
 
-/** One node on the chain: a dot on the line, then the step (a tool chip or a thought). */
+/**
+ * One node on the chain. The step's own leading icon (a tool chip's, or the
+ * thought's brain) is the node: the connector runs from below it down to the
+ * next step's icon, so the line starts at the first step and ends at the last.
+ * Details under a step (result cards, thought text) sit in the text column,
+ * clear of the line.
+ */
 const ChainStep: FC<PropsWithChildren> = ({ children }) => (
-  <li className="relative list-none">
-    <span
-      aria-hidden
-      className="bg-background border-muted-foreground/60 absolute top-[0.4rem] -start-[1.28rem] size-2 rounded-full border"
-    />
+  <li
+    className={cn(
+      "relative list-none pb-2 last:pb-0 [&_.aui-tool-detail]:ms-[22px]",
+      "before:bg-muted-foreground/35 before:absolute before:start-[6.5px] before:top-[19px] before:-bottom-px before:w-px last:before:hidden",
+    )}
+  >
     {children}
   </li>
 );
@@ -570,16 +578,24 @@ const ChainThought: FC<PropsWithChildren<{ running: boolean }>> = ({ running, ch
   const open = expanded || running;
   return (
     <ChainStep>
-      <div className="text-muted-foreground flex flex-col items-start gap-0.5 text-xs">
+      <div className="text-muted-foreground flex flex-col items-start text-xs">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="hover:text-foreground font-medium"
+          className="hover:text-foreground flex items-center gap-2 py-0.5 font-medium"
           aria-expanded={open}
         >
+          <BrainIcon className={cn("text-sable size-3.5 shrink-0", running && "animate-pulse")} />
           Thought
         </button>
-        <div className={cn("[&_.aui-md]:text-xs [&_.aui-md_p]:my-1", !open && "line-clamp-3")}>{children}</div>
+        <div
+          className={cn(
+            "aui-tool-detail [&_.aui-md]:text-xs [&_.aui-md>:first-child]:mt-0 [&_.aui-md_p]:my-1",
+            !open && "line-clamp-3",
+          )}
+        >
+          {children}
+        </div>
       </div>
     </ChainStep>
   );
