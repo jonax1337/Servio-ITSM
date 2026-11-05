@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Save, RotateCcw, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export function EmailTemplateEditor({
   previewHtml: string;
 }) {
   const [state, action, pending] = useActionState<State, FormData>(saveEmailTemplate, undefined);
+  const submit = useFormSubmit(action);
   const wasPending = useRef(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -72,7 +74,7 @@ export function EmailTemplateEditor({
         <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{templateKey}</code>
       </div>
 
-      <form action={action} className="grid gap-3">
+      <form onSubmit={submit} className="grid gap-3">
         <input type="hidden" name="key" value={templateKey} />
 
         <label className="flex items-center justify-between gap-4">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { CheckCircle2, Loader2, Star } from "lucide-react";
 import { submitSurvey, type SurveyState } from "@/lib/actions/survey";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ export function SurveyForm({ token }: { token: string }) {
     submitSurvey,
     undefined,
   );
+  const submit = useFormSubmit(action);
 
   if (state && "ok" in state) {
     return (
@@ -61,7 +63,7 @@ export function SurveyForm({ token }: { token: string }) {
   const active = hover || rating;
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="rating" value={rating || ""} />
 

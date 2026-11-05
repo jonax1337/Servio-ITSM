@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { useSearchParams } from "next/navigation";
 import { Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { authenticate, ssoSignIn, type LoginState } from "@/lib/actions/auth";
@@ -29,6 +30,7 @@ export function LoginForm({
     authenticate,
     undefined,
   );
+  const submit = useFormSubmit(action);
 
   return (
     <div className="grid gap-5">
@@ -49,7 +51,7 @@ export function LoginForm({
         </>
       ) : null}
 
-      <form action={action} className="grid gap-4">
+      <form onSubmit={submit} className="grid gap-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { useRouter } from "next/navigation";
 import { User, SlidersHorizontal, PenLine, Loader2, Save, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -37,6 +38,7 @@ export function AccountSettingsDialog({
     updateMySettings,
     undefined,
   );
+  const submit = useFormSubmit(action);
 
   // Load (fresh) account data whenever the dialog opens.
   useEffect(() => {
@@ -55,9 +57,7 @@ export function AccountSettingsDialog({
     };
   }, [open]);
 
-  // React resets an action form to its defaultValues after a submit. Remount it with
-  // the freshly saved values, or a later save in another section would resubmit the
-  // stale values from when the dialog opened (e.g. wiping a just-saved phone number).
+  // Remount the form with the freshly saved values so every section shows what is stored.
   const [formKey, setFormKey] = useState(0);
   useEffect(() => {
     if (!state?.ok) return;
@@ -90,7 +90,7 @@ export function AccountSettingsDialog({
         ) : (
           <form
             key={formKey}
-            action={action}
+            onSubmit={submit}
             className="grid h-full min-h-0 sm:grid-cols-[190px_1fr]"
           >
             {/* Sidebar */}

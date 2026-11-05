@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
 import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
 import type { ServiceField } from "@/lib/service-forms";
@@ -42,10 +43,11 @@ export function ServiceRequestForm({
   maxMb?: number;
 }) {
   const [state, action, pending] = useActionState<CatalogState, FormData>(createCatalogRequest, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       <input type="hidden" name="catalogItemId" value={serviceId} />
 
       {state?.error ? (

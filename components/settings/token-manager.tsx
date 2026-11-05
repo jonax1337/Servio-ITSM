@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { KeyRound, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createApiToken, type ActionState } from "@/lib/actions/tokens";
@@ -22,6 +23,7 @@ export function TokenManager() {
     createApiToken,
     undefined,
   );
+  const submit = useFormSubmit(action);
   const formRef = useRef<HTMLFormElement>(null);
   const wasPending = useRef(false);
 
@@ -57,7 +59,7 @@ export function TokenManager() {
         </Alert>
       ) : null}
 
-      <form ref={formRef} action={action} className="grid gap-3">
+      <form ref={formRef} onSubmit={submit} className="grid gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid min-w-48 flex-1 gap-1.5">
             <Label htmlFor="token-name">Name</Label>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createTicket, type ActionState } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function TicketForm({
   customFieldDefs?: CustomFieldDef[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createTicket, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const typeOpts: ComboOption[] = TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label, tone: TICKET_TYPE_META[t].tone, icon: TICKET_TYPE_META[t].icon }));
@@ -55,7 +57,7 @@ export function TicketForm({
   const svcOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

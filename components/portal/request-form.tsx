@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Send, Loader2 } from "lucide-react";
 import { createPortalTicket, type PortalState } from "@/lib/actions/portal";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ export function RequestForm({
   maxMb?: number;
 }) {
   const [state, action, pending] = useActionState<PortalState, FormData>(createPortalTicket, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const priorityOpts: ComboOption[] = PRIORITIES.map((p) => ({
@@ -86,7 +88,7 @@ export function RequestForm({
     : "INCIDENT";
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

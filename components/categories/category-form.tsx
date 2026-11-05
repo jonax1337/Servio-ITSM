@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus, Save } from "lucide-react";
 import { createCategory, updateCategory, type ActionState } from "@/lib/actions/categories";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ export function CategoryForm({
     editing ? updateCategory : createCategory,
     undefined,
   );
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
   // A category can't be nested under itself.
   const parentOpts: ComboOption[] = parents
@@ -63,7 +65,7 @@ export function CategoryForm({
   const teamOpts: ComboOption[] = teams.map((t) => ({ value: t.id, label: t.name }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {editing ? <input type="hidden" name="id" value={category.id} /> : null}
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

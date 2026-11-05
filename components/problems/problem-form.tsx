@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createProblem, type ActionState } from "@/lib/actions/problems";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ export function ProblemForm({
   customFieldDefs?: CustomFieldDef[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createProblem, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const statusOpts: ComboOption[] = PROBLEM_STATUSES.map((s) => ({ value: s, label: PROBLEM_STATUS_META[s].label, tone: PROBLEM_STATUS_META[s].tone, icon: PROBLEM_STATUS_META[s].icon }));
@@ -50,7 +52,7 @@ export function ProblemForm({
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

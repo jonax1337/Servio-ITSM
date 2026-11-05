@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createChange, type ActionState } from "@/lib/actions/changes";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ export function ChangeForm({
   customFieldDefs?: CustomFieldDef[];
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createChange, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({ value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon }));
@@ -51,7 +53,7 @@ export function ChangeForm({
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}
@@ -89,7 +91,7 @@ export function ChangeForm({
         <Field label="Planned start" hint="Optional maintenance window start.">
           <Input type="datetime-local" name="plannedStart" />
         </Field>
-        <Field label="Planned end" hint="Optional maintenance window end.">
+        <Field label="Planned end" hint="Optional maintenance window end." error={fe.plannedEnd}>
           <Input type="datetime-local" name="plannedEnd" />
         </Field>
       </div>

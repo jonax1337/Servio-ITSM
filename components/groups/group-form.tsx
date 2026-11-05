@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createGroup, type ActionState } from "@/lib/actions/groups";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("
 
 export function GroupForm({ options }: { options: FormOptions }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createGroup, undefined);
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const typeOpts: ComboOption[] = GROUP_TYPES.map((t) => ({ value: t, label: GROUP_TYPE_META[t].label, tone: GROUP_TYPE_META[t].tone, icon: GROUP_TYPE_META[t].icon }));
@@ -36,7 +38,7 @@ export function GroupForm({ options }: { options: FormOptions }) {
   const autoAssignOpts: ComboOption[] = AUTO_ASSIGN_STRATEGIES.map((s) => ({ value: s, label: AUTO_ASSIGN_META[s].label, tone: AUTO_ASSIGN_META[s].tone }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

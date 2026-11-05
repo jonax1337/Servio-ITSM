@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Plus, Pencil, Trash2, Loader2, Save, ShoppingBag } from "lucide-react";
 import {
   createCatalogItem, updateCatalogItem, type CatalogAdminState,
@@ -49,6 +50,7 @@ export function CatalogEditor({
     },
     undefined,
   );
+  const submit = useFormSubmit(action);
 
   const [icon, setIcon] = useState(item?.icon ?? "ShoppingBag");
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? "none");
@@ -76,7 +78,7 @@ export function CatalogEditor({
           <DialogDescription>What end users can request from the self-service catalog.</DialogDescription>
         </DialogHeader>
 
-        <form action={action} className="grid gap-5">
+        <form onSubmit={submit} className="grid gap-5">
           {item ? <input type="hidden" name="id" value={item.id} /> : null}
           <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="categoryId" value={categoryId} />

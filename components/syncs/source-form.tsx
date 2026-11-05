@@ -8,6 +8,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { useFormStatus } from "react-dom";
 import { Loader2, Save, Trash2, Plug } from "lucide-react";
 import { toast } from "sonner";
@@ -183,6 +184,7 @@ export function SyncSourceForm({
   );
   const action = mode === "create" ? createSyncSource : updateSyncSource;
   const [state, formAction] = useActionState<ActionState, FormData>(action, undefined);
+  const submit = useFormSubmit(formAction);
   const wasErr = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -200,7 +202,7 @@ export function SyncSourceForm({
 
   return (
     <div className="grid max-w-2xl gap-4">
-      <form action={formAction} className="grid gap-6 rounded-xl border bg-card p-5">
+      <form onSubmit={submit} className="grid gap-6 rounded-xl border bg-card p-5">
         {mode === "edit" && source ? <input type="hidden" name="id" value={source.id} /> : null}
 
         <div className="grid gap-4">

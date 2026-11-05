@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Save } from "lucide-react";
 import type { ArticleState } from "@/lib/actions/knowledge";
 import { renderMarkdown } from "@/lib/markdown";
@@ -54,6 +55,7 @@ export function ArticleEditor({
   defaults?: ArticleDefaults;
 }) {
   const [state, formAction, pending] = useActionState<ArticleState, FormData>(action, undefined);
+  const submit = useFormSubmit(formAction);
   const fe = state?.fieldErrors ?? {};
 
   // Seed the rich editor from the existing article. Already-HTML articles pass
@@ -70,7 +72,7 @@ export function ArticleEditor({
   const categoryOpts = categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <form action={formAction} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {defaults.id ? <input type="hidden" name="id" value={defaults.id} /> : null}
 
       {state?.error ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createAsset, type ActionState } from "@/lib/actions/assets";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ export function AssetForm({ options }: { options: FormOptions }) {
     createAsset,
     undefined,
   );
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const typeOpts: ComboOption[] = ASSET_TYPES.map((t) => ({ value: t, label: ASSET_TYPE_META[t].label, tone: ASSET_TYPE_META[t].tone, icon: ASSET_TYPE_META[t].icon }));
@@ -52,7 +54,7 @@ export function AssetForm({ options }: { options: FormOptions }) {
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

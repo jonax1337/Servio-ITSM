@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ export function SettingsForm({
     action,
     undefined,
   );
+  const submit = useFormSubmit(formAction);
   const wasPending = useRef(false);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function SettingsForm({
   }, [pending, state]);
 
   return (
-    <form action={formAction} className="grid gap-5 rounded-xl border bg-card p-5">
+    <form onSubmit={submit} className="grid gap-5 rounded-xl border bg-card p-5">
       {fields.map((f) => (
         <div key={f.name} className="grid gap-1.5">
           {f.type === "switch" ? (

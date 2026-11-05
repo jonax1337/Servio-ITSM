@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createService, type ActionState } from "@/lib/actions/services";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ export function ServiceForm({ options }: { options: FormOptions }) {
     createService,
     undefined,
   );
+  const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
 
   const statusOpts: ComboOption[] = SERVICE_STATUSES.map((s) => ({
@@ -81,7 +83,7 @@ export function ServiceForm({ options }: { options: FormOptions }) {
   }));
 
   return (
-    <form action={action} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}
