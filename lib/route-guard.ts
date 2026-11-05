@@ -18,6 +18,13 @@ const RANK = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
 
 export type RankRole = keyof typeof RANK;
 
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey", "/brand"];
+
+/** Public route namespaces match whole path segments, including static brand assets. */
+export function isPublicPath(path: string): boolean {
+  return PUBLIC_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 /** Rank of a role string (unknown roles fall back to the lowest rank). */
 export function roleRank(role: string): number {
   return RANK[role as RankRole] ?? 0;

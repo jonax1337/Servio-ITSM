@@ -1,15 +1,9 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
-import { requiredRoleFor, roleAtLeast } from "@/lib/route-guard";
+import { requiredRoleFor, roleAtLeast, isPublicPath } from "@/lib/route-guard";
 
 const { auth } = NextAuth(authConfig);
-
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey"];
-
-/** Anchored prefix match: "/survey" must not also cover "/surveypayload". */
-const isPublicPath = (path: string) =>
-  PUBLIC_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 
 export default auth((req) => {
   const { nextUrl } = req;

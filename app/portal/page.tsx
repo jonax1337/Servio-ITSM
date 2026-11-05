@@ -28,10 +28,10 @@ export default async function PortalHome() {
   ]);
 
   return (
-    <div className="grid gap-10">
+    <div className="grid min-w-0 grid-cols-1 gap-10">
       <PortalHero firstName={me?.name?.split(" ")[0] ?? "there"} />
 
-      <div className="grid gap-10 lg:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-10 lg:grid-cols-3">
         {/* My open requests */}
         <section className="lg:col-span-2">
           <SectionHeader
@@ -112,7 +112,7 @@ export default async function PortalHome() {
             title="Popular services"
             action={{ href: "/portal/catalog", label: "Browse catalog" }}
           />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {catalog.map((it) => (
               <Link
                 key={it.id}

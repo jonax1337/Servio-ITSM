@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./brand-tokens.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "tw-shimmer";
@@ -7,6 +8,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-brand-cobalt: var(--brand-cobalt);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-mist: var(--brand-mist);
+  --color-brand-ice: var(--brand-ice);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
@@ -42,7 +47,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* Sable — monochrome "edel" accent (change --sable / --sable-foreground to retint everywhere). */
+  /* Nova Flow stays monochrome in dense interfaces; accent surfaces use Cobalt and Ice. */
   --color-sable: var(--sable);
   --color-sable-foreground: var(--sable-foreground);
   --color-sable-muted: var(--sable-muted);
@@ -71,82 +76,82 @@
   }
 }
 
-/* ── Servio "control room" theme ──────────────────────────────── */
+/* Relay surfaces and accessible interface tints of the brand palette. */
 :root {
-  --background: oklch(0.994 0.002 264);
-  --foreground: oklch(0.21 0.02 266);
+  --background: var(--brand-mist);
+  --foreground: var(--brand-navy);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 266);
+  --card-foreground: var(--brand-navy);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 266);
-  --primary: oklch(0.55 0.196 266);
-  --primary-foreground: oklch(0.99 0.002 264);
-  --secondary: oklch(0.967 0.006 264);
-  --secondary-foreground: oklch(0.28 0.02 266);
-  --muted: oklch(0.968 0.005 264);
-  --muted-foreground: oklch(0.54 0.02 262);
-  --accent: oklch(0.955 0.017 266);
-  --accent-foreground: oklch(0.42 0.12 266);
+  --popover-foreground: var(--brand-navy);
+  --primary: var(--brand-cobalt);
+  --primary-foreground: var(--brand-white);
+  --secondary: #E7ECF5;
+  --secondary-foreground: var(--brand-navy);
+  --muted: #E9EEF5;
+  --muted-foreground: #52647C;
+  --accent: #E5EBFF;
+  --accent-foreground: #2845BF;
   --destructive: oklch(0.585 0.222 24);
-  --border: oklch(0.922 0.006 264);
-  --input: oklch(0.922 0.006 264);
-  --ring: oklch(0.55 0.196 266);
-  --chart-1: oklch(0.55 0.196 266);
-  --chart-2: oklch(0.62 0.17 300);
-  --chart-3: oklch(0.66 0.14 220);
+  --border: #D7E0EC;
+  --input: #CBD6E5;
+  --ring: var(--brand-cobalt);
+  --chart-1: var(--brand-cobalt);
+  --chart-2: #227A8E;
+  --chart-3: #476C9B;
   --chart-4: oklch(0.7 0.15 162);
   --chart-5: oklch(0.72 0.16 70);
   --radius: 0.7rem;
-  --sidebar: oklch(0.986 0.003 264);
-  --sidebar-foreground: oklch(0.3 0.02 266);
-  --sidebar-primary: oklch(0.55 0.196 266);
-  --sidebar-primary-foreground: oklch(0.99 0.002 264);
-  --sidebar-accent: oklch(0.955 0.014 266);
-  --sidebar-accent-foreground: oklch(0.42 0.12 266);
-  --sidebar-border: oklch(0.915 0.006 264);
-  --sidebar-ring: oklch(0.55 0.196 266);
+  --sidebar: #EAF0F7;
+  --sidebar-foreground: var(--brand-navy);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
   /* Sable monochrome accent: near-black solid on light surfaces. */
-  --sable: oklch(0.24 0.006 264);
-  --sable-foreground: oklch(0.985 0.002 264);
-  --sable-muted: oklch(0.955 0.004 264);
+  --sable: var(--brand-navy);
+  --sable-foreground: var(--brand-white);
+  --sable-muted: #E6EDF4;
 }
 
 .dark {
-  --background: oklch(0.17 0.012 264);
-  --foreground: oklch(0.965 0.004 264);
-  --card: oklch(0.205 0.014 264);
-  --card-foreground: oklch(0.965 0.004 264);
-  --popover: oklch(0.215 0.015 264);
-  --popover-foreground: oklch(0.965 0.004 264);
-  --primary: oklch(0.66 0.18 266);
-  --primary-foreground: oklch(0.15 0.02 266);
-  --secondary: oklch(0.27 0.016 264);
-  --secondary-foreground: oklch(0.965 0.004 264);
-  --muted: oklch(0.255 0.014 264);
-  --muted-foreground: oklch(0.71 0.02 262);
-  --accent: oklch(0.3 0.03 266);
-  --accent-foreground: oklch(0.9 0.05 266);
+  --background: var(--brand-navy);
+  --foreground: var(--brand-mist);
+  --card: #182D46;
+  --card-foreground: var(--brand-mist);
+  --popover: #1C324D;
+  --popover-foreground: var(--brand-mist);
+  --primary: #8FAAFF;
+  --primary-foreground: var(--brand-navy);
+  --secondary: #203953;
+  --secondary-foreground: var(--brand-mist);
+  --muted: #203953;
+  --muted-foreground: #ACBCD0;
+  --accent: #243D61;
+  --accent-foreground: #DFE8FF;
   --destructive: oklch(0.7 0.19 22);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.66 0.18 266);
-  --chart-1: oklch(0.66 0.18 266);
-  --chart-2: oklch(0.7 0.16 300);
-  --chart-3: oklch(0.72 0.13 220);
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-ice);
+  --chart-3: #72A5CD;
   --chart-4: oklch(0.74 0.15 162);
   --chart-5: oklch(0.78 0.15 70);
-  --sidebar: oklch(0.195 0.013 264);
-  --sidebar-foreground: oklch(0.9 0.006 264);
-  --sidebar-primary: oklch(0.66 0.18 266);
-  --sidebar-primary-foreground: oklch(0.15 0.02 266);
-  --sidebar-accent: oklch(0.3 0.03 266);
-  --sidebar-accent-foreground: oklch(0.9 0.05 266);
+  --sidebar: #0F2035;
+  --sidebar-foreground: var(--brand-mist);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.66 0.18 266);
+  --sidebar-ring: var(--ring);
   /* Sable monochrome accent: near-white solid on dark surfaces. */
-  --sable: oklch(0.96 0.004 264);
-  --sable-foreground: oklch(0.2 0.01 264);
-  --sable-muted: oklch(0.27 0.012 264);
+  --sable: var(--brand-white);
+  --sable-foreground: var(--brand-navy);
+  --sable-muted: #213951;
 }
 
 @layer base {
@@ -185,42 +190,35 @@
     -webkit-mask-image: radial-gradient(120% 120% at 50% 0%, #000 0%, transparent 62%);
     mask-image: radial-gradient(120% 120% at 50% 0%, #000 0%, transparent 62%);
   }
-  /* on-brand ambient wash — a soft violet aurora anchored top-centre. Used once
+  /* Relay's Cobalt / Ice ambient wash, anchored top-centre. Used once
      per surface as a hero backdrop, not per-card. */
   .bg-aurora {
     background-image:
       radial-gradient(60% 80% at 15% -10%, color-mix(in oklch, var(--primary) 22%, transparent), transparent 60%),
-      radial-gradient(55% 90% at 100% 0%, color-mix(in oklch, var(--chart-2) 20%, transparent), transparent 55%);
+      radial-gradient(55% 90% at 100% 0%, color-mix(in oklch, var(--brand-ice) 20%, transparent), transparent 55%);
   }
   .glow {
     box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 20%, transparent),
       0 8px 30px -12px color-mix(in oklch, var(--primary) 45%, transparent);
   }
 
-  /* Sable — a minimal, glossy iridescent "rainbow" accent for its controls.
-     A soft multi-hue halo for the floating launcher, and a hairline gradient
-     ring (drawn on ::after via a mask, so it works over any button background)
-     for the in-ticket AI buttons. */
+  /* Restrained Cobalt / Ice accents for Nova Flow controls. */
   .sable-glow {
     box-shadow:
       0 4px 14px -4px rgb(0 0 0 / 0.22),
-      0 0 16px -3px oklch(0.72 0.19 300 / 0.4),
-      0 10px 26px -8px oklch(0.68 0.17 255 / 0.42),
-      0 10px 26px -10px oklch(0.78 0.14 195 / 0.4),
-      0 6px 18px -8px oklch(0.75 0.17 350 / 0.4);
+      0 0 18px -5px color-mix(in srgb, var(--brand-cobalt) 38%, transparent),
+      0 8px 24px -10px color-mix(in srgb, var(--brand-ice) 36%, transparent);
   }
   .sable-glow:hover {
     box-shadow:
       0 6px 18px -4px rgb(0 0 0 / 0.25),
-      0 0 22px -3px oklch(0.72 0.2 300 / 0.5),
-      0 12px 30px -8px oklch(0.68 0.18 255 / 0.52),
-      0 12px 30px -10px oklch(0.78 0.15 195 / 0.5),
-      0 8px 22px -8px oklch(0.75 0.18 350 / 0.5);
+      0 0 22px -4px color-mix(in srgb, var(--brand-cobalt) 46%, transparent),
+      0 10px 28px -10px color-mix(in srgb, var(--brand-ice) 42%, transparent);
   }
-  .sable-rainbow-border {
+  .sable-accent-border {
     position: relative;
   }
-  .sable-rainbow-border::after {
+  .sable-accent-border::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -228,10 +226,8 @@
     padding: 1px;
     background: linear-gradient(
       120deg,
-      oklch(0.72 0.15 300),
-      oklch(0.72 0.14 250),
-      oklch(0.78 0.12 195),
-      oklch(0.77 0.15 340)
+      var(--brand-cobalt),
+      var(--brand-ice)
     );
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,

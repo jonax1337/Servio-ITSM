@@ -2,8 +2,8 @@
 
 Servio ships a small, deliberately opinionated design system layered on top of
 **Tailwind v4**, **base-ui** (via the `base-nova` shadcn style), and
-**next-themes**. The look is a calm "control room" aesthetic: a violet primary,
-OKLCH tokens, tight tracking on display type, and status colour coded through a
+**next-themes**. Servio uses **Relay** and Sable uses **Nova Flow**: Navy surfaces,
+Cobalt actions, Mist backgrounds, Ice accents and Manrope display type. Status colour is coded through a
 single source of truth in [`lib/constants.ts`](../lib/constants.ts).
 
 This guide documents what actually exists in the repo. For where these pieces sit
@@ -22,7 +22,9 @@ feature module consumes them, see [modules.md](./modules.md).
 
 ## Theme foundation
 
-Everything is defined in a single stylesheet, [`app/globals.css`](../app/globals.css).
+Interface tokens and utilities live in [`app/globals.css`](../app/globals.css).
+The generated [`app/brand-tokens.css`](../app/brand-tokens.css) supplies canonical
+colours from [`branding/source/brand.json`](../branding/source/brand.json).
 There is **no `tailwind.config` file** — Tailwind v4 is configured entirely in CSS
 via `@import "tailwindcss"` and the `@theme inline { … }` block. The imports at the
 top wire in the animation utilities, the shadcn base layer, and the typography
@@ -42,9 +44,9 @@ Dark mode is class-based: the `dark` variant matches any element inside a `.dark
 ancestor, and next-themes toggles that class on `<html>` (see
 [Typography](#typography) and [The two shells](#the-two-shells)).
 
-### Colour tokens (OKLCH)
+### Colour tokens
 
-Colours are CSS custom properties in `oklch()` space, declared on `:root`
+Colours are CSS custom properties (brand hex values, interface tints and functional OKLCH colours), declared on `:root`
 (light) and `.dark`, then re-exported to Tailwind utilities through the
 `@theme inline` map (`--color-primary: var(--primary)`, etc.). This is why you
 write `bg-primary`, `text-muted-foreground`, `border-sidebar-border` and so on —
@@ -54,33 +56,30 @@ The **actual** token values in `app/globals.css` (do not trust older blueprint
 values):
 
 | Token | Light `:root` | Dark `.dark` | Usage |
-|-------|---------------|--------------|-------|
-| `--background` | `oklch(0.994 0.002 264)` | `oklch(0.17 0.012 264)` | Page background |
-| `--foreground` | `oklch(0.21 0.02 266)` | `oklch(0.965 0.004 264)` | Body text |
-| `--card` / `--card-foreground` | `oklch(1 0 0)` / `0.21…` | `0.205…` / `0.965…` | Card surfaces |
-| `--popover` / `--popover-foreground` | `oklch(1 0 0)` / `0.21…` | `0.215…` / `0.965…` | Menus, dropdowns |
-| `--primary` | `oklch(0.55 0.196 266)` | `oklch(0.66 0.18 266)` | Brand violet |
-| `--primary-foreground` | `oklch(0.99 0.002 264)` | `oklch(0.15 0.02 266)` | Text on primary |
-| `--secondary` / `-foreground` | `0.967…` / `0.28…` | `0.27…` / `0.965…` | Secondary buttons |
-| `--muted` / `--muted-foreground` | `0.968…` / `0.54…` | `0.255…` / `0.71…` | Subtle text/fills |
-| `--accent` / `-foreground` | `0.955…` / `0.42 0.12 266` | `0.3…` / `0.9 0.05 266` | Hover/active accents |
+| --- | --- | --- | --- |
+| `--background` | Mist `#F1F4F8` | Navy `#12243A` | Page background |
+| `--foreground` | Navy | Mist | Body text |
+| `--card` / `--card-foreground` | white / Navy | `#182D46` / Mist | Cards |
+| `--popover` / `--popover-foreground` | white / Navy | `#1C324D` / Mist | Menus |
+| `--primary` | Cobalt `#3559E8` | `#8FAAFF` | Actions and readable links |
+| `--primary-foreground` | white | Navy | Text on primary |
+| `--secondary` / `--secondary-foreground` | `#E7ECF5` / Navy | `#203953` / Mist | Secondary buttons |
+| `--muted` / `--muted-foreground` | `#E9EEF5` / `#52647C` | `#203953` / `#ACBCD0` | Subtle surfaces/text |
+| `--accent` / `--accent-foreground` | `#E5EBFF` / `#2845BF` | `#243D61` / `#DFE8FF` | Hover/active |
 | `--destructive` | `oklch(0.585 0.222 24)` | `oklch(0.7 0.19 22)` | Danger red |
-| `--border` / `--input` | `oklch(0.922 0.006 264)` | `oklch(1 0 0 / 9%)` / `/ 12%` | Hairlines, inputs |
-| `--ring` | `oklch(0.55 0.196 266)` | `oklch(0.66 0.18 266)` | Focus ring |
-| `--chart-1…5` | violet → magenta → blue → teal → amber | brighter variants | Charts |
-| `--sidebar*` | dedicated sidebar surface/accent/border set | — | Console sidebar |
-| `--sable` / `--sable-foreground` / `--sable-muted` | near-black solid + light muted fill | near-white solid + dark muted fill | AI ("Sable") accent |
+| `--border` / `--input` | `#D7E0EC` / `#CBD6E5` | white 9% / 12% | Hairlines and inputs |
+| `--ring` | Cobalt | `#8FAAFF` | Focus |
+| `--chart-1...5` | Cobalt, teal, steel blue, green, amber | Brighter variants including Ice | Charts |
+| `--sidebar` | `#EAF0F7` | `#0F2035` | Sidebar surface |
+| `--sidebar-primary`, `--sidebar-accent`, `--sidebar-ring` | Shared primary/accent/ring | Shared primary/accent/ring | Navigation |
+| `--sable` / `--sable-foreground` / `--sable-muted` | Navy / white / `#E6EDF4` | white / Navy / `#213951` | AI controls |
 
-The **`--sable*`** trio is a deliberately **monochrome** AI accent — a near-black
-solid on light surfaces, near-white on dark — that **replaced the old
-violet/fuchsia AI tint** everywhere the app signals an AI affordance. They are
-mapped in `@theme inline` to `bg-sable` / `text-sable` / `text-sable-foreground` /
-`bg-sable-muted`, so retinting every AI surface is a two-variable change. Consumers
-include [`components/ui/ai-button.tsx`](../components/ui/ai-button.tsx) (an
-outline `Button` with a subtle `--sable` tint), the ticket triage per-field
-suggestions ([`ticket-properties.tsx`](../components/tickets/ticket-properties.tsx)),
-the AI draft/summary card ([`comment-thread.tsx`](../components/comments/comment-thread.tsx)),
-and the Sable chat surface (composer send button + caret).
+The **`--sable*`** trio keeps dense AI surfaces monochrome: Navy on light,
+white on dark. It maps to `bg-sable`, `text-sable`, `text-sable-foreground` and
+`bg-sable-muted`. Consumers include `AiButton`, inline ticket suggestions,
+summary/draft cards and the composer send controls. The launcher uses a Navy
+tile with the Cobalt/Ice Nova Flow symbol. `sable-accent-border` and `sable-glow`
+use the same two colours for restrained borders and shadows.
 
 The dark theme is the **default** (`defaultTheme="dark"` in the root layout), so
 verify contrast in dark first.
@@ -119,24 +118,25 @@ Scrollbars are globally set to `thin` with a `--border` thumb.
 
 ## Typography
 
-Fonts are wired in [`app/layout.tsx`](../app/layout.tsx) with `next/font/google`
+Fonts are wired in [`app/layout.tsx`](../app/layout.tsx) with `next/font/local`
+(bundled Manrope) and `next/font/google` (Inter, JetBrains Mono)
 and exposed as the CSS variables referenced by the `@theme` map:
 
 | Role | Font | CSS variable | Token |
 |------|------|--------------|-------|
 | Body / UI (`font-sans`) | **Inter** | `--font-sans` | default `html` font |
-| Display / headings (`font-display`, `font-heading`) | **Bricolage Grotesque** | `--font-display` | `h1–h3`, `.font-display` |
+| Display / headings (`font-display`, `font-heading`) | **Manrope**, local variable font, weights 200–800 | `--font-display` | `h1–h3`, `.font-display` |
 | Monospace (`font-mono`) | **JetBrains Mono** | `--font-mono` | ref numbers, kbd, code |
 
-All three are attached to `<body>` as `${inter.variable} ${bricolage.variable}
+All three are attached to `<body>` as `${inter.variable} ${manrope.variable}
 ${jetbrains.variable} font-sans antialiased`. Use `font-display` for headings,
 stat values, and anything that should read as a "title"; `tabular-nums` is
 applied to numeric displays (e.g. [`stat-card.tsx`](../components/stat-card.tsx),
 [`pagination-bar.tsx`](../components/pagination-bar.tsx)).
 
-The **Sable** wordmark (the AI assistant's display name) also uses the display
-font — **Bricolage Grotesque @600**, i.e. `font-display font-semibold` — so the
-assistant reads as a first-class brand surface rather than plain UI text.
+Servio and Sable wordmarks are **outlined Manrope 750 artwork**, rendered by
+`BrandName`. `Logo` renders Relay; `SableMark` renders the six-segment Nova Flow.
+Geometry comes from the generated [`lib/brand-assets.ts`](../lib/brand-assets.ts).
 
 The `<ThemeProvider>` (a thin wrapper over next-themes,
 [`components/theme-provider.tsx`](../components/theme-provider.tsx)) is configured
@@ -261,7 +261,8 @@ Higher-level, app-specific components live directly in `components/` (not
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `Logo` / `Wordmark` | [`components/brand.tsx`](../components/brand.tsx) | The Servio "service ring" mark and the mark-plus-wordmark lockup (optional subtitle). |
+| `Logo` / `BrandName` / `Wordmark` | [`components/brand.tsx`](../components/brand.tsx) | Relay symbol, outlined wordmark for either brand, and Servio lockup with optional subtitle. |
+| `SableMark` | [`components/sable-mark.tsx`](../components/sable-mark.tsx) | Filled Nova Flow SVG, inheriting current colour; optional Cobalt/Ice `accent`, SVG props and forwarded ref. |
 | `ThemeToggle` | [`components/theme-toggle.tsx`](../components/theme-toggle.tsx) | Ghost icon button that flips light/dark via next-themes' `resolvedTheme`. |
 | `PageHeader` / `PageBody` | [`components/page-header.tsx`](../components/page-header.tsx) | Standard page title bar (optional icon, description, right-aligned action slot) and padded body wrapper. |
 | `StatCard` | [`components/stat-card.tsx`](../components/stat-card.tsx) | Dashboard KPI tile: big `tabular-nums` value, label, optional hint, icon tone, optional link. Tones: `primary`/`success`/`warning`/`danger`/`muted`. |

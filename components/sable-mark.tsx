@@ -1,11 +1,37 @@
-import { Astroid, type LucideProps } from "lucide-react";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
+import { brandAssets } from "@/lib/brand-assets";
 
-/**
- * Sable's brand icon — lucide's **Astroid**: a four-cusped star with concave,
- * swept-in sides (the shape people know from Gemini), used everywhere Sable
- * appears instead of the busy three-star `Sparkles`. One place to swap the whole
- * app's Sable icon; size it with a Tailwind `size-*` class like any lucide icon.
- */
-export function SableMark(props: LucideProps) {
-  return <Astroid strokeWidth={1.5} {...props} />;
-}
+type SableMarkProps = ComponentPropsWithoutRef<"svg"> & {
+  size?: number | string;
+  accent?: boolean;
+};
+
+export const SableMark = forwardRef<SVGSVGElement, SableMarkProps>(function SableMark(
+  { size = 24, accent = false, color = "currentColor", ...props },
+  ref,
+) {
+  const mark = brandAssets.marks.sable;
+  return (
+    <svg
+      ref={ref}
+      width={size}
+      height={size}
+      color={color}
+      fill="currentColor"
+      aria-hidden={props["aria-label"] ? undefined : true}
+      role={props["aria-label"] ? "img" : undefined}
+      {...props}
+      viewBox={`-1 -1 ${mark.width + 2} ${mark.height + 2}`}
+      stroke="none"
+    >
+      {mark.paths.map((path, index) => (
+        <path
+          key={index}
+          d={path.d}
+          transform={path.transform}
+          fill={accent ? (index < 3 ? brandAssets.colors.cobalt : brandAssets.colors.ice) : undefined}
+        />
+      ))}
+    </svg>
+  );
+});

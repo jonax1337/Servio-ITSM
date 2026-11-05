@@ -24,7 +24,9 @@ RUN pnpm install --frozen-lockfile
 # ── builder ──────────────────────────────────────────────────────────────────
 FROM deps AS builder
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
+ARG APP_URL=http://localhost:3000
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    APP_URL=$APP_URL
 RUN pnpm prisma generate && pnpm build
 
 # ── prod-deps ────────────────────────────────────────────────────────────────

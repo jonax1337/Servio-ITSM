@@ -338,6 +338,12 @@ Copy this structure for new modules; see [modules.md](./modules.md) for the full
 
 ## Troubleshooting
 
+For identity work, `pnpm brand:check` validates application copies against the
+canonical kit; `pnpm brand:sync` regenerates them. A normal `pnpm build` runs
+brand validation before Next.js. Full kit generation is a separate authoring
+toolchain; see [branding.md](./branding.md) and
+[branding/README.md](../branding/README.md).
+
 - **Blank/placeholder in a `Select`** → you're missing `items`; prefer `ComboField` for
   forms (see gotcha above).
 - **`asChild` "not a valid prop"** → use `render={…}` (base-ui, not Radix).

@@ -1,0 +1,13 @@
+{
+  "name": "servio-brand-kit",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "python tools/build.py && node tools/render.mjs && python tools/package.py",
+    "render": "node tools/render.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "sharp": "0.35.5"
+  }
+}

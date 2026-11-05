@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { SableMark } from "@/components/sable-mark";
+import { BrandName } from "@/components/brand";
 
 /**
  * Shared Sable window chrome, so the console min-card and the self-service
@@ -52,12 +53,12 @@ export function SableFab({
       onClick={onClick}
       className={cn(
         "sable-glow fixed bottom-4 right-4 z-40 grid size-12 place-items-center rounded-xl",
-        "bg-sable text-sable-foreground",
+        "bg-brand-navy text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ice focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "duration-200 animate-in zoom-in-50 fade-in",
         "transition-[transform,box-shadow] hover:scale-105 active:scale-95",
       )}
     >
-      <SableMark className="size-7" />
+      <SableMark accent className="size-7" />
       {beta ? (
         <span className="bg-background text-sable border-border absolute -right-1.5 -top-1.5 rounded-full border px-1 py-px text-[8px] font-semibold uppercase leading-none tracking-wide shadow-sm">
           Beta
@@ -90,13 +91,11 @@ export function SableHeader({
       </span>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-[15px] font-semibold leading-tight tracking-tight">
-            {AI_ASSISTANT_NAME}
-          </span>
+          <BrandName brand="sable" className="h-4" />
           {beta ? <SableBetaBadge /> : null}
         </div>
         <div className="truncate text-[11px] text-muted-foreground">
-          {subtitle ?? "Your service desk copilot"}
+          {subtitle ?? "AI teammate by Servio"}
         </div>
       </div>
       {extra}

@@ -1,35 +1,37 @@
 import { cn } from "@/lib/utils";
+import { brandAssets } from "@/lib/brand-assets";
 
-/** Servio logo mark — a stylised "service ring" with a spark. */
 export function Logo({ className }: { className?: string }) {
+  const mark = brandAssets.marks.servio;
   return (
-    <div
-      className={cn(
-        "grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm",
-        className,
-      )}
+    <svg
+      viewBox={`-1 -1 ${mark.width + 2} ${mark.height + 2}`}
+      fill="currentColor"
+      className={cn("size-8 shrink-0 text-brand-cobalt dark:text-white", className)}
+      aria-hidden="true"
     >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        className="size-5"
-        aria-hidden="true"
-      >
-        <path
-          d="M12 3a9 9 0 1 0 9 9"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-        />
-        <circle cx="12" cy="12" r="3" fill="currentColor" />
-        <path
-          d="M20 4l-3.2 3.2"
-          stroke="currentColor"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-        />
-      </svg>
-    </div>
+      {mark.paths.map((path, index) => (
+        <path key={index} d={path.d} transform={path.transform} />
+      ))}
+    </svg>
+  );
+}
+
+export function BrandName({ brand, className }: { brand: "servio" | "sable"; className?: string }) {
+  const word = brandAssets.wordmarks[brand];
+  const [, , width, height] = word.viewBox.split(" ").map(Number);
+  return (
+    <svg
+      viewBox={word.viewBox}
+      width={width}
+      height={height}
+      fill="currentColor"
+      role="img"
+      aria-label={brand === "servio" ? "Servio" : "Sable"}
+      className={cn("h-5 w-auto shrink-0", className)}
+    >
+      <path d={word.path} />
+    </svg>
   );
 }
 
@@ -44,9 +46,7 @@ export function Wordmark({
     <div className={cn("flex items-center gap-2.5", className)}>
       <Logo />
       <div className="grid leading-none">
-        <span className="font-display text-lg font-semibold tracking-tight">
-          Servio
-        </span>
+        <BrandName brand="servio" />
         {subtitle ? (
           <span className="text-[11px] font-medium text-muted-foreground">
             {subtitle}

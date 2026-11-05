@@ -8,6 +8,12 @@ For the full list of environment variables and their meaning, see
 [configuration.md](./configuration.md). For the schema itself, see
 [data-model.md](./data-model.md).
 
+Application builds validate committed brand assets before Next.js runs. Keep
+the canonical `branding` sources and synced `public/brand` / `app` files in
+the build context. Local Manrope is compiled from `branding/fonts` into Next's
+static font output. Normal deployment does not require the Python/browser
+tools used to author the full brand kit. See [branding.md](./branding.md).
+
 ---
 
 ## 🗄️ Database: SQLite → PostgreSQL
@@ -87,7 +93,7 @@ your platform) and set at minimum:
 | `AUTH_SECRET` | Yes | Strong random secret used to sign JWT sessions. Generate with `npx auth secret`. **Never** reuse the dev value. |
 | `AUTH_TRUST_HOST` | Yes | Set `true` when running behind a proxy/load balancer so Auth.js trusts the host header. |
 | `NEXTAUTH_URL` | Yes | Public origin, e.g. `https://servicedesk.example.com`. Must match the deployed URL for callback/redirect correctness. |
-| `APP_URL` | Yes | Public origin used when building links (e.g. in emails). Set to the same value as `NEXTAUTH_URL`. |
+| `APP_URL` | Yes | Public origin for links and build-time share-image metadata. Set to the same value as `NEXTAUTH_URL`; Compose forwards it to the image build. Rebuild if that origin changes. |
 | `APP_NAME` | No | Display name (defaults to `Servio`). |
 
 ### SSO / OIDC (optional)

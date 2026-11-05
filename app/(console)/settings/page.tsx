@@ -13,7 +13,6 @@ import {
   Mail,
   Inbox,
   MailCheck,
-  Bot,
   UploadCloud,
   Workflow,
   MessageSquareText,
@@ -25,6 +24,7 @@ import { requireRole } from "@/lib/session";
 import { APP_VERSION } from "@/lib/constants";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SableMark } from "@/components/sable-mark";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
@@ -69,9 +69,9 @@ const CARDS: SettingCard[] = [
   },
   {
     href: "/settings/ai",
-    title: "AI Assistant",
+    title: "Sable (AI assistant)",
     description: "Provider, model and API keys for the built-in AI assistant.",
-    icon: Bot,
+    icon: SableMark,
     minRole: "ADMIN",
   },
   {

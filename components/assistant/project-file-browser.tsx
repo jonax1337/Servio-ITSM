@@ -27,9 +27,9 @@ import {
   Pencil,
   Trash2,
   Upload,
-  Sparkles,
   X,
 } from "lucide-react";
+import { SableMark } from "@/components/sable-mark";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -802,7 +802,7 @@ function FileRow({
           </span>
         ) : null}
         {file.indexedAt ? (
-          <Sparkles className="size-3 shrink-0 text-sable" aria-label="Indexed" />
+          <SableMark className="size-3.5 shrink-0 text-sable" aria-label="Indexed" />
         ) : null}
         <span className="shrink-0 text-[11px] text-muted-foreground">{humanSize(file.size)}</span>
       </button>

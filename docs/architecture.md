@@ -147,8 +147,11 @@ export async function GET(req: Request) {
 
 Three layouts define the three surfaces:
 
-- **`app/layout.tsx`** — root layout. Loads fonts, `ThemeProvider`, and the
-  `Toaster`. No auth logic.
+- **`app/layout.tsx`** — root layout. Loads local Manrope display type, Inter,
+  JetBrains Mono, `ThemeProvider`, and the `Toaster`. Defines application/share
+  metadata and browser theme colours. No auth logic. File-based icons and share
+  images live in `app/`; static `/brand/*` icons and manifests are public before
+  login through the shared route policy. See [branding.md](./branding.md).
 - **`app/(console)/layout.tsx`** — the agent console. Calls
   `requireRole("AGENT")`; anything below `AGENT` is redirected to the portal.
   Renders the sidebar (`AppSidebar`) + topbar shell. It also mounts **Sable** once,
@@ -262,7 +265,7 @@ Enforcement happens in three complementary places:
 (except Next internals and shallow static assets, per its `matcher` — deep routes that merely
 *end* in an image/media extension still run middleware). It:
 
-- allows the public prefixes `/login`, `/api/auth`, `/api/v1` via an **anchored** match
+- allows `/login`, `/api/auth`, `/api/v1`, `/survey` and the static `/brand` namespace via an **anchored** match
   (`path === p || path.startsWith(p + "/")`, so `/surveypayload` is not covered by `/survey`);
 - redirects already-logged-in users away from `/login` to `/`;
 - redirects unauthenticated users to `/login?callbackUrl=…`;

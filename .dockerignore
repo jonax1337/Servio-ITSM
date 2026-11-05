@@ -1,4 +1,7 @@
 node_modules
+branding/node_modules
+branding/.build
+branding/servio-sable-brand-kit.zip
 .next
 .git
 .github
