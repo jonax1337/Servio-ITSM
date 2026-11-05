@@ -435,18 +435,22 @@ const AssistantMessage: FC = () => {
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
-                return <div data-slot="aui_chain-of-thought">{children}</div>;
+                return (
+                  <AgentChain steps={part.indices.length} running={part.status.type === "running"}>
+                    {children}
+                  </AgentChain>
+                );
               case "group-tool":
                 if (ToolGroup) {
                   return <ToolGroup group={part}>{children}</ToolGroup>;
                 }
                 return (
-                  <LiveToolGroup
+                  <ToolRun
                     count={part.indices.length}
                     running={part.status.type === "running"}
                   >
                     {children}
-                  </LiveToolGroup>
+                  </ToolRun>
                 );
               case "group-reasoning": {
                 if (ReasoningGroup) {
@@ -456,12 +460,7 @@ const AssistantMessage: FC = () => {
                 }
                 const running = part.status.type === "running";
                 return (
-                  <ReasoningRoot streaming={running}>
-                    <ReasoningTrigger active={running} />
-                    <ReasoningContent aria-busy={running}>
-                      <ReasoningText>{children}</ReasoningText>
-                    </ReasoningContent>
-                  </ReasoningRoot>
+                  <ReasoningRun running={running}>{children}</ReasoningRun>
                 );
               }
               case "text":
@@ -469,7 +468,7 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
-                return part.toolUI ?? <ToolFallbackComponent {...part} />;
+                return <ChainItem>{part.toolUI ?? <ToolFallbackComponent {...part} />}</ChainItem>;
               case "data":
                 return part.dataRendererUI;
               case "indicator":
@@ -490,6 +489,99 @@ const AssistantMessage: FC = () => {
         <AssistantActionBar />
       </div>
     </MessagePrimitive.Root>
+  );
+};
+
+/** A run of tool calls: flat steps inside an {@link AgentChain}, its own disclosure elsewhere. */
+const ToolRun: FC<PropsWithChildren<{ count: number; running: boolean }>> = ({ count, running, children }) =>
+  useContext(ChainContext) ? (
+    <>{children}</>
+  ) : (
+    <LiveToolGroup count={count} running={running}>
+      {children}
+    </LiveToolGroup>
+  );
+
+/** A run of thinking: one chain node inside an {@link AgentChain}, the reasoning disclosure elsewhere. */
+const ReasoningRun: FC<PropsWithChildren<{ running: boolean }>> = ({ running, children }) => {
+  const inChain = useContext(ChainContext);
+  if (inChain) return <ChainThought running={running}>{children}</ChainThought>;
+  return (
+    <ReasoningRoot streaming={running}>
+      <ReasoningTrigger active={running} />
+      <ReasoningContent aria-busy={running}>
+        <ReasoningText>{children}</ReasoningText>
+      </ReasoningContent>
+    </ReasoningRoot>
+  );
+};
+
+/** True inside an {@link AgentChain}: steps render as nodes on its line instead of their own disclosures. */
+const ChainContext = createContext(false);
+
+/**
+ * All of a turn's thinking and read-tool calls as ONE disclosure: a vertical
+ * line with a node per step, open while the agent works, folded to "N steps"
+ * once the answer starts, instead of a stack of separate "Reasoning" and
+ * "N tool calls" boxes. Approval cards and drafted documents stay outside it.
+ */
+const AgentChain: FC<PropsWithChildren<{ steps: number; running: boolean }>> = ({
+  steps,
+  running,
+  children,
+}) => {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const label = running ? "Working" : `${steps} ${steps === 1 ? "step" : "steps"}`;
+  return (
+    <ToolGroupRoot
+      variant="ghost"
+      className="aui-agent-chain mb-3"
+      open={userOpen ?? running}
+      onOpenChange={setUserOpen}
+    >
+      <ToolGroupTrigger count={steps} label={label} active={running} />
+      <ToolGroupContent>
+        <ChainContext.Provider value={true}>
+          <ol className="border-muted-foreground/30 ms-1.5 flex flex-col gap-1.5 border-s ps-4">{children}</ol>
+        </ChainContext.Provider>
+      </ToolGroupContent>
+    </ToolGroupRoot>
+  );
+};
+
+/** One node on the chain: a dot on the line, then the step (a tool chip or a thought). */
+const ChainStep: FC<PropsWithChildren> = ({ children }) => (
+  <li className="relative list-none">
+    <span
+      aria-hidden
+      className="bg-background border-muted-foreground/60 absolute top-[0.4rem] -start-[1.28rem] size-2 rounded-full border"
+    />
+    {children}
+  </li>
+);
+
+/** A tool call: a chain node inside an {@link AgentChain}, otherwise rendered as-is. */
+const ChainItem: FC<PropsWithChildren> = ({ children }) =>
+  useContext(ChainContext) ? <ChainStep>{children}</ChainStep> : <>{children}</>;
+
+/** A block of thinking on the chain: three muted lines, expandable to the full text. */
+const ChainThought: FC<PropsWithChildren<{ running: boolean }>> = ({ running, children }) => {
+  const [expanded, setExpanded] = useState(false);
+  const open = expanded || running;
+  return (
+    <ChainStep>
+      <div className="text-muted-foreground flex flex-col items-start gap-0.5 text-xs">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="hover:text-foreground font-medium"
+          aria-expanded={open}
+        >
+          Thought
+        </button>
+        <div className={cn("[&_.aui-md]:text-xs [&_.aui-md_p]:my-1", !open && "line-clamp-3")}>{children}</div>
+      </div>
+    </ChainStep>
   );
 };
 

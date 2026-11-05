@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ToneBadge } from "@/components/status-badge";
+import { inlineBadgeMeta } from "@/lib/inline-badge";
 import { cn } from "@/lib/utils";
 import { useSable } from "./sable-provider";
 import { applyAssistantProposal, type AssistantProposal } from "@/lib/actions/ai-assistant";
@@ -24,34 +26,48 @@ export type ProposalStatus = {
 /** Args that are plumbing, not user-facing detail — hidden from the card body. */
 const HIDDEN_ARGS = new Set(["attachmentIds", "attachFiles"]);
 
-/** Long-form fields worth previewing in the canvas rather than a cramped row. */
-const PREVIEW_FIELDS = ["body", "description", "content", "comment", "message", "answer", "resolution"];
+/** Text this long reads badly in a one-line row, so it goes to the canvas preview instead. */
+const LONG_TEXT_CHARS = 120;
 
-/** The first long text field of a proposal, for the "Preview in canvas" affordance. */
-function previewable(p: AssistantProposal): { field: string; text: string; isHtml: boolean } | null {
-  const args = (p.args ?? {}) as Record<string, unknown>;
-  for (const field of PREVIEW_FIELDS) {
-    const v = args[field];
-    if (typeof v === "string" && v.trim().length >= 120) {
-      const isHtml = /<\/(p|div|ul|ol|li|h[1-6]|pre|table|blockquote|strong|em|a|br)>/i.test(v) || /^\s*</.test(v);
-      return { field, text: v, isHtml };
-    }
-  }
-  return null;
+const isHtmlText = (v: string) =>
+  /<\/(p|div|ul|ol|li|h[1-6]|pre|table|blockquote|strong|em|a|br)>/i.test(v) || /^\s*</.test(v);
+
+/** "implementationPlan" → "Implementation plan". */
+const humanizeKey = (key: string) => {
+  const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** The proposal's arguments that will actually be written, as [key, value] rows. */
+function visibleArgs(p: AssistantProposal): [string, string][] {
+  return Object.entries(p.args ?? {})
+    .filter(([k, v]) => !HIDDEN_ARGS.has(k) && v !== undefined && v !== null && String(v).trim() !== "")
+    .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string]);
 }
 
-/** The proposed change's arguments as clean [key, value] rows (long body excluded). */
-function proposalEntries(p: AssistantProposal, skipField?: string): [string, string][] {
-  return Object.entries(p.args ?? {})
-    .filter(
-      ([k, v]) =>
-        !HIDDEN_ARGS.has(k) &&
-        k !== skipField &&
-        v !== undefined &&
-        v !== null &&
-        String(v).trim() !== "",
-    )
-    .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string]);
+type Preview = { fields: string[]; text: string; isHtml: boolean };
+
+/**
+ * Every long text of a proposal (a change's description, implementation and
+ * rollback plans, a KB body…) as one document for the canvas preview, so the
+ * reviewer sees the whole record before approving it, not just the first field.
+ */
+function previewable(args: [string, string][]): Preview | null {
+  const long = args.filter(([, v]) => v.trim().length >= LONG_TEXT_CHARS);
+  if (!long.length) return null;
+  if (long.length === 1) return { fields: [long[0][0]], text: long[0][1], isHtml: isHtmlText(long[0][1]) };
+  const html = long.some(([, v]) => isHtmlText(v));
+  const text = long
+    .map(([k, v]) => (html ? `<h2>${humanizeKey(k)}</h2>${isHtmlText(v) ? v : `<p>${v}</p>`}` : `## ${humanizeKey(k)}\n\n${v}`))
+    .join(html ? "" : "\n\n");
+  return { fields: long.map(([k]) => k), text, isHtml: html };
+}
+
+/** The badge namespace (see lib/inline-badge) a proposal argument's value belongs to. */
+function badgeNamespace(entity: string, key: string): string {
+  if (key === "status") return entity === "change" || entity === "problem" ? entity : "status";
+  if (key === "type" && entity === "change") return "change-type";
+  return key;
 }
 
 /** How many files this proposal will link to its ticket (0 if none). */
@@ -94,8 +110,10 @@ export function ProposalCard({
   const [, startApply] = useTransition();
   const st = status.status;
   const msg = status.msg;
-  const preview = previewable(proposal);
-  const entries = proposalEntries(proposal, preview?.field);
+  const args = visibleArgs(proposal);
+  const preview = previewable(args);
+  const entries = args.filter(([k]) => !preview?.fields.includes(k));
+  const entity = opTag(proposal.operationId);
   const attachments = attachmentCount(proposal);
   const applied = st === "applied";
   const busy = st === "applying";
@@ -159,7 +177,7 @@ export function ProposalCard({
           <p className="truncate font-medium leading-tight text-foreground">{proposal.label}</p>
         </div>
         <span className="shrink-0 rounded-md bg-background/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {opTag(proposal.operationId)}
+          {entity}
         </span>
       </div>
 
@@ -167,12 +185,17 @@ export function ProposalCard({
         <div className="flex flex-col gap-2 p-3">
           {entries.length ? (
             <dl className="grid gap-1 rounded-lg bg-muted/50 p-2 text-xs">
-              {entries.slice(0, 6).map(([k, v]) => (
-                <div key={k} className="flex gap-2">
-                  <dt className="w-20 shrink-0 truncate text-muted-foreground">{k}</dt>
-                  <dd className="min-w-0 flex-1 truncate font-medium text-foreground">{v}</dd>
-                </div>
-              ))}
+              {entries.map(([k, v]) => {
+                const badge = inlineBadgeMeta(`${badgeNamespace(entity, k)}:${v}`);
+                return (
+                  <div key={k} className="flex items-center gap-2">
+                    <dt className="w-24 shrink-0 truncate text-muted-foreground">{humanizeKey(k)}</dt>
+                    <dd className="min-w-0 flex-1 truncate font-medium text-foreground">
+                      {badge ? <ToneBadge meta={badge} dot /> : v}
+                    </dd>
+                  </div>
+                );
+              })}
             </dl>
           ) : null}
 

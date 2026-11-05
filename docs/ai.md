@@ -153,8 +153,15 @@ General scope (`lib/assistant-tools.ts` + `lib/ai-tools.ts`):
   `web_search` uses a real provider API when configured — **Tavily** or **Brave** (clean,
   LLM-friendly results) — else the keyless DuckDuckGo scraper (`lib/ai-tools.ts` `webSearch`; set
   `WEB_SEARCH_PROVIDER` + the key in Settings → AI). `fetch_url` strips page chrome before reading.
-- `draft_document` — hand a long document or **script** to the read-only **canvas** (see
+- `draft_document` — hand a long free-standing document (runbook, RCA, KB draft) or **script** to the read-only **canvas**; never used for a record the user asked to create, whose content goes into the `propose_*` fields (see
   [Artifacts & the canvas](#artifacts--the-canvas)).
+
+A turn's thinking and read-tool calls render as **one chain** (`AgentChain` in `components/thread.tsx`):
+a single "N steps" disclosure, open while Sable works, with a node per thought or tool chip on a
+vertical line. Approval cards and drafted documents stay outside it. In answers, record states written
+as namespaced inline code (`` `status:OPEN` ``, `` `priority:HIGH` ``, `` `change:SCHEDULED` ``) render
+as the list's tone badges, and record refs as inline code (`` `INC-0142` ``, `` `CHG-0039` ``) as links
+(`lib/inline-badge.ts`).
 
 The web pages, KB articles and project files a turn grounded on are aggregated into a **"Sources"**
 row rendered under the answer (a synthetic `cited_sources` part emitted after the run;
@@ -185,7 +192,7 @@ Coverage by module:
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
 | Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, `asset.link_ticket` / `asset.unlink_ticket`, location create/update/delete |
 | Knowledge base | `modules/knowledge.ts` | article create, set status, delete; `article.link` / `article.unlink` (attach to a ticket, problem or change by ref) |
-| Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
+| Problems & Changes | `modules/problems-changes.ts` | problem/change create (`change.create` takes the full record: reason, implementation/rollback plan, planned window, problem link), update field, comment; `change.set_plan` / `change.set_window`; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
 | Integrations | `modules/mcp.ts` | `mcp.call` — run a tool on a remote MCP server; never a model tool: the harness creates the proposal for `APPROVAL`-mode servers, and approving re-checks the server's config and the approver's role (see [Remote MCP servers](#remote-mcp-servers-libsable-mcpts-libsable-mcp-policyts)) |
 

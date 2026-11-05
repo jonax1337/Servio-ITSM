@@ -14,6 +14,8 @@ import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { SyntaxHighlighter } from "@/components/shiki-highlighter";
+import { ToneBadge } from "@/components/status-badge";
+import { inlineBadgeMeta, recordRefHref } from "@/lib/inline-badge";
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +84,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h1: ({ className, ...props }) => (
     <h1
       className={cn(
-        "aui-md-h1 mt-5 mb-2 scroll-m-20 text-xl font-semibold first:mt-0 last:mb-0",
+        "aui-md-h1 mt-5 mb-2 scroll-m-20 font-sans text-xl font-semibold tracking-normal first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -91,7 +93,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h2: ({ className, ...props }) => (
     <h2
       className={cn(
-        "aui-md-h2 mt-5 mb-2 scroll-m-20 text-lg font-semibold first:mt-0 last:mb-0",
+        "aui-md-h2 mt-5 mb-2 scroll-m-20 font-sans text-lg font-semibold tracking-normal first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -100,7 +102,7 @@ const defaultComponents = memoizeMarkdownComponents({
   h3: ({ className, ...props }) => (
     <h3
       className={cn(
-        "aui-md-h3 mt-4 mb-1.5 scroll-m-20 text-base font-semibold first:mt-0 last:mb-0",
+        "aui-md-h3 mt-4 mb-1.5 scroll-m-20 font-sans text-base font-semibold tracking-normal first:mt-0 last:mb-0",
         className,
       )}
       {...props}
@@ -258,6 +260,20 @@ const defaultComponents = memoizeMarkdownComponents({
   ),
   code: function Code({ className, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
+    const token = !isCodeBlock && typeof props.children === "string" ? props.children : null;
+    const badge = token ? inlineBadgeMeta(token) : null;
+    if (badge) return <ToneBadge meta={badge} dot className="align-middle" />;
+    const href = token ? recordRefHref(token) : null;
+    if (href) {
+      return (
+        <Link
+          href={href}
+          className="bg-muted hover:bg-accent text-foreground rounded-md px-1.5 py-0.5 font-mono text-[0.85em] font-medium no-underline transition-colors"
+        >
+          {token}
+        </Link>
+      );
+    }
     return (
       <code
         className={cn(

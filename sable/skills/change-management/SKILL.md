@@ -35,7 +35,16 @@ A change is not ready without all of these:
 6. Schedule: start/end, maintenance window, freeze periods respected.
 7. Communication plan: who is told before, during, after; downtime notice text.
 8. Roles: implementer, assigned team, approvers.
-Draft the document with draft_document when it is long; short changes go into description.
+
+When the user asks you to create a change, the deliverable is ONE complete propose_change_create,
+never a canvas draft (do not call draft_document for a change). Map the sections to its fields:
+- reason: section 1. implementationPlan: sections 3 and 4. rollbackPlan: section 5.
+- plannedStart / plannedEnd: section 6 as "YYYY-MM-DD HH:mm" (resolve the year from the current date).
+- description: sections 2, 7 and 8, plus freeze periods or dependencies.
+- type, risk, priority, impact, team, category, assignee, problem: verified values only.
+Fill what the user gave you; write a sound draft for the rest and say in one line which parts are
+your assumptions. Ask instead only when a fact you cannot reasonably assume (the window, the
+affected service) is missing.
 
 ## CAB readiness checklist
 - Type, risk, priority, impact set and consistent with the assessment.
@@ -48,11 +57,12 @@ Report gaps as a short list; do not mark a change ready if any item fails.
 ## Procedure and tools
 1. Read: change_get for an existing change; search_changes for conflicts and history;
    search_problems / get_ticket for the driver.
-2. Create: propose_change_create (title, description, type, risk, priority, impact, team, category,
-   assignee). Starts as DRAFT.
+2. Create: propose_change_create with every field above filled. Starts as DRAFT.
 3. Adjust: propose_change_update_field (field = status, type, risk, priority, impact, team,
-   category, assignee). Closing and cancelling have their own operations that need an
-   outcome/closure notes or a reason; ask the user for those instead of inventing them.
+   category, assignee); propose_change_set_plan (reason, implementationPlan, rollbackPlan);
+   propose_change_set_window (planned start and end). Closing and cancelling have their own
+   operations that need an outcome/closure notes or a reason; ask the user for those instead of
+   inventing them.
 4. Document progress with propose_change_comment.
 5. Link: propose_change_set_problem (change fixes problem); propose_ticket_set_change (incident or
    request tied to the change).
