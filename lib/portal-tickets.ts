@@ -54,7 +54,7 @@ export async function addPortalReply(userId: string, ticketId: number, body: str
   if (checkReplyRate(userId)) return { ok: false, reason: "RATE_LIMITED" };
 
   await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
-  await reopenOnCustomerReply(ticketId, userId);
+  await reopenOnCustomerReply(ticketId, userId, clean);
   const ticketMeta = await db.ticket.findUnique({ where: { id: ticketId }, select: { prefix: true, type: true } });
   await notifyAssigneeAndWatchers(ticketId, userId, {
     type: "COMMENT",

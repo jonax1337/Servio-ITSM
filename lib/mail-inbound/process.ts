@@ -153,7 +153,7 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   if (isInternal) {
     await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
   } else {
-    await reopenOnCustomerReply(ticketId, sender.id);
+    await reopenOnCustomerReply(ticketId, sender.id, reply.text);
   }
 
   // Customer-side replies grow the participant list (portal access + future CC).

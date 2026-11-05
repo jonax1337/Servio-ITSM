@@ -84,7 +84,7 @@ export async function addPortalComment(formData: FormData): Promise<PortalCommen
     }
   });
 
-  await reopenOnCustomerReply(id, me.id);
+  await reopenOnCustomerReply(id, me.id, body);
   const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
   await notifyAssigneeAndWatchers(id, me.id, {
     type: "COMMENT",

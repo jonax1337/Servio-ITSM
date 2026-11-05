@@ -14,7 +14,8 @@ import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { slaCreateData, slaRepricePatch, firstResponseData, customerReplyReopenData } from "@/lib/sla";
+import { slaCreateData, slaRepricePatch, firstResponseData, customerReplyReopenData, ticketCalendar } from "@/lib/sla";
+import { isThankYouOnly } from "@/lib/thank-you-reply";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -200,19 +201,24 @@ export async function notifyAssigneeAndWatchers(
 
 /**
  * A requester-side reply (portal or email) arrived: reopen a RESOLVED/CLOSED
- * ticket so it lands back in the agent queue, and bump its activity timestamp.
+ * ticket (or resume one awaiting the customer) so it lands back in the agent
+ * queue, and bump its activity timestamp. A plain thank-you leaves a RESOLVED
+ * ticket resolved.
  * Returns true when the ticket was reopened. The caller has authorised `actorId`.
  */
-export async function reopenOnCustomerReply(ticketId: number, actorId: string): Promise<boolean> {
+export async function reopenOnCustomerReply(ticketId: number, actorId: string, replyText: string): Promise<boolean> {
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
     select: {
-      status: true, resolutionCode: true, resolutionNote: true,
+      status: true, resolutionCode: true, resolutionNote: true, pendingReason: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
+      sla: { select: { businessCalendarId: true } },
     },
   });
   if (!ticket) return false;
-  const reopen = customerReplyReopenData(ticket);
+  // A plain "thanks" keeps a resolved ticket resolved (the comment is still kept and the agent notified).
+  const courtesyOnly = ticket.status === "RESOLVED" && isThankYouOnly(replyText);
+  const reopen = courtesyOnly ? null : customerReplyReopenData(ticket, new Date(), await ticketCalendar(ticket));
   const allowed = reopen !== null && (await canTransitionConfigured("TICKET", ticket.status, "OPEN", "USER"));
   if (!allowed) {
     await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });

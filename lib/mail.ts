@@ -217,11 +217,37 @@ export async function recordInboundEmail(input: {
 export async function ticketThreadHeaders(
   ticketId: number,
 ): Promise<{ inReplyTo?: string; references?: string }> {
-  const rows = await db.emailMessage.findMany({
+  const rows = await threadRows(ticketId);
+  // Customer-facing mail must not reveal the vendor side of the ticket: our
+  // forwards and the replies that came back as internal notes would otherwise
+  // show up (by Message-ID domain) in the requester's References header.
+  const internalCommentIds = new Set(
+    (await db.ticketComment.findMany({
+      where: { ticketId, isInternal: true, id: { in: rows.flatMap((r) => (r.commentId ? [r.commentId] : [])) } },
+      select: { id: true },
+    })).map((c) => c.id),
+  );
+  return threadHeadersFrom(
+    rows.filter((r) => r.template !== FORWARD_TEMPLATE && !(r.commentId && internalCommentIds.has(r.commentId))),
+  );
+}
+
+/** Thread headers for a forward to an external party: the whole chain, vendor side included. */
+export async function forwardThreadHeaders(ticketId: number): Promise<{ inReplyTo?: string; references?: string }> {
+  return threadHeadersFrom(await threadRows(ticketId));
+}
+
+export const FORWARD_TEMPLATE = "ticket_forward";
+
+function threadRows(ticketId: number) {
+  return db.emailMessage.findMany({
     where: { ticketId, messageId: { not: null } },
     orderBy: { createdAt: "asc" },
-    select: { messageId: true },
+    select: { messageId: true, template: true, commentId: true },
   });
+}
+
+function threadHeadersFrom(rows: { messageId: string | null }[]): { inReplyTo?: string; references?: string } {
   const ids = rows.map((r) => r.messageId!).filter(Boolean);
   if (ids.length === 0) return {};
   return { inReplyTo: ids[ids.length - 1], references: ids.join(" ") };

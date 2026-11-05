@@ -318,11 +318,15 @@ const REOPENED_BY_CUSTOMER_REPLY = ["RESOLVED", "CLOSED"];
  * when the reply leaves the status alone (CANCELLED stays cancelled on purpose).
  */
 export function customerReplyReopenData(
-  current: Parameters<typeof statusChangeData>[0],
+  current: Parameters<typeof statusChangeData>[0] & { pendingReason?: string | null },
   now: Date = new Date(),
+  calendar: BusinessCalendarLike | null = null,
 ): Record<string, unknown> | null {
-  if (!REOPENED_BY_CUSTOMER_REPLY.includes(current.status)) return null;
-  return { status: "OPEN", ...statusChangeData(current, "OPEN", now) };
+  // A ticket parked on "awaiting customer" got its answer: back to the agent,
+  // clock resumes. Other pending reasons (vendor, change, parts) stay parked.
+  const answersPending = current.status === "PENDING" && current.pendingReason === "AWAITING_CUSTOMER";
+  if (!REOPENED_BY_CUSTOMER_REPLY.includes(current.status) && !answersPending) return null;
+  return { status: "OPEN", ...statusChangeData(current, "OPEN", now, calendar) };
 }
 
 const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"

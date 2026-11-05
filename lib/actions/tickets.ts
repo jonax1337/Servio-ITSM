@@ -13,7 +13,7 @@ async function requireAgent() {
   return requireAgentUser();
 }
 import {
-  sendMail, ticketThreadHeaders, mailBrand,
+  sendMail, ticketThreadHeaders, forwardThreadHeaders, FORWARD_TEMPLATE, mailBrand,
   tplTicketAssigned, tplTicketParticipant,
   textToHtmlParagraphs, renderEmailHtml, renderThreadHistory,
 } from "@/lib/mail";
@@ -910,7 +910,7 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
 
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    select: { id: true, type: true, title: true, assigneeId: true, groupId: true, requester: { select: { email: true } } },
+    select: { id: true, type: true, prefix: true, title: true, assigneeId: true, groupId: true, requester: { select: { email: true } } },
   });
   if (!ticket) return { error: "Ticket not found." };
   // Guard the external-exfiltration path: only ADMIN/MANAGER, the assignee, or a
@@ -925,7 +925,7 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
     return { error: "Use a public reply to contact the requester." };
   }
 
-  const ref = ticketRef(ticket.id, ticket.type);
+  const ref = ticketRef(ticket.id, ticket.prefix || ticket.type);
   const requesterEmail = (ticket.requester?.email ?? "").toLowerCase();
   // The requester must never end up on a forward — that would silently flip their
   // future replies to internal (and leak the internal forward to them). Drop them
@@ -963,7 +963,13 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
     })),
   );
   const contentHtml = (note ? textToHtmlParagraphs(note) : "") + historyHtml;
-  const threadHeaders = await ticketThreadHeaders(ticketId);
+  const threadHeaders = await forwardThreadHeaders(ticketId);
+  // The external party needs the evidence too (screenshots, logs): files on the
+  // ticket itself plus those on the forwarded public messages — never internal ones.
+  const files = await db.attachment.findMany({
+    where: { OR: [{ ticketId }, { commentId: { in: chain.map((m) => m.id) } }] },
+    select: { filename: true, storageKey: true },
+  });
   await sendMail({
     to,
     cc,
@@ -971,7 +977,8 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
     entityId: ticketId,
     ticketId,
     ...threadHeaders,
-    template: "ticket_forward",
+    attachments: files.flatMap((f) => (f.storageKey ? [{ filename: f.filename, storageKey: f.storageKey }] : [])),
+    template: FORWARD_TEMPLATE,
     subject: `[${ref}] Fwd: ${ticket.title}`,
     body: htmlToText(contentHtml),
     html: renderEmailHtml({ contentHtml }),
