@@ -39,6 +39,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.7.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@prisma/client": "^6.19.3",
     "@shadcn/react": "^0.3.0",
     "@tailwindcss/typography": "^0.5.20",

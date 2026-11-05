@@ -8,6 +8,7 @@ import { OPERATIONS as configOps } from "./modules/config";
 import { OPERATIONS as knowledgeOps } from "./modules/knowledge";
 import { OPERATIONS as pcOps } from "./modules/problems-changes";
 import { OPERATIONS as projectOps } from "./modules/projects";
+import { OPERATIONS as mcpOps } from "./modules/mcp";
 
 /** Every RBAC-gated operation Sable can perform, composed from the domain modules. */
 export const ALL_OPERATIONS: AiOperation[] = [
@@ -22,7 +23,13 @@ export const ALL_OPERATIONS: AiOperation[] = [
   ...projectOps,
 ];
 
-const BY_ID = new Map(ALL_OPERATIONS.map((o) => [o.id, o]));
+/**
+ * Operations reachable only through a proposal the harness builds (never offered
+ * to the model as a tool): approved remote MCP calls.
+ */
+const PROPOSAL_ONLY_OPERATIONS: AiOperation[] = [...mcpOps];
+
+const BY_ID = new Map([...ALL_OPERATIONS, ...PROPOSAL_ONLY_OPERATIONS].map((o) => [o.id, o]));
 
 export function findOperation(id: string): AiOperation | undefined {
   return BY_ID.get(id);

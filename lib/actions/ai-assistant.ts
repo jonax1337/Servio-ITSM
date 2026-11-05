@@ -1,10 +1,20 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { hasRun, stopRun } from "@/lib/sable-active-runs";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { runOperation } from "@/lib/ai-operations/tools";
 import { AI_SCOPES, ticketRef, problemRef, changeRef } from "@/lib/constants";
 import { loadAccessibleProject, canManageProjectRow } from "@/lib/ai-projects";
+import {
+  claimProposal,
+  dismissProposal,
+  markProposalApplied,
+  proposalDecisions,
+  proposalKey,
+  releaseProposalClaim,
+  type ProposalDecision,
+} from "@/lib/ai-proposal-decisions";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * SHARED TYPES — defined once here, imported (type-only) everywhere else.
@@ -58,6 +68,11 @@ export type AssistantProposal = {
   operationId: string; // registry op id, e.g. "category.create"
   args: Record<string, unknown>;
   label: string; // human summary for the approval card
+  toolCallId?: string; // the tool call that made it: one proposal, one decision
+  decision?: ProposalDecision; // set on a reloaded transcript once the user applied or dismissed it
+  // Stored after decisions were recorded server-side. Older proposals may have been applied
+  // without a record, so only tracked ones are offered again on reload.
+  decisionTracked?: boolean;
 };
 
 /** Left-rail list item. */
@@ -113,6 +128,8 @@ export type ConversationDetail = {
   scope: AssistantScope;
   archived: boolean;
   messages: AssistantMessage[];
+  /** Sable's answer to the last message is still streaming (or not yet saved): rejoin it. */
+  resumable: boolean;
 };
 
 export type ApplyResult = { ok: boolean; applied?: string; error?: string };
@@ -353,6 +370,12 @@ export async function getConversation(
     return { ok: false, error: "Not authorised" };
   }
 
+  const decisions = await proposalDecisions(row.id);
+  const withDecision = (p: AssistantProposal): AssistantProposal => {
+    const decision = decisions.get(proposalKey(p));
+    return decision ? { ...p, decision } : p;
+  };
+
   return {
     ok: true,
     conversation: {
@@ -360,7 +383,11 @@ export async function getConversation(
       title: row.title,
       scope,
       archived: row.archived,
-      messages: row.messages.map(toAssistantMessage),
+      messages: row.messages.map(toAssistantMessage).map((m) =>
+        m.proposals ? { ...m, proposals: m.proposals.map(withDecision) } : m,
+      ),
+      // Only while the answer is not in the transcript yet, so a replay never doubles it.
+      resumable: row.messages.at(-1)?.role === "user" && hasRun(row.id),
     },
   };
 }
@@ -414,6 +441,7 @@ export async function deleteConversation(id: string): Promise<{ ok: boolean; err
   });
   if (!row || row.userId !== me.id) return { ok: false, error: "Not authorised" };
 
+  stopRun(id, me.id); // nobody could reach its answer any more
   await db.aiConversation.delete({ where: { id } }); // AiMessage cascades
   return { ok: true };
 }
@@ -765,15 +793,81 @@ export async function applyAssistantProposal(input: {
   // minRole against the FRESH DB role (actingAgent), enforces adminOnly against
   // the conversation's scope, re-validates the args against the op's schema
   // (client args are never trusted), then runs the real mutation.
+  // Once the turn is stored, apply what Sable actually proposed, not what the client sent.
+  const stored = p.toolCallId ? await storedProposal(input.conversationId, p.toolCallId) : null;
+  const target: AssistantProposal = stored ?? p;
+
+  // Claim before running, so a double click, a second tab or a reloaded card
+  // cannot apply the same proposal twice; a refused or failed run gives it back.
+  const key = proposalKey(target);
+  const claim = await claimProposal(input.conversationId, key, me.id);
+  if (!claim.claimed) {
+    // Approving an already-applied proposal is a no-op that reports the original result.
+    return claim.appliedSummary !== undefined
+      ? { ok: true, applied: claim.appliedSummary }
+      : { ok: false, error: claim.reason };
+  }
+
+  let res: Awaited<ReturnType<typeof runOperation>>;
   try {
-    const res = await runOperation({
-      operationId: p.operationId,
-      args: p.args,
+    res = await runOperation({
+      operationId: target.operationId,
+      args: target.args,
       ctx: { userId: me.id, role: me.role, name: me.name, projectId },
       scope: coerceScope(conv.scope),
     });
-    return res.ok ? { ok: true, applied: res.summary } : { ok: false, error: res.error };
   } catch (e) {
+    await releaseProposalClaim(input.conversationId, key, claim.claimId);
     return { ok: false, error: e instanceof Error ? e.message : "Could not apply the change" };
   }
+  if (!res.ok) {
+    await releaseProposalClaim(input.conversationId, key, claim.claimId);
+    return { ok: false, error: res.error };
+  }
+
+  // The change is made: never release the claim from here on. Failing to record
+  // it leaves an APPLYING row, which blocks a retry; a second apply would be worse.
+  try {
+    await markProposalApplied(input.conversationId, key, claim.claimId, res.summary);
+  } catch (e) {
+    console.error("[sable] applied proposal could not be recorded", e);
+  }
+  return { ok: true, applied: res.summary };
+}
+
+/** The proposal a stored turn of this conversation made with this tool call, if the turn is stored yet. */
+async function storedProposal(conversationId: string, toolCallId: string): Promise<AssistantProposal | null> {
+  const rows = await db.aiMessage.findMany({
+    where: { conversationId, role: "assistant", proposals: { contains: toolCallId } },
+    // Newest first: should an upstream model ever reuse a call id, the latest turn wins.
+    orderBy: { createdAt: "desc" },
+    select: { proposals: true },
+  });
+  for (const row of rows) {
+    const found = toAssistantMessage({ role: "assistant", content: "", html: null, toolCalls: null, proposals: row.proposals })
+      .proposals?.find((p) => p.toolCallId === toolCallId);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Dismiss a proposal for good, so a reloaded chat no longer offers it. */
+export async function dismissAssistantProposal(input: {
+  conversationId: string;
+  proposal: AssistantProposal;
+}): Promise<{ ok: boolean; error?: string }> {
+  const me = await actingAgent();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const p = input?.proposal;
+  if (!p || typeof p.operationId !== "string") return { ok: false, error: "Bad proposal" };
+
+  const conv = await db.aiConversation.findUnique({ where: { id: input.conversationId }, select: { userId: true } });
+  if (!conv || conv.userId !== me.id) return { ok: false, error: "Not authorised" };
+
+  const res = await dismissProposal(input.conversationId, proposalKey(p), me.id);
+  if (res.dismissed) return { ok: true };
+  return {
+    ok: false,
+    error: res.status === "APPLIED" ? "This proposal has already been applied." : "This proposal is being applied.",
+  };
 }

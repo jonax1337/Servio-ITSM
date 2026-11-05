@@ -59,15 +59,19 @@ filenames match it (`sable-*`/`Sable*`). Full write-up: [ai.md](./ai.md).
 | Routes | `app/(console)/assistant/page.tsx` (route `/assistant`, AGENT+) — renders the ONE global window inline (deep-linkable) |
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) — server-authoritative: rebuilds history from the DB and streams (AI SDK v7 `streamText` → `toUIMessageStreamResponse`; the claude-code provider is buffered and synthesises tool parts) |
 | Shared core | `lib/assistant-core.ts` (`getActingAgent`, `prepareAssistantTurn`, `buildUserContent`, `generalSystemPrompt`/`adminSystemPromptSection`, `buildAssistantProposals`, `sanitizeUploads`) — pre-model logic shared by the route |
-| Actions | `lib/actions/ai-assistant.ts` — conversation CRUD (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`) + folder actions (`listFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `moveConversation`) + `applyAssistantProposal` (the old console `sendMessage` is retired) |
+| Actions | `lib/actions/ai-assistant.ts` — conversation CRUD (`listConversations`, `createConversation`, `getConversation`, `renameConversation`, `archiveConversation`) + folder actions (`listFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `moveConversation`) + `applyAssistantProposal` / `dismissAssistantProposal` |
+| Proposal decisions | `lib/ai-proposal-decisions.ts` (claim / mark applied / release / dismiss, keyed per tool call; `AiProposalDecision`), `lib/ai-proposal-signature.ts` (stable args signature) |
+| Running answers | `lib/sable-active-runs.ts` (in-memory run registry: replay + live, stop) · `app/api/assistant/chat/[id]/stream/route.ts` (`GET` rejoin, `DELETE` stop) |
+| Inline badges | `lib/inline-badge.ts` — `status:OPEN`-style tokens, bare states and record refs in chat markdown (`components/markdown-text.tsx`) |
 | Global window | `components/assistant/` — `sable-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `sable-mount`, `sable-window`, `sable-fab` (floating action button restoring the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark) |
 | Chat UI | `sable-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `sable-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `sable-rail` (New chat, search, folders with @dnd-kit drag, archived) |
 | assistant-ui scaffold | `components/thread.tsx` (+ `markdown-text`, `reasoning`, `tool-fallback`, `tool-group`, `tooltip-icon-button`, `attachment`, `follow-up-suggestions`) — packages `@assistant-ui/react` + `@assistant-ui/react-ai-sdk` |
-| Provider layer | `lib/ai.ts` (config + privacy gate; `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`), `lib/claude-cli.ts` (Claude Agent SDK adapter) |
+| Provider layer | `lib/ai.ts` (config + privacy gate; every provider runs through Claude Code — `streamAiChat`/`generateAi*`), `lib/claude-cli.ts` (Claude Code harness; remote MCP; console/portal `audience`), `lib/claude-env.ts` (allowlisted CLI env), `lib/claude-agent-events.ts` (SDK events → live UI chunks), `lib/ai-models.ts` (model dropdown lists), `lib/llm-proxy/` (built-in Anthropic⇄OpenAI proxy for `openai`/`ollama`, incl. `token-cap.ts`) |
+| Skills & MCP | `lib/sable-workspace.ts` (isolated agent home, skill sync), `lib/sable-skills.ts`, `lib/actions/sable-skills.ts`; `lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`, `lib/actions/sable-mcp.ts`, `lib/ai-operations/modules/mcp.ts` (`mcp.call`) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*` — tickets, taxonomy, org, catalog-services, cmdb, knowledge, problems-changes, config) |
-| Settings | `app/(console)/settings/ai/page.tsx` (ADMIN) |
-| Data | `AiConversation` (with `folderId`), `AiFolder`, `AiMessage` (`prisma/schema.prisma`) |
+| Settings | `app/(console)/settings/ai/page.tsx` (ADMIN) + `components/settings/{ai-settings-form,claude-connect-dialog,ai-skills-manager,ai-mcp-manager}.tsx` |
+| Data | `AiConversation` (with `folderId`), `AiFolder`, `AiMessage`, `AiSkill`, `AiMcpServer` (`prisma/schema.prisma`) |
 
 There is ONE global window, mounted once in the console layout via `<SableProvider>` + `<SableMount>`;
 the floating action button (`SableFab`, bottom-right) restores its last state, and `/assistant`

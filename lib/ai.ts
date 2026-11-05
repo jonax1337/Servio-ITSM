@@ -1,16 +1,27 @@
-import { generateText, generateObject, stepCountIs } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ModelMessage, ToolSet } from "ai";
 import type { z } from "zod";
 import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
+import {
+  runClaudeAgent,
+  streamClaudeAgent,
+  type AgentRunInput,
+  type ClaudeBackend,
+  type RemoteMcp,
+} from "@/lib/claude-cli";
+import type { AgentChunk, AgentTranscript } from "@/lib/claude-agent-events";
+import { leaseProxyRoute, type ProxyUpstream } from "@/lib/llm-proxy/server";
+import { inheritedHostEnv } from "@/lib/claude-env";
+import type { SableAudience } from "@/lib/sable-workspace";
 
 /**
  * Self-hosted "AI Service Agent" (Sable) config. Config is resolved through
  * lib/settings (DB AppSetting overrides process.env), gated on an async
  * *Configured() boolean, and secrets never leak to the client. All AI runs
  * server-side (server actions / route handlers).
+ *
+ * EVERY provider runs through the same local Claude Code harness
+ * (lib/claude-cli.ts) so all models share one agent loop and tool format; the
+ * provider only decides which endpoint Claude Code talks to.
  *
  * `ollama` is a LOCAL, OpenAI-compatible endpoint — no key, data stays on-box.
  * `anthropic`/`openai` are EXTERNAL and require AI_ALLOW_EXTERNAL="true".
@@ -47,6 +58,7 @@ async function allowExternal(): Promise<boolean> {
 async function defaultModel(p: AiProvider): Promise<string> {
   if (p === "openai") return "gpt-4o";
   if (p === "ollama") return (await getSetting("OLLAMA_MODEL")) || "llama3.1";
+  if (p === "claude-code") return "sonnet"; // CLI alias → the subscription's current Sonnet
   return "claude-sonnet-5"; // anthropic default (align with the settings-UI guidance)
 }
 
@@ -62,7 +74,10 @@ async function modelId(p: AiProvider): Promise<string> {
  */
 export async function aiConfigured(): Promise<boolean> {
   const p = await provider();
-  // ollama (local) and claude-code (operator's own subscription CLI) self-authorise.
+  // Sable's isolated Claude Code instance can't use the operator's interactive
+  // login, so the subscription needs a long-lived token (`claude setup-token`).
+  if (p === "claude-code") return Boolean(await getSetting("CLAUDE_CODE_OAUTH_TOKEN"));
+  // ollama (local) self-authorises.
   if (isSelfAuthorized(p)) return true;
   if (!(await allowExternal())) return false; // privacy gate blocks external providers
   if (p === "anthropic") return Boolean(await getSetting("ANTHROPIC_API_KEY"));
@@ -92,49 +107,95 @@ async function assertPrivacy(p: AiProvider): Promise<void> {
   }
 }
 
-/** Resolve the AI SDK model for the current AI_PROVIDER. Keys stay server-side. */
-async function getModel() {
-  const p = await provider();
-  await assertPrivacy(p);
-  if (p === "claude-code") {
-    // claude-code has no ai-sdk model — it routes through the Agent SDK (CLI).
-    // The generate* wrappers branch before here; this guards any other caller.
-    throw new Error("The claude-code provider uses the CLI backend, not an ai-sdk model.");
-  }
-  const id = await modelId(p);
+/**
+ * Claude Code needs headroom: adaptive thinking shares the output budget with
+ * the answer, so a small AI_MAX_OUTPUT_TOKENS would truncate agent turns.
+ */
+const MIN_AGENT_OUTPUT_TOKENS = 8192;
 
-  if (p === "anthropic") {
-    const anthropic = createAnthropic({
-      apiKey: (await getSetting("ANTHROPIC_API_KEY")) ?? undefined,
-    });
-    return anthropic(id);
+/**
+ * The CLI inherits only an allowlist of the host env (lib/claude-env.ts):
+ * provider credentials and endpoints are set explicitly per backend, the
+ * upstream OpenAI key stays inside this process (the proxy holds it), and no
+ * Servio secret is there for `${VAR}` expansion to leak.
+ */
+async function baseClaudeEnv(): Promise<Record<string, string | undefined>> {
+  const env = inheritedHostEnv();
+  // Blank / "auto" / 0 leaves the variable unset: Claude Code then uses the model's own default.
+  const maxTokens = await getNumberSetting("AI_MAX_OUTPUT_TOKENS", 0);
+  if (maxTokens > 0) {
+    env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = String(Math.max(maxTokens, MIN_AGENT_OUTPUT_TOKENS));
   }
-
-  if (p === "openai") {
-    // OPENAI_BASE_URL lets you point at any OpenAI-compatible cloud (OpenAI,
-    // Moonshot/Kimi, Zhipu/GLM, OpenRouter, …) — the model id comes from AI_MODEL.
-    const openai = createOpenAI({
-      apiKey: (await getSetting("OPENAI_API_KEY")) ?? undefined,
-      baseURL: (await getSetting("OPENAI_BASE_URL")) || undefined,
-    });
-    return openai(id);
-  }
-
-  // ollama — local, OpenAI-compatible, no API key required.
-  // supportsStructuredOutputs → the SDK sends response_format:json_schema (strict),
-  // so Ollama grammar-constrains output to our zod schema (fixes generateObject:
-  // without it the model free-forms JSON with wrong keys / missing fields).
-  const ollama = createOpenAICompatible({
-    name: "ollama",
-    baseURL: (await getSetting("OLLAMA_BASE_URL")) || "http://localhost:11434/v1",
-    supportsStructuredOutputs: true,
-  });
-  return ollama(id);
+  // No telemetry/update traffic: with a local model nothing should leave the box.
+  env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
+  return env;
 }
 
-async function maxOutputTokens(): Promise<number> {
-  const n = await getNumberSetting("AI_MAX_OUTPUT_TOKENS", 1024);
-  return Number.isFinite(n) && n > 0 ? n : 1024;
+/** The OpenAI-compatible endpoint behind the translation proxy, per provider. */
+async function proxyUpstream(p: "openai" | "ollama", model: string): Promise<ProxyUpstream> {
+  if (p === "ollama") {
+    return { baseURL: (await getSetting("OLLAMA_BASE_URL")) || "http://localhost:11434/v1", model };
+  }
+  // OPENAI_BASE_URL lets you point at any OpenAI-compatible cloud (OpenAI,
+  // Moonshot/Kimi, Zhipu/GLM, OpenRouter, …) — the model id comes from AI_MODEL.
+  return {
+    baseURL: (await getSetting("OPENAI_BASE_URL")) || "https://api.openai.com/v1",
+    apiKey: (await getSetting("OPENAI_API_KEY")) ?? undefined,
+    model,
+  };
+}
+
+/**
+ * Point the local Claude Code CLI at the configured provider:
+ *  - claude-code:   the CLI's own login (Pro/Max subscription)
+ *  - anthropic:     ANTHROPIC_API_KEY
+ *  - openai/ollama: the built-in Anthropic→OpenAI translation proxy (localhost)
+ * Callers must release() when the run ends (frees the proxy route).
+ */
+async function openClaudeBackend(): Promise<{ backend: ClaudeBackend; release(): void }> {
+  const p = await provider();
+  await assertPrivacy(p);
+  const model = await modelId(p);
+  const env = await baseClaudeEnv();
+
+  if (p === "openai" || p === "ollama") {
+    const lease = await leaseProxyRoute(await proxyUpstream(p, model));
+    env.ANTHROPIC_BASE_URL = lease.baseURL;
+    env.ANTHROPIC_AUTH_TOKEN = lease.token;
+    // A corporate HTTP(S)_PROXY must not intercept the loopback proxy call.
+    env.NO_PROXY = [env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",");
+    // Local Ollama models are frequently text-only: an image would fail the turn.
+    const backend = { model, env, supportsThinking: false, supportsImages: p === "openai" };
+    return { backend, release: lease.release };
+  }
+  if (p === "anthropic") {
+    env.ANTHROPIC_API_KEY = (await getSetting("ANTHROPIC_API_KEY")) ?? undefined;
+  } else {
+    env.CLAUDE_CODE_OAUTH_TOKEN = await subscriptionToken();
+  }
+  return { backend: { model, env, supportsThinking: true, supportsImages: true }, release: () => {} };
+}
+
+async function subscriptionToken(): Promise<string> {
+  const token = await getSetting("CLAUDE_CODE_OAUTH_TOKEN");
+  if (!token) {
+    throw new Error(
+      "The Claude subscription needs a token for Sable's isolated instance: run `claude setup-token` and paste it under Settings › Sable.",
+    );
+  }
+  return token;
+}
+
+type AgentRequest = Omit<AgentRunInput, "backend">;
+
+/** Run one agent turn to completion on the configured backend. */
+async function runAgent(request: AgentRequest): Promise<AgentTranscript> {
+  const { backend, release } = await openClaudeBackend();
+  try {
+    return await runClaudeAgent({ ...request, backend });
+  } finally {
+    release();
+  }
 }
 
 /** Pull the first JSON object out of a text blob (tolerates code fences / prose). */
@@ -152,143 +213,69 @@ function extractJson(text: string): unknown {
   }
 }
 
-/** Thin wrapper over generateText. Returns trimmed text. */
-export async function generateAiText(input: {
-  system?: string;
-  prompt: string;
-  maxOutputTokens?: number;
-  temperature?: number;
-}): Promise<string> {
-  if ((await provider()) === "claude-code") {
-    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
-    const { text } = await generateViaClaudeSdk({
-      system: input.system,
-      messages: [{ role: "user", content: input.prompt }],
-      aiSdkTools: {},
-    });
-    return text.trim();
-  }
-  const { text } = await generateText({
-    model: await getModel(),
+/** One-shot text generation (no tools, no thinking). Returns trimmed text. */
+export async function generateAiText(input: { system?: string; prompt: string }): Promise<string> {
+  const transcript = await runAgent({
     system: input.system,
-    prompt: input.prompt,
-    maxOutputTokens: input.maxOutputTokens ?? (await maxOutputTokens()),
-    temperature: input.temperature,
+    messages: [{ role: "user", content: input.prompt }],
+    aiSdkTools: {},
+    maxTurns: 1,
   });
-  return text.trim();
+  return transcript.text.trim();
 }
 
 /**
- * Multi-step chat with optional tools (the agent loop). The model may call tools
- * (e.g. web search) up to maxSteps times before producing its final answer.
- * Returns the final text plus the tool calls it made (for UI activity display).
+ * The agent loop as a LIVE stream of UI chunks (thinking, tool calls, tool
+ * results, text) for the chat route handlers. The backend is released when the
+ * stream ends or the consumer stops iterating.
  */
-export async function generateAiChat(input: {
+export async function* streamAiChat(input: {
   system?: string;
   messages: ModelMessage[];
-  tools?: ToolSet;
-  maxSteps?: number;
-  temperature?: number;
-  /** Enable extended thinking (claude-code / reasoning-capable models); returns `reasoning`. */
-  maxThinkingTokens?: number;
-}): Promise<{
-  text: string;
-  toolCalls: { name: string; input: unknown }[];
-  toolResults: { name: string; output: unknown }[];
-  reasoning?: string;
-}> {
-  // claude-code routes through the Agent SDK (subscription CLI), adapting the
-  // same ai-sdk tools into in-process SDK tools so tool use + proposals work
-  // identically to the built-in providers.
-  if ((await provider()) === "claude-code") {
-    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
-    return generateViaClaudeSdk({
+  tools: ToolSet;
+  remoteMcp?: RemoteMcp;
+  /** "portal" = self-service end users: no console charter, no skills. */
+  audience: SableAudience;
+  maxSteps: number;
+  abortSignal?: AbortSignal;
+}): AsyncGenerator<AgentChunk> {
+  const { backend, release } = await openClaudeBackend();
+  try {
+    yield* streamClaudeAgent({
+      backend,
       system: input.system,
       messages: input.messages,
-      aiSdkTools: input.tools ?? {},
-      maxThinkingTokens: input.maxThinkingTokens,
+      aiSdkTools: input.tools,
+      remoteMcp: input.remoteMcp,
+      audience: input.audience,
+      maxTurns: input.maxSteps,
+      thinking: true,
+      abortSignal: input.abortSignal,
     });
+  } finally {
+    release();
   }
-  const result = await generateText({
-    model: await getModel(),
-    system: input.system,
-    messages: input.messages,
-    tools: input.tools,
-    stopWhen: stepCountIs(input.maxSteps ?? 6),
-    temperature: input.temperature,
-    maxOutputTokens: Math.max(await maxOutputTokens(), 2048),
-  });
-  const toolCalls = result.steps.flatMap((s) =>
-    s.toolCalls.map((tc) => ({ name: tc.toolName, input: (tc as { input?: unknown }).input })),
-  );
-  const toolResults = result.steps.flatMap((s) =>
-    (s.toolResults ?? []).map((tr) => ({
-      name: (tr as { toolName: string }).toolName,
-      output: (tr as { output?: unknown; result?: unknown }).output ?? (tr as { result?: unknown }).result,
-    })),
-  );
-  // reasoning-capable models (e.g. Anthropic extended thinking) expose reasoningText.
-  const reasoning = (result as { reasoningText?: string }).reasoningText?.trim() || undefined;
-  return { text: result.text.trim(), toolCalls, toolResults, reasoning };
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Streaming primitives — used by the assistant route handler
- * (app/api/assistant/chat/route.ts) which calls `streamText` directly.
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/** The effective AI provider (settings-resolved). */
-export async function currentProvider(): Promise<AiProvider> {
-  return provider();
 }
 
 /**
- * The privacy-checked ai-sdk model for streaming. Throws for `claude-code`
- * (no ai-sdk model — the caller must use the buffered `generateAiChat` path).
+ * Structured output: Claude Code has no schema-constrained decoding, so instruct
+ * strict JSON, then parse + zod-validate (one retry). Callers handle failures.
  */
-export async function resolveChatModel() {
-  return getModel();
-}
-
-/** The configured output-token cap (min 2048 for the multi-step chat loop). */
-export async function chatMaxOutputTokens(): Promise<number> {
-  return Math.max(await maxOutputTokens(), 2048);
-}
-
-/** Thin wrapper over generateObject. Returns the typed object. */
 export async function generateAiObject<T>(input: {
   system?: string;
   prompt: string;
   schema: z.ZodType<T>;
-  maxOutputTokens?: number;
 }): Promise<T> {
-  if ((await provider()) === "claude-code") {
-    // No schema-constrained decoding via the CLI — instruct strict JSON, then
-    // parse + zod-validate (one retry). Callers already handle failures.
-    const { generateViaClaudeSdk } = await import("@/lib/claude-cli");
-    const system =
-      (input.system ? input.system + "\n\n" : "") +
-      "Respond with ONLY a single valid JSON object that satisfies the request. " +
-      "No markdown, no code fences, no commentary — just the JSON.";
-    let lastErr = "no output";
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const { text } = await generateViaClaudeSdk({
-        system,
-        messages: [{ role: "user", content: input.prompt }],
-        aiSdkTools: {},
-      });
-      const parsed = input.schema.safeParse(extractJson(text));
-      if (parsed.success) return parsed.data;
-      lastErr = parsed.error?.message ?? "invalid JSON";
-    }
-    throw new Error(`Claude did not return valid structured output: ${lastErr}`);
+  const system =
+    (input.system ? input.system + "\n\n" : "") +
+    "Respond with ONLY a single valid JSON object that satisfies the request. " +
+    "No markdown, no code fences, no commentary — just the JSON.";
+  let lastErr = "no output";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const text = await generateAiText({ system, prompt: input.prompt });
+    const parsed = input.schema.safeParse(extractJson(text));
+    if (parsed.success) return parsed.data;
+    lastErr = parsed.error?.message ?? "invalid JSON";
   }
-  const { object } = await generateObject({
-    model: await getModel(),
-    system: input.system,
-    prompt: input.prompt,
-    schema: input.schema,
-    maxOutputTokens: input.maxOutputTokens ?? (await maxOutputTokens()),
-  });
-  return object;
+  throw new Error(`The model did not return valid structured output: ${lastErr}`);
 }

@@ -16,6 +16,8 @@ import { useEffect } from "react";
 import type { FC, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { ToneBadge } from "@/components/status-badge";
+import { inlineBadgeMeta } from "@/lib/inline-badge";
 import { Button } from "@/components/ui/button";
 import { useSable, type SableCanvasDoc } from "./sable-provider";
 
@@ -98,8 +100,8 @@ const TicketCardBody: FC<{ t: NonNullable<TicketResult["ticket"]> }> = ({
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        {t.status ? <Pill>{t.status}</Pill> : null}
-        {t.priority ? <Pill>{t.priority}</Pill> : null}
+        {t.status ? <StateBadge namespace="status" value={t.status} /> : null}
+        {t.priority ? <StateBadge namespace="priority" value={t.priority} /> : null}
         {t.assignee ? <Pill muted>{t.assignee}</Pill> : null}
         {t.team ? <Pill muted>{t.team}</Pill> : null}
       </div>
@@ -111,6 +113,12 @@ const TicketCardBody: FC<{ t: NonNullable<TicketResult["ticket"]> }> = ({
       ) : null}
     </>
   );
+};
+
+/** A ticket field as the app's own colored badge, or a plain pill for a value it does not know. */
+const StateBadge: FC<{ namespace: string; value: string }> = ({ namespace, value }) => {
+  const meta = inlineBadgeMeta(`${namespace}:${value}`);
+  return meta ? <ToneBadge meta={meta} dot /> : <Pill>{value}</Pill>;
 };
 
 const Pill: FC<{ children: ReactNode; muted?: boolean }> = ({

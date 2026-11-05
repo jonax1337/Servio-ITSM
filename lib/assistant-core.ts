@@ -2,8 +2,7 @@
  * Shared, non-"use server" core for the Sable agent console assistant.
  *
  * This module holds the pieces the streaming route handler
- * (`app/api/assistant/chat/route.ts`) and the legacy `sendMessage` server action
- * both need: identity resolution, scope coercion, multimodal attachment
+ * (`app/api/assistant/chat/route.ts`) needs: identity resolution, scope coercion, multimodal attachment
  * assembly, the system prompts, proposal derivation, and `prepareAssistantTurn`
  * (everything up to — but not including — the model call).
  *
@@ -24,6 +23,7 @@ import { ASSISTANT_ADMIN_TOOLS } from "@/lib/ai-admin-tools";
 import { buildOperationTools } from "@/lib/ai-operations/tools";
 import { findOperation } from "@/lib/ai-operations/registry";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { INLINE_BADGE_NAMESPACES } from "@/lib/inline-badge";
 import type {
   AssistantScope,
   AssistantAttachment,
@@ -65,28 +65,30 @@ export function coerceScope(raw: string): AssistantScope {
 /**
  * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
  * writeToolToOpId, built alongside the tools) to a registry operation id; we look
- * up the op to compute the card label. Deduped by operation + args.
+ * up the op to compute the card label. Only calls whose args pass the op's schema
+ * become proposals (the live tool refused the others, so no card was shown), and
+ * they keep the parsed args and their tool call id, exactly like the live card.
+ * Not deduped: every call is its own proposal with its own decision.
  */
 export function buildAssistantProposals(
-  toolCalls: { name: string; input: unknown }[],
+  toolCalls: { id?: string; name: string; input: unknown }[],
   writeToolToOpId: Map<string, string>,
 ): AssistantProposal[] {
   const out: AssistantProposal[] = [];
-  const seen = new Set<string>();
   toolCalls.forEach((tc, i) => {
     const operationId = writeToolToOpId.get(tc.name);
     if (!operationId) return;
     const op = findOperation(operationId);
     if (!op) return;
-    const args = (tc.input ?? {}) as Record<string, unknown>;
-    const sig = `${operationId}:${JSON.stringify(args)}`;
-    if (seen.has(sig)) return;
-    seen.add(sig);
+    const parsed = op.input.safeParse(tc.input ?? {});
+    if (!parsed.success) return;
+    const args = parsed.data as Record<string, unknown>;
     out.push({
       id: `pr${i}`,
       operationId,
       args,
       label: op.label ? op.label(args) : operationId,
+      ...(tc.id ? { toolCallId: tc.id } : {}),
     });
   });
   return out;
@@ -101,12 +103,16 @@ export function generalSystemPrompt(input: {
   orgDirectory: string;
   meName: string;
   meRole: string;
+  now?: Date;
 }): string {
-  const { orgName, orgDirectory, meName, meRole } = input;
+  const { orgName, orgDirectory, meName, meRole, now = new Date() } = input;
   return [
     `You are ${AI_ASSISTANT_NAME}, the AI assistant built into ${orgName}, an IT service`,
     "management system. You are an experienced ITSM engineer: knowledgeable, concise,",
     "specific, a real teammate. This is a standalone chat (not tied to one ticket).",
+    "",
+    `NOW: ${now.toLocaleString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+    "(server local time). Resolve relative or year-less dates (\"Saturday 14.11.\") against it.",
     "",
     "WHO YOU ARE HELPING:",
     `${meName || "An agent"} (role ${meRole}). Treat them as a trusted colleague. When`,
@@ -126,8 +132,10 @@ export function generalSystemPrompt(input: {
     "- search_knowledge_base: the org's own how-to / troubleshooting articles. Try this first.",
     "- search_tickets / search_problems / search_changes: free-text search of existing records (incl. comments).",
     "- web_search / fetch_url: the public web, only for facts not documented internally.",
-    "- draft_document: for a LONG document (a runbook, RCA, change doc, or KB draft) call this with the",
+    "- draft_document: for a LONG free-standing document (a runbook, RCA or KB draft) call this with the",
     "  full markdown to open an editable canvas beside the chat where the user can refine and publish it.",
+    "  NEVER use it for a record the user asked you to create or change (a change, problem, ticket): put",
+    "  the content into the propose_* tool's own fields so the record itself is complete.",
     "  When the user asks for a SCRIPT or a file, call draft_document (pass `filename`/`language`, e.g.",
     "  'deploy.sh'/'bash') to open that editable canvas, which the user can then save into the project's files.",
     "  For a SCRIPT, put ONLY the code in `markdown` as a SINGLE fenced code block — no prose, no",
@@ -139,6 +147,19 @@ export function generalSystemPrompt(input: {
     "FORMATTING — write bodies, comments and descriptions in MARKDOWN: separate paragraphs with a BLANK",
     "line, use '- ' bullet lists and '1.' numbered lists, '**bold**' and headings where helpful. They are",
     "rendered as rich text, so real line breaks and lists matter — never return one unbroken block.",
+    "In CHAT replies: keep paragraphs to 2-3 sentences, prefer short bullet lists over long prose, and",
+    "NEVER write internal tool or field names (list_my_tickets, propose_ticket_escalate, breached:false):",
+    "say what you did or can do in plain words (\"I looked up your tickets\", \"I can propose an escalation\").",
+    "Use a hyphen or a comma instead of an em-dash; keep normal letters (German umlauts stay ä, ö, ü).",
+    "Say each thing once: after a proposal, close with 2-4 short bullets (assumptions, open points),",
+    "do not repeat the analysis you already gave above the approval card.",
+    "STATUS BADGES: write a record's state as namespaced inline code, ALWAYS wrapped in backticks, and it",
+    "renders as a coloured badge, e.g. `status:OPEN`, `priority:HIGH`, `sla:BREACHED`, `change:SCHEDULED`,",
+    `\`risk:MEDIUM\`. Namespaces: ${INLINE_BADGE_NAMESPACES.join(", ")}. Use the exact enum value; never`,
+    "write a state as a bare word or without the backticks. Badges are ONLY for these enum states (`sla:`",
+    "is the clock state ON_TRACK/AT_RISK/BREACHED/MET/PAUSED); names such as an SLA policy, team or",
+    "category stay plain text. Write record refs as inline code (`INC-0142`, `PRB-0019`, `CHG-0039`):",
+    "they render as links to the record.",
     "",
     "ACCURACY — never invent data. Do NOT fabricate category, team, user, service or asset names (a",
     "common mistake is guessing a category like 'Network > VPN' — categories are single names, and the",
@@ -343,9 +364,7 @@ export type PreparedTurn = {
 
 /**
  * Authorise the conversation, persist the user turn, auto-title, load bounded
- * history, and assemble system + messages + tools. Mirrors the pre-model logic
- * of the legacy `sendMessage` server action so the streaming route produces
- * identical context. Throws on auth/config errors (the caller maps to an HTTP
+ * history, and assemble system + messages + tools. Throws on auth/config errors (the caller maps to an HTTP
  * status); the assistant turn itself is persisted by the caller after streaming.
  */
 export async function prepareAssistantTurn(input: {

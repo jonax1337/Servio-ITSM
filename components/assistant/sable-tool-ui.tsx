@@ -13,40 +13,24 @@ import {
   SableTicketCard,
   type Citation,
 } from "./sable-read-cards";
-import type { AssistantProposal } from "@/lib/actions/ai-assistant";
+import { toast } from "sonner";
+import { dismissAssistantProposal, type AssistantProposal } from "@/lib/actions/ai-assistant";
+import { parseRemoteToolName } from "@/lib/claude-agent-events";
+import { approvalCardProposal, mcpCallLabel } from "@/lib/sable-mcp-policy";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
 export const SableConversationContext = createContext<string>("");
 
-/* ── Persist approve/dismiss so a proposal can't be re-approved after the thread
- *    re-hydrates (assistant-ui re-renders the tool part as a fresh "idle"). ── */
-
-type Persisted = "applied" | "dismissed";
-
-function propKey(conversationId: string, p: AssistantProposal): string {
-  return `sable:prop:${conversationId}::${p.operationId}::${JSON.stringify(p.args)}`;
-}
-function readState(key: string): Persisted | null {
-  try {
-    const v = window.localStorage.getItem(key);
-    return v === "applied" || v === "dismissed" ? v : null;
-  } catch {
-    return null;
-  }
-}
-function writeState(key: string, v: Persisted) {
-  try {
-    window.localStorage.setItem(key, v);
-  } catch {
-    /* ignore */
-  }
-}
+/** Tool name of an approval card rebuilt from a reloaded transcript (sable-thread hydrate). */
+export const RESTORED_PROPOSAL_TOOL = "propose_restored";
 
 /**
  * Tool UI for the assistant-ui thread: renders Sable's approve-first
- * `ProposalCard` for `propose_*` write tools (whose result carries the
- * proposal), a compact branded activity chip for known read tools, and the
- * default collapsible fallback for anything else (or a read tool that errored).
+ * `ProposalCard` for `propose_*` write tools and for remote MCP calls that need
+ * approval (both carry the proposal in their result), a compact branded
+ * activity chip for known read tools, the default collapsible fallback labelled
+ * "<server> · <tool>" for remote MCP calls, and the plain fallback for anything
+ * else (or a read tool that errored).
  */
 export const SableToolUI: ToolCallMessagePartComponent = (props) => {
   // The synthetic "Sources" part (emitted after the answer) — render the panel
@@ -54,12 +38,12 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
   if (props.toolName === "cited_sources") {
     return props.result ? <SableSourcesCard result={props.result} /> : null;
   }
-  if (props.toolName.startsWith("propose_")) {
-    const result = props.result as { proposal?: AssistantProposal } | undefined;
-    if (result?.proposal) return <ProposalTool proposal={result.proposal} />;
-    // Still running / not yet resolved — render nothing (no ugly generic card).
-    return null;
-  }
+  const proposal = approvalCardProposal(props.toolName, props.result);
+  if (proposal) return <ProposalTool proposal={{ ...proposal, toolCallId: proposal.toolCallId ?? props.toolCallId }} />;
+  // A propose_* still running / not yet resolved — render nothing (no ugly generic card).
+  if (props.toolName.startsWith("propose_")) return null;
+  const remote = parseRemoteToolName(props.toolName);
+  if (remote) return <ToolFallback {...props} toolName={mcpCallLabel(remote.server, remote.tool)} />;
   if (hasToolActivity(props.toolName) && props.status?.type !== "incomplete") {
     const running = props.status?.type === "running";
     return (
@@ -70,11 +54,13 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
           running={running}
         />
         {!running ? (
-          <BrandedResult
-            toolName={props.toolName}
-            result={props.result}
-            args={props.args as Record<string, unknown> | undefined}
-          />
+          <div className="aui-tool-detail empty:hidden">
+            <BrandedResult
+              toolName={props.toolName}
+              result={props.result}
+              args={props.args as Record<string, unknown> | undefined}
+            />
+          </div>
         ) : null}
       </div>
     );
@@ -136,17 +122,21 @@ function knowledgeCitations(result: unknown): Citation[] {
   return out;
 }
 
+/** The card's starting state: the decision a reloaded transcript carries, else pending. */
+function initialStatus(proposal: AssistantProposal): ProposalStatus {
+  if (proposal.decision?.status === "applied") return { status: "applied", msg: proposal.decision.summary ?? "Applied" };
+  if (proposal.decision?.status === "dismissed") return { status: "dismissed" };
+  if (proposal.decision?.status === "unconfirmed") {
+    return { status: "error", msg: "Applying this did not confirm. Check the record before asking Sable again." };
+  }
+  return { status: "idle" };
+}
+
 function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
   const conversationId = useContext(SableConversationContext);
-  const key = propKey(conversationId, proposal);
-  const [status, setStatus] = useState<ProposalStatus>(() => {
-    const s = readState(key);
-    if (s === "applied") return { status: "applied", msg: "Applied" };
-    if (s === "dismissed") return { status: "dismissed" };
-    return { status: "idle" };
-  });
+  const [status, setStatus] = useState<ProposalStatus>(() => initialStatus(proposal));
 
-  // Once dismissed, it's gone for good.
+  // Once dismissed, it's gone for good (the server remembers it across reloads).
   if (status.status === "dismissed") return null;
 
   return (
@@ -155,9 +145,14 @@ function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
       proposal={proposal}
       status={status}
       onStatusChange={(next) => {
-        setStatus(next);
-        if (next.status === "applied") writeState(key, "applied");
-        else if (next.status === "dismissed") writeState(key, "dismissed");
+        if (next.status !== "dismissed") {
+          setStatus(next);
+          return;
+        }
+        void dismissAssistantProposal({ conversationId, proposal }).then((res) => {
+          if (res.ok) setStatus(next);
+          else toast.error(res.error ?? "Could not dismiss");
+        });
       }}
     />
   );

@@ -80,6 +80,8 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
+# Sable's agent charter + ITSM skills, synced into its isolated SABLE_HOME at runtime.
+COPY sable ./sable
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 RUN chmod +x ./docker/entrypoint.sh \
  && mkdir -p /data \

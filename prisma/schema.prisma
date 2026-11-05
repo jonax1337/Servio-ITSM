@@ -102,6 +102,40 @@ model AppSetting {
   updatedBy   User?    @relation(fields: [updatedById], references: [id])
 }
 
+/// A Sable skill added from the web UI (next to the built-in ones shipped in
+/// `sable/skills`). Synced into Sable's isolated Claude config as
+/// `skills/<name>/SKILL.md`.
+model AiSkill {
+  id          String   @id @default(cuid())
+  /// kebab-case; also the skill's directory name. Unique across custom skills
+  /// and must not collide with a built-in skill.
+  name        String   @unique
+  description String
+  /// Markdown body of SKILL.md (without the frontmatter).
+  body        String
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// A remote MCP server whose tools Sable may use (HTTP/SSE only — nothing is
+/// executed on the Servio host). `mode` (AI_MCP_MODES) decides how its tools
+/// run; `minRole` gates who gets them in the chat.
+model AiMcpServer {
+  id        String   @id @default(cuid())
+  /// slug (a-z0-9_-); the model sees tools as mcp__<name>__<tool>.
+  name      String   @unique
+  url       String
+  transport String   @default("http") // AI_MCP_TRANSPORTS
+  /// Encrypted JSON object of HTTP headers (e.g. Authorization), or null.
+  headers   String?
+  mode      String   @default("APPROVAL") // AI_MCP_MODES
+  minRole   String   @default("AGENT") // ROLES
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// A persisted standalone Sable conversation (the /assistant surface). Reopenable,
 /// listed in the left rail, auto-titled from the first user message. Distinct
 /// from ticket-bound chat, which is ephemeral.
@@ -120,6 +154,7 @@ model AiConversation {
   folder   AiFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
   project  AiProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   messages AiMessage[]
+  proposalDecisions AiProposalDecision[]
 
   @@index([userId, archived, updatedAt])
   @@index([folderId])
@@ -155,6 +190,27 @@ model AiMessage {
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+/// The user's decision on one of Sable's approve-first proposals, keyed by the
+/// tool call that made it plus a signature of its operation and parsed args. The
+/// unique key makes Approve a claim, so a proposal is applied at most once (double
+/// click, second tab, reload), and lets a reloaded chat show each card as
+/// pending, applied or gone.
+model AiProposalDecision {
+  id             String   @id @default(cuid())
+  conversationId String
+  proposalKey    String
+  status         String // APPLYING | APPLIED | DISMISSED
+  claimId        String? // token of the request holding an APPLYING claim
+  summary        String? // the applied operation's result line
+  decidedById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, proposalKey])
 }
 
 /// A persistent Sable workspace: owns conversations, a foldered file library,

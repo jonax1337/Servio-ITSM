@@ -467,6 +467,24 @@ export const ARTICLE_STATUS_META: Record<string, Meta> = {
   RETIRED: { label: "Retired", tone: "neutral", icon: CircleSlash },
 };
 
+/** Remote MCP transports Sable supports (no local stdio: nothing runs on the host). */
+export const AI_MCP_TRANSPORTS = ["http", "sse"] as const;
+export type AiMcpTransport = (typeof AI_MCP_TRANSPORTS)[number];
+
+/**
+ * How Sable may use a remote MCP server's tools:
+ *  - READ_ONLY: only tools annotated readOnlyHint run; everything else is blocked
+ *  - APPROVAL:  read-only tools run; others become approve-first proposals
+ *  - TRUSTED:   every tool runs directly (still shown live in the chat)
+ */
+export const AI_MCP_MODES = ["READ_ONLY", "APPROVAL", "TRUSTED"] as const;
+export type AiMcpMode = (typeof AI_MCP_MODES)[number];
+export const AI_MCP_MODE_META: Record<AiMcpMode, { label: string; description: string }> = {
+  READ_ONLY: { label: "Read only", description: "Only read-only tools; anything that changes data is blocked." },
+  APPROVAL: { label: "With approval", description: "Read-only tools run; other tool calls need an Approve click." },
+  TRUSTED: { label: "Trusted", description: "All tools run directly." },
+};
+
 export const ARTICLE_VISIBILITIES = ["INTERNAL", "PUBLIC"] as const;
 export const ARTICLE_VISIBILITY_META: Record<string, Meta> = {
   INTERNAL: { label: "Internal", tone: "warning", icon: Lock },

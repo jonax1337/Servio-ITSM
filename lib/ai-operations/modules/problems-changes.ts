@@ -2,7 +2,14 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { updateProblemField, updateProblemText, addProblemComment } from "@/lib/actions/problems";
-import { updateChangeField, addChangeComment, setChangeProblem } from "@/lib/actions/changes";
+import {
+  updateChangeField,
+  updateChangeText,
+  updateChangeWindow,
+  addChangeComment,
+  setChangeProblem,
+} from "@/lib/actions/changes";
+import { plannedWindowError } from "@/lib/change-rules";
 import { setTicketProblem, setTicketChange } from "@/lib/actions/tickets";
 import {
   resolveGroupId,
@@ -53,6 +60,33 @@ function parseRefId(ref: unknown): number | null {
 }
 
 const TICKET_REF_PREFIXES = ["INC", "REQ"] as const;
+
+const CHANGE_PLAN_FIELDS = ["reason", "implementationPlan", "rollbackPlan"] as const;
+
+const DATE_TIME_FORMAT = "YYYY-MM-DD HH:mm";
+
+/** The change page shows plan fields as plain text (pre-wrapped), so markdown markup would show raw. */
+const PLAIN_TEXT = "plain text, one item per line, no markdown markup";
+
+/** A model-supplied local date-time ("2026-11-14 22:00", or ISO), or null when it is not one. */
+function parseLocalDateTime(value: string): Date | null {
+  const date = new Date(value.trim().replace(" ", "T"));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Both ends of a planned window, each optional, validated like the change form does. */
+function parsePlannedWindow(
+  startText: unknown,
+  endText: unknown,
+): { start: Date | null; end: Date | null } | { error: string } {
+  const ends = { start: str(startText), end: str(endText) };
+  const start = ends.start ? parseLocalDateTime(ends.start) : null;
+  const end = ends.end ? parseLocalDateTime(ends.end) : null;
+  if (ends.start && !start) return { error: `Cannot read plannedStart "${ends.start}"; use "${DATE_TIME_FORMAT}".` };
+  if (ends.end && !end) return { error: `Cannot read plannedEnd "${ends.end}"; use "${DATE_TIME_FORMAT}".` };
+  const orderError = plannedWindowError(start, end);
+  return orderError ? { error: orderError } : { start, end };
+}
 const dateTime = (d: Date | null) => (d ? d.toISOString().slice(0, 16).replace("T", " ") : null);
 const ticketLinks = (rows: { id: number; prefix: string; title: string; status: string }[]) =>
   rows.map((t) => ({ ref: ticketRef(t.id, t.prefix), title: t.title, status: t.status }));
@@ -307,14 +341,22 @@ export const OPERATIONS: AiOperation[] = [
     kind: "write",
     minRole: "AGENT",
     description:
-      "Create a new Change record (planned change / maintenance). Optionally set type, risk, priority, impact, and a team, category and assignee by name. Starts as a DRAFT.",
+      "Create a complete Change record (planned change / maintenance) in ONE proposal: put each plan into its own field " +
+      "(reason, implementationPlan, rollbackPlan, plannedStart/plannedEnd) instead of packing everything into the description. " +
+      "Optionally set type, risk, priority, impact, the problem it fixes, and a team, category and assignee by name. Starts as a DRAFT.",
     input: z.object({
       title: z.string().min(3).describe("change title"),
-      description: z.string().optional(),
+      description: z.string().optional().describe("scope, impact during the window, communication plan and roles (markdown)"),
+      reason: z.string().optional().describe(`why the change is needed and the expected benefit (${PLAIN_TEXT})`),
+      implementationPlan: z.string().optional().describe(`numbered implementation steps with owner and duration, plus how success is verified (${PLAIN_TEXT})`),
+      rollbackPlan: z.string().optional().describe(`backout trigger, exact steps and time to restore (${PLAIN_TEXT})`),
+      plannedStart: z.string().optional().describe(`planned start, local time "${DATE_TIME_FORMAT}"`),
+      plannedEnd: z.string().optional().describe(`planned end, local time "${DATE_TIME_FORMAT}"; after plannedStart`),
       type: z.enum(CHANGE_TYPES).optional().describe("STANDARD, NORMAL or EMERGENCY"),
       risk: z.enum(RISKS).optional().describe("LOW, MEDIUM or HIGH"),
       priority: z.enum(PRIORITIES).optional(),
       impact: z.enum(IMPACT_URGENCY).optional().describe("LOW, MEDIUM or HIGH"),
+      problem: z.string().optional().describe("ref of the problem this change fixes, e.g. 'PRB-0019'"),
       team: z.string().optional().describe("team/group name to own it"),
       category: z.string().optional().describe("category name"),
       assignee: z.string().optional().describe("assignee name or email"),
@@ -323,6 +365,15 @@ export const OPERATIONS: AiOperation[] = [
     run: async (a, ctx) => {
       const title = str(a.title);
       if (!title || title.length < 3) return err("Change title is too short.");
+
+      const window = parsePlannedWindow(a.plannedStart, a.plannedEnd);
+      if ("error" in window) return err(window.error);
+
+      const problemRefText = str(a.problem);
+      const problemId = problemRefText ? parseRecordNumber(problemRefText, [PROBLEM_LINK.prefix]) : null;
+      if (problemRefText && !problemId) return err(`Cannot parse a problem ref (PRB-0019) from "${a.problem}".`);
+      if (problemId && !(await db.problem.findUnique({ where: { id: problemId }, select: { id: true } })))
+        return err(`Problem not found: ${a.problem}`);
 
       const type = (coerceEnum(a.type, CHANGE_TYPES) ?? "NORMAL") as (typeof CHANGE_TYPES)[number];
       const risk = (coerceEnum(a.risk, RISKS) ?? "MEDIUM") as (typeof RISKS)[number];
@@ -352,6 +403,13 @@ export const OPERATIONS: AiOperation[] = [
           priority,
           impact,
           status: "DRAFT",
+          reason: str(a.reason) ?? null,
+          implementationPlan: str(a.implementationPlan) ?? null,
+          rollbackPlan: str(a.rollbackPlan) ?? null,
+          plannedStart: window.start,
+          plannedEnd: window.end,
+          createdById: ctx.userId,
+          ...(problemId ? { problemId } : {}),
           ...(team ? { groupId: team.id } : {}),
           ...(category ? { categoryId: category.id } : {}),
           ...(assignee ? { assigneeId: assignee.id } : {}),
@@ -365,6 +423,60 @@ export const OPERATIONS: AiOperation[] = [
         summary: `Created change "${title}"`,
       });
       return ok(`Created ${changeRef(c.id)} — "${title}"`);
+    },
+  },
+  {
+    id: "change.set_plan",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Write one planning text of an existing Change (replaces the current text): reason, implementationPlan or rollbackPlan. " +
+      "Use it to complete a change that is missing a plan. Closed and cancelled changes are read-only.",
+    input: z.object({
+      ref: z.string().describe("change ref, e.g. 'CHG-0025'"),
+      field: z.enum(CHANGE_PLAN_FIELDS),
+      text: z.string().min(1).describe(`the full text (${PLAIN_TEXT})`),
+    }),
+    label: (a) => `Set ${a.field} of ${a.ref}`,
+    run: async (a) => {
+      const change = await resolveChangeId(a.ref);
+      if ("error" in change) return err(change.error);
+      const text = str(a.text);
+      if (!text) return err("The text is required.");
+      const res = await updateChangeText(toFormData({ id: change.id, field: String(a.field), value: text }));
+      return fromActionResult(res, `Updated the ${a.field} of ${changeRef(change.id)}`);
+    },
+  },
+  {
+    id: "change.set_window",
+    group: "Changes",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      `Set the planned maintenance window of a Change (local time "${DATE_TIME_FORMAT}"). Editable while DRAFT or REJECTED; ` +
+      "moving the window of an APPROVED or SCHEDULED change is a reschedule and needs a reason.",
+    input: z.object({
+      ref: z.string().describe("change ref, e.g. 'CHG-0025'"),
+      plannedStart: z.string().describe(`planned start, "${DATE_TIME_FORMAT}"`),
+      plannedEnd: z.string().describe(`planned end, "${DATE_TIME_FORMAT}"; after plannedStart`),
+      reason: z.string().optional().describe("why the window moves (required when rescheduling an approved change)"),
+    }),
+    label: (a) => `Schedule ${a.ref}: ${a.plannedStart} to ${a.plannedEnd}`,
+    run: async (a) => {
+      const change = await resolveChangeId(a.ref);
+      if ("error" in change) return err(change.error);
+      const window = parsePlannedWindow(a.plannedStart, a.plannedEnd);
+      if ("error" in window) return err(window.error);
+      const res = await updateChangeWindow(
+        toFormData({
+          id: change.id,
+          plannedStart: window.start?.toISOString() ?? "",
+          plannedEnd: window.end?.toISOString() ?? "",
+          reason: str(a.reason) ?? "",
+        }),
+      );
+      return fromActionResult(res, `Scheduled ${changeRef(change.id)}`);
     },
   },
   {

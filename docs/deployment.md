@@ -214,6 +214,10 @@ docker compose up --build               # app on :3000, Gotenberg internal
 - **Office previews.** The web service sets `GOTENBERG_URL=http://gotenberg:3000`
   automatically. Documents (docx/pptx/legacy/ODF) then render as a faithful PDF in the
   lightbox; without it, Servio falls back to a best-effort text/HTML preview.
+- **Sable (AI agent).** The image ships `sable/` (agent charter + built-in ITSM skills);
+  at runtime they are synced into Sable's isolated home `SABLE_HOME` (default
+  `~/.servio/sable`). Custom skills and MCP servers live in the database, so nothing
+  else needs mounting — see [AI agent](ai.md#sables-isolated-agent-home).
 - **Secrets.** The web service reads your `.env` (`env_file`) for `AUTH_SECRET`, AI keys,
   SMTP, etc. — override `DATABASE_URL`/`GOTENBERG_URL`/`UPLOAD_DIR` are set in the compose.
 

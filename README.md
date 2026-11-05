@@ -160,9 +160,13 @@ ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 | Provider | Runs | Key | Notes |
 |----------|------|-----|-------|
 | **Ollama** | Local, on-box | — | Fully offline. The privacy-safe default. |
-| **Anthropic** | External API | `ANTHROPIC_API_KEY` | Default `claude-opus-4-8`. Needs the external gate. |
+| **Anthropic** | External API | `ANTHROPIC_API_KEY` | Default `claude-sonnet-5`. Needs the external gate. |
 | **OpenAI-compatible** | External API | `OPENAI_API_KEY` | OpenAI, OpenRouter, Moonshot/Kimi, Zhipu/GLM… |
 | **Claude subscription** | Local `claude` CLI | — | Drives your logged-in Claude Pro/Max. |
+
+Every provider runs through the locally installed **Claude Code** CLI (`claude` must be on the
+server), so all models share one agent loop and the chat shows thinking and tool calls live;
+OpenAI-compatible and Ollama models are translated by a built-in localhost proxy.
 
 Point Sable at a **vision-capable** model to read attached screenshots. Everything is also
 manageable from **Settings › Sable (AI assistant)** (ADMIN), which overrides `.env` and encrypts

@@ -5,10 +5,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Boxes, Loader2 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useChatRuntime, AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
+import { useChatRuntime, AssistantChatTransport, useAISDKChat } from "@assistant-ui/react-ai-sdk";
 import type { UIMessage } from "@ai-sdk/react";
 import { Thread } from "@/components/thread";
-import { SableToolUI, SableConversationContext } from "./sable-tool-ui";
+import { SableToolUI, SableConversationContext, RESTORED_PROPOSAL_TOOL } from "./sable-tool-ui";
 import { useSableChatAdapters } from "./sable-adapters";
 import {
   createConversation,
@@ -38,9 +38,8 @@ type UIPart = UIMessage<SableMetadata>["parts"][number];
 /**
  * Rebuild the read-tool parts of a persisted assistant turn so their activity
  * chips — and Sable's generative cards (notably the `draft_document` artifact) —
- * survive a reload, not just the live stream. `propose_*` write tools are
- * deliberately NOT resurrected: an approval card must only be actionable during
- * its live turn (re-approving a stale proposal on reload would double-apply).
+ * survive a reload, not just the live stream. Raw `propose_*` calls are skipped
+ * here: approval cards come back from the stored proposals (see proposalPartsOf).
  *
  * A drafted document's output is the pass-through of its input, so we synthesise
  * `{ ok, ...input }` — the card then renders fully off the reconstructed part
@@ -65,6 +64,25 @@ function toolPartsOf(toolCalls: { name: string; input: unknown }[] | undefined, 
   return out;
 }
 
+/**
+ * The approval cards of a persisted turn, each carrying the user's decision so
+ * an applied card shows as applied and a dismissed one stays gone. Approving a
+ * still-pending card is safe: the server applies a proposal at most once.
+ */
+function proposalPartsOf(proposals: AssistantProposal[] | undefined, msgIdx: number): UIPart[] {
+  if (!Array.isArray(proposals)) return [];
+  return proposals.filter((p) => p.decisionTracked && p.toolCallId).map(
+    (proposal, k) =>
+      ({
+        type: `tool-${RESTORED_PROPOSAL_TOOL}`,
+        toolCallId: proposal.toolCallId ?? `h${msgIdx}-p${k}`,
+        state: "output-available",
+        input: proposal.args,
+        output: { ok: true, proposal },
+      }) as unknown as UIPart,
+  );
+}
+
 /** Convert a persisted transcript into assistant-ui / useChat UI messages. */
 function hydrate(
   rows: {
@@ -77,10 +95,11 @@ function hydrate(
   return rows.map((m, i) => ({
     id: `h${i}`,
     role: m.role,
-    // Read-tool parts first (chips + cards), then the answer — mirrors the live
-    // layout where tool activity precedes the reply.
+    // Read-tool parts first (chips + cards), then the approval cards, then the
+    // answer — mirrors the live layout where tool activity precedes the reply.
     parts: [
       ...(m.role === "assistant" ? toolPartsOf(m.toolCalls, i) : []),
+      ...(m.role === "assistant" ? proposalPartsOf(m.proposals, i) : []),
       { type: "text", text: m.content } as UIPart,
     ],
     metadata:
@@ -118,6 +137,7 @@ export function SableThread({
   onActivity?: () => void;
 }) {
   const [initial, setInitial] = useState<UIMessage<SableMetadata>[]>([]);
+  const [resumable, setResumable] = useState(false);
   const [hydrating, setHydrating] = useState<boolean>(Boolean(conversationId));
 
   useEffect(() => {
@@ -125,7 +145,9 @@ export function SableThread({
     let ignore = false;
     getConversation(conversationId)
       .then((res) => {
-        if (!ignore && res.ok) setInitial(hydrate(res.conversation.messages));
+        if (ignore || !res.ok) return;
+        setInitial(hydrate(res.conversation.messages));
+        setResumable(res.conversation.resumable);
       })
       .finally(() => {
         if (!ignore) setHydrating(false);
@@ -150,6 +172,7 @@ export function SableThread({
       scope={scope}
       context={context}
       initialMessages={initial}
+      resumable={resumable}
       overview={overview}
       projectName={projectName}
       onOpenOverview={onOpenOverview}
@@ -164,6 +187,7 @@ function ThreadRuntime({
   scope,
   context,
   initialMessages,
+  resumable,
   overview,
   projectName,
   onOpenOverview,
@@ -174,6 +198,8 @@ function ThreadRuntime({
   scope: AssistantScope;
   context?: { ticketId?: number; projectId?: string };
   initialMessages: UIMessage<SableMetadata>[];
+  /** The conversation's last answer is still streaming on the server: rejoin it on mount. */
+  resumable: boolean;
   overview?: ReactNode;
   projectName?: string | null;
   onOpenOverview?: () => void;
@@ -209,11 +235,20 @@ function ThreadRuntime({
       new AssistantChatTransport<UIMessage<SableMetadata>>({
         api: "/api/assistant/chat",
         prepareSendMessagesRequest: prepareRequest,
+        // Rejoin by OUR conversation id (the runtime's own chat id is client-local).
+        prepareReconnectToStreamRequest: () => ({ api: runStreamUrl(convIdRef.current) }),
       }),
     [prepareRequest],
   );
 
   const adapters = useSableChatAdapters();
+
+  // Answers outlive the request, so Stop must end the run on the server, not just this connection.
+  const stopRun = useCallback(() => {
+    const cid = convIdRef.current;
+    if (!cid) return;
+    void fetch(runStreamUrl(cid), { method: "DELETE" }).catch((e) => console.error("[sable] stop failed", e));
+  }, []);
 
   const runtime = useChatRuntime<UIMessage<SableMetadata>>({
     transport,
@@ -262,7 +297,9 @@ function ThreadRuntime({
     <div ref={containerRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AssistantRuntimeProvider runtime={runtime}>
         <SableConversationContext.Provider value={convId ?? ""}>
+          {resumable ? <ResumeRun /> : null}
           <Thread
+            onStop={stopRun}
             components={THREAD_COMPONENTS}
             suggestions={STARTER_SUGGESTIONS}
             editable={false}
@@ -273,4 +310,21 @@ function ThreadRuntime({
       </AssistantRuntimeProvider>
     </div>
   );
+}
+
+/** Where a conversation's running answer is rejoined (GET) or stopped (DELETE). */
+function runStreamUrl(conversationId: string | null): string {
+  return `/api/assistant/chat/${encodeURIComponent(conversationId ?? "")}/stream`;
+}
+
+/** Rejoins the answer still streaming on the server once, when the chat is opened again. */
+function ResumeRun() {
+  const chat = useAISDKChat();
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!chat || resumed.current) return;
+    resumed.current = true;
+    void chat.resumeStream().catch((e: unknown) => console.error("[sable] could not rejoin the answer", e));
+  }, [chat]);
+  return null;
 }

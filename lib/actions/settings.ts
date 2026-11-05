@@ -5,6 +5,8 @@ import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { setSetting } from "@/lib/settings";
 import { encryptionAvailable } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
+import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
+import { listModels, type AiModelList } from "@/lib/ai-models";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -146,12 +148,72 @@ export async function saveAiSettings(
       { key: "AI_TICKET_TRIAGE", value: bool(fd, "AI_TICKET_TRIAGE") },
       { key: "ANTHROPIC_API_KEY", value: str(fd, "ANTHROPIC_API_KEY"), encrypted: true, keepIfEmpty: true },
       { key: "OPENAI_API_KEY", value: str(fd, "OPENAI_API_KEY"), encrypted: true, keepIfEmpty: true },
+      {
+        key: "CLAUDE_CODE_OAUTH_TOKEN",
+        value: str(fd, "CLAUDE_CODE_OAUTH_TOKEN"),
+        encrypted: true,
+        keepIfEmpty: true,
+      },
       // Web search: optional real provider (Tavily/Brave); blank → keyless DuckDuckGo.
       { key: "WEB_SEARCH_PROVIDER", value: str(fd, "WEB_SEARCH_PROVIDER") },
       { key: "TAVILY_API_KEY", value: str(fd, "TAVILY_API_KEY"), encrypted: true, keepIfEmpty: true },
       { key: "BRAVE_API_KEY", value: str(fd, "BRAVE_API_KEY"), encrypted: true, keepIfEmpty: true },
     ],
     "Updated AI settings",
+    "/settings/ai",
+  );
+}
+
+export type AiConnectionCheck =
+  | { ok: true; latencyMs: number; reply: string }
+  | { ok: false; error: string };
+
+const CONNECTION_CHECK_REPLY_CHARS = 200;
+
+/**
+ * One real round trip through Sable's harness with the SAVED settings, so the
+ * admin sees whether the provider, credentials and Claude Code actually work.
+ */
+export async function testAiConnection(): Promise<AiConnectionCheck> {
+  const me = await requireAdmin();
+  if (!me) return { ok: false, error: "Not authorised" };
+  if (!(await aiConfigured())) {
+    return { ok: false, error: "Not configured yet: pick a provider and add its credentials, then save." };
+  }
+  const started = Date.now();
+  try {
+    const reply = await generateAiText({
+      system: "You are a connectivity check. Answer in one short sentence.",
+      prompt: "Reply with: Sable is online.",
+    });
+    return { ok: true, latencyMs: Date.now() - started, reply: reply.slice(0, CONNECTION_CHECK_REPLY_CHARS) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "The AI request failed." };
+  }
+}
+
+/** Long-lived tokens from `claude setup-token` look like `sk-ant-oat01-…`. */
+const CLAUDE_TOKEN_PATTERN = /^sk-ant-[A-Za-z0-9_-]{20,}$/;
+
+/**
+ * Store a Claude subscription token (from `claude setup-token`, run on ANY
+ * machine — the token is bound to the account, not the host) and switch Sable
+ * to the subscription provider.
+ */
+export async function connectClaudeSubscription(token: string): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const value = token.trim();
+  if (!CLAUDE_TOKEN_PATTERN.test(value)) {
+    return { error: "That doesn't look like a Claude token. It starts with sk-ant- and is printed by `claude setup-token`." };
+  }
+  return persist(
+    me.id,
+    [
+      { key: "AI_PROVIDER", value: "claude-code" },
+      { key: "CLAUDE_CODE_OAUTH_TOKEN", value, encrypted: true },
+    ],
+    "Connected Claude subscription",
     "/settings/ai",
   );
 }
@@ -171,4 +233,11 @@ export async function saveUploadSettings(
     "Updated upload settings",
     "/settings/uploads",
   );
+}
+
+/** Models offered by a provider, loaded with the SAVED credentials (admin-only). */
+export async function listAiModels(provider: AiProvider): Promise<AiModelList> {
+  const me = await requireAdmin();
+  if (!me) return { models: [], error: "Not authorised" };
+  return listModels(provider);
 }

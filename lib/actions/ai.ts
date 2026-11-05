@@ -479,8 +479,7 @@ export async function improveText(
   ].join("\n");
 
   try {
-    // Low temperature → stay faithful to the input (don't rewrite names, don't drift).
-    const text = await generateAiText({ system, prompt: draft, temperature: 0.2 });
+    const text = await generateAiText({ system, prompt: draft });
     // Safety net: weaker local models sometimes answer with meta-commentary instead
     // of the rewrite. If it looks like a refusal/explanation, keep the original text.
     const final = looksLikeRefusal(text) ? draft.trim() : text;
