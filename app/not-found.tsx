@@ -1,10 +1,12 @@
 import { FileQuestion } from "lucide-react";
 import { LinkButton } from "@/components/link-button";
 import { EmptyState } from "@/components/empty-state";
+import { Wordmark } from "@/components/brand";
 
 export default function NotFound() {
   return (
-    <div className="grid min-h-svh place-items-center p-6">
+    <div className="grid min-h-svh place-content-center justify-items-center gap-10 p-6">
+      <Wordmark />
       <EmptyState
         icon={FileQuestion}
         title="Page not found"

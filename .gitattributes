@@ -1,0 +1,6 @@
+branding/** text=auto eol=lf
+public/brand/** text=auto eol=lf
+app/icon.svg text eol=lf
+app/**/icon.svg text eol=lf
+app/brand-tokens.css text eol=lf
+lib/brand-assets.ts text eol=lf

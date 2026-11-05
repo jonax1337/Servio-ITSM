@@ -2,6 +2,7 @@
 
 import { useSable } from "./sable-provider";
 import { SableFab } from "./sable-chrome";
+import { usePathname } from "next/navigation";
 
 /**
  * The always-present floating action button (bottom-right). Re-opens Sable in
@@ -11,6 +12,7 @@ import { SableFab } from "./sable-chrome";
  */
 export function SableLauncher() {
   const sable = useSable();
-  if (sable.state !== "closed") return null;
+  const pathname = usePathname();
+  if (sable.state !== "closed" || pathname === "/assistant") return null;
   return <SableFab beta onClick={sable.openLast} />;
 }

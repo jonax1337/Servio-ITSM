@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bot } from "lucide-react";
+import { SableMark } from "@/components/sable-mark";
 import { requireRole } from "@/lib/session";
 import { getSetting, getBoolSetting, settingIsSet } from "@/lib/settings";
 import { PageHeader, PageBody } from "@/components/page-header";
@@ -45,7 +45,7 @@ export default async function AiSettingsPage() {
   return (
     <>
       <PageHeader
-        icon={Bot}
+        icon={SableMark}
         title={`${AI_ASSISTANT_NAME} (AI assistant)`}
         description="Provider, model and keys for the built-in AI assistant. External providers require the privacy toggle."
       />

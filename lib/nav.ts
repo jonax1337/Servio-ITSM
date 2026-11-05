@@ -18,8 +18,9 @@ import {
   ShoppingBag,
   ScrollText,
   MessageSquareText,
-  Bot,
 } from "lucide-react";
+import { SableMark } from "@/components/sable-mark";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
 
 export type NavItem = {
   title: string;
@@ -35,7 +36,7 @@ export const consoleNav: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", href: "/", icon: LayoutDashboard },
-      { title: "Assistant", href: "/assistant", icon: Bot },
+      { title: AI_ASSISTANT_NAME, href: "/assistant", icon: SableMark },
     ],
   },
   {

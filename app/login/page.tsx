@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CheckCircle2 } from "lucide-react";
 import { ssoEnabled, ssoProviderName } from "@/auth";
-import { Wordmark } from "@/components/brand";
+import { Wordmark, BrandName } from "@/components/brand";
+import { SableMark } from "@/components/sable-mark";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -11,7 +12,7 @@ const highlights = [
   "Tickets, Problems & Changes — full ITIL flow",
   "CMDB with asset dependency mapping",
   "SSO, self-service portal & a clean REST API",
-  "Sync users & assets from AD, Azure, Intune…",
+  "Sable proposes. Your team stays in control.",
 ];
 
 export default function LoginPage() {
@@ -20,17 +21,17 @@ export default function LoginPage() {
       {/* Left: brand / marketing panel */}
       <div className="relative hidden overflow-hidden border-r bg-sidebar lg:block">
         <div className="absolute inset-0 bg-grid opacity-60" />
+        <SableMark className="pointer-events-none absolute -bottom-12 -right-12 size-96 text-brand-cobalt/10 dark:text-brand-ice/10" />
         <div className="absolute -left-24 top-1/3 size-[36rem] rounded-full bg-primary/20 blur-3xl" />
         <div className="relative flex h-full flex-col justify-between p-12">
           <Wordmark subtitle="Open-Source ITSM" />
           <div className="max-w-md">
             <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight">
-              The service desk your team{" "}
-              <span className="text-primary">actually enjoys</span>.
+              Service,<br /><span className="text-primary">in flow.</span>
             </h1>
             <p className="mt-4 text-muted-foreground">
-              A modern, open-source alternative to legacy ITSM. Everything from
-              incidents to infrastructure sync — in one fast, beautiful place.
+              Your service desk. A smarter teammate. Bring tickets, knowledge,
+              changes and assets together, with Sable working alongside your team.
             </p>
             <ul className="mt-8 grid gap-3">
               {highlights.map((h) => (
@@ -41,9 +42,10 @@ export default function LoginPage() {
               ))}
             </ul>
           </div>
-          <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Servio · MIT licensed
-          </p>
+          <div className="grid gap-5">
+            <div className="flex items-center gap-3 text-sable"><SableMark className="size-7" /><div className="grid gap-1"><BrandName brand="sable" className="h-4" /><span className="text-[11px] text-muted-foreground">AI teammate by Servio</span></div></div>
+            <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Servio · MIT licensed</p>
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
-import { Inter, Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
+import { brandAssets } from "@/lib/brand-assets";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -9,8 +11,10 @@ const inter = Inter({
   variable: "--font-sans",
   display: "swap",
 });
-const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
+const manrope = localFont({
+  src: "../branding/fonts/Manrope-Variable.ttf",
+  weight: "200 800",
+  style: "normal",
   variable: "--font-display",
   display: "swap",
 });
@@ -21,19 +25,31 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_URL || process.env.AUTH_URL || process.env.NEXTAUTH_URL || "http://localhost:3000"),
+  applicationName: "Servio",
+  manifest: "/brand/servio/site.webmanifest",
   title: {
     default: "Servio — Open-Source ITSM",
     template: "%s · Servio",
   },
   description:
-    "Servio is a modern, open-source IT Service Management platform: tickets, problems, changes, assets, self-service and a clean API.",
+    "An open-source service desk with Sable, your AI teammate. Tickets, knowledge, changes, assets and self-service, with human approval for AI actions.",
+  openGraph: { title: "Servio — Service, in flow.", siteName: "Servio", type: "website" },
+  twitter: { card: "summary_large_image" },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: brandAssets.colors.mist },
+    { media: "(prefers-color-scheme: dark)", color: brandAssets.colors.navy },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${bricolage.variable} ${jetbrains.variable} font-sans antialiased`}
+        className={`${inter.variable} ${manrope.variable} ${jetbrains.variable} font-sans antialiased`}
       >
         <ThemeProvider
           attribute="class"

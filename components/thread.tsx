@@ -24,6 +24,8 @@ import {
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { TypingDots } from "@/components/assistant/typing-dots";
+import { SableMark } from "@/components/sable-mark";
+import { BrandName } from "@/components/brand";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
@@ -269,7 +271,9 @@ const ThreadScrollToBottom: FC = () => {
 
 const ThreadWelcome: FC = () => {
   return (
-    <div className="aui-thread-welcome-root mb-6 flex flex-col items-center px-4 text-center">
+    <div className="aui-thread-welcome-root mb-6 flex flex-col items-center gap-4 px-4 text-center">
+      <SableMark className="size-12 text-sable" />
+      <div className="flex items-end gap-2 text-sable"><BrandName brand="sable" className="h-6" /><span className="text-xs text-muted-foreground">by Servio</span></div>
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
         How can I help you today?
       </h1>
@@ -285,7 +289,7 @@ const ThreadSuggestions: FC = () => {
       {suggestions.map((prompt) => (
         <div
           key={prompt}
-          className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200"
+          className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both min-w-0 max-w-full duration-200"
         >
           <ThreadPrimitive.Suggestion
             prompt={prompt}
@@ -293,7 +297,7 @@ const ThreadSuggestions: FC = () => {
             render={
               <Button
                 variant="ghost"
-                className="aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-normal whitespace-nowrap transition-colors"
+                className="aui-thread-welcome-suggestion text-foreground hover:bg-muted border-border/60 h-auto max-w-full gap-1.5 rounded-full border px-3.5 py-1.5 text-center text-sm font-normal whitespace-normal transition-colors"
               >
                 {prompt}
               </Button>

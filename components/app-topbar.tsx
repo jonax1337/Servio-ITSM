@@ -17,8 +17,10 @@ import { CommandMenu } from "@/components/command-menu";
 import { CreateMenu } from "@/components/create-menu";
 import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
 
 function label(seg: string) {
+  if (seg === "assistant") return AI_ASSISTANT_NAME;
   if (/^\d+$/.test(seg)) return `#${seg}`;
   // cuid-like ids (e.g. cmskaeker0022v6l8mv61vvni) → friendly label
   if (/^[a-z0-9]{18,}$/i.test(seg) && /\d/.test(seg)) return "Details";

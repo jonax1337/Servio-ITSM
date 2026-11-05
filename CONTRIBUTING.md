@@ -47,6 +47,8 @@ Useful scripts from [`package.json`](package.json):
 | `pnpm dev` | Run the dev server (`next dev`, Turbopack) |
 | `pnpm build` | Production build — **must pass before you open a PR** |
 | `pnpm lint` | ESLint (`eslint-config-next`) — **must pass before you open a PR** |
+| `pnpm brand:check` | Verify application logos, icons, metadata images and brand tokens |
+| `pnpm brand:sync` | Regenerate application copies after updating the canonical brand kit |
 | `pnpm db:migrate` | `prisma migrate dev` — create/apply a dev migration |
 | `pnpm db:push` | Push schema without a migration (prototyping only) |
 | `pnpm db:seed` | Seed via `prisma/seed.ts` + `prisma/seed-extras.ts` |
@@ -272,6 +274,11 @@ PR expectations:
 ---
 
 ## Where to go next
+
+Identity changes use the [brand kit](branding/README.md) and
+[integration reference](docs/branding.md). Reuse Relay and Nova Flow through
+the shared components, with local Manrope display type and Inter for dense UI.
+Include regenerated application assets and update the design-system reference.
 
 - [docs/README.md](docs/README.md) — documentation index
 - [docs/architecture.md](docs/architecture.md) — how the app fits together

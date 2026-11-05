@@ -27,7 +27,10 @@ services:
       start_period: 10s
 
   web:
-    build: .
+    build:
+      context: .
+      args:
+        APP_URL: ${APP_URL:-http://localhost:3000}
     restart: unless-stopped
     depends_on:
       gotenberg:

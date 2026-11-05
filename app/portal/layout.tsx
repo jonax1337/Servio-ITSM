@@ -47,7 +47,7 @@ export default async function PortalLayout({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:py-10">{children}</main>
+      <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:py-10">{children}</main>
 
       <footer className="mt-4 border-t">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground">

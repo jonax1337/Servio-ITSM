@@ -14,7 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Logo } from "@/components/brand";
+import { Logo, BrandName } from "@/components/brand";
 import { consoleNav, filterNav } from "@/lib/nav";
 import { APP_VERSION } from "@/lib/constants";
 
@@ -38,12 +38,10 @@ export function AppSidebar({ role }: { role: string }) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="h-14 justify-center border-b group-data-[collapsible=icon]:items-center">
-        <Link href="/" className="flex items-center gap-2.5 px-1">
+        <Link href="/" aria-label="Servio home" className="flex items-center gap-2.5 px-1">
           <Logo />
           <div className="grid leading-none group-data-[collapsible=icon]:hidden">
-            <span className="font-display text-base font-semibold tracking-tight">
-              Servio
-            </span>
+            <BrandName brand="servio" className="h-4.5" />
             <span className="text-[11px] font-medium text-muted-foreground">
               Open-Source ITSM
             </span>

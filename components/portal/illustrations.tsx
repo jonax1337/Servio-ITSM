@@ -3,7 +3,7 @@
  *
  * All colours reference the theme CSS variables so the art tracks light/dark
  * and any accent retheme automatically. Keep the style consistent: rounded
- * shapes, 2px strokes with round caps, a single violet lead colour, muted
+ * shapes, 2px strokes with round caps, the Relay lead colour, muted
  * neutrals, and sparse accent sparkles. Sized via className (default provided).
  */
 

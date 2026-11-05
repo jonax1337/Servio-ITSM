@@ -1,5 +1,10 @@
 # Servio documentation
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../branding/exports/banners/readme-servio-dark.svg">
+  <img src="../branding/exports/banners/readme-servio-light.svg" alt="Servio Relay — the open-source service desk" width="100%">
+</picture>
+
 Developer and operator documentation for **Servio**, an open-source ITSM platform
 built with Next.js 16, React 19, Prisma 6, and Auth.js v5. Every page is verified
 against the code and kept in sync with the repository. New here? Start with
@@ -21,6 +26,7 @@ against the code and kept in sync with the repository. New here? Start with
 | [data-model.md](./data-model.md) | The Prisma schema by domain, the String-backed enum strategy, human reference numbers, and the migration workflow. |
 | [rest-api.md](./rest-api.md) | The versioned `/api/v1` Bearer-token REST API: auth, scopes, envelope, pagination, and every endpoint. |
 | [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
+| [branding.md](./branding.md) | Relay/Nova Flow, canonical assets, fonts, generated application files and sync commands. |
 | [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
 
 ## Operations

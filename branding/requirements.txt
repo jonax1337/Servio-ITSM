@@ -1,0 +1,4 @@
+fonttools>=4.60,<5
+Pillow>=11,<14
+vtracer==0.6.15
+numpy>=2,<3

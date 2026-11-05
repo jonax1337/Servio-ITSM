@@ -101,11 +101,13 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
   return (
     <>
       <button
+        type="button"
+        aria-label="Search"
         onClick={() => setOpen(true)}
-        className="flex h-9 w-full items-center gap-2 rounded-lg border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted sm:w-64"
+        className="flex size-9 shrink-0 items-center justify-center gap-2 rounded-lg border bg-muted/40 text-sm text-muted-foreground transition-colors hover:bg-muted sm:w-64 sm:justify-start sm:px-3"
       >
         <Search className="size-4" />
-        <span className="flex-1 text-left">Search…</span>
+        <span className="hidden flex-1 text-left sm:block">Search…</span>
         <kbd className="pointer-events-none hidden select-none items-center gap-0.5 rounded border bg-background px-1.5 font-mono text-[10px] font-medium sm:flex">
           ⌘K
         </kbd>

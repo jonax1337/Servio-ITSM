@@ -1,18 +1,21 @@
 <div align="center">
 
-# Servio
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/exports/banners/readme-family-dark.svg">
+  <img src="branding/exports/banners/readme-family-light.svg" alt="Servio and Sable — Service, in flow." width="100%">
+</picture>
 
 ### The open-source ITSM platform with an AI teammate built in.
 
 A modern service desk — tickets, problems, changes, CMDB, a self-service portal and a
 clean REST API — with **Sable**, an AI agent that actually works your queue *with your approval*.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-6366f1?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3559e8?style=flat-square)](LICENSE)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js)](https://nextjs.org)
 [![React 19](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![Prisma 6](https://img.shields.io/badge/Prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-8b5cf6?style=flat-square)](CONTRIBUTING.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-3559e8?style=flat-square)](CONTRIBUTING.md)
 
 </div>
 
@@ -46,7 +49,12 @@ Full walkthrough → [docs/development.md](docs/development.md)
 
 ---
 
-## ✦ Meet Sable — your AI service-desk teammate
+## Meet Sable — your AI service-desk teammate
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/exports/banners/readme-sable-dark.svg">
+  <img src="branding/exports/banners/readme-sable-light.svg" alt="Sable by Servio — A capable teammate. On your terms." width="100%">
+</picture>
 
 **Sable is Servio's headline feature: an AI teammate that lives inside the service desk and
 does real work, not just chat.** One streaming chat window (powered by [assistant-ui](https://www.assistant-ui.com)),
@@ -65,6 +73,8 @@ that user's *own* tickets, understands attached screenshots of an error, and ope
 correctly-routed ticket or catalog request — all confirm-first. It shares **none** of the agent tools.
 
 Deep dive → [docs/ai.md](docs/ai.md)
+
+Brand assets → [Servio + Sable brand kit](branding/README.md) · [Brand guidelines](branding/brand-guide.pdf)
 
 ---
 
@@ -109,7 +119,9 @@ Deep dive → [docs/ai.md](docs/ai.md)
 - **SSO** — OIDC (Keycloak, Authentik, Azure AD, Okta, Google…) plus email/password.
 - **RBAC** — Admin / Manager / Agent / User, enforced in `proxy.ts` and every server action.
 - **Public REST API** — versioned `/api/v1`, Bearer-token auth with scopes, pagination, filtering, and an OpenAPI 3.1 doc.
-- **Beautiful by default** — a quiet "control-room" dark/light theme, command palette (⌘K),
+- **Relay + Nova Flow branding** — Navy/Cobalt themes, local Manrope display type,
+  Servio/Sable vector marks, icons and share previews from the [brand kit](branding/README.md).
+- **Beautiful by default** — a quiet service-desk layout, command palette (⌘K),
   responsive layout, and designed empty/loading states.
 
 ---
@@ -213,6 +225,7 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 | [data-model.md](docs/data-model.md) | Prisma schema & enum strategy |
 | [rest-api.md](docs/rest-api.md) | The `/api/v1` REST API |
 | [design-system.md](docs/design-system.md) | Theme, tokens, and UI primitives |
+| [branding.md](docs/branding.md) | Brand kit, shared logos, fonts and generated application assets |
 | [modules.md](docs/modules.md) | Feature-to-file map |
 | [deployment.md](docs/deployment.md) | PostgreSQL, production, persistence |
 
@@ -225,6 +238,7 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 | `pnpm dev` | Dev server (Turbopack) |
 | `pnpm build` / `pnpm start` | Production build & serve |
 | `pnpm lint` | Lint (`eslint` / `eslint-config-next`) |
+| `pnpm brand:check` / `pnpm brand:sync` | Validate / synchronize application assets from the canonical brand kit |
 | `pnpm db:migrate` | Prisma migrations (`prisma migrate dev`) |
 | `pnpm db:seed` | Seed demo data |
 | `pnpm db:reset` | Reset DB + reseed |

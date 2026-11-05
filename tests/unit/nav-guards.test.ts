@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { consoleNav, filterNav } from "@/lib/nav";
-import { requiredRoleFor } from "@/lib/route-guard";
+import { requiredRoleFor, isPublicPath } from "@/lib/route-guard";
+
+describe("public route namespaces", () => {
+  it("serves brand icons and manifests before login", () => {
+    expect(isPublicPath("/brand/servio/site.webmanifest")).toBe(true);
+    expect(isPublicPath("/brand/sable/icon-512.png")).toBe(true);
+    expect(isPublicPath("/login")).toBe(true);
+    expect(isPublicPath("/survey/token")).toBe(true);
+  });
+
+  it("keeps protected routes and similarly named prefixes private", () => {
+    for (const path of ["/settings", "/assistant", "/tickets", "/brand-settings", "/surveypayload", "/api/v10/tickets", "/reports/export/123.png"]) {
+      expect(isPublicPath(path), path).toBe(false);
+    }
+  });
+});
 
 describe("filterNav", () => {
   it("admins see everything", () => {

@@ -408,16 +408,19 @@ free-form tickets.
 
 ## Design tokens
 
-Sable — and every AI affordance in the app — uses a **monochrome** accent, not the old violet/fuchsia.
-The tokens live in `app/globals.css` (`:root` + `.dark`): `--sable`, `--sable-foreground`, `--sable-muted`,
-mapped in `@theme inline` to Tailwind's `bg-sable` / `text-sable` / `text-sable-foreground` / `bg-sable-muted`.
-Change the three `--sable*` variables to retint everything at once.
+Sable uses **Nova Flow**: six separate curved segments and an outlined Manrope
+wordmark. `components/sable-mark.tsx` supplies the common SVG for chat,
+navigation, settings and inline AI affordances. `BrandName` renders the
+wordmark. Both read generated geometry from `lib/brand-assets.ts`.
 
-These replaced the old AI accent across Sable and the app's AI affordances: `components/ui/ai-button.tsx`,
-the ticket triage per-field suggestions (`components/tickets/ticket-properties.tsx`), and the AI
-draft/summary card (`components/comments/comment-thread.tsx`) are all `sable`-tinted, as are the
-assistant-ui composer send button and caret. The Sable wordmark uses the app display font
-(Bricolage Grotesque, `font-display font-semibold`).
+Dense AI surfaces use monochrome `--sable`, `--sable-foreground` and
+`--sable-muted` tokens: Navy/white on light, white/Navy on dark. Consumers include
+`AiButton`, ticket triage suggestions, comment draft/summary cards and composer
+controls. The launcher uses a Navy tile with the Cobalt/Ice accent symbol;
+`sable-accent-border` and `sable-glow` use those same two colours.
+
+Headings use local Manrope; body text remains Inter. See
+[branding.md](./branding.md) and [design-system.md](./design-system.md).
 
 ---
 

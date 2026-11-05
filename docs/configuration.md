@@ -42,7 +42,7 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `AUTH_OIDC_ISSUER` | No | — | OIDC issuer URL (the IdP's discovery base, e.g. `https://idp/realms/main`). Required to enable SSO. |
 | `AUTH_OIDC_NAME` | No | `SSO` | Display name for the SSO button ("Continue with _{name}_"). |
 | `APP_NAME` | No | `Servio` | Application display name. Present in `.env.example` as a convention; not currently read by app code. |
-| `APP_URL` | No | _empty_ | Public app origin used to build **absolute links** in outbound mail and CSAT survey links (`lib/mail.ts`, `lib/actions/survey.ts`). Also settable from **Settings** (the DB `AppSetting` row wins). When empty, survey links fall back to a relative path. |
+| `APP_URL` | No | _empty_ | Public origin for absolute mail/CSAT links and build-time social image URLs. Settings/DB overrides win for runtime mail/survey links; static share metadata uses the build environment and requires a rebuild when the origin changes. Compose forwards this value as a build argument. |
 | `SMTP_HOST` | No | _empty_ | SMTP server host. **Leaving it empty enables outbox mode** — see [Email / SMTP](#email--smtp). |
 | `SMTP_PORT` | No | `587` | SMTP port. Together with `SMTP_HOST` it forms the "SMTP configured" check in [`../lib/mail.ts`](../lib/mail.ts). |
 | `SMTP_SECURE` | No | `false` | `"true"` to use an implicit TLS connection (typically port 465); any other value uses STARTTLS. |

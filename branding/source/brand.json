@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "date": "2026-11-05",
+  "brands": {"servio": {"name": "Servio", "direction": "Relay"}, "sable": {"name": "Sable", "direction": "Nova Flow", "endorsement": "by Servio"}},
+  "colors": {"cobalt": "#3559E8", "navy": "#12243A", "mist": "#F1F4F8", "ice": "#8EE3F5", "white": "#FFFFFF", "black": "#111827", "muted": "#5D6C80"},
+  "typography": {"brand": "Manrope", "wordmarkWeight": 750, "displayWeight": 650, "bodyWeight": 400, "ui": "Inter", "code": "JetBrains Mono"},
+  "clearSpace": "At least 25% of symbol height around a standalone mark or complete lockup",
+  "minimumSizes": {"symbolScreenPx": 24, "labeledInlinePx": 14, "faviconPx": 16, "horizontalScreenPx": 140, "symbolPrintMm": 8, "horizontalPrintMm": 35},
+  "taglines": {"servio": "Service, in flow.", "sable": "A capable teammate. On your terms.", "family": "Your service desk. A smarter teammate."}
+}
