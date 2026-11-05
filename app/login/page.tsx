@@ -24,7 +24,7 @@ export default function LoginPage() {
         <SableMark className="pointer-events-none absolute -bottom-12 -right-12 size-96 text-brand-cobalt/10 dark:text-brand-ice/10" />
         <div className="absolute -left-24 top-1/3 size-[36rem] rounded-full bg-primary/20 blur-3xl" />
         <div className="relative flex h-full flex-col justify-between p-12">
-          <Wordmark subtitle="Open-Source ITSM" />
+          <Wordmark />
           <div className="max-w-md">
             <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight">
               Service,<br /><span className="text-primary">in flow.</span>
@@ -43,7 +43,7 @@ export default function LoginPage() {
             </ul>
           </div>
           <div className="grid gap-5">
-            <div className="flex items-center gap-3 text-sable"><SableMark className="size-7" /><div className="grid gap-1"><BrandName brand="sable" className="h-4" /><span className="text-[11px] text-muted-foreground">AI teammate by Servio</span></div></div>
+            <div className="flex items-center gap-3 text-sable"><SableMark className="size-7" /><BrandName brand="sable" className="h-4" /></div>
             <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Servio · MIT licensed</p>
           </div>
         </div>
@@ -53,7 +53,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <Wordmark subtitle="Open-Source ITSM" />
+            <Wordmark />
           </div>
           <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
             <div className="mb-6 grid gap-1.5">

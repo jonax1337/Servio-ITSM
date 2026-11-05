@@ -94,9 +94,7 @@ export function SableHeader({
           <BrandName brand="sable" className="h-4" />
           {beta ? <SableBetaBadge /> : null}
         </div>
-        <div className="truncate text-[11px] text-muted-foreground">
-          {subtitle ?? "AI teammate by Servio"}
-        </div>
+        {subtitle ? <div className="truncate text-[11px] text-muted-foreground">{subtitle}</div> : null}
       </div>
       {extra}
       <div className="ml-auto flex items-center gap-0.5">{children}</div>

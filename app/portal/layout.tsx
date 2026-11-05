@@ -26,7 +26,7 @@ export default async function PortalLayout({
         <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
           <div className="flex items-center">
             <Link href="/portal" className="shrink-0 transition-opacity hover:opacity-80">
-              <Wordmark subtitle="Help Center" />
+              <Wordmark />
             </Link>
           </div>
           <div className="hidden md:flex md:justify-center">

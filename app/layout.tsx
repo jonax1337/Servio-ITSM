@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   applicationName: "Servio",
   manifest: "/brand/servio/site.webmanifest",
   title: {
-    default: "Servio — Open-Source ITSM",
+    default: "Servio",
     template: "%s · Servio",
   },
   description:

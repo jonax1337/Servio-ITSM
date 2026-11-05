@@ -31,7 +31,7 @@ export default async function SurveyPage({
 
       <div className="relative w-full max-w-md">
         <div className="mb-8 flex justify-center">
-          <Wordmark subtitle="Open-Source ITSM" />
+          <Wordmark />
         </div>
 
         <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">

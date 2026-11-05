@@ -75,7 +75,6 @@ export function SableWidget({
             )}
           >
             <SableHeader
-              subtitle="Help Center assistant"
               extra={
                 previewOnly ? (
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
