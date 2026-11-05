@@ -98,8 +98,6 @@ export async function classifyFile(input: {
         `${FILE_TAGS.join(", ")}\n\n` +
         `Filename: ${input.name}\n\n` +
         `Content (first part):\n${snippet}`,
-      maxOutputTokens: 12,
-      temperature: 0,
     });
     const normalized = answer.trim().replace(/[.\s]+$/, "");
     const match = FILE_TAGS.find((t) => t.toLowerCase() === normalized.toLowerCase());

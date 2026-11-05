@@ -1,18 +1,16 @@
 import {
-  streamText,
-  stepCountIs,
   createUIMessageStream,
   createUIMessageStreamResponse,
   type UIMessage,
   type ModelMessage,
 } from "ai";
 import { getSessionUser, getCurrentUser } from "@/lib/session";
-import { aiConfigured, currentProvider, resolveChatModel, chatMaxOutputTokens, generateAiChat } from "@/lib/ai";
+import { aiConfigured, streamAiChat } from "@/lib/ai";
+import { AgentTranscript, pipeAgentRun } from "@/lib/claude-agent-events";
 import { checkAiRate } from "@/lib/rate-limit";
 import {
   buildPortalTools,
   buildUserParts,
-  portalProposalForTool,
   SYSTEM_PROMPT,
   type ChatAttachment,
 } from "@/lib/portal-assistant";
@@ -20,17 +18,17 @@ import {
 /**
  * Streaming self-service (portal) assistant — the same assistant-ui Thread as
  * the console, USER-scoped and EPHEMERAL (no persistence: the client runtime
- * holds the transcript). propose_* tools return the draft as their result so
- * the portal tool UI can render a confirm card; the claude-code provider is
- * buffered and synthesises the tool parts.
+ * holds the transcript). Runs through the Claude Code harness and streams each
+ * agent step live; propose_* tools return the draft as their result so the
+ * portal tool UI can render a confirm card.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const TEXT_ID = "t0";
 const MAX_TURNS = 12;
+const FALLBACK_ERROR = "The assistant ran into a problem.";
 
 /** Concatenate the text parts of a UI message. */
 function textOf(m: UIMessage): string {
@@ -102,73 +100,29 @@ export async function POST(req: Request) {
     messages[lastIdx] = { role: "user", content: buildUserParts(text, attachments) } as ModelMessage;
   }
 
-  // Slim files that ride along on the propose_* tool result (ai-sdk path) so the
-  // confirm card can link them to the ticket; the claude-code branch below injects
-  // the same shape itself.
+  // Slim files ride along on the propose_* tool result so the confirm card can
+  // link them to the ticket it creates (the runtime is ephemeral — no staging).
   const slimAttachments = attachments.map((a) => ({ name: a.name, type: a.type, dataUrl: a.dataUrl }));
   const tools = buildPortalTools(me.id, slimAttachments);
-  const provider = await currentProvider();
 
-  /* ── claude-code: buffered, tool parts synthesised (read tools → answer → drafts) ── */
-  if (provider === "claude-code") {
-    const stream = createUIMessageStream<UIMessage>({
-      execute: async ({ writer }) => {
-        let text = "(no answer)";
-        let rawToolCalls: { name: string; input: unknown }[] = [];
-        try {
-          const result = await generateAiChat({ system: SYSTEM_PROMPT, messages, tools, maxSteps: 6 });
-          text = result.text || "(no answer)";
-          rawToolCalls = result.toolCalls ?? [];
-        } catch (e) {
-          text = e instanceof Error ? `⚠️ ${e.message}` : "⚠️ The assistant ran into a problem.";
-        }
-
-        rawToolCalls.forEach((tc, i) => {
-          if (tc.name.startsWith("propose_")) return; // read tools above the answer
-          const toolCallId = `t${i}`;
-          writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
-          writer.write({ type: "tool-output-available", toolCallId, output: { ok: true } });
-        });
-
-        writer.write({ type: "text-start", id: TEXT_ID });
-        writer.write({ type: "text-delta", id: TEXT_ID, delta: text });
-        writer.write({ type: "text-end", id: TEXT_ID });
-
-        for (let i = 0; i < rawToolCalls.length; i++) {
-          const tc = rawToolCalls[i];
-          if (!tc.name.startsWith("propose_")) continue; // drafts below the answer
-          const proposal = await portalProposalForTool(me.id, tc.name, tc.input);
-          const toolCallId = `t${i}`;
-          // Carry the turn's attachments on the draft so the confirm card can link
-          // them to the ticket it creates (the runtime is ephemeral — no staging).
-          // Honour the model's attachFiles opt-out for an unrelated attachment.
-          const attachFiles = (tc.input as { attachFiles?: boolean } | undefined)?.attachFiles !== false;
-          writer.write({ type: "tool-input-available", toolCallId, toolName: tc.name, input: (tc.input ?? {}) as unknown });
-          writer.write({
-            type: "tool-output-available",
-            toolCallId,
-            output: proposal
-              ? { ok: true, proposal, attachments: attachFiles ? slimAttachments : [] }
-              : { ok: false, error: "Could not prepare that draft." },
-          });
-        }
-      },
-      onError: (e) => (e instanceof Error ? e.message : "The assistant ran into a problem."),
-    });
-    return createUIMessageStreamResponse({ stream });
-  }
-
-  /* ── ai-sdk providers: real token streaming (tool results carry the drafts) ── */
-  const result = streamText({
-    model: await resolveChatModel(),
-    system: SYSTEM_PROMPT,
-    messages,
-    tools,
-    stopWhen: stepCountIs(6),
-    maxOutputTokens: await chatMaxOutputTokens(),
+  const stream = createUIMessageStream<UIMessage>({
+    execute: async ({ writer }) => {
+      const run = streamAiChat({
+        system: SYSTEM_PROMPT,
+        messages,
+        tools,
+        audience: "portal",
+        maxSteps: 6,
+        abortSignal: req.signal,
+      });
+      await pipeAgentRun(run, {
+        writer,
+        transcript: new AgentTranscript(),
+        fallbackError: FALLBACK_ERROR,
+        abortSignal: req.signal,
+      });
+    },
+    onError: (e) => (e instanceof Error ? e.message : FALLBACK_ERROR),
   });
-
-  return result.toUIMessageStreamResponse<UIMessage>({
-    onError: (e) => (e instanceof Error ? e.message : "The assistant ran into a problem."),
-  });
+  return createUIMessageStreamResponse({ stream });
 }

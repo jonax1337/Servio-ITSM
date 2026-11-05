@@ -100,17 +100,25 @@ The pre-model logic is shared, non-`"use server"` code in **`lib/assistant-core.
 - `generalSystemPrompt` / `adminSystemPrompt` — the per-scope system prompts.
 - `buildAssistantProposals()` — turn `propose_*` tool calls into deduped approval cards.
 
-Streaming itself:
+Streaming itself — **one agent harness for every provider**:
 
-- **ai-sdk providers (anthropic / openai / ollama)** → `streamText` → `toUIMessageStreamResponse`,
-  with real token streaming; proposals ride to the client as message metadata on `finish`, and the
-  finished turn is persisted in `onFinish`.
-- **`claude-code` (subscription CLI)** → buffered `generateAiChat`, emitted as a single uniform UI
-  message stream (read-tool parts, then the answer, then the proposal cards are **synthesised** so
-  the client stays uniform).
+- Every turn runs through the locally installed **Claude Code** CLI via the Claude Agent SDK
+  (`lib/claude-cli.ts`, `streamClaudeAgent`). Sable's ai-sdk tools are adapted 1:1 into an
+  in-process MCP server, so tool handlers keep direct DB access. All built-in Claude Code tools are
+  disabled (`tools: []`), project settings are not loaded, and sessions are not persisted to disk.
+- `lib/claude-agent-events.ts` maps the SDK's partial stream events to ai-sdk UI chunks **live**:
+  thinking → `reasoning-*`, each tool call → `tool-input-start/delta/available` while the model writes
+  it, each tool result → `tool-output-available`, and the text between steps → `text-*`. The chat
+  therefore shows the agentic loop step by step (reasoning and tool groups stay open while running).
+- `propose_*` tools return their proposal as the tool result, so approval cards appear inline the
+  moment the agent proposes. Staged upload ids are injected into `ticket.create`/`ticket.comment`
+  proposals **before** the tool runs (server-controlled — any model-supplied `attachmentIds` is
+  stripped).
+- When the run ends, the route emits the `cited_sources` part and the `proposals` metadata and
+  persists the assistant turn. A failure mid-run becomes a final `⚠️` text part.
 
-`lib/ai.ts` exposes the helpers the route needs: `currentProvider`, `resolveChatModel`,
-`chatMaxOutputTokens` (plus the existing `generateAiChat`).
+`lib/ai.ts` exposes `streamAiChat` (live chunks) next to `generateAiChat` / `generateAiText` /
+`generateAiObject`, which run the same harness to completion.
 
 > **Server actions.** `lib/actions/ai-assistant.ts` keeps the conversation/folder CRUD and
 > `applyAssistantProposal` (below). Its legacy `sendMessage` server action still exists but is
@@ -149,7 +157,7 @@ General scope (`lib/assistant-tools.ts` + `lib/ai-tools.ts`):
   [Artifacts & the canvas](#artifacts--the-canvas)).
 
 The web pages, KB articles and project files a turn grounded on are aggregated into a **"Sources"**
-row rendered under the answer (a synthetic `cited_sources` part on the claude-code path;
+row rendered under the answer (a synthetic `cited_sources` part emitted after the run;
 `SableSourcesCard`). Source URL schemes are validated (only `http(s)` / in-app relative paths).
 
 Admin scope adds (`lib/ai-admin-tools.ts`, `lib/ai-stats.ts`):
@@ -179,6 +187,7 @@ Coverage by module:
 | Knowledge base | `modules/knowledge.ts` | article create, set status, delete; `article.link` / `article.unlink` (attach to a ticket, problem or change by ref) |
 | Problems & Changes | `modules/problems-changes.ts` | problem/change create, update field, comment; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
+| Integrations | `modules/mcp.ts` | `mcp.call` — run a tool on a remote MCP server; never a model tool: the harness creates the proposal for `APPROVAL`-mode servers, and approving re-checks the server's config and the approver's role (see [Remote MCP servers](#remote-mcp-servers-libsable-mcpts-libsable-mcp-policyts)) |
 
 **Ticket to problem/change links.** `ticket.set_problem` and `ticket.set_change` (both `minRole` AGENT) take a
 ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. They reuse `setTicketProblem` /
@@ -285,25 +294,190 @@ extracted + indexed for retrieval and auto-tagged; office documents preview at h
 Configured via `AI_PROVIDER` (`lib/ai.ts`). Config resolves through `lib/settings` — a DB
 `AppSetting` row overrides `process.env` — so an admin can manage everything from the UI.
 
-| Provider | `AI_PROVIDER` | Runs | Key | Privacy gate | Default model |
+**Every provider runs through the local Claude Code CLI** (the `claude` binary must be installed on
+the server). The provider only decides which endpoint Claude Code talks to (`openClaudeBackend()`):
+
+| Provider | `AI_PROVIDER` | Claude Code talks to | Key | Privacy gate | Default model |
 | --- | --- | --- | --- | --- | --- |
-| **Ollama** | `ollama` | **Local, on-box** | none | not gated (self-authorized) | `OLLAMA_MODEL` (`llama3.1`) |
-| **Anthropic** | `anthropic` | External API | `ANTHROPIC_API_KEY` | **requires `AI_ALLOW_EXTERNAL=true`** | `claude-opus-4-8` |
-| **OpenAI-compatible** | `openai` | External API | `OPENAI_API_KEY` | **requires `AI_ALLOW_EXTERNAL=true`** | `gpt-4o` |
-| **Claude subscription** | `claude-code` | Local `claude` CLI | none (your login) | not gated (self-authorized) | CLI default |
+| **Ollama** | `ollama` | built-in proxy → `OLLAMA_BASE_URL` (**local, on-box**) | none | not gated (self-authorized) | `OLLAMA_MODEL` (`llama3.1`) |
+| **Anthropic** | `anthropic` | Anthropic API | `ANTHROPIC_API_KEY` | **requires `AI_ALLOW_EXTERNAL=true`** | `claude-sonnet-5` |
+| **OpenAI-compatible** | `openai` | built-in proxy → `OPENAI_BASE_URL` | `OPENAI_API_KEY` | **requires `AI_ALLOW_EXTERNAL=true`** | `gpt-4o` |
+| **Claude subscription** | `claude-code` | Anthropic, via your Pro/Max plan | `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) | not gated (self-authorized) | `sonnet` |
 
 - **Ollama** is a local, OpenAI-compatible endpoint — no key, data stays on the machine. This is
   the privacy-safe default and the recommended way to try Sable.
 - **OpenAI-compatible** works with any compatible cloud via `OPENAI_BASE_URL` (OpenAI, OpenRouter,
   Moonshot/Kimi, Zhipu/GLM, …); the model id comes from `AI_MODEL`.
-- **Claude subscription** (`claude-code`) drives the operator's own logged-in `claude` CLI (their
-  Pro/Max plan) through the Claude Agent SDK (`lib/claude-cli.ts`). Selecting it *is* the consent —
-  data does leave the box (to Anthropic), which the settings UI calls out. This path is **buffered**:
-  the streaming route synthesises the tool/answer/proposal parts so the client behaves identically.
+- **Claude subscription** (`claude-code`) uses the operator's Pro/Max plan. Because Sable runs in
+  its own isolated Claude Code instance (below), it cannot reuse an interactive `claude` login. The
+  **Connect Claude** dialog on Settings › Sable walks the admin through it: run
+  `npx -y @anthropic-ai/claude-code setup-token` (or `claude setup-token`) on **any** computer — the
+  token is bound to the Claude account, not the host — paste it, and Servio stores it encrypted,
+  switches the provider and runs a live test. The page's **Test connection** button does the same
+  round trip for any provider. Selecting it
+  *is* the consent — data does leave the box (to Anthropic), which the settings UI calls out.
+- The CLI subprocess gets an **allowlisted** environment (`lib/claude-env.ts`): only what a process
+  needs to run (`PATH`, home/profile and temp dirs, Windows system vars, locale, `TZ`, the
+  `HTTP(S)_PROXY`/`NO_PROXY` variables, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`) is inherited — none
+  of Servio's own configuration (`DATABASE_URL`, `AUTH_SECRET`, `SETTINGS_ENCRYPTION_KEY`, provider
+  keys, …). Only the selected provider's endpoint/credential is set on top; `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
+  keeps telemetry off; `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is only set when `AI_MAX_OUTPUT_TOKENS`
+  is a number, floored at 8192 because thinking shares the output budget. Blank / `auto` / `0`
+  (**Auto**, the default) leaves it unset, so Claude Code uses the model's own limit.
+- **Output-token cap for proxied models.** With Auto, Claude Code asks for the model's full
+  Anthropic output budget (32k+), which smaller OpenAI-compatible upstreams reject with a 400. The
+  proxy (`lib/llm-proxy/server.ts`, `token-cap.ts`) recognises that max-token error, parses the
+  stated limit (or falls back to 8192), retries the request **once** with it and remembers the cap
+  per upstream URL + model for an hour, clamping later requests (in memory). A stated cap below
+  1024 is treated as a misparse: the fallback is used and nothing is remembered.
+- **Thinking** is requested (adaptive, summarized) for Claude backends. Proxied models show their
+  reasoning when the upstream streams `reasoning_content`/`reasoning`.
+
+### Sable's isolated agent home (`sable/`, `lib/sable-workspace.ts`)
+
+Sable never runs inside the Servio repo or with the server operator's Claude configuration. On the
+first run per process, `ensureSableWorkspace()` prepares `SABLE_HOME` (default `~/.servio/sable`):
+
+- `config/` is Sable's own `CLAUDE_CONFIG_DIR`, holding only `CLAUDE.md` (the charter, copied from
+  `sable/AGENT.md`) and `skills/` (the **enabled** skills, see below). `workspace/` is an empty
+  working directory.
+- The harness loads **only that "user" tier** (`settingSources: ["user"]`). The project tier is off on
+  purpose: Claude Code's project lookup walks up parent directories, including their
+  `.claude/CLAUDE.md`, which under a home directory would pull in the operator's own instructions.
+- Auto-memory is disabled, `strictMcpConfig` keeps out host MCP servers and plugins, sessions are
+  not persisted, and the only built-in tool is `Skill` (`skills` lists Sable's own, hiding Claude
+  Code's bundled skills). Everything else is Servio's MCP tools.
+- **Portal runs** (`streamAiChat({ audience: "portal" })`, the self-service assistant) use
+  `ensurePortalWorkspace()` instead: their own **empty** config dir `config-portal/` (and
+  `workspace-portal/`), no `Skill` tool and `skills: []` — end users get neither the console charter
+  nor any skill. One-shot helpers (`generateAiText`/`generateAiObject`) keep the console scope.
+
+Verified by dumping the full request Claude Code sends upstream: it contains the system prompt,
+Sable's charter, the skill index and Servio's tools — no repo path, git state, memory, user
+instructions, account e-mail or foreign skills. (The path of Sable's own `CLAUDE.md` appears in
+the header; set `SABLE_HOME` outside the home directory if the OS user name must not show.)
+
+**Skills** (loaded on demand — the chat shows an "Applied skill" step) come from two sources and
+are managed under **Settings › Sable › Skills** (`components/settings/ai-skills-manager.tsx`,
+`lib/actions/sable-skills.ts`, ADMIN):
+
+- **Built-in** ITSM skills versioned in `sable/skills/<name>/SKILL.md`: `incident-triage`,
+  `major-incident`, `problem-management`, `change-management`, `knowledge-article`,
+  `customer-communication`, `queue-and-sla`, `service-request`. They can be disabled, not edited
+  or deleted; disabled names are stored in the `SABLE_DISABLED_SKILLS` setting (comma-separated).
+  The Docker image copies `sable/`.
+- **Custom** skills are `AiSkill` rows (`name` kebab-case and unique, must not collide with a
+  built-in, `description`, markdown `body`, `enabled`). Create, edit, delete, enable/disable, or
+  import an existing `SKILL.md` (frontmatter is parsed). Validation and the SKILL.md parse/render
+  live in `lib/sable-skills.ts`.
+
+`ensureSableWorkspace()` syncs built-in + enabled custom skills into `config/skills/` (each
+`SKILL.md` is written to a temp file and renamed, so a running agent never reads a half-written
+one); every skill action calls `invalidateSableWorkspace()`, so the **next agent run** re-syncs — no
+restart needed.
+
+### Remote MCP servers (`lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`)
+
+Admins can connect **remote** MCP servers (HTTP / SSE only — nothing runs on the Servio host) under
+**Settings › Sable › MCP servers** (`components/settings/ai-mcp-manager.tsx`,
+`lib/actions/sable-mcp.ts`, ADMIN). Each `AiMcpServer` has a slug `name` (the model sees its tools
+as `mcp__<name>__<tool>`; `servio` is reserved), `url`, `transport`, optional **headers**
+(e.g. `Authorization`, stored **encrypted**; a blank value on edit keeps the stored one — but only
+while the URL keeps the same origin: pointing a server at another scheme/host/port requires
+re-entering every header value), a `mode`, a `minRole` (`AGENT`/`MANAGER`/`ADMIN`) and `enabled`.
+**Test** connects and lists the server's tools.
+
+- **Addresses.** `https://` only — plain `http://` is allowed for `localhost`/`127.0.0.1`/`[::1]`.
+  Link-local and cloud-metadata hosts (`169.254.0.0/16`, `fe80::/10`, IPv4-mapped `169.254.x.x`,
+  `metadata.google.internal`, `fd00:ec2::254`) are refused. Hostnames are not resolved, so a DNS name
+  that points at such an address is not caught.
+- **No `$`.** Claude Code expands `${VAR}` in a remote server's URL and header values from its own
+  environment (verified for both the `--mcp-config` and the `setMcpServers` path), which would let a
+  server config exfiltrate host secrets. The form rejects `$` in the URL and in header names/values,
+  and the same check (`remoteServerProblem`) runs again on every stored row before Servio or the CLI
+  connects (a hand-edited row is left out with a warning). The CLI env is also allowlisted (above),
+  so nothing secret is there to expand.
+
+| Mode | Behaviour |
+| --- | --- |
+| `READ_ONLY` | Only tools with the MCP `readOnlyHint` annotation run; the rest are hidden from the model |
+| `APPROVAL` (default) | Read-only tools run; any other call becomes an approve-first `mcp.call` proposal card |
+| `TRUSTED` | Every tool runs directly (still shown live in the chat) |
+
+- **Gating.** Servers are only offered when `AI_ALLOW_EXTERNAL=true` (a server is an external
+  destination), only in the **console** chat (`app/api/assistant/chat/route.ts` →
+  `resolveRemoteMcp(role)`), and only to users at or above the server's `minRole`. The **portal
+  assistant never gets MCP servers**.
+- **Approval flow.** In `APPROVAL` mode the harness's permission callback denies the call to the
+  model ("not executed, waiting for approval") and records an `mcp.call` proposal
+  (`lib/ai-operations/modules/mcp.ts`), which the chat renders as a card (`sable-tool-ui.tsx`;
+  `lib/claude-agent-events.ts` swaps the denial for the proposal). The proposal pins the server by
+  **id and name** (`args.serverId` + `args.server`). Approving runs `executeApprovedMcpCall`, which
+  **re-checks** the privacy gate, that this very server (same id AND name) still exists, is enabled
+  and not `READ_ONLY`, and the approver's current role against `minRole`
+  (`approvedCallProblem`), then writes an `AuditLog` row for every call that reached the server —
+  successful or failed (`meta.outcome`).
+- **Cards only from the harness.** A remote tool's real output is shown as **plain text** — the event
+  mapper never JSON-parses it — so the only object a remote call's output can be is the harness's
+  substitute for an intercepted call; that one must still be the `mcp.call` proposal for that exact
+  call to show a card.
+- **Tool names.** Tools whose names don't match `[A-Za-z0-9_.-]{1,64}` are hidden and denied, and
+  when two names collide after Claude Code's sanitising (`issue.get` vs `issue_get`) **both** are
+  dropped, so neither can run under the other's policy.
+- **Header secrets stay off the command line.** The SDK would hand `options.mcpServers` to the CLI as
+  a `--mcp-config` argument — visible to anyone who can list processes on the host. Servio instead
+  registers remote servers over the SDK control channel (`query.setMcpServers`, stdin) and holds the
+  prompt back until they are connected (`lib/claude-cli.ts`, `connectRemoteServers`). Verified: the
+  CLI's command line carries neither `--mcp-config` nor the header value.
+- **Known gap: replay.** `applyAssistantProposal` takes the proposal from the client, so an
+  `mcp.call` can be approved again (or one composed by hand) by a user who meets the server's
+  `minRole`; every run is audited. Binding approval to the persisted proposal is open.
+- **Trust caveat.** "Read-only" comes from the server's own `readOnlyHint`; Servio cannot verify
+  it. Use `READ_ONLY`/`APPROVAL` only for servers you trust to annotate honestly, and `TRUSTED`
+  sparingly.
+- **Reload.** Tool lists are discovered per chat turn and cached for 5 minutes per server version
+  (saving or deleting a server drops its entry at once). All of a turn's discovery shares one
+  **5 s deadline**; a slower or unreachable server is left out of that turn, and a failed discovery is
+  not retried for 60 s. A server listing more than **128 tools** is left out (warning in the log);
+  descriptions in Servio's copy are cut at 1 KB (the CLI lists the tools itself for the model).
+  Changes apply to the next message — no restart.
+
+### Settings page (`/settings/ai`, ADMIN)
+
+`app/(console)/settings/ai/page.tsx` loads the values and `components/settings/ai-settings-form.tsx`
+renders them:
+
+- A **status card** (configured or not) with a **Test connection** button that runs a live round trip
+  for the saved provider (`testAiConnection`).
+- **Provider tiles**, then per-provider fields (keys, Ollama URL/model); the **Connect Claude** dialog
+  (`claude-connect-dialog.tsx`) for the subscription token.
+- **Model dropdown** (`ModelField`): `listAiModels(provider)` (`lib/actions/settings.ts`, ADMIN) calls
+  `listModels` in `lib/ai-models.ts` with the **saved** credentials — Anthropic `/v1/models`, the
+  OpenAI-compatible and Ollama model endpoints, or the Claude Code CLI itself for the subscription.
+  It never throws: on failure (or no saved key yet) it shows the error, with a static Claude fallback
+  list where useful, and a model id can always be typed by hand. A refresh button reloads it. For the
+  external providers (Anthropic, OpenAI-compatible) nothing is fetched while `AI_ALLOW_EXTERNAL` is
+  off — the saved key never leaves the box just to fill a dropdown.
+- **Max output tokens** (blank = Auto), privacy and behaviour switches, then the **Skills** and
+  **MCP servers** managers described above.
+
+### The built-in LLM proxy (`lib/llm-proxy/`)
+
+Claude Code only speaks the Anthropic Messages API, so `openai`/`ollama` go through a small
+translation proxy that starts **automatically** inside the Servio process on first use:
+
+- Binds `127.0.0.1` on a random port (a `globalThis` singleton, survives dev HMR, `unref()`ed).
+- Each run **leases** a route: a random per-run token (passed to the CLI as `ANTHROPIC_AUTH_TOKEN`)
+  mapped to the upstream URL, key and model. The upstream API key never leaves the Node process;
+  the lease is released when the run ends.
+- `POST /v1/messages` (streaming and non-streaming) and `POST /v1/messages/count_tokens`;
+  `translate.ts` converts system blocks, images, tool use/results, tool choice and stop reasons, and
+  turns OpenAI SSE chunks (text, `reasoning_content`, fragmented tool-call arguments, usage) into the
+  exact Anthropic event sequence. The upstream model is always the configured one.
 
 ### The privacy gate
 
-`AI_ALLOW_EXTERNAL` is a hard backstop. When it is not exactly `"true"`, `assertPrivacy()` in
+`AI_ALLOW_EXTERNAL` is a hard backstop (it also gates remote MCP servers). When it is not exactly `"true"`, `assertPrivacy()` in
 `lib/ai.ts` **throws before any network call** for a non-local provider — so a misconfiguration
 can never send ticket data off-box. Local (`ollama`) and subscription (`claude-code`) providers
 authorize themselves and are not subject to the gate.
@@ -328,8 +502,8 @@ All keys are read through `lib/settings` (DB overrides `.env`); secrets are encr
 | --- | --- | --- |
 | `AI_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `ollama` \| `claude-code` |
 | `AI_ALLOW_EXTERNAL` | `false` | Privacy gate — must be `true` to use anthropic/openai |
-| `AI_MODEL` | provider default | Explicit model id (blank = provider default) |
-| `AI_MAX_OUTPUT_TOKENS` | `1024` | Output token cap |
+| `AI_MODEL` | provider default | Explicit model id (blank = provider default); the settings page offers a live dropdown |
+| `AI_MAX_OUTPUT_TOKENS` | blank (Auto) | Output token cap; blank / `auto` / `0` = model default, a number is floored at 8192 |
 | `AI_TEASER` | `false` | Show AI buttons as a preview when AI is off |
 | `ANTHROPIC_API_KEY` | — | Anthropic key (external; needs the gate) |
 | `OPENAI_API_KEY` | — | OpenAI key (external; needs the gate) |
@@ -413,9 +587,9 @@ USER-scoped, confirm-to-create variant of the console thread.
   Portal/Sable tickets carry `source: "SABLE"` — a neutral "Sable" badge (`SOURCE_META.SABLE`, whose
   label reads from `AI_ASSISTANT_NAME`).
 - **Attachments & vision:** the widget stages files (images / PDF / …, incl. `.eml`) and sends the
-  current turn to a vision-capable model; anything attached is linked onto the ticket Sable opens. On
-  the `claude-code` backend images are passed as real Anthropic content blocks
-  (`lib/claude-cli.ts`) instead of being flattened to text.
+  current turn to a vision-capable model; anything attached is linked onto the ticket Sable opens. Images
+  are passed to Claude Code as real Anthropic content blocks (`lib/claude-cli.ts`) instead of being
+  flattened to text; the built-in proxy forwards them as `image_url` parts to OpenAI-compatible models.
 
 The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
 **service team → category team → Service Desk triage**, runs automations, then auto-assigns; free-form
@@ -457,12 +631,13 @@ Headings use local Manrope; body text remains Inter. See
 | Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) |
 | Shared pre-model core | `lib/assistant-core.ts` (identity, `prepareAssistantTurn`, prompts, proposals, uploads) |
 | Server actions | `lib/actions/ai-assistant.ts` (conversation + folder CRUD, `applyAssistantProposal`; shared types) |
-| Provider layer | `lib/ai.ts` (config, gate, `currentProvider`/`resolveChatModel`/`chatMaxOutputTokens`, `generateAi*`), `lib/claude-cli.ts` (Agent SDK adapter) |
+| Provider layer | `lib/ai.ts` (config, gate, `openClaudeBackend`, `streamAiChat`, `generateAi*`), `lib/ai-models.ts` (model lists for the settings dropdown), `lib/claude-cli.ts` (Claude Code harness; `remoteMcp`, `audience`), `lib/claude-env.ts` (allowlisted CLI env), `lib/claude-agent-events.ts` (SDK events → live UI chunks), `lib/llm-proxy/{server,translate,token-cap}.ts` (built-in Anthropic⇄OpenAI proxy) |
+| Skills & MCP | `lib/sable-skills.ts`, `lib/sable-workspace.ts`, `lib/actions/sable-skills.ts`, `lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`, `lib/actions/sable-mcp.ts`, `lib/ai-operations/modules/mcp.ts` |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
 | Portal | `components/portal/sable-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
-| Settings UI | `app/(console)/settings/ai/page.tsx` (provider, model, web-search keys), `app/(console)/settings/uploads/page.tsx` (`GOTENBERG_URL`) |
-| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |
+| Settings UI | `app/(console)/settings/ai/page.tsx` + `components/settings/{ai-settings-form,claude-connect-dialog,ai-skills-manager,ai-mcp-manager}.tsx` (provider, model, web-search keys, skills, MCP servers), `app/(console)/settings/uploads/page.tsx` (`GOTENBERG_URL`) |
+| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`; `AiSkill`, `AiMcpServer`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |
 
 ---
 

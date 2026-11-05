@@ -10,6 +10,7 @@ import {
   FolderSearch,
   Files,
   Globe,
+  GraduationCap,
   Link2,
   Search,
   Settings2,
@@ -56,6 +57,8 @@ const TOOLS: Record<string, Meta> = {
   web_search: { icon: Globe, label: (a) => `Searched the web${suffix(a, "query")}` },
   fetch_url: { icon: Link2, label: () => "Read a web page" },
   draft_document: { icon: FilePen, label: (a) => `Drafted a document${suffix(a, "title")}` },
+  // Sable loading one of its ITSM skills (sable/skills) in the Claude Code harness
+  use_skill: { icon: GraduationCap, label: (a) => `Applied skill${suffix(a, "skill")}` },
 
   // Project library (Sable Projects)
   project_search_files: { icon: FolderSearch, label: (a) => `Searched the project files${suffix(a, "query")}` },

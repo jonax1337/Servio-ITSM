@@ -59,6 +59,7 @@ import {
 import {
   createContext,
   useContext,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -390,6 +391,25 @@ const WorkingIndicator: FC = () => {
   );
 };
 
+/**
+ * A group of tool calls that stays OPEN while the agent is working, so each
+ * call and its result are visible live, then folds back to "N tool calls" when
+ * the turn moves on — mirroring the reasoning disclosure. A manual toggle wins.
+ */
+const LiveToolGroup: FC<PropsWithChildren<{ count: number; running: boolean }>> = ({
+  count,
+  running,
+  children,
+}) => {
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  return (
+    <ToolGroupRoot variant="ghost" open={userOpen ?? running} onOpenChange={setUserOpen}>
+      <ToolGroupTrigger count={count} active={running} />
+      <ToolGroupContent>{children}</ToolGroupContent>
+    </ToolGroupRoot>
+  );
+};
+
 const AssistantMessage: FC = () => {
   const {
     ToolFallback: ToolFallbackComponent = ToolFallback,
@@ -421,13 +441,12 @@ const AssistantMessage: FC = () => {
                   return <ToolGroup group={part}>{children}</ToolGroup>;
                 }
                 return (
-                  <ToolGroupRoot variant="ghost">
-                    <ToolGroupTrigger
-                      count={part.indices.length}
-                      active={part.status.type === "running"}
-                    />
-                    <ToolGroupContent>{children}</ToolGroupContent>
-                  </ToolGroupRoot>
+                  <LiveToolGroup
+                    count={part.indices.length}
+                    running={part.status.type === "running"}
+                  >
+                    {children}
+                  </LiveToolGroup>
                 );
               case "group-reasoning": {
                 if (ReasoningGroup) {

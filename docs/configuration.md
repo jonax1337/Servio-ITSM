@@ -54,8 +54,10 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. [`../lib/files.ts`](../lib/files.ts) derives `MAX_UPLOAD_BYTES` from it. |
 | `AI_PROVIDER` | No | `anthropic` | Sable's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Sable)](#ai-service-agent-sable). |
 | `AI_ALLOW_EXTERNAL` | No | `false` | **Privacy gate.** Must be exactly `"true"` to allow an external provider (`anthropic`/`openai`); `ollama`/`claude-code` are not gated. |
-| `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-opus-4-8` / `gpt-4o` / `$OLLAMA_MODEL`. |
-| `AI_MAX_OUTPUT_TOKENS` | No | `1024` | Cap on AI output tokens per call. |
+| `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-sonnet-5` / `gpt-4o` / `$OLLAMA_MODEL` / `sonnet` (claude-code). |
+| `AI_MAX_OUTPUT_TOKENS` | No | blank (Auto) | Cap on AI output tokens per call. Blank / `auto` / `0` uses the model's own limit (proxied OpenAI-compatible models learn their cap from the upstream's error); a number is raised to at least 8192 (thinking shares the budget). |
+| `CLAUDE_CODE_OAUTH_TOKEN` | For `claude-code` | — | Long-lived Claude subscription token from `claude setup-token` (Sable's isolated instance can't use an interactive login). Encrypted when set in the UI. |
+| `SABLE_HOME` | No | `~/.servio/sable` | Sable's isolated agent home: its own Claude config dir (charter + built-in ITSM skills from `sable/` plus custom skills managed in Settings › Sable) and an empty working dir. |
 | `AI_TEASER` | No | `false` | When AI is **off**, still show the AI buttons as a disabled preview (a "ask your admin" nudge). |
 | `AI_TICKET_TRIAGE` | No | `true` | Show Sable's inline triage suggestions (priority/type/team/category) when an agent opens a ticket. Turn off to hide them; chat and request handling stay on. |
 | `ANTHROPIC_API_KEY` | No | — | Anthropic key. Secret — encrypted at rest when set via Settings. Only used when `AI_PROVIDER=anthropic` **and** the gate is open. |

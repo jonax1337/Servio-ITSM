@@ -268,8 +268,7 @@ const SHARED_READ_TOOLS = {
 /**
  * Full tool set for a specific signed-in user. `attachments` (the current turn's
  * inline files) are closed into the propose_* tools so their result carries the
- * files for the confirm card to link — works for the streaming ai-sdk providers;
- * the buffered claude-code path injects the same attachments itself.
+ * files for the confirm card to link.
  */
 export function buildPortalTools(userId: string, attachments: ProposalAttachment[] = []) {
   return {
@@ -280,19 +279,6 @@ export function buildPortalTools(userId: string, attachments: ProposalAttachment
     list_my_tickets: myTicketsTool(userId),
     get_my_ticket: myTicketTool(userId),
   };
-}
-
-/** Reconstruct a portal proposal from a propose_* tool call (for the buffered
- *  claude-code path, which doesn't surface tool outputs). */
-export async function portalProposalForTool(
-  userId: string,
-  toolName: string,
-  input: unknown,
-): Promise<RequestProposal | null> {
-  if (toolName === "propose_request") return buildTicketProposal(input);
-  if (toolName === "propose_service_request") return buildServiceProposal(input);
-  if (toolName === "propose_reply") return buildCommentProposal(userId, input);
-  return null;
 }
 
 export const SYSTEM_PROMPT = `You are ${AI_ASSISTANT_NAME}, the friendly assistant in the Servio Help Center. You help employees and customers get unblocked quickly, and you can act on their behalf.
