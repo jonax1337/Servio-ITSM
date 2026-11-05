@@ -13,36 +13,16 @@ import {
   SableTicketCard,
   type Citation,
 } from "./sable-read-cards";
-import type { AssistantProposal } from "@/lib/actions/ai-assistant";
+import { toast } from "sonner";
+import { dismissAssistantProposal, type AssistantProposal } from "@/lib/actions/ai-assistant";
 import { parseRemoteToolName } from "@/lib/claude-agent-events";
 import { approvalCardProposal, mcpCallLabel } from "@/lib/sable-mcp-policy";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
 export const SableConversationContext = createContext<string>("");
 
-/* ── Persist approve/dismiss so a proposal can't be re-approved after the thread
- *    re-hydrates (assistant-ui re-renders the tool part as a fresh "idle"). ── */
-
-type Persisted = "applied" | "dismissed";
-
-function propKey(conversationId: string, p: AssistantProposal): string {
-  return `sable:prop:${conversationId}::${p.operationId}::${JSON.stringify(p.args)}`;
-}
-function readState(key: string): Persisted | null {
-  try {
-    const v = window.localStorage.getItem(key);
-    return v === "applied" || v === "dismissed" ? v : null;
-  } catch {
-    return null;
-  }
-}
-function writeState(key: string, v: Persisted) {
-  try {
-    window.localStorage.setItem(key, v);
-  } catch {
-    /* ignore */
-  }
-}
+/** Tool name of an approval card rebuilt from a reloaded transcript (sable-thread hydrate). */
+export const RESTORED_PROPOSAL_TOOL = "propose_restored";
 
 /**
  * Tool UI for the assistant-ui thread: renders Sable's approve-first
@@ -59,7 +39,7 @@ export const SableToolUI: ToolCallMessagePartComponent = (props) => {
     return props.result ? <SableSourcesCard result={props.result} /> : null;
   }
   const proposal = approvalCardProposal(props.toolName, props.result);
-  if (proposal) return <ProposalTool proposal={proposal} />;
+  if (proposal) return <ProposalTool proposal={{ ...proposal, toolCallId: proposal.toolCallId ?? props.toolCallId }} />;
   // A propose_* still running / not yet resolved — render nothing (no ugly generic card).
   if (props.toolName.startsWith("propose_")) return null;
   const remote = parseRemoteToolName(props.toolName);
@@ -140,17 +120,21 @@ function knowledgeCitations(result: unknown): Citation[] {
   return out;
 }
 
+/** The card's starting state: the decision a reloaded transcript carries, else pending. */
+function initialStatus(proposal: AssistantProposal): ProposalStatus {
+  if (proposal.decision?.status === "applied") return { status: "applied", msg: proposal.decision.summary ?? "Applied" };
+  if (proposal.decision?.status === "dismissed") return { status: "dismissed" };
+  if (proposal.decision?.status === "unconfirmed") {
+    return { status: "error", msg: "Applying this did not confirm. Check the record before asking Sable again." };
+  }
+  return { status: "idle" };
+}
+
 function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
   const conversationId = useContext(SableConversationContext);
-  const key = propKey(conversationId, proposal);
-  const [status, setStatus] = useState<ProposalStatus>(() => {
-    const s = readState(key);
-    if (s === "applied") return { status: "applied", msg: "Applied" };
-    if (s === "dismissed") return { status: "dismissed" };
-    return { status: "idle" };
-  });
+  const [status, setStatus] = useState<ProposalStatus>(() => initialStatus(proposal));
 
-  // Once dismissed, it's gone for good.
+  // Once dismissed, it's gone for good (the server remembers it across reloads).
   if (status.status === "dismissed") return null;
 
   return (
@@ -159,9 +143,14 @@ function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
       proposal={proposal}
       status={status}
       onStatusChange={(next) => {
-        setStatus(next);
-        if (next.status === "applied") writeState(key, "applied");
-        else if (next.status === "dismissed") writeState(key, "dismissed");
+        if (next.status !== "dismissed") {
+          setStatus(next);
+          return;
+        }
+        void dismissAssistantProposal({ conversationId, proposal }).then((res) => {
+          if (res.ok) setStatus(next);
+          else toast.error(res.error ?? "Could not dismiss");
+        });
       }}
     />
   );

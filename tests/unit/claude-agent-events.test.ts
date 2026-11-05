@@ -173,7 +173,7 @@ describe("AgentTranscript", () => {
 
     expect(transcript.text).toBe("Looking it up.\n\nIt is INC-42.");
     expect(transcript.reasoning).toBe("Need the ticket.");
-    expect(transcript.toolCalls).toEqual([{ name: "get_ticket", input: { id: 42 } }]);
+    expect(transcript.toolCalls).toEqual([{ id: "toolu_1", name: "get_ticket", input: { id: 42 } }]);
     expect(transcript.toolResults).toEqual([{ name: "get_ticket", output: { ref: "INC-42" } }]);
   });
 

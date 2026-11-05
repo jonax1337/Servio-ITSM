@@ -218,7 +218,7 @@ export function createRemoteMcpRun(
       const decision = decideRemoteToolUse(plan, toolName, input, toolUseID);
       if (decision.behavior === "allow") return { behavior: "allow", updatedInput: input };
       if (decision.behavior === "deny") return { behavior: "deny", message: decision.message };
-      proposals.set(toolUseID, decision.proposal);
+      proposals.set(toolUseID, { ...decision.proposal, toolCallId: toolUseID });
       return { behavior: "deny", message: PROPOSED_MESSAGE };
     },
     interceptedResult: (toolCallId) => {

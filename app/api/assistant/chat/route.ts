@@ -190,7 +190,8 @@ async function persistAssistant(
       content: answer,
       html,
       toolCalls: JSON.stringify(rawToolCalls),
-      proposals: proposals.length ? JSON.stringify(proposals) : null,
+      // decisionTracked: applies to this proposal are recorded, so a reload may offer it again.
+      proposals: proposals.length ? JSON.stringify(proposals.map((p) => ({ ...p, decisionTracked: true }))) : null,
     },
   });
   // Bump updatedAt so the rail re-sorts this conversation to the top.

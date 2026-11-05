@@ -439,6 +439,8 @@ function SableCanvasPublish({ title, html }: { title: string; html: string }) {
       operationId: "article.create",
       args: { title, body: html, visibility: "INTERNAL" },
       label: `Create article “${title}”`,
+      // One id per shown draft: a double click applies once, publishing a new draft applies again.
+      toolCallId: `canvas-${crypto.randomUUID()}`,
     }),
     [title, html],
   );

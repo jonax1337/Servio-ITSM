@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { inlineBadgeMeta, recordRefHref } from "@/lib/inline-badge";
+import { inlineBadgeMeta, recordRefHref, remarkStateBadges } from "@/lib/inline-badge";
 import {
   APPROVAL_META,
   CHANGE_STATUS_META,
   CHANGE_TYPE_META,
   PRIORITY_META,
+  SLA_STATE_META,
   TICKET_STATUS_META,
   TICKET_TYPE_META,
 } from "@/lib/constants";
@@ -52,5 +53,47 @@ describe("recordRefHref", () => {
     expect(recordRefHref("INC-0142 and more")).toBeNull();
     expect(recordRefHref("KB-12")).toBeNull();
     expect(recordRefHref("status:OPEN")).toBeNull();
+  });
+});
+
+describe("remarkStateBadges", () => {
+  type Node = { type: string; value?: string; children?: Node[] };
+  const paragraph = (...children: Node[]): Node => ({ type: "root", children: [{ type: "paragraph", children }] });
+  const run = (tree: Node) => {
+    remarkStateBadges()(tree);
+    return tree.children![0].children!;
+  };
+
+  it("turns a bare upper-case state in prose into a badge token", () => {
+    expect(run(paragraph({ type: "text", value: "Typ: NORMAL, Risiko MEDIUM." }))).toEqual([
+      { type: "text", value: "Typ: " },
+      { type: "inlineCode", value: "state:NORMAL" },
+      { type: "text", value: ", Risiko " },
+      { type: "inlineCode", value: "state:MEDIUM" },
+      { type: "text", value: "." },
+    ]);
+  });
+
+  it("resolves the badge token to the matching tone badge", () => {
+    expect(inlineBadgeMeta("state:BREACHED")).toBe(SLA_STATE_META.BREACHED);
+    expect(inlineBadgeMeta("state:IN_PROGRESS")).toBe(TICKET_STATUS_META.IN_PROGRESS);
+  });
+
+  it("leaves lower-case words, refs, acronyms and English look-alikes alone", () => {
+    const text = "Medium risk, INC-0142, VPN and CU, NONE MET";
+    expect(run(paragraph({ type: "text", value: text }))).toEqual([{ type: "text", value: text }]);
+  });
+
+  it("leaves shouted phrases and headings alone", () => {
+    const shouted = "REQUEST FAILED after retry";
+    expect(run(paragraph({ type: "text", value: shouted }))).toEqual([{ type: "text", value: shouted }]);
+    const heading: Node = { type: "heading", children: [{ type: "text", value: "OPEN items" }] };
+    expect(run(paragraph(heading))).toEqual([heading]);
+  });
+
+  it("never rewrites code or link text", () => {
+    const link: Node = { type: "link", children: [{ type: "text", value: "OPEN" }] };
+    const code: Node = { type: "inlineCode", value: "OPEN" };
+    expect(run(paragraph(link, code))).toEqual([link, code]);
   });
 });

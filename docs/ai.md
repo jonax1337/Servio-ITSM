@@ -75,8 +75,8 @@ Sable's chat UI is built on **[assistant-ui](https://www.assistant-ui.com/)** �
 - `components/assistant/sable-tool-ui.tsx` is the thread's `ToolFallback`: it renders read-tool
   activity via the default `ToolFallback`, and for `propose_*` write tools it renders the
   approve-first `ProposalCard` (the proposal arrives as the tool's **result**). Approve/dismiss is
-  persisted in `localStorage` (keyed `sable:prop:…`) so a proposal can't be re-approved after the
-  thread re-hydrates.
+  recorded server-side per proposal (`AiProposalDecision`), so a reloaded chat shows each card as
+  pending, applied or gone.
 
 `components/assistant/sable-window.tsx` frames the thread (header + the max-state rail) and keeps a
 single `<SableThread>` mounted across the min↔max morph so an in-flight stream is never lost.
@@ -252,8 +252,16 @@ Nothing Sable "decides" to change is applied automatically. The path is:
 
 Client-supplied args are never trusted: they are re-validated at apply time. The underlying
 mutation writes its own audit trail, so AI-driven changes are indistinguishable from — and as
-accountable as — manual ones. Approve/dismiss state is remembered per proposal in `localStorage`
-so a card can't be re-approved after the thread re-renders.
+accountable as — manual ones. Each decision is recorded in
+`AiProposalDecision` (`lib/ai-proposal-decisions.ts`), keyed by the tool call that made the
+proposal plus a signature of its operation and parsed args. Approve first **claims** that key (a
+unique row, with a token), so a proposal is applied at most once across double clicks, tabs and
+reloads; re-approving an applied one returns its original result. An apply whose result was never
+recorded stays claimed and shows as unconfirmed rather than offering Approve again. When the client
+sends the id of a stored proposal, the server applies the stored args, not the client's; other args
+are still re-validated and re-checked against the role. Asking for the same change again later is a
+new tool call and therefore a new proposal (the canvas "Save as KB article" mints one per draft). Proposals stored before decisions were
+recorded (no `decisionTracked` / `toolCallId`) are not offered again on reload.
 
 Content-heavy proposals (a KB-article body, a long comment/description) get a **"Preview"** on the
 card that opens the full body read-only in the canvas.
@@ -546,6 +554,9 @@ Chats are saved per user (base migration
   `(userId, archived, updatedAt)` so the left rail sorts newest-first.
 - **`AiMessage`** — one turn: `role` (`user`/`assistant`), `content`, sanitized `html`,
   `toolCalls` (JSON), and `proposals` (JSON). Cascades with its conversation.
+- **`AiProposalDecision`** — the user's decision on one proposal: `proposalKey` (unique per
+  conversation), `status` (`APPLYING`/`APPLIED`/`DISMISSED`), `claimId`, `summary`. Cascades with
+  its conversation.
 - **`AiFolder`** — a per-user folder (`id`, `userId`, `name`, timestamps). Deleting a folder just
   **un-groups** its chats (`AiConversation.folderId` is `onDelete: SetNull`) — it never deletes
   conversations. `folderId` is indexed.
@@ -644,7 +655,7 @@ Headings use local Manrope; body text remains Inter. See
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
 | Portal | `components/portal/sable-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
 | Settings UI | `app/(console)/settings/ai/page.tsx` + `components/settings/{ai-settings-form,claude-connect-dialog,ai-skills-manager,ai-mcp-manager}.tsx` (provider, model, web-search keys, skills, MCP servers), `app/(console)/settings/uploads/page.tsx` (`GOTENBERG_URL`) |
-| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiFolder`; `AiSkill`, `AiMcpServer`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |
+| Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiProposalDecision`, `AiFolder`; `AiSkill`, `AiMcpServer`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |
 
 ---
 

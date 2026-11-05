@@ -38,11 +38,14 @@ const humanizeKey = (key: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+const displayValue = (v: unknown): string =>
+  typeof v === "string" ? v : typeof v === "boolean" ? (v ? "Yes" : "No") : JSON.stringify(v);
+
 /** The proposal's arguments that will actually be written, as [key, value] rows. */
 function visibleArgs(p: AssistantProposal): [string, string][] {
   return Object.entries(p.args ?? {})
     .filter(([k, v]) => !HIDDEN_ARGS.has(k) && v !== undefined && v !== null && String(v).trim() !== "")
-    .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)] as [string, string]);
+    .map(([k, v]) => [k, displayValue(v)] as [string, string]);
 }
 
 type Preview = { fields: string[]; text: string; isHtml: boolean };
@@ -121,13 +124,18 @@ export function ProposalCard({
   function approve() {
     onStatusChange({ status: "applying" });
     startApply(async () => {
-      const res = await applyAssistantProposal({ conversationId, proposal });
-      if (res.ok) {
-        onStatusChange({ status: "applied", msg: res.applied });
-        toast.success(res.applied ?? "Applied");
-      } else {
-        onStatusChange({ status: "error", msg: res.error });
-        toast.error(res.error ?? "Could not apply");
+      try {
+        const res = await applyAssistantProposal({ conversationId, proposal });
+        if (res.ok) {
+          onStatusChange({ status: "applied", msg: res.applied });
+          toast.success(res.applied ?? "Applied");
+        } else {
+          onStatusChange({ status: "error", msg: res.error });
+          toast.error(res.error ?? "Could not apply");
+        }
+      } catch {
+        onStatusChange({ status: "error", msg: "Could not reach the server. Check the record before retrying." });
+        toast.error("Could not apply");
       }
     });
   }

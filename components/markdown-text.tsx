@@ -15,14 +15,14 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { SyntaxHighlighter } from "@/components/shiki-highlighter";
 import { ToneBadge } from "@/components/status-badge";
-import { inlineBadgeMeta, recordRefHref } from "@/lib/inline-badge";
+import { inlineBadgeMeta, recordRefHref, remarkStateBadges } from "@/lib/inline-badge";
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkStateBadges]}
       className="aui-md"
       components={defaultComponents}
       defer

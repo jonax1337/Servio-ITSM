@@ -66,28 +66,30 @@ export function coerceScope(raw: string): AssistantScope {
 /**
  * Turn Sable's propose_* tool calls into approval cards. Each write tool maps (via
  * writeToolToOpId, built alongside the tools) to a registry operation id; we look
- * up the op to compute the card label. Deduped by operation + args.
+ * up the op to compute the card label. Only calls whose args pass the op's schema
+ * become proposals (the live tool refused the others, so no card was shown), and
+ * they keep the parsed args and their tool call id, exactly like the live card.
+ * Not deduped: every call is its own proposal with its own decision.
  */
 export function buildAssistantProposals(
-  toolCalls: { name: string; input: unknown }[],
+  toolCalls: { id?: string; name: string; input: unknown }[],
   writeToolToOpId: Map<string, string>,
 ): AssistantProposal[] {
   const out: AssistantProposal[] = [];
-  const seen = new Set<string>();
   toolCalls.forEach((tc, i) => {
     const operationId = writeToolToOpId.get(tc.name);
     if (!operationId) return;
     const op = findOperation(operationId);
     if (!op) return;
-    const args = (tc.input ?? {}) as Record<string, unknown>;
-    const sig = `${operationId}:${JSON.stringify(args)}`;
-    if (seen.has(sig)) return;
-    seen.add(sig);
+    const parsed = op.input.safeParse(tc.input ?? {});
+    if (!parsed.success) return;
+    const args = parsed.data as Record<string, unknown>;
     out.push({
       id: `pr${i}`,
       operationId,
       args,
       label: op.label ? op.label(args) : operationId,
+      ...(tc.id ? { toolCallId: tc.id } : {}),
     });
   });
   return out;

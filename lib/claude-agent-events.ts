@@ -303,7 +303,7 @@ function parseToolOutput(text: string): unknown {
  * thinking. One instance per run.
  */
 export class AgentTranscript {
-  readonly toolCalls: { name: string; input: unknown }[] = [];
+  readonly toolCalls: { id: string; name: string; input: unknown }[] = [];
   readonly toolResults: { name: string; output: unknown }[] = [];
   private readonly textParts: string[] = [];
   private readonly reasoningParts: string[] = [];
@@ -325,7 +325,7 @@ export class AgentTranscript {
         break;
       case "tool-input-available":
         this.toolNames.set(chunk.toolCallId, chunk.toolName);
-        this.toolCalls.push({ name: chunk.toolName, input: chunk.input });
+        this.toolCalls.push({ id: chunk.toolCallId, name: chunk.toolName, input: chunk.input });
         break;
       case "tool-output-available": {
         const name = this.toolNames.get(chunk.toolCallId);
