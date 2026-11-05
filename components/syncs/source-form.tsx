@@ -202,7 +202,7 @@ export function SyncSourceForm({
 
   return (
     <div className="grid max-w-2xl gap-4">
-      <form onSubmit={submit} className="grid gap-6 rounded-xl border bg-card p-5">
+      <form method="post" onSubmit={submit} className="grid gap-6 rounded-xl border bg-card p-5">
         {mode === "edit" && source ? <input type="hidden" name="id" value={source.id} /> : null}
 
         <div className="grid gap-4">

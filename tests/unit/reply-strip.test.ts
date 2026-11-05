@@ -80,6 +80,16 @@ describe("stripQuotedHtml", () => {
   });
 });
 
+describe("hostile input", () => {
+  it("handles a huge mail of quote lines and long attribution-like lines quickly", () => {
+    const lines = Array.from({ length: 50_000 }, (_, i) => (i % 2 ? "> quoted" : `On ${"1".repeat(400)} x`));
+    const started = Date.now();
+    stripQuotedText(`Reply\n${lines.join("\n")}`);
+    stripQuotedHtml(`<p>Reply</p>${"<div class='".repeat(20_000)}`);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
 describe("isForwardedSubject", () => {
   it("recognises forward prefixes in English and German", () => {
     for (const s of ["Fwd: x", "FW: x", "WG: x", "Weitergeleitet: x"]) expect(isForwardedSubject(s), s).toBe(true);

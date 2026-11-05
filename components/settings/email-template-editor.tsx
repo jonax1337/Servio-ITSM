@@ -74,7 +74,7 @@ export function EmailTemplateEditor({
         <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{templateKey}</code>
       </div>
 
-      <form onSubmit={submit} className="grid gap-3">
+      <form method="post" onSubmit={submit} className="grid gap-3">
         <input type="hidden" name="key" value={templateKey} />
 
         <label className="flex items-center justify-between gap-4">

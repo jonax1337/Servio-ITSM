@@ -18,33 +18,47 @@ const HEADER_TO_OR_SUBJECT = /^\s*(To|An|Cc|Subject|Betreff):\s.*$/i;
  *   "Am 05.11.2026 um 09:40 schrieb Servio <…>:"
  * Case-sensitive on purpose, so a German sentence like "am Montag schrieb mir…" never matches.
  */
-const ATTRIBUTION = /^\s*(On\s.*\d.*\swrote:|Am\s.*\d.*\sschrieb\s.+:)\s*$/;
+const ATTRIBUTION = /^\s*(On\s[^\n]{0,200}?\d[^\n]{0,200}?\swrote:|Am\s[^\n]{0,200}?\d[^\n]{0,200}?\sschrieb\s[^\n]{1,200}:)\s*$/;
 const QUOTED = /^\s*>/;
+/** Attribution/header lines are short; longer lines are never treated as one (bounds regex work). */
+const MAX_MARKER_LINE = 500;
+/** Bodies above this size are stored as-is rather than scanned (an inbound mail is attacker-controlled). */
+const MAX_STRIP_CHARS = 200_000;
 const FORWARDED_SUBJECT = /^\s*(fwd?|fw|wg|weitergeleitet)\s*:/i;
 
 export function isForwardedSubject(subject: string | null | undefined): boolean {
   return FORWARDED_SUBJECT.test(subject ?? "");
 }
 
-const onlyQuotedFrom = (lines: string[], i: number) => lines.slice(i).every((l) => QUOTED.test(l) || !l.trim());
+const isMarker = (re: RegExp, line: string | undefined) => !!line && line.length <= MAX_MARKER_LINE && re.test(line);
 
 const isOutlookHeader = (lines: string[], i: number) =>
-  HEADER_FROM.test(lines[i]) &&
-  HEADER_SENT.test(lines[i + 1] ?? "") &&
-  lines.slice(i + 2, i + 5).some((l) => HEADER_TO_OR_SUBJECT.test(l));
+  isMarker(HEADER_FROM, lines[i]) &&
+  isMarker(HEADER_SENT, lines[i + 1]) &&
+  lines.slice(i + 2, i + 5).some((l) => isMarker(HEADER_TO_OR_SUBJECT, l));
 
-function quotedHistoryStartsAt(lines: string[], i: number): boolean {
-  if (OUTLOOK_SEPARATOR.test(lines[i]) || isOutlookHeader(lines, i)) return true;
+/** quotedTail[i] — every line from i to the end is quoted or blank (one backward pass). */
+function quotedTailFlags(lines: string[]): boolean[] {
+  const flags = new Array<boolean>(lines.length + 1);
+  flags[lines.length] = true;
+  for (let i = lines.length - 1; i >= 0; i--) flags[i] = flags[i + 1] && (QUOTED.test(lines[i]) || !lines[i].trim());
+  return flags;
+}
+
+function quotedHistoryStartsAt(lines: string[], i: number, quotedTail: boolean[]): boolean {
+  if (isMarker(OUTLOOK_SEPARATOR, lines[i]) || isOutlookHeader(lines, i)) return true;
   // An attribution or a quote line only ends the reply when nothing but quoted
   // lines follows — interleaved ("inline") answers must survive.
-  if (ATTRIBUTION.test(lines[i])) return onlyQuotedFrom(lines, i + 1);
-  return QUOTED.test(lines[i]) && onlyQuotedFrom(lines, i);
+  if (isMarker(ATTRIBUTION, lines[i])) return quotedTail[i + 1];
+  return QUOTED.test(lines[i]) && quotedTail[i];
 }
 
 /** The reply text above the quoted history, trimmed. Falls back to the input when nothing would remain. */
 export function stripQuotedText(text: string): string {
-  const lines = (text ?? "").replace(/\r\n/g, "\n").split("\n");
-  const cut = lines.findIndex((_, i) => quotedHistoryStartsAt(lines, i));
+  if ((text ?? "").length > MAX_STRIP_CHARS) return text.trim();
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const quotedTail = quotedTailFlags(lines);
+  const cut = lines.findIndex((_, i) => quotedHistoryStartsAt(lines, i, quotedTail));
   if (cut <= 0) return text.trim();
   return lines.slice(0, cut).join("\n").trim() || text.trim();
 }
@@ -59,10 +73,14 @@ export function stripQuotedText(text: string): string {
  * sanitizing, and the result must still be sanitized by the caller.
  */
 export function stripQuotedHtml(html: string): string {
-  const outlookAt = html.search(/<div[^>]*id=["']?divRplyFwdMsg/i);
-  const out = (outlookAt >= 0 ? html.slice(0, outlookAt) : html)
-    .replace(/<div[^>]*class=["'][^"']*gmail_quote[^"']*["'][\s\S]*$/i, "")
-    .replace(/<blockquote[^>]*type=["']?cite["']?[\s\S]*$/i, "")
-    .trim();
-  return out || html;
+  if (html.length > MAX_STRIP_CHARS) return html;
+  // Bounded attribute scans keep the work linear on hostile markup.
+  const cutAt = (re: RegExp, s: string) => {
+    const at = s.search(re);
+    return at >= 0 ? s.slice(0, at) : s;
+  };
+  let out = cutAt(/<div[^>]{0,500}?id=["']?divRplyFwdMsg/i, html);
+  out = cutAt(/<div[^>]{0,500}?class=["'][^"'>]{0,300}?gmail_quote/i, out);
+  out = cutAt(/<blockquote[^>]{0,500}?type=["']?cite/i, out);
+  return out.trim() || html;
 }

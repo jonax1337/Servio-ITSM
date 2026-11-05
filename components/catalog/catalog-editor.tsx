@@ -78,7 +78,7 @@ export function CatalogEditor({
           <DialogDescription>What end users can request from the self-service catalog.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="grid gap-5">
+        <form method="post" onSubmit={submit} className="grid gap-5">
           {item ? <input type="hidden" name="id" value={item.id} /> : null}
           <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="categoryId" value={categoryId} />

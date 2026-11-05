@@ -54,7 +54,7 @@ export function AssetForm({ options }: { options: FormOptions }) {
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form method="post" onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {state.error}

@@ -59,7 +59,7 @@ export function TokenManager() {
         </Alert>
       ) : null}
 
-      <form ref={formRef} onSubmit={submit} className="grid gap-3">
+      <form ref={formRef} method="post" onSubmit={submit} className="grid gap-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid min-w-48 flex-1 gap-1.5">
             <Label htmlFor="token-name">Name</Label>

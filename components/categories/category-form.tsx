@@ -65,7 +65,7 @@ export function CategoryForm({
   const teamOpts: ComboOption[] = teams.map((t) => ({ value: t.id, label: t.name }));
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form method="post" onSubmit={submit} className="grid gap-5">
       {editing ? <input type="hidden" name="id" value={category.id} /> : null}
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

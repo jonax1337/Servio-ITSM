@@ -51,7 +51,7 @@ export function LoginForm({
         </>
       ) : null}
 
-      <form onSubmit={submit} className="grid gap-4">
+      <form method="post" onSubmit={submit} className="grid gap-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>

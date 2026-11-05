@@ -62,7 +62,7 @@ export function SettingsForm({
   }, [pending, state]);
 
   return (
-    <form onSubmit={submit} className="grid gap-5 rounded-xl border bg-card p-5">
+    <form method="post" onSubmit={submit} className="grid gap-5 rounded-xl border bg-card p-5">
       {fields.map((f) => (
         <div key={f.name} className="grid gap-1.5">
           {f.type === "switch" ? (

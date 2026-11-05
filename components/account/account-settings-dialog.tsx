@@ -90,6 +90,7 @@ export function AccountSettingsDialog({
         ) : (
           <form
             key={formKey}
+            method="post"
             onSubmit={submit}
             className="grid h-full min-h-0 sm:grid-cols-[190px_1fr]"
           >

@@ -47,7 +47,7 @@ export function ServiceRequestForm({
   const fe = state?.fieldErrors ?? {};
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form method="post" onSubmit={submit} className="grid gap-5">
       <input type="hidden" name="catalogItemId" value={serviceId} />
 
       {state?.error ? (

@@ -72,7 +72,7 @@ export function ArticleEditor({
   const categoryOpts = categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form method="post" onSubmit={submit} className="grid gap-5">
       {defaults.id ? <input type="hidden" name="id" value={defaults.id} /> : null}
 
       {state?.error ? (

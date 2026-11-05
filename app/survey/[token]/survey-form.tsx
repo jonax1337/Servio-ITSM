@@ -63,7 +63,7 @@ export function SurveyForm({ token }: { token: string }) {
   const active = hover || rating;
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form method="post" onSubmit={submit} className="grid gap-5">
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="rating" value={rating || ""} />
 
