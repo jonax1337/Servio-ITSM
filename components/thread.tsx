@@ -273,7 +273,7 @@ const ThreadWelcome: FC = () => {
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center gap-4 px-4 text-center">
       <SableMark className="size-12 text-sable" />
-      <div className="flex items-end gap-2 text-sable"><BrandName brand="sable" className="h-6" /><span className="text-xs text-muted-foreground">by Servio</span></div>
+      <div className="text-sable"><BrandName brand="sable" className="h-6" /></div>
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
         How can I help you today?
       </h1>

@@ -27,7 +27,7 @@ export function ApprovalProgress({
     <div className="mb-4 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Gauge className="size-4 text-indigo-500" />
+          <Gauge className="size-4 text-primary" />
           CAB decision rule
         </div>
         <div className="flex items-center gap-2">
@@ -52,7 +52,7 @@ export function ApprovalProgress({
       {/* Progress bar */}
       <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={tally.satisfied ? "h-full bg-emerald-500" : "h-full bg-indigo-500"}
+          className={tally.satisfied ? "h-full bg-emerald-500" : "h-full bg-primary"}
           style={{ width: `${pct}%` }}
         />
       </div>

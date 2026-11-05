@@ -58,7 +58,7 @@ export function SableFab({
         "transition-[transform,box-shadow] hover:scale-105 active:scale-95",
       )}
     >
-      <SableMark accent className="size-7" />
+      <SableMark className="size-7" />
       {beta ? (
         <span className="bg-background text-sable border-border absolute -right-1.5 -top-1.5 rounded-full border px-1 py-px text-[8px] font-semibold uppercase leading-none tracking-wide shadow-sm">
           Beta

@@ -340,8 +340,8 @@ export function CommentThread({
             />
           ) : null}
           {comments.map((c) => {
-            // FORWARD = an outbound "you forwarded this" entry (indigo). External =
-            // an internal reply that came in by email from a forwarded party (sky).
+            // FORWARD = an outbound "you forwarded this" entry (primary). External =
+            // an internal reply that came in by email from a forwarded party (Ice tint).
             // Both are distinct from a plain internal note (amber).
             const forwarded = c.channel === "FORWARD";
             const external = c.isInternal && !!c.fromEmail && !forwarded;
@@ -352,11 +352,11 @@ export function CommentThread({
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{c.author}</span>
                   {forwarded ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                       <Forward className="size-2.5" /> Forwarded
                     </span>
                   ) : external ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-brand-ice/20 px-1.5 py-0.5 text-[10px] font-medium text-sable">
                       <Forward className="size-2.5" /> External
                     </span>
                   ) : c.isInternal ? (
@@ -389,7 +389,7 @@ export function CommentThread({
                     {c.recipients.cc.length ? <span> · Cc: {c.recipients.cc.join(", ")}</span> : null}
                   </div>
                 ) : null}
-                <div className={`mt-1 rounded-lg border p-3 text-sm ${forwarded ? "border-indigo-500/20 bg-indigo-500/5" : external ? "border-sky-500/20 bg-sky-500/5" : c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
+                <div className={`mt-1 rounded-lg border p-3 text-sm ${forwarded ? "border-primary/20 bg-primary/5" : external ? "border-brand-ice/40 bg-brand-ice/10" : c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
                   {c.bodyHtml ? (
                     <div
                       className="prose prose-sm dark:prose-invert max-w-none [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"

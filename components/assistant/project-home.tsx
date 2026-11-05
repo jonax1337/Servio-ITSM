@@ -269,7 +269,7 @@ function LinkedRecords({
           {cur.ticket ? (
             <LinkedChip
               href={cur.ticket.href}
-              icon={<Ticket className="size-3.5 text-sky-500" />}
+              icon={<Ticket className="size-3.5 text-primary" />}
               label={cur.ticket.label}
               unlink={isOwner ? <UnlinkButton action={() => unbind("ticketId")} fields={{}} /> : undefined}
             />

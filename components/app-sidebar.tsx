@@ -42,9 +42,6 @@ export function AppSidebar({ role }: { role: string }) {
           <Logo />
           <div className="grid leading-none group-data-[collapsible=icon]:hidden">
             <BrandName brand="servio" className="h-4.5" />
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Open-Source ITSM
-            </span>
           </div>
         </Link>
       </SidebarHeader>

@@ -242,7 +242,7 @@ export default async function AssetDetailPage({
                     className="group flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
                     <Link href={`/assets/${r.targetId}`} className="flex min-w-0 flex-1 items-center gap-2">
-                      <HardDrive className="size-4 text-indigo-500" />
+                      <HardDrive className="size-4 text-primary" />
                       <span className="text-muted-foreground">This</span>
                       <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
                       <span className="font-medium">{r.target.name}</span>
@@ -256,7 +256,7 @@ export default async function AssetDetailPage({
                     className="group flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
                     <Link href={`/assets/${r.sourceId}`} className="flex min-w-0 flex-1 items-center gap-2">
-                      <HardDrive className="size-4 text-indigo-500" />
+                      <HardDrive className="size-4 text-primary" />
                       <span className="font-medium">{r.source.name}</span>
                       <ToneBadge meta={metaFor(ASSET_RELATION_META, r.type)} />
                       <span className="text-muted-foreground">this</span>

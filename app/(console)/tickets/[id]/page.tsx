@@ -616,7 +616,7 @@ export default async function TicketDetailPage({
         <RelatedArticlesCard className="mt-4" entityType="TICKET" entityId={ticket.id} />
       </aside>
 
-      {/* Onyx lives in the global window (FAB / SableProvider) — it detects this
+      {/* Sable lives in the global window (FAB / SableProvider) — it detects this
           ticket from the URL and opens the same assistant with ticket context. */}
     </div>
   );

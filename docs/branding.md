@@ -25,7 +25,7 @@ reconstructed vectors, including outlined wordmarks.
 | `Logo` in `components/brand.tsx` | Relay; Cobalt on light surfaces and white on dark |
 | `BrandName` in `components/brand.tsx` | Outlined wordmark for `brand="servio"` or `brand="sable"` |
 | `Wordmark` in `components/brand.tsx` | Servio symbol and wordmark, optional subtitle |
-| `SableMark` in `components/sable-mark.tsx` | Filled Nova Flow, inheriting colour; `accent` enables Cobalt/Ice; SVG attributes and forwarded SVG ref |
+| `SableMark` in `components/sable-mark.tsx` | Filled Nova Flow, inheriting colour; `accent` (opt-in) enables Cobalt/Ice, the floating launcher uses the monochrome mark (white on navy); the sidebar shows the Servio wordmark without a subtitle; SVG attributes and forwarded SVG ref |
 
 These components serve the sidebar, login, portal, Sable chat, launcher, inline
 AI controls, settings and command navigation. The assistant nav entry and

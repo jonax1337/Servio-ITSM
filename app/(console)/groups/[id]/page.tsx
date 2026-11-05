@@ -142,7 +142,7 @@ export default async function GroupDetailPage({
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
                           m.role === "LEAD"
-                            ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                            ? "border-primary/20 bg-primary/10 text-primary"
                             : "border-border bg-muted text-muted-foreground"
                         }`}
                       >

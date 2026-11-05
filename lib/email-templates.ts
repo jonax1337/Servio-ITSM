@@ -74,7 +74,7 @@ export function surveyCtaHtml(url?: string | null): string {
   const safe = escapeHtml(url);
   return (
     `<p style="margin:16px 0 0;">How did we do? ` +
-    `<a href="${safe}" style="color:#2563eb;text-decoration:underline;">Rate our support</a>` +
+    `<a href="${safe}" style="color:#3559E8;text-decoration:underline;">Rate our support</a>` +
     `</p>`
   );
 }

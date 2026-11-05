@@ -350,7 +350,7 @@ export default async function ChangeDetailPage({
                 ))}
                 {change.assets.map((a) => (
                   <Link key={a.assetId} href={`/assets/${a.assetId}`} className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs hover:border-primary/40">
-                    <Server className="size-3.5 text-indigo-500" /> {a.asset.name}
+                    <Server className="size-3.5 text-primary" /> {a.asset.name}
                   </Link>
                 ))}
               </div>

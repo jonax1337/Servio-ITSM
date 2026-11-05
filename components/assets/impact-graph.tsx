@@ -68,7 +68,7 @@ export function ImpactGraph({ impact }: { impact: ImpactResult }) {
                     href={`/assets/${node.id}`}
                     className="group flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
                   >
-                    <HardDrive className="size-4 shrink-0 text-indigo-500" />
+                    <HardDrive className="size-4 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate font-medium">
                       {node.name}
                     </span>

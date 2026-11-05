@@ -97,7 +97,7 @@ export default async function MailSettingsPage() {
                     <TableCell className="whitespace-nowrap text-sm">
                       <div className="flex items-center gap-1.5 font-medium">
                         {inbound ? (
-                          <ArrowDownLeft className="size-3.5 text-purple-500" />
+                          <ArrowDownLeft className="size-3.5 text-primary" />
                         ) : (
                           <ArrowUpRight className="size-3.5 text-emerald-500" />
                         )}

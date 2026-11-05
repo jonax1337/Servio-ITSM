@@ -16,7 +16,7 @@ export function renderEmailHtml(opts: { contentHtml: string }): string {
   return (
     `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
     `<body style="margin:0;padding:0;background:#ffffff;">` +
-    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1f2937;">${opts.contentHtml}</div>` +
+    `<div style="font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#111827;">${opts.contentHtml}</div>` +
     `</body></html>`
   );
 }
@@ -31,12 +31,12 @@ export function textToHtmlParagraphs(text: string): string {
 
 /** A normal email quote (left rule, muted) — used for forwards/context, not replies. */
 export function quoteHtml(inner: string): string {
-  return `<blockquote style="margin:10px 0;padding:0 0 0 12px;border-left:2px solid #d1d5db;color:#6b7280;">${inner}</blockquote>`;
+  return `<blockquote style="margin:10px 0;padding:0 0 0 12px;border-left:2px solid #D7E0EC;color:#5D6C80;">${inner}</blockquote>`;
 }
 
 /** A plain signature block under an agent reply. */
 export function signatureHtml(inner: string): string {
-  return `<div style="margin:14px 0 0;color:#6b7280;">${inner}</div>`;
+  return `<div style="margin:14px 0 0;color:#5D6C80;">${inner}</div>`;
 }
 
 /**
@@ -49,8 +49,8 @@ export function renderThreadHistory(items: { author: string; dateLabel: string; 
   const rows = items
     .map(
       (m) =>
-        `<div style="margin:12px 0 4px;color:#6b7280;font-size:13px;">On ${escape(m.dateLabel)}, ${escape(m.author)} wrote:</div>` +
-        `<blockquote style="margin:0;padding:0 0 0 12px;border-left:2px solid #d1d5db;color:#6b7280;">${m.html}</blockquote>`,
+        `<div style="margin:12px 0 4px;color:#5D6C80;font-size:13px;">On ${escape(m.dateLabel)}, ${escape(m.author)} wrote:</div>` +
+        `<blockquote style="margin:0;padding:0 0 0 12px;border-left:2px solid #D7E0EC;color:#5D6C80;">${m.html}</blockquote>`,
     )
     .join("");
   return `<div style="margin-top:16px;">${rows}</div>`;

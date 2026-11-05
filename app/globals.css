@@ -47,7 +47,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* Nova Flow stays monochrome in dense interfaces; accent surfaces use Cobalt and Ice. */
+  /* Nova Flow stays calm in dense interfaces: accents come from the Cobalt `primary` token, Ice is reserved for secondary tints. */
   --color-sable: var(--sable);
   --color-sable-foreground: var(--sable-foreground);
   --color-sable-muted: var(--sable-muted);
@@ -110,7 +110,7 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
-  /* Sable monochrome accent: near-black solid on light surfaces. */
+  /* Sable accent: navy solid on light surfaces (the launcher mark is monochrome, white on navy). */
   --sable: var(--brand-navy);
   --sable-foreground: var(--brand-white);
   --sable-muted: #E6EDF4;
@@ -148,7 +148,7 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: oklch(1 0 0 / 9%);
   --sidebar-ring: var(--ring);
-  /* Sable monochrome accent: near-white solid on dark surfaces. */
+  /* Sable accent: white solid on dark surfaces (the launcher mark is monochrome, navy on white). */
   --sable: var(--brand-white);
   --sable-foreground: var(--brand-navy);
   --sable-muted: #213951;

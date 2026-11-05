@@ -84,7 +84,7 @@ export function AffectedCiPanel({
           <div className="mb-4 rounded-xl border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <Network className="size-4 text-indigo-500" />
+                <Network className="size-4 text-primary" />
                 Automated impact assessment
               </div>
               <StatusBadge map={IMPACT_RISK_META} value={impact.risk} />
@@ -129,7 +129,7 @@ export function AffectedCiPanel({
                 className="flex items-center justify-between gap-3 border-b px-4 py-2.5 text-sm last:border-b-0 hover:bg-muted/40"
               >
                 <Link href={`/assets/${ci.assetId}`} className="flex min-w-0 items-center gap-2 font-medium hover:underline">
-                  <Server className="size-4 shrink-0 text-indigo-500" />
+                  <Server className="size-4 shrink-0 text-primary" />
                   <span className="truncate">{ci.name}</span>
                 </Link>
                 <div className="flex shrink-0 items-center gap-2">

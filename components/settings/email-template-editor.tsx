@@ -64,7 +64,7 @@ export function EmailTemplateEditor({
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">{label}</h3>
             {customized ? (
-              <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-600 dark:text-indigo-400">Customized</span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Customized</span>
             ) : (
               <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Default</span>
             )}
