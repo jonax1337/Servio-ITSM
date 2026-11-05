@@ -11,6 +11,7 @@ import { statusChangeData, ticketCalendar } from "@/lib/sla";
 import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
+import { mergedStatusRefusal } from "@/lib/merge-rules";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { deliverTicketReply, slaRepricePatch } from "@/lib/ticket-core";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
@@ -225,7 +226,7 @@ export async function applyMacro(formData: FormData) {
     // contract as updateTicketField).
     select: {
       id: true, title: true, type: true, requesterId: true,
-      assigneeId: true, groupId: true, status: true, approvalState: true,
+      assigneeId: true, groupId: true, status: true, approvalState: true, mergedIntoId: true,
       priority: true, serviceId: true, slaId: true, firstResponseAt: true, createdAt: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
       sla: { select: { businessCalendarId: true } },
@@ -259,6 +260,8 @@ export async function applyMacro(formData: FormData) {
       case "set_status": {
         if (!TICKET_STATUSES.includes(a.value as (typeof TICKET_STATUSES)[number])) break;
         if (!approvalAllowsStatus(ticket.approvalState, a.value)) break;
+        // A merged ticket stays cancelled until the merge is undone.
+        if (mergedStatusRefusal(ticket, a.value)) break;
         // Enforce the configured lifecycle + role, same as updateTicketField.
         if (!(await canTransitionConfigured("TICKET", ticket.status, a.value, me.role as Role))) break;
         nextStatus = a.value;

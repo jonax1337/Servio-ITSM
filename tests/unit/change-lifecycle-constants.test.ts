@@ -15,7 +15,7 @@ describe("change cancellation", () => {
   });
 
   it("is reachable from every pre-execution state, and from nowhere else", () => {
-    const cancellable = ["DRAFT", "SUBMITTED", "APPROVAL", "APPROVED", "SCHEDULED", "REJECTED"];
+    const cancellable = ["DRAFT", "APPROVAL", "APPROVED", "SCHEDULED", "REJECTED"];
     for (const from of CHANGE_STATUSES) {
       expect(canTransition(CHANGE_TRANSITIONS, from, "CANCELLED", true)).toBe(
         cancellable.includes(from) || from === "CANCELLED",

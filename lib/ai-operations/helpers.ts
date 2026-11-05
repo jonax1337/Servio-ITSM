@@ -23,7 +23,15 @@ export function verifyFieldWrite(stored: unknown, requested: string, success: st
  * result, so the reason the rule gave reaches the user instead of a generic failure.
  */
 export function fromActionResult(res: ActionResult, success: string): AiOpResult {
-  return res.ok ? ok(success) : err(res.error ?? "The change was refused. Nothing was changed.");
+  return actionRefusal(res) ?? ok(success);
+}
+
+/**
+ * The refusal an action reported, as an op result, or null when it succeeded. For ops that
+ * still read the stored value back after a successful call.
+ */
+export function actionRefusal(res: ActionResult): AiOpResult | null {
+  return res.ok ? null : err(res.error ?? "The change was refused. Nothing was changed.");
 }
 
 /** Heuristic: does this text already contain HTML tags (vs markdown / plain)? */

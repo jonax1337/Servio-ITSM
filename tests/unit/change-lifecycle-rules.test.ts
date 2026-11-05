@@ -30,7 +30,7 @@ const window12to13 = { start: at(12), end: at(13) };
 
 describe("planned window editing by status", () => {
   it("is open before the CAB decides and as a reschedule after approval", () => {
-    for (const status of ["DRAFT", "SUBMITTED", "REJECTED", "APPROVED", "SCHEDULED"]) {
+    for (const status of ["DRAFT", "REJECTED", "APPROVED", "SCHEDULED"]) {
       expect(isWindowEditable(status), status).toBe(true);
     }
   });
@@ -43,7 +43,7 @@ describe("planned window editing by status", () => {
 
   it("asks for a reason only once the change is approved", () => {
     expect(["APPROVED", "SCHEDULED"].every(requiresRescheduleReason)).toBe(true);
-    expect(["DRAFT", "SUBMITTED", "REJECTED"].some(requiresRescheduleReason)).toBe(false);
+    expect(["DRAFT", "REJECTED"].some(requiresRescheduleReason)).toBe(false);
   });
 
   it("names the status that blocks the edit", () => {
@@ -180,11 +180,11 @@ describe("shouldStampActualEnd", () => {
 
 describe("manualStatusError", () => {
   it("keeps the approval-flow statuses out of manual edits", () => {
-    for (const status of ["SUBMITTED", "APPROVAL", "APPROVED"]) expect(manualStatusError(status), status).toMatch(/approval workflow/);
+    for (const status of ["APPROVAL", "APPROVED"]) expect(manualStatusError(status), status).toMatch(/approval workflow/);
   });
 
   it("lets every other status through", () => {
-    for (const status of CHANGE_STATUSES.filter((s) => !["SUBMITTED", "APPROVAL", "APPROVED"].includes(s))) {
+    for (const status of CHANGE_STATUSES.filter((s) => !["APPROVAL", "APPROVED"].includes(s))) {
       expect(manualStatusError(status), status).toBeNull();
     }
   });

@@ -33,6 +33,12 @@ async function runEscalateTicket(fd: FormData): Promise<void> {
   if (res && !res.ok) toast.error(res.error ?? "Could not escalate.");
 }
 
+// A successful merge redirects to the target ticket; only a refusal comes back here.
+async function runMergeTicket(fd: FormData): Promise<void> {
+  const res = await mergeTicket(fd);
+  if (res && !res.ok) toast.error(res.error ?? "Could not merge the ticket.");
+}
+
 const LINK_TYPES: ComboOption[] = [
   { value: "RELATED", label: "Related to", tone: "info" },
   { value: "DUPLICATE", label: "Duplicate of", tone: "warning" },
@@ -185,10 +191,10 @@ export function TicketActions({
           <DialogHeader>
             <DialogTitle>Merge ticket</DialogTitle>
             <DialogDescription>
-              This ticket will be cancelled and merged into the ticket you choose. This can&apos;t be undone.
+              This ticket will be cancelled and merged into the ticket you choose. You can undo the merge from the merged ticket.
             </DialogDescription>
           </DialogHeader>
-          <form action={mergeTicket} className="grid gap-3">
+          <form action={runMergeTicket} className="grid gap-3">
             <input type="hidden" name="id" value={ticketId} />
             <Combobox options={opts} value={mergeTarget} onChange={setMergeTarget} name="targetId" placeholder="Merge into…" searchPlaceholder="Search tickets…" />
             <DialogFooter>

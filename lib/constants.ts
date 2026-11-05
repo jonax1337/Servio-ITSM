@@ -214,7 +214,6 @@ export const CHANGE_TYPE_META: Record<string, Meta> = {
 
 export const CHANGE_STATUSES = [
   "DRAFT",
-  "SUBMITTED",
   "APPROVAL",
   "APPROVED",
   "SCHEDULED",
@@ -227,7 +226,6 @@ export const CHANGE_STATUSES = [
 ] as const;
 export const CHANGE_STATUS_META: Record<string, Meta> = {
   DRAFT: { label: "Draft", tone: "neutral", icon: FileEdit },
-  SUBMITTED: { label: "Submitted", tone: "info", icon: Send },
   APPROVAL: { label: "In Approval", tone: "warning", icon: Clock },
   APPROVED: { label: "Approved", tone: "success", icon: ThumbsUp },
   SCHEDULED: { label: "Scheduled", tone: "indigo", icon: CalendarClock },

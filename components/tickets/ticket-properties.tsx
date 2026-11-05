@@ -12,6 +12,7 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog } from "@/components/tickets/pending-reason-dialog";
 import { ResolutionDialog } from "@/components/tickets/resolution-dialog";
 import { DueDatePicker } from "@/components/tickets/due-date-picker";
+import { childResolutionMessage, refusedChildrenDetail, type RefusedChild } from "@/lib/ticket-hierarchy-rules";
 import {
   TICKET_STATUSES,
   TICKET_TYPES,
@@ -33,7 +34,7 @@ type DraftKey = "status" | "type" | "priority" | "impact" | "urgency" | "assigne
 const DRAFT_KEYS: DraftKey[] = ["status", "type", "priority", "impact", "urgency", "assigneeId", "groupId", "categoryId", "serviceId"];
 
 /** Extra data captured for status changes that need a note (resolution / pending). */
-type StatusPayload = { code?: string | null; reason?: string; noteHtml: string; isInternal: boolean } | null;
+type StatusPayload = { code?: string | null; reason?: string; noteHtml: string; isInternal: boolean; resolveChildren?: boolean } | null;
 
 function initials(s: string) {
   return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -96,6 +97,7 @@ export function TicketProperties({
   aiTeaser = false,
   triageEnabled = false,
   allowedStatuses,
+  openChildCount = 0,
 }: {
   ticket: {
     id: number;
@@ -116,6 +118,8 @@ export function TicketProperties({
   triageEnabled?: boolean;
   /** Statuses reachable from the current one under the workflow; others grey out. */
   allowedStatuses?: string[];
+  /** Child tickets still open — resolving this ticket can take them along. */
+  openChildCount?: number;
 }) {
   // ── Options ──
   const allowedSet = allowedStatuses ? new Set(allowedStatuses) : null;
@@ -219,6 +223,8 @@ export function TicketProperties({
     savingRef.current = true;
     startSaving(async () => {
       let refusal: string | null = null;
+      let childNote: string | null = null;
+      let refusedChildren: RefusedChild[] = [];
       try {
         for (const c of nonStatus) {
           const fd = new FormData();
@@ -241,7 +247,11 @@ export function TicketProperties({
             if (payload?.code) fd.set("code", payload.code);
             fd.set("bodyHtml", payload?.noteHtml ?? "");
             if (payload?.isInternal) fd.set("isInternal", "on");
-            refusal = errorOf(await setTicketResolution(fd));
+            if (payload?.resolveChildren) fd.set("resolveChildren", "on");
+            const res = await setTicketResolution(fd);
+            refusal = errorOf(res);
+            refusedChildren = res.refusedChildren ?? [];
+            childNote = childResolutionMessage(res.childrenResolved ?? 0, refusedChildren.length);
           } else {
             fd.set("field", "status");
             fd.set("value", newStatus);
@@ -250,10 +260,18 @@ export function TicketProperties({
         }
         if (refusal) {
           toast.error(refusal);
+          // A refused status stays unsaved: show the real status again instead of a pending change.
+          if (statusChanged) {
+            setDraft((d) => ({ ...d, status: base.status }));
+            setStatusPayload(null);
+          }
           return;
         }
         const count = nonStatus.length + (statusChanged ? 1 : 0);
-        toast.success(`Saved ${count} change${count > 1 ? "s" : ""}`);
+        const message = `Saved ${count} change${count > 1 ? "s" : ""}${childNote ? ` · ${childNote}` : ""}`;
+        // A child the workflow refused stays open, so the result is not a plain success.
+        if (refusedChildren.length > 0) toast.warning(message, { description: refusedChildrenDetail(refusedChildren) });
+        else toast.success(message);
         setStatusPayload(null);
       } catch {
         toast.error("Could not save changes.");
@@ -379,11 +397,12 @@ export function TicketProperties({
       />
       <ResolutionDialog
         status={resDlg.status}
+        openChildCount={openChildCount}
         open={resDlg.open}
         onOpenChange={(o) => setResDlg((s) => ({ ...s, open: o }))}
         onConfirm={(p) => {
           setDraft((d) => ({ ...d, status: resDlg.status }));
-          setStatusPayload({ code: p.code, noteHtml: p.noteHtml, isInternal: p.isInternal });
+          setStatusPayload({ code: p.code, noteHtml: p.noteHtml, isInternal: p.isInternal, resolveChildren: p.resolveChildren });
           setResDlg((s) => ({ ...s, open: false }));
         }}
       />

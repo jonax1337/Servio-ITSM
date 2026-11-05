@@ -29,7 +29,7 @@ export function plannedWindowError(start: Date | null, end: Date | null): string
 const RESCHEDULE_STATUSES: readonly string[] = ["APPROVED", "SCHEDULED"];
 
 /** Statuses in which the planned window may change: before the CAB decides, or as a reasoned reschedule. */
-const WINDOW_EDITABLE_STATUSES: readonly string[] = ["DRAFT", "SUBMITTED", "REJECTED", ...RESCHEDULE_STATUSES];
+const WINDOW_EDITABLE_STATUSES: readonly string[] = ["DRAFT", "REJECTED", ...RESCHEDULE_STATUSES];
 
 export function isWindowEditable(status: string): boolean {
   return WINDOW_EDITABLE_STATUSES.includes(status);
@@ -157,7 +157,7 @@ export function settlesApprovalBoard(status: string): boolean {
 // ── Lifecycle moves ──────────────────────────────────────────────────────────
 
 /** Statuses set only by the approval workflow; a manual edit would bypass separation of duties. */
-const APPROVAL_FLOW_STATUSES: readonly string[] = ["SUBMITTED", "APPROVAL", "APPROVED"];
+const APPROVAL_FLOW_STATUSES: readonly string[] = ["APPROVAL", "APPROVED"];
 
 export function manualStatusError(to: string): string | null {
   return APPROVAL_FLOW_STATUSES.includes(to)

@@ -10,6 +10,7 @@ import { PRIORITIES, IMPACT_URGENCY, TICKET_TYPES, ticketRef, AI_ASSISTANT_NAME 
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
 import { renderMarkdown } from "@/lib/markdown";
 import { getOrgDirectory } from "@/lib/ai-context";
+import { TICKET_RELATIONS_SELECT, relationLines } from "@/lib/ai-operations/ticket-relations";
 
 /** Only agents/managers/admins may use the AI console (mirrors tickets.ts). */
 async function requireAgent() {
@@ -37,6 +38,7 @@ async function loadTicketContext(id: number) {
       sla: { select: { name: true } },
       assets: { select: { asset: { select: { name: true } } } },
       watchers: { select: { userId: true } },
+      ...TICKET_RELATIONS_SELECT,
       comments: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -152,6 +154,7 @@ function renderTicket(t: TicketContext): string {
     t.sla ? `SLA policy: ${t.sla.name}` : null,
     assets.length ? `Linked assets: ${assets.join(", ")}` : null,
     t.watchers.length ? `Watchers: ${t.watchers.length}` : null,
+    ...relationLines(t),
     "",
     "CURRENT STATE:",
     ...state,

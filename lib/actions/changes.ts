@@ -7,7 +7,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
-import { canTransition, CHANGE_TRANSITIONS } from "@/lib/transitions";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
@@ -248,7 +247,7 @@ async function moveChangeStatus(
   details: StatusMoveDetails,
 ): Promise<ChangeActionResult> {
   if (to === current.status) return OK;
-  // CAB seating never happens through a manual status edit: SUBMITTED/APPROVAL seat
+  // CAB seating never happens through a manual status edit: APPROVAL seats
   // the board via submitChangeForApproval, and APPROVED is set only when decideApproval
   // records the board's approval. Allowing any of these here would let a change reach
   // the approval phase with an EMPTY board — bypassing separation-of-duties entirely.
@@ -446,7 +445,7 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
   });
   if (!current) return refuse("Change not found.");
   // Only from DRAFT — this also makes a double-click idempotent (2nd submit is in APPROVAL).
-  if (!canTransition(CHANGE_TRANSITIONS, current.status, "SUBMITTED", true)) {
+  if (current.status !== "DRAFT") {
     return refuse("Only a draft change can be submitted for approval.");
   }
 

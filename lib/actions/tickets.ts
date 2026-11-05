@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import type { Prisma, TicketMerge } from "@prisma/client";
 import { db } from "@/lib/db";
 import { type Role, requireAgentUser } from "@/lib/session";
 import { writeAudit, notify } from "@/lib/audit";
@@ -38,6 +39,14 @@ import {
   problemRef,
   changeRef,
 } from "@/lib/constants";
+import {
+  MAX_HIERARCHY_DEPTH, ancestorChain, openChildren, parentLinkRefusal, subtreeHeight, type RefusedChild,
+} from "@/lib/ticket-hierarchy-rules";
+import {
+  MERGE_REFUSALS, adoptedId, foreignRequesterLabel, mergeDepthRefusal, mergedStatusRefusal, mergeRefusal, mergeTargetRefusal,
+  missingFrom, parseMovedAttachments, parseNumberIds, parseStringIds, planAttachmentRestore, planChildRestore,
+  planCommentCopy, planMergeLinks, undoClockData, unmergeRefusal, type MovedAttachment,
+} from "@/lib/merge-rules";
 import {
   createSchema, createTicketCore, deliverTicketReply, notifyWatchers,
   ticketCcEmails, slaRepricePatch, TICKET_LINK_TYPES, EMAIL_RE,
@@ -132,6 +141,8 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
       include: { sla: { select: { businessCalendarId: true } } },
     });
     if (!current) return refused(TICKET_NOT_FOUND);
+    const mergedRefusal = mergedStatusRefusal(current, value);
+    if (mergedRefusal) return refused(mergedRefusal);
     if (!approvalAllowsStatus(current.approvalState, value)) return refused(AWAITING_APPROVAL);
     // Enforce the configured lifecycle (built-in map + admin overrides + role).
     if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
@@ -327,6 +338,9 @@ const INVALID_LINK = "That link request isn't valid.";
 const ALREADY_LINKED = "These tickets are already linked.";
 const refused = (error: string): TicketActionResult => ({ ok: false, error });
 
+/** The ticket's display reference, keyed by its stored prefix (stable after a type switch). */
+const refOf = (t: { id: number; type: string; prefix: string | null }) => ticketRef(t.id, t.prefix || t.type);
+
 type ResolvedMailTicket = {
   id: number; title: string; type: string; prefix: string | null;
   requester: { email: string | null; name: string | null } | null;
@@ -483,95 +497,511 @@ export async function unlinkTicket(formData: FormData): Promise<TicketActionResu
   return { ok: true };
 }
 
-export async function mergeTicket(formData: FormData) {
+// ── Parent / child tickets ───────────────────────────────────────────────────
+
+const HIERARCHY_TICKET_SELECT = {
+  id: true, type: true, prefix: true, assigneeId: true, groupId: true, parentId: true, status: true, mergedIntoId: true,
+} as const;
+
+type HierarchyTicket = {
+  id: number; type: string; prefix: string | null; assigneeId: string | null; groupId: string | null;
+  parentId: number | null; status: string; mergedIntoId: number | null;
+};
+
+/**
+ * Make `parentId` the parent of `ticketId`; an empty `parentId` detaches the ticket.
+ * Works from either side: the child's page picks a parent, the parent's page picks a child.
+ */
+export async function setTicketParent(formData: FormData): Promise<TicketActionResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return refused(NOT_AUTHORISED);
+  const ticketId = Number(formData.get("ticketId"));
+  const raw = String(formData.get("parentId") ?? "").trim();
+  const parentId = raw && raw !== "none" ? Number(raw) : null;
+  if (!ticketId || Number.isNaN(parentId)) return refused(INVALID_LINK);
+
+  const ticket = await db.ticket.findUnique({ where: { id: ticketId }, select: HIERARCHY_TICKET_SELECT });
+  if (!ticket) return refused(TICKET_NOT_FOUND);
+  if (parentId === ticket.parentId) return { ok: true };
+  return parentId === null ? detachFromParent(me, ticket) : attachToParent(me, ticket, parentId);
+}
+
+async function detachFromParent(me: Agent, ticket: HierarchyTicket): Promise<TicketActionResult> {
+  const oldParent = await db.ticket.findUnique({ where: { id: ticket.parentId! }, select: HIERARCHY_TICKET_SELECT });
+  // Either end may remove the link, like unlinkTicket.
+  const mayAct = (await canActOnTicket(me, ticket)) || (!!oldParent && (await canActOnTicket(me, oldParent)));
+  if (!mayAct) return refused(NOT_YOUR_TICKET);
+
+  const notes = oldParent
+    ? [
+        { ticketId: ticket.id, text: `Removed from parent ${refOf(oldParent)}` },
+        { ticketId: oldParent.id, text: `Detached child ${refOf(ticket)}` },
+      ]
+    : [];
+  await db.$transaction(async (tx) => {
+    await tx.ticket.update({ where: { id: ticket.id }, data: { parentId: null } });
+    await writeParentNotes(tx, me, notes);
+  });
+  await auditParentNotes(me, notes);
+  revalidatePath(`/tickets/${ticket.id}`);
+  revalidatePath(`/tickets/${ticket.parentId}`);
+  return { ok: true };
+}
+
+async function attachToParent(me: Agent, ticket: HierarchyTicket, parentId: number): Promise<TicketActionResult> {
+  const parent = await db.ticket.findUnique({ where: { id: parentId }, select: HIERARCHY_TICKET_SELECT });
+  if (!parent) return refused(TICKET_NOT_FOUND);
+  // Both tickets get a note, so the actor must be allowed on both (same rule as mergeTicket).
+  if (!(await canActOnTicket(me, ticket)) || !(await canActOnTicket(me, parent))) return refused(NOT_YOUR_TICKET);
+  const previousParent = ticket.parentId === null
+    ? null
+    : await db.ticket.findUnique({ where: { id: ticket.parentId }, select: HIERARCHY_TICKET_SELECT });
+
+  const notes = [
+    { ticketId: ticket.id, text: `Set parent to ${refOf(parent)}${previousParent ? ` (was ${refOf(previousParent)})` : ""}` },
+    { ticketId: parent.id, text: `Added child ${refOf(ticket)}` },
+    ...(previousParent ? [{ ticketId: previousParent.id, text: `Child ${refOf(ticket)} moved to ${refOf(parent)}` }] : []),
+  ];
+  // The cycle and depth checks run in the same transaction as the write, so two
+  // concurrent opposite links can't both pass them.
+  const refusal = await db.$transaction(async (tx) => {
+    const edges = await tx.ticket.findMany({ where: { parentId: { not: null } }, select: { id: true, parentId: true } });
+    const found = parentLinkRefusal(ticket.id, parent, ancestorChain(parent.id, edges), subtreeHeight(ticket.id, edges));
+    if (found) return found;
+    await tx.ticket.update({ where: { id: ticket.id }, data: { parentId } });
+    await writeParentNotes(tx, me, notes);
+    return null;
+  });
+  if (refusal) return refused(refusal);
+
+  await auditParentNotes(me, notes);
+  revalidatePath(`/tickets/${ticket.id}`);
+  revalidatePath(`/tickets/${parentId}`);
+  if (previousParent) revalidatePath(`/tickets/${previousParent.id}`);
+  return { ok: true };
+}
+
+type ParentNote = { ticketId: number; text: string };
+
+/** An internal note on each affected ticket, written inside the link change's transaction. */
+async function writeParentNotes(tx: Tx, me: Agent, notes: readonly ParentNote[]) {
+  await tx.ticketComment.createMany({
+    data: notes.map((n) => ({ ticketId: n.ticketId, authorId: me.id, isInternal: true, body: `${n.text}.` })),
+  });
+}
+
+/** Audit entries go through `db`, so they are written after the transaction has committed. */
+async function auditParentNotes(me: Agent, notes: readonly ParentNote[]) {
+  for (const n of notes) {
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: n.ticketId, summary: n.text });
+  }
+}
+
+/** The candidate parent followed by its ancestors, nearest first. Stops past the depth limit, so corrupt cyclic data can't loop. */
+async function ancestorIds(parent: { id: number; parentId: number | null }): Promise<number[]> {
+  const ids = [parent.id];
+  let next = parent.parentId;
+  while (next !== null && ids.length <= MAX_HIERARCHY_DEPTH) {
+    ids.push(next);
+    next = (await db.ticket.findUnique({ where: { id: next }, select: { parentId: true } }))?.parentId ?? null;
+  }
+  return ids;
+}
+
+// ── Merge / unmerge ──────────────────────────────────────────────────────────
+
+type Tx = Prisma.TransactionClient;
+
+const INVALID_MERGE = "Pick another ticket to merge into.";
+/** A merge copies many rows one by one; SQLite needs more than Prisma's 5 s default. */
+const MERGE_TRANSACTION_OPTIONS = { timeout: 30_000 };
+
+const MERGE_TARGET_SELECT = {
+  id: true, type: true, prefix: true, assigneeId: true, groupId: true, requesterId: true,
+  parentId: true, mergedIntoId: true, status: true, problemId: true, changeId: true,
+} as const;
+
+const MERGE_SOURCE_INCLUDE = {
+  comments: { orderBy: { createdAt: "asc" } },
+  watchers: true,
+  requester: { select: { name: true, email: true } },
+} as const;
+
+type MergeSourceTicket = Prisma.TicketGetPayload<{ include: typeof MERGE_SOURCE_INCLUDE }>;
+type MergeTargetTicket = Prisma.TicketGetPayload<{ select: typeof MERGE_TARGET_SELECT }>;
+
+/**
+ * Cancel a ticket and carry its comments, watchers, assets, attachments, links,
+ * problem/change and child tickets over to the target. Everything the merge adds is
+ * recorded in a TicketMerge row so {@link unmergeTicket} can take exactly that back.
+ */
+export async function mergeTicket(formData: FormData): Promise<TicketActionResult> {
+  const me = await requireAgent();
+  if (!me) return refused(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
   const targetId = Number(formData.get("targetId"));
-  if (!id || !targetId || id === targetId) return;
+  if (!id || !targetId || id === targetId) return refused(INVALID_MERGE);
 
-  const source = await db.ticket.findUnique({
-    where: { id },
-    include: { comments: { orderBy: { createdAt: "asc" } }, watchers: true },
-  });
-  if (!source) return;
+  const source = await db.ticket.findUnique({ where: { id }, include: MERGE_SOURCE_INCLUDE });
+  if (!source) return refused(TICKET_NOT_FOUND);
   // Only ADMIN/MANAGER, or the source's assignee / a member of its group, may merge it.
-  if (!(await canActOnTicket(me, source))) return;
-  // Don't re-merge a ticket that's already merged/cancelled.
-  if (source.mergedIntoId || source.status === "CANCELLED") return;
+  if (!(await canActOnTicket(me, source))) return refused(NOT_YOUR_TICKET);
 
-  // Pre-validate the target: it must exist and not itself be merged/cancelled, and
-  // merging into it must not form a cycle (target already points back at the source).
-  const target = await db.ticket.findUnique({
-    where: { id: targetId },
-    select: { id: true, mergedIntoId: true, status: true, assigneeId: true, groupId: true },
-  });
-  if (!target || target.status === "CANCELLED") return;
-  // The actor must be allowed to act on the TARGET too — merging writes comments,
-  // watchers and a link into it, so it's not enough to clear the source only.
-  if (!(await canActOnTicket(me, target))) return;
-  if (target.mergedIntoId === id || source.mergedIntoId === targetId) return;
+  const target = await db.ticket.findUnique({ where: { id: targetId }, select: MERGE_TARGET_SELECT });
+  if (!target) return refused(TICKET_NOT_FOUND);
+  // Merging writes into the TARGET too, so the actor must be allowed to act on it as well.
+  if (!(await canActOnTicket(me, target))) return refused(NOT_YOUR_TICKET);
+  const refusal = mergeRefusal(id, source, target, await ancestorIds(target));
+  if (refusal) return refused(refusal);
 
-  // All writes in one transaction so a partial merge can't leave orphaned comments
-  // with the source still open.
-  await db.$transaction(async (tx) => {
-    // 1) Carry the source's description + comments into the target (attributed to original authors)
-    await tx.ticketComment.create({
-      data: {
-        ticketId: targetId, authorId: me.id, isInternal: true,
-        body: `⤵︎ Merged from ${ticketRef(source.id, source.type)} — "${source.title}"\n\n${source.description || "(no description)"}`,
-      },
-    });
-    for (const c of source.comments) {
-      await tx.ticketComment.create({
-        data: {
-          ticketId: targetId, authorId: c.authorId, isInternal: c.isInternal,
-          body: `[from ${ticketRef(source.id, source.type)}] ${c.body}`,
-          createdAt: c.createdAt,
-        },
-      });
-    }
-
-    // 2) Move watchers + any linked assets over to the target
-    for (const w of source.watchers) {
-      await tx.ticketWatcher.upsert({
-        where: { ticketId_userId: { ticketId: targetId, userId: w.userId } },
-        create: { ticketId: targetId, userId: w.userId },
-        update: {},
-      });
-    }
-    const srcAssets = await tx.ticketAsset.findMany({ where: { ticketId: id } });
-    for (const a of srcAssets) {
-      await tx.ticketAsset.upsert({
-        where: { ticketId_assetId: { ticketId: targetId, assetId: a.assetId } },
-        create: { ticketId: targetId, assetId: a.assetId },
-        update: {},
-      });
-    }
-
-    // 3) Close the source as merged, and cross-link
-    await tx.ticket.update({
-      where: { id },
-      data: { mergedIntoId: targetId, status: "CANCELLED", closedAt: new Date(), approvalState: cancelledApprovalState(source) },
-    });
-    await tx.ticketComment.create({ data: { ticketId: id, authorId: me.id, isInternal: true, body: `Merged into ${ticketRef(targetId)}. Comments, watchers and assets were carried over.` } });
-    await tx.ticketLink.upsert({
-      where: { ticketId_linkedTicketId: { ticketId: targetId, linkedTicketId: id } },
-      create: { ticketId: targetId, linkedTicketId: id, type: "DUPLICATE" },
-      update: { type: "DUPLICATE" },
-    });
-  });
-  await withdrawPendingApprovals(id, { approvalState: cancelledApprovalState(source) });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Merged into ${ticketRef(targetId)}` });
+  // One transaction, so a partial merge can't leave orphaned copies with the source still open.
+  const stopped = await inRefusableTransaction((tx) => mergeInTransaction(tx, me, source, target));
+  if (stopped) return refused(stopped);
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Merged into ${refOf(target)}` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: targetId, summary: `Merged ${refOf(source)} into this ticket` });
 
   revalidatePath(`/tickets/${id}`);
   revalidatePath(`/tickets/${targetId}`);
+  revalidatePath("/tickets");
   redirect(`/tickets/${targetId}`);
+}
+
+/** A refusal found inside a transaction: thrown so everything written so far is rolled back. */
+class MergeRefused extends Error {}
+
+/** Runs a merge/undo transaction; a {@link MergeRefused} rolls it back and comes out as the refusal text. */
+async function inRefusableTransaction(run: (tx: Tx) => Promise<string | null>): Promise<string | null> {
+  try {
+    return await db.$transaction(run, MERGE_TRANSACTION_OPTIONS);
+  } catch (error) {
+    if (error instanceof MergeRefused) return error.message;
+    throw error;
+  }
+}
+
+/**
+ * The merge itself. The checks that decide whether it may run are repeated here, on
+ * the rows as they are now, so two concurrent merges can't both pass: the source is
+ * claimed first (which also serialises the writers), then the target is re-read, and
+ * the merge is rolled back when it can't go ahead.
+ * Returns the refusal, or null once everything is written.
+ */
+async function mergeInTransaction(tx: Tx, me: Agent, source: MergeSourceTicket, target: MergeTargetTicket): Promise<string | null> {
+  const approvalState = cancelledApprovalState(source);
+  const claimed = await tx.ticket.updateMany({
+    where: { id: source.id, mergedIntoId: null, status: source.status },
+    data: { mergedIntoId: target.id, status: "CANCELLED", closedAt: new Date(), approvalState },
+  });
+  if (claimed.count === 0) return MERGE_REFUSALS.changedMeanwhile;
+  await refuseUnlessTargetStillFits(tx, source.id, target.id);
+
+  const foreignRequester = foreignRequesterLabel(source, target.requesterId);
+  const copiedComments = await copyComments(tx, me, source, target.id, foreignRequester);
+
+  const targetWatcherIds = (await tx.ticketWatcher.findMany({ where: { ticketId: target.id } })).map((w) => w.userId);
+  const copiedWatcherIds = missingFrom(targetWatcherIds, source.watchers.map((w) => w.userId));
+  await tx.ticketWatcher.createMany({ data: copiedWatcherIds.map((userId) => ({ ticketId: target.id, userId })) });
+
+  const targetAssetIds = (await tx.ticketAsset.findMany({ where: { ticketId: target.id } })).map((a) => a.assetId);
+  const sourceAssetIds = (await tx.ticketAsset.findMany({ where: { ticketId: source.id } })).map((a) => a.assetId);
+  const copiedAssetIds = missingFrom(targetAssetIds, sourceAssetIds);
+  await tx.ticketAsset.createMany({ data: copiedAssetIds.map((assetId) => ({ ticketId: target.id, assetId })) });
+
+  const attachments = await moveAttachments(tx, me, source, target.id, copiedComments.bySourceId, foreignRequester !== null);
+  const copiedLinkIds = await copyLinks(tx, source.id, target.id);
+
+  const adoptedProblemId = adoptedId(target.problemId, source.problemId);
+  const adoptedChangeId = adoptedId(target.changeId, source.changeId);
+  if (adoptedProblemId !== null || adoptedChangeId !== null) {
+    await tx.ticket.update({
+      where: { id: target.id },
+      data: { problemId: adoptedProblemId ?? undefined, changeId: adoptedChangeId ?? undefined },
+    });
+  }
+
+  const movedChildIds = (await tx.ticket.findMany({ where: { parentId: source.id }, select: { id: true } })).map((c) => c.id);
+  await tx.ticket.updateMany({ where: { id: { in: movedChildIds } }, data: { parentId: target.id } });
+
+  const withdrawnApprovalIds = approvalState === "CANCELLED"
+    ? (await tx.ticketApproval.findMany({ where: { ticketId: source.id, status: "PENDING" }, select: { id: true } })).map((a) => a.id)
+    : [];
+  await tx.ticketApproval.updateMany({
+    where: { id: { in: withdrawnApprovalIds } },
+    data: { status: "CANCELLED", decidedAt: new Date() },
+  });
+
+  await tx.ticketComment.create({
+    data: {
+      ticketId: source.id, authorId: me.id, isInternal: true,
+      body: `Merged into ${refOf(target)}. Comments, watchers, assets, attachments, links and child tickets were carried over. The merge can be undone from this ticket.`,
+    },
+  });
+  await tx.ticketMerge.create({
+    data: {
+      sourceId: source.id, targetId: target.id, mergedById: me.id,
+      previousStatus: source.status, previousClosedAt: source.closedAt, previousApprovalState: source.approvalState,
+      copiedCommentIds: JSON.stringify(attachments.noteId ? [...copiedComments.ids, attachments.noteId] : copiedComments.ids),
+      copiedWatcherIds: JSON.stringify(copiedWatcherIds),
+      copiedAssetIds: JSON.stringify(copiedAssetIds),
+      movedAttachments: JSON.stringify(attachments.moved),
+      copiedLinkIds: JSON.stringify(copiedLinkIds),
+      movedChildIds: JSON.stringify(movedChildIds),
+      withdrawnApprovalIds: JSON.stringify(withdrawnApprovalIds),
+      adoptedProblemId, adoptedChangeId,
+    },
+  });
+  return null;
+}
+
+/**
+ * The target as it is now (not as the action read it before the transaction): a merge
+ * the other way round, or one into a ticket cancelled meanwhile, must not go ahead.
+ * Throws {@link MergeRefused} so the claim on the source is rolled back too.
+ */
+async function refuseUnlessTargetStillFits(tx: Tx, sourceId: number, targetId: number): Promise<void> {
+  const target = await tx.ticket.findUniqueOrThrow({ where: { id: targetId }, select: { mergedIntoId: true, status: true } });
+  const edges = await tx.ticket.findMany({ where: { parentId: { not: null } }, select: { id: true, parentId: true } });
+  const targetChain = ancestorChain(targetId, edges);
+  const refusal = mergeTargetRefusal(sourceId, target, targetChain) ?? mergeDepthRefusal(targetChain.length, subtreeHeight(sourceId, edges));
+  if (refusal) throw new MergeRefused(refusal);
+}
+
+/**
+ * The source's description and comments as copies on the target, attributed to their original
+ * authors: internal notes, and all internal when the target belongs to another requester.
+ */
+async function copyComments(tx: Tx, me: Agent, source: MergeSourceTicket, targetId: number, foreignRequester: string | null) {
+  const sourceRef = refOf(source);
+  const intro = await tx.ticketComment.create({
+    data: {
+      ticketId: targetId, authorId: me.id, isInternal: true,
+      body: `⤵︎ Merged from ${sourceRef} — "${source.title}"\n\n${source.description || "(no description)"}`,
+    },
+  });
+  const ids = [intro.id];
+  const bySourceId = new Map<string, string>();
+  for (const c of source.comments) {
+    const copy = await tx.ticketComment.create({
+      data: { ticketId: targetId, authorId: c.authorId, createdAt: c.createdAt, ...planCommentCopy(c, sourceRef, foreignRequester) },
+    });
+    ids.push(copy.id);
+    bySourceId.set(c.id, copy.id);
+  }
+  return { ids, bySourceId };
+}
+
+/**
+ * Re-point the source's files to the target: ticket-level files to the target ticket,
+ * comment files to the copy of their comment. Re-pointed rather than copied because
+ * deleting an attachment also deletes its blob, which a copy would share.
+ * With `internalOnly` (another requester owns the target) the ticket-level files go on one
+ * internal note instead, so only agents see them; the note's id comes back to be recorded.
+ */
+async function moveAttachments(
+  tx: Tx,
+  me: Agent,
+  source: MergeSourceTicket,
+  targetId: number,
+  copiedCommentIds: ReadonlyMap<string, string>,
+  internalOnly: boolean,
+): Promise<{ moved: MovedAttachment[]; noteId: string | null }> {
+  const files = await tx.attachment.findMany({
+    where: { OR: [{ ticketId: source.id }, { commentId: { in: [...copiedCommentIds.keys()] } }] },
+    select: { id: true, commentId: true },
+  });
+  const copyOf = (file: MovedAttachment) => (file.commentId ? copiedCommentIds.get(file.commentId) : undefined);
+  const hasTicketLevelFiles = files.some((file) => !copyOf(file));
+  const note = internalOnly && hasTicketLevelFiles
+    ? await tx.ticketComment.create({
+        data: { ticketId: targetId, authorId: me.id, isInternal: true, body: `Attachments from merged ${refOf(source)}` },
+      })
+    : null;
+  for (const file of files) {
+    const copiedCommentId = copyOf(file);
+    const destination = copiedCommentId
+      ? { commentId: copiedCommentId }
+      : note ? { ticketId: null, commentId: note.id } : { ticketId: targetId };
+    await tx.attachment.update({ where: { id: file.id }, data: destination });
+  }
+  return { moved: files, noteId: note?.id ?? null };
+}
+
+/** Re-create the source's links on the target (and cross-link the two); returns the new link ids. */
+async function copyLinks(tx: Tx, sourceId: number, targetId: number): Promise<string[]> {
+  const touching = (ticketId: number) => ({ where: { OR: [{ ticketId }, { linkedTicketId: ticketId }] } });
+  const sourceLinks = await tx.ticketLink.findMany(touching(sourceId));
+  const targetLinks = await tx.ticketLink.findMany(touching(targetId));
+  const ids: string[] = [];
+  for (const link of planMergeLinks(sourceId, targetId, sourceLinks, targetLinks)) {
+    ids.push((await tx.ticketLink.create({ data: link })).id);
+  }
+  return ids;
+}
+
+type UnmergeTicket = {
+  id: number; type: string; prefix: string | null; assigneeId: string | null; groupId: string | null; mergedIntoId: number | null;
+  sla: { businessCalendarId: string | null } | null;
+};
+
+/**
+ * Undo the active merge of a ticket: reopen it as it was and take back exactly
+ * what the merge added to the target (by the ids the merge recorded).
+ */
+export async function unmergeTicket(formData: FormData): Promise<TicketActionResult> {
+  const me = await requireAgent();
+  if (!me) return refused(NOT_AUTHORISED);
+  const sourceId = Number(formData.get("id"));
+  if (!sourceId) return refused(INVALID_CHANGE);
+
+  const select = {
+    id: true, type: true, prefix: true, assigneeId: true, groupId: true, mergedIntoId: true,
+    sla: { select: { businessCalendarId: true } },
+  } as const;
+  const source: UnmergeTicket | null = await db.ticket.findUnique({ where: { id: sourceId }, select });
+  if (!source) return refused(TICKET_NOT_FOUND);
+  if (!(await canActOnTicket(me, source))) return refused(NOT_YOUR_TICKET);
+
+  const merge = await db.ticketMerge.findFirst({ where: { sourceId, undoneAt: null }, orderBy: { createdAt: "desc" } });
+  const target: UnmergeTicket | null = merge ? await db.ticket.findUnique({ where: { id: merge.targetId }, select }) : null;
+  const refusal = unmergeRefusal({
+    activeMerge: merge,
+    sourceMergedIntoId: source.mergedIntoId,
+    targetMergedIntoId: target?.mergedIntoId ?? null,
+  });
+  if (refusal) return refused(refusal);
+  if (!merge || !target) return refused(TICKET_NOT_FOUND);
+  // The undo writes into the target as well.
+  if (!(await canActOnTicket(me, target))) return refused(NOT_YOUR_TICKET);
+
+  // Loaded here: the calendar lookup uses `db`, which must not run inside the transaction.
+  const calendar = await ticketCalendar(source);
+  const stopped = await inRefusableTransaction((tx) => unmergeInTransaction(tx, me, source, target, merge, calendar));
+  if (stopped) return refused(stopped);
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: sourceId, summary: `Undid the merge into ${refOf(target)}` });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: target.id, summary: `Undid the merge of ${refOf(source)}` });
+
+  revalidatePath(`/tickets/${sourceId}`);
+  revalidatePath(`/tickets/${target.id}`);
+  revalidatePath("/tickets");
+  return { ok: true };
+}
+
+async function unmergeInTransaction(
+  tx: Tx,
+  me: Agent,
+  source: UnmergeTicket,
+  target: UnmergeTicket,
+  merge: TicketMerge,
+  calendar: Awaited<ReturnType<typeof ticketCalendar>>,
+): Promise<string | null> {
+  // Claim the merge first: a second undo (double submit, another tab) finds it taken and stops.
+  const claimed = await tx.ticketMerge.updateMany({
+    where: { id: merge.id, undoneAt: null },
+    data: { undoneAt: new Date(), undoneById: me.id },
+  });
+  if (claimed.count === 0) return MERGE_REFUSALS.alreadyUndone;
+
+  // Claiming also serialises the writers: judge source and target as they are now, not as the action read them.
+  const sourceNow = await tx.ticket.findUniqueOrThrow({
+    where: { id: source.id },
+    select: { mergedIntoId: true, responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true },
+  });
+  const targetNow = await tx.ticket.findUniqueOrThrow({ where: { id: target.id }, select: { mergedIntoId: true } });
+  const refusal = unmergeRefusal({
+    activeMerge: merge,
+    sourceMergedIntoId: sourceNow.mergedIntoId,
+    targetMergedIntoId: targetNow.mergedIntoId,
+  });
+  if (refusal) throw new MergeRefused(refusal);
+
+  // Files first: deleting a copied comment would cascade-delete the files hanging on it.
+  const moved = parseMovedAttachments(merge.movedAttachments);
+  const sourceCommentIds = moved.flatMap((m) => (m.commentId ? [m.commentId] : []));
+  const existingComments = await tx.ticketComment.findMany({ where: { id: { in: sourceCommentIds } }, select: { id: true } });
+  for (const { id, ticketId, commentId } of planAttachmentRestore(moved, new Set(existingComments.map((c) => c.id)), source.id)) {
+    await tx.attachment.updateMany({ where: { id }, data: { ticketId, commentId } });
+  }
+  // Files uploaded to a copied comment after the merge belong to the target now: they stay with its ticket.
+  const copiedCommentIds = parseStringIds(merge.copiedCommentIds);
+  await tx.attachment.updateMany({
+    where: { commentId: { in: copiedCommentIds }, id: { notIn: moved.map((m) => m.id) } },
+    data: { ticketId: target.id, commentId: null },
+  });
+
+  await tx.ticketComment.deleteMany({ where: { id: { in: copiedCommentIds }, ticketId: target.id } });
+  await tx.ticketWatcher.deleteMany({ where: { ticketId: target.id, userId: { in: parseStringIds(merge.copiedWatcherIds) } } });
+  await tx.ticketAsset.deleteMany({ where: { ticketId: target.id, assetId: { in: parseStringIds(merge.copiedAssetIds) } } });
+  await tx.ticketLink.deleteMany({ where: { id: { in: parseStringIds(merge.copiedLinkIds) } } });
+
+  // Only what is still as the merge left it: a problem/change or parent the agents changed since stays.
+  if (merge.adoptedProblemId !== null) {
+    await tx.ticket.updateMany({ where: { id: target.id, problemId: merge.adoptedProblemId }, data: { problemId: null } });
+  }
+  if (merge.adoptedChangeId !== null) {
+    await tx.ticket.updateMany({ where: { id: target.id, changeId: merge.adoptedChangeId }, data: { changeId: null } });
+  }
+  const keptChildren = await restoreChildren(tx, source.id, target.id, parseNumberIds(merge.movedChildIds));
+
+  await tx.ticketApproval.updateMany({
+    where: { id: { in: parseStringIds(merge.withdrawnApprovalIds) }, status: "CANCELLED" },
+    data: { status: "PENDING", decidedAt: null },
+  });
+  const restored = await tx.ticket.updateMany({
+    where: { id: source.id, mergedIntoId: merge.targetId },
+    data: {
+      mergedIntoId: null,
+      status: merge.previousStatus,
+      closedAt: merge.previousClosedAt,
+      approvalState: merge.previousApprovalState,
+      ...undoClockData(sourceNow, merge.previousStatus, merge.createdAt, new Date(), calendar),
+    },
+  });
+  if (restored.count === 0) throw new MergeRefused(MERGE_REFUSALS.changedMeanwhile);
+  const keptNote = keptChildren.length > 0
+    ? ` Child tickets that stayed under ${refOf(target)} because moving them back would create a hierarchy cycle: ${keptChildren.map((id) => `#${id}`).join(", ")}.`
+    : "";
+  await tx.ticketComment.createMany({
+    data: [
+      { ticketId: source.id, authorId: me.id, isInternal: true, body: `Merge into ${refOf(target)} undone. This ticket is back to ${merge.previousStatus.toLowerCase().replace(/_/g, " ")}.${keptNote}` },
+      { ticketId: target.id, authorId: me.id, isInternal: true, body: `Merge of ${refOf(source)} undone. What the merge carried over was removed again.${keptNote}` },
+    ],
+  });
+  return null;
+}
+
+/**
+ * Put the children the merge moved back under the source, except those that are now
+ * the source's own ancestors (see planChildRestore). Returns the kept ones that are
+ * still below the target, so the notes can name them.
+ */
+async function restoreChildren(tx: Tx, sourceId: number, targetId: number, movedChildIds: readonly number[]): Promise<number[]> {
+  const edges = await tx.ticket.findMany({ where: { parentId: { not: null } }, select: { id: true, parentId: true } });
+  const { restore, kept } = planChildRestore(movedChildIds, ancestorChain(sourceId, edges));
+  await tx.ticket.updateMany({ where: { id: { in: restore }, parentId: targetId }, data: { parentId: sourceId } });
+  const stillBelowTarget = await tx.ticket.findMany({ where: { id: { in: kept }, parentId: targetId }, select: { id: true } });
+  return stillBelowTarget.map((c) => c.id);
 }
 
 // ── Resolution / cancel ──────────────────────────────────────────────────────
 
-export async function setTicketResolution(formData: FormData): Promise<TicketActionResult> {
+type Agent = NonNullable<Awaited<ReturnType<typeof requireAgent>>>;
+
+type ResolutionInput = {
+  id: number;
+  status: string;
+  code: string | null;
+  note: string | null;
+  bodyHtml: string | null;
+  noteInternal: boolean;
+};
+
+/**
+ * Resolve, close or cancel a ticket. With `resolveChildren` on, a RESOLVED parent
+ * takes its open child tickets along (same code and note) and reports how many.
+ */
+export async function setTicketResolution(
+  formData: FormData,
+): Promise<TicketActionResult & { childrenResolved?: number; refusedChildren?: RefusedChild[] }> {
   const me = await requireAgent();
   if (!me) return refused(NOT_AUTHORISED);
   const id = Number(formData.get("id"));
@@ -583,12 +1013,47 @@ export async function setTicketResolution(formData: FormData): Promise<TicketAct
   const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["RESOLVED", "CLOSED", "CANCELLED"].includes(status)) return refused(INVALID_CHANGE);
 
+  const input = { id, status, code, note, bodyHtml, noteInternal };
+  const result = await applyResolution(me, input);
+  if (!result.ok || status !== "RESOLVED" || formData.get("resolveChildren") !== "on") return result;
+  return { ...result, ...(await resolveOpenChildren(me, input)) };
+}
+
+/** Resolve the open children of `parent` with the parent's resolution, one by one through {@link applyResolution}. */
+async function resolveOpenChildren(me: Agent, parent: ResolutionInput) {
+  const [parentTicket, children] = await Promise.all([
+    db.ticket.findUnique({ where: { id: parent.id }, select: { id: true, type: true, prefix: true } }),
+    db.ticket.findMany({ where: { parentId: parent.id }, select: { id: true, type: true, prefix: true, status: true }, orderBy: { id: "asc" } }),
+  ]);
+  const parentRef = parentTicket ? refOf(parentTicket) : ticketRef(parent.id);
+  let childrenResolved = 0;
+  const refusedChildren: RefusedChild[] = [];
+  for (const child of openChildren(children)) {
+    const result = await applyResolution(me, { ...parent, id: child.id });
+    if (!result.ok) {
+      refusedChildren.push({ ref: refOf(child), error: result.error ?? INVALID_CHANGE });
+      continue;
+    }
+    await db.ticketComment.create({
+      data: { ticketId: child.id, authorId: me.id, isInternal: true, body: `Resolved together with parent ${parentRef}.` },
+    });
+    childrenResolved++;
+  }
+  return { childrenResolved, refusedChildren };
+}
+
+async function applyResolution(
+  me: Agent,
+  { id, status, code, note, bodyHtml, noteInternal }: ResolutionInput,
+): Promise<TicketActionResult> {
   const current = await db.ticket.findUnique({
     where: { id },
     include: { sla: { select: { businessCalendarId: true } } },
   });
   if (!current) return refused(TICKET_NOT_FOUND);
   if (!(await canActOnTicket(me, current))) return refused(NOT_YOUR_TICKET);
+  const mergedRefusal = mergedStatusRefusal(current, status);
+  if (mergedRefusal) return refused(mergedRefusal);
   if (!approvalAllowsStatus(current.approvalState, status)) return refused(AWAITING_APPROVAL);
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
 
@@ -1047,9 +1512,11 @@ export async function setTicketPending(formData: FormData): Promise<TicketAction
   const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return refused(INVALID_CHANGE);
 
-  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, approvalState: true, pendingSince: true, assigneeId: true, groupId: true } });
+  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, approvalState: true, pendingSince: true, assigneeId: true, groupId: true, mergedIntoId: true } });
   if (!current) return refused(TICKET_NOT_FOUND);
   if (!(await canActOnTicket(me, current))) return refused(NOT_YOUR_TICKET);
+  const mergedRefusal = mergedStatusRefusal(current, status);
+  if (mergedRefusal) return refused(mergedRefusal);
   if (!approvalAllowsStatus(current.approvalState, status)) return refused(AWAITING_APPROVAL);
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return refused(TRANSITION_NOT_ALLOWED);
 

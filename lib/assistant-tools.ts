@@ -13,6 +13,7 @@ import {
   parseTicketId,
 } from "@/lib/ai-tools";
 import { PRIORITIES, TICKET_STATUSES, ticketRef } from "@/lib/constants";
+import { ticketRelations, TICKET_RELATIONS_SELECT } from "@/lib/ai-operations/ticket-relations";
 
 /**
  * The GENERAL standalone Sable tool set (the /assistant surface, AGENT+).
@@ -174,7 +175,7 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
     description:
       "Get the FULL details of ONE ticket by its ref or number (e.g. 'INC-0042' or '42'): status, priority, " +
       "impact/urgency, requester, assignee, team, category, SLA response/resolve due dates and breaches, the " +
-      "description, and the latest comments — so you can help the agent actually work on it.",
+      "description, parent ticket, child tickets, merge info and the latest comments — so you can help the agent actually work on it.",
     inputSchema: z.object({
       ref: z.string().describe("ticket ref or number, e.g. 'INC-0042' or '42'"),
     }),
@@ -204,6 +205,7 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
           category: { select: { name: true } },
           service: { select: { name: true } },
           sla: { select: { name: true } },
+          ...TICKET_RELATIONS_SELECT,
           comments: {
             orderBy: { createdAt: "desc" },
             take: 6,
@@ -238,6 +240,7 @@ export function buildAssistantGeneralTools(ctx: AssistantUserContext): ToolSet {
           created: fmt(t.createdAt),
           updated: fmt(t.updatedAt),
           description: (t.description || "").slice(0, 800),
+          ...ticketRelations(t),
           comments: t.comments
             .slice()
             .reverse()

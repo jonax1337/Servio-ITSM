@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, GitMerge, CheckCircle2, Users,
+  Flame, Link2, GitMerge, CheckCircle2, Users, Network,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { RelatedArticlesCard } from "@/components/related-articles-card";
@@ -24,13 +24,16 @@ import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
 import { getBoolSetting, getMaxUploadMb } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
+import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset, unmergeTicket } from "@/lib/actions/tickets";
+import { ConfirmButton } from "@/components/confirm-dialog";
+import { TicketHierarchy } from "@/components/tickets/ticket-hierarchy";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { MacroPicker } from "@/components/tickets/macro-picker";
 import { LinkPicker } from "@/components/link-picker";
 import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { ticketLinkEntries } from "@/lib/ticket-link-labels";
 import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
+import { HIERARCHY_PICKER_LIMIT, ancestorChain, descendantIds, openChildren } from "@/lib/ticket-hierarchy-rules";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { FormAnswers } from "@/components/tickets/form-answers";
@@ -47,6 +50,8 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 
 export const dynamic = "force-dynamic";
+
+const RELATED_TICKET_SELECT = { id: true, title: true, prefix: true, status: true } as const;
 
 export async function generateMetadata({
   params,
@@ -69,7 +74,7 @@ export default async function TicketDetailPage({
 
   const me = await getSessionUser();
   const maxUploadMb = await getMaxUploadMb();
-  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs] = await Promise.all([
+  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs, hierarchyCandidates, hierarchyEdges] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
@@ -82,6 +87,8 @@ export default async function TicketDetailPage({
         problem: true,
         change: true,
         mergedInto: true,
+        parent: { select: RELATED_TICKET_SELECT },
+        children: { select: RELATED_TICKET_SELECT, orderBy: { id: "asc" } },
         comments: { include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
         assets: { include: { asset: true } },
         watchers: { include: { user: true } },
@@ -124,6 +131,15 @@ export default async function TicketDetailPage({
     }),
     getEntityApprovals("TICKET", ticketId),
     db.customFieldDef.findMany({ where: { entityType: "TICKET", active: true }, orderBy: { order: "asc" } }),
+    // Parent / child pickers: only tickets that can take part in a hierarchy, and more
+    // of them than the general link picker offers (the parent is often an older major incident).
+    db.ticket.findMany({
+      where: { id: { not: ticketId }, status: { notIn: ["CLOSED", "CANCELLED"] }, mergedIntoId: null },
+      select: { id: true, title: true, prefix: true },
+      orderBy: { updatedAt: "desc" },
+      take: HIERARCHY_PICKER_LIMIT,
+    }),
+    db.ticket.findMany({ where: { parentId: { not: null } }, select: { id: true, parentId: true } }),
   ]);
   if (!ticket) notFound();
 
@@ -166,6 +182,12 @@ export default async function TicketDetailPage({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
   }));
+  // What parentLinkRefusal would reject is left out: a parent may not be a descendant, a child may not be an ancestor.
+  const hierarchyOpts = hierarchyCandidates.map((c) => ({ id: c.id, value: String(c.id), label: `${ticketRef(c.id, c.prefix)} — ${c.title}` }));
+  const descendants = descendantIds(ticket.id, hierarchyEdges);
+  const ancestors = new Set(ancestorChain(ticket.id, hierarchyEdges));
+  const parentOpts = hierarchyOpts.filter((o) => !descendants.has(o.id));
+  const childOpts = hierarchyOpts.filter((o) => !ancestors.has(o.id) && !descendants.has(o.id));
   const pickerMacros = macros.map((m) => {
     let actionCount = 0;
     try {
@@ -276,13 +298,42 @@ export default async function TicketDetailPage({
         ) : null}
 
         {ticket.mergedInto ? (
-          <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
             <GitMerge className="size-4 text-muted-foreground" />
-            This ticket was merged into{" "}
-            <Link href={`/tickets/${ticket.mergedInto.id}`} className="font-medium text-primary hover:underline">
-              {ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)}
+            <span>
+              This ticket was merged into{" "}
+              <Link href={`/tickets/${ticket.mergedInto.id}`} className="font-medium text-primary hover:underline">
+                {ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)}
+              </Link>
+              .
+            </span>
+            {isAgentUser ? (
+              <ConfirmButton
+                action={unmergeTicket}
+                fields={{ id: ticket.id }}
+                title="Undo merge?"
+                description={`This ticket is restored as it was before the merge, and what the merge carried over to ${ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)} is removed again.`}
+                confirmLabel="Undo merge"
+                confirmVariant="default"
+                triggerVariant="outline"
+                triggerSize="sm"
+                triggerClassName="ml-auto"
+                successMessage="Merge undone"
+              >
+                Undo merge
+              </ConfirmButton>
+            ) : null}
+          </div>
+        ) : null}
+
+        {ticket.parent ? (
+          <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
+            <Network className="size-4 text-muted-foreground" />
+            Part of{" "}
+            <Link href={`/tickets/${ticket.parent.id}`} className="font-medium text-primary hover:underline">
+              {ticketRef(ticket.parent.id, ticket.parent.prefix)}
             </Link>
-            .
+            (parent) &middot; {ticket.parent.title}
           </div>
         ) : null}
 
@@ -400,6 +451,15 @@ export default async function TicketDetailPage({
           )}
           </div>
 
+          <TicketHierarchy
+            ticketId={ticket.id}
+            parent={ticket.parent}
+            childTickets={ticket.children}
+            parentOptions={parentOpts}
+            childOptions={childOpts}
+            canEdit={isAgentUser}
+          />
+
           {/* Approvals (ad-hoc sign-off) */}
           {isAgentUser ? (
             <EntityApprovals
@@ -462,7 +522,7 @@ export default async function TicketDetailPage({
         <Card className="mt-4 overflow-visible">
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
-            <TicketProperties ticket={ticket} options={options} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
+            <TicketProperties ticket={ticket} options={options} openChildCount={openChildren(ticket.children).length} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
 

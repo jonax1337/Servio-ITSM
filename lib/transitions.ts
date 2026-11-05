@@ -27,8 +27,7 @@ export const PROBLEM_TRANSITIONS: TransitionMap = {
 };
 
 export const CHANGE_TRANSITIONS: TransitionMap = {
-  DRAFT: ["SUBMITTED", "CANCELLED"],
-  SUBMITTED: ["APPROVAL", "DRAFT", "REJECTED", "CANCELLED"],
+  DRAFT: ["CANCELLED"], // submitting is the dedicated submit action (DRAFT -> APPROVAL/APPROVED)
   // APPROVED is reachable ONLY via the CAB approval flow (decideApproval),
   // never a manual status edit — so it is deliberately absent here.
   APPROVAL: ["REJECTED", "DRAFT", "CANCELLED"],

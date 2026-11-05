@@ -11,7 +11,11 @@ import {
   addWorkLog,
   toggleWatch,
   toggleMajorIncident,
+  setTicketParent,
+  mergeTicket,
+  unmergeTicket,
 } from "@/lib/actions/tickets";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { createTicketCore } from "@/lib/ticket-core";
 import {
   resolveGroupId,
@@ -30,7 +34,8 @@ import {
   ticketRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite, fromActionResult } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite, fromActionResult, actionRefusal } from "../helpers";
+import { refFor, isNoParent, NO_PARENT_TARGET, setParentLabel, mergeLabel, unmergeLabel } from "../ticket-relations";
 
 /**
  * Tickets. Reference module shape — export `OPERATIONS: AiOperation[]`, one entry
@@ -43,7 +48,21 @@ import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite, fromA
 async function resolveTicket(ref: unknown) {
   const id = parseTicketId(String(ref ?? ""));
   if (!id) return null;
-  return db.ticket.findUnique({ where: { id }, select: { id: true, type: true } });
+  return db.ticket.findUnique({ where: { id }, select: { id: true, type: true, prefix: true } });
+}
+
+/**
+ * mergeTicket redirects to the target on success, which throws NEXT_REDIRECT. That is
+ * not a failure here: Sable stays in the chat, so the redirect is swallowed and the
+ * caller checks the stored merge instead.
+ */
+async function mergeIgnoringRedirect(formData: FormData) {
+  try {
+    return await mergeTicket(formData);
+  } catch (error) {
+    if (isRedirectError(error)) return { ok: true as const };
+    throw error;
+  }
 }
 
 const FIELD_ENUMS: Record<string, readonly string[]> = {
@@ -204,7 +223,9 @@ export const OPERATIONS: AiOperation[] = [
       }
 
       // updateTicketField writes its own audit entry and runs the state-machine/SLA/notifications.
-      await updateTicketField(toFormData({ id: ticket.id, field: realField, value: realValue }));
+      const res = await updateTicketField(toFormData({ id: ticket.id, field: realField, value: realValue }));
+      const refusal = actionRefusal(res);
+      if (refusal) return refusal;
       const after = (await db.ticket.findUnique({ where: { id: ticket.id } })) as Record<string, unknown> | null;
       return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${ticketRef(ticket.id, ticket.type)}`);
     },
@@ -272,7 +293,7 @@ export const OPERATIONS: AiOperation[] = [
       if (!status) return err("Status must be RESOLVED, CLOSED or CANCELLED.");
       const code = str(a.code) ? coerceEnum(a.code, RESOLUTION_CODES) : null;
       if (str(a.code) && !code) return err(`Invalid resolution code "${a.code}".`);
-      await setTicketResolution(
+      const res = await setTicketResolution(
         toFormData({
           id: ticket.id,
           status,
@@ -281,6 +302,8 @@ export const OPERATIONS: AiOperation[] = [
           isInternal: a.internal === true,
         }),
       );
+      const refusal = actionRefusal(res);
+      if (refusal) return refusal;
       const after = await db.ticket.findUnique({ where: { id: ticket.id }, select: { status: true } });
       return verifyFieldWrite(after?.status, status, `Set ${ticketRef(ticket.id, ticket.type)} to ${status}`);
     },
@@ -334,7 +357,8 @@ export const OPERATIONS: AiOperation[] = [
     minRole: "AGENT",
     description:
       "Remove the link between two tickets (whichever of them is the source). Give both ticket refs or numbers. " +
-      "To detach a ticket from a problem or change use ticket.set_problem / ticket.set_change with target 'none'.",
+      "To detach a ticket from a problem or change use ticket.set_problem / ticket.set_change with target 'none'; " +
+      "to detach it from a parent ticket use ticket.set_parent with target 'none'.",
     input: z.object({
       ref: z.string().describe("one ticket's ref or number"),
       target: z.string().describe("the other ticket's ref or number"),
@@ -357,6 +381,87 @@ export const OPERATIONS: AiOperation[] = [
       });
       if (!link) return err(`${names} are not linked.`);
       return fromActionResult(await unlinkTicket(toFormData({ linkId: link.id })), `Unlinked ${names}`);
+    },
+  },
+  {
+    id: "ticket.set_parent",
+    group: "Tickets",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Make a ticket a child (sub-ticket) of another ticket, or detach it from its parent. Pass the child's ref and the parent's ref; " +
+      "use target 'none' to remove the ticket's current parent. A ticket has at most one parent; a closed, cancelled or merged ticket " +
+      "cannot be a parent, and a ticket cannot be its own ancestor. Resolving a parent can also resolve its open children (the user chooses that in the UI).",
+    input: z.object({
+      ref: z.string().describe("the child ticket's ref or number, e.g. 'INC-0042'"),
+      target: z.string().describe(`the parent ticket's ref or number, or '${NO_PARENT_TARGET}' to detach`),
+    }),
+    label: (a) => setParentLabel(a.ref, a.target),
+    run: async (a) => {
+      const ticket = await resolveTicket(a.ref);
+      if (!ticket) return err(`Ticket not found: ${a.ref}`);
+      const detach = isNoParent(str(a.target));
+      const parent = detach ? null : await resolveTicket(a.target);
+      if (!detach && !parent) return err(`Parent ticket not found: ${a.target}`);
+      const before = await db.ticket.findUnique({ where: { id: ticket.id }, select: { parentId: true } });
+      if ((before?.parentId ?? null) === (parent?.id ?? null)) {
+        return ok(
+          parent
+            ? `${refFor(ticket)} is already a child of ${refFor(parent)}`
+            : `${refFor(ticket)} has no parent to detach from`,
+        );
+      }
+      const refusal = actionRefusal(
+        await setTicketParent(toFormData({ ticketId: ticket.id, parentId: parent?.id ?? NO_PARENT_TARGET })),
+      );
+      if (refusal) return refusal;
+      const after = await db.ticket.findUnique({ where: { id: ticket.id }, select: { parentId: true } });
+      return verifyFieldWrite(
+        after?.parentId,
+        parent ? String(parent.id) : NO_PARENT_TARGET,
+        parent ? `Made ${refFor(ticket)} a child of ${refFor(parent)}` : `Detached ${refFor(ticket)} from its parent`,
+      );
+    },
+  },
+  {
+    id: "ticket.merge",
+    group: "Tickets",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Merge a duplicate ticket (ref) into the ticket that stays (target). The source's comments, watchers, linked assets and ticket links are copied " +
+      "to the target (the source keeps its own); its attachments and child tickets are moved; the target adopts the source's problem/change when it has none; " +
+      "the source's pending approvals are withdrawn; the source is then cancelled and keeps pointing at the target. Cancelled or already merged tickets cannot be merged or merged into. The merge can be reverted with ticket.unmerge.",
+    input: z.object({
+      ref: z.string().describe("the duplicate ticket to merge away, e.g. 'INC-0043'"),
+      target: z.string().describe("the ticket that remains, e.g. 'INC-0042'"),
+    }),
+    label: (a) => mergeLabel(a.ref, a.target),
+    run: async (a) => {
+      const source = await resolveTicket(a.ref);
+      if (!source) return err(`Ticket not found: ${a.ref}`);
+      const target = await resolveTicket(a.target);
+      if (!target) return err(`Target ticket not found: ${a.target}`);
+      const res = await mergeIgnoringRedirect(toFormData({ id: source.id, targetId: target.id }));
+      if (!res.ok) return err(res.error ?? "The merge was refused. Nothing was changed.");
+      const after = await db.ticket.findUnique({ where: { id: source.id }, select: { mergedIntoId: true } });
+      return verifyFieldWrite(after?.mergedIntoId, String(target.id), `Merged ${refFor(source)} into ${refFor(target)}`);
+    },
+  },
+  {
+    id: "ticket.unmerge",
+    group: "Tickets",
+    kind: "write",
+    minRole: "AGENT",
+    description:
+      "Undo a merge: pass the merged (cancelled) ticket's ref. It is restored to its previous status and what the merge copied or moved " +
+      "to the other ticket is taken back. Merges made before undo existed, or whose target was merged again, cannot be undone.",
+    input: z.object({ ref: z.string().describe("the merged ticket's ref or number, e.g. 'INC-0043'") }),
+    label: (a) => unmergeLabel(a.ref),
+    run: async (a) => {
+      const ticket = await resolveTicket(a.ref);
+      if (!ticket) return err(`Ticket not found: ${a.ref}`);
+      return fromActionResult(await unmergeTicket(toFormData({ id: ticket.id })), `Undid the merge of ${refFor(ticket)}`);
     },
   },
   {

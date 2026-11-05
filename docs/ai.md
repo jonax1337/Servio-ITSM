@@ -171,7 +171,7 @@ Coverage by module:
 
 | Module | File | Operations (write) |
 | --- | --- | --- |
-| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), tasks, work-log, watch, major-incident |
+| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), parent/child (`ticket.set_parent`), merge / undo merge (`ticket.merge`, `ticket.unmerge`), tasks, work-log, watch, major-incident |
 | Categories | `modules/taxonomy.ts` | category create/update |
 | Groups & Users | `modules/org.ts` | group create / auto-assign, user field (role/active — ADMIN) |
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
@@ -186,6 +186,8 @@ ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. 
 The ops then read `Ticket.problemId` / `changeId` back and return `err(...)` when the action silently refused (role,
 missing target). A ref of the wrong kind (a `CHG-` ref for a problem) is rejected by `parseRecordNumber`
 (`helpers.ts`). A change's own problem link is set with `change.set_problem` (`setChangeProblem`), same ref/`none` convention.
+
+**Parent/child and merge.** `ticket.set_parent` (child ref + parent ref, or `none` to detach), `ticket.merge` (duplicate ref + the ticket that stays) and `ticket.unmerge` (the merged ticket's ref) call `setTicketParent`, `mergeTicket` and `unmergeTicket`, so every rule the UI enforces (no cycles, no closed/cancelled/merged parent, merged tickets only move back via undo) applies and the refusal reason reaches the user. The approval card for a merge lists what is copied (comments, watchers, linked assets, ticket links) and what is moved (attachments, child tickets), that the target adopts the source's problem/change when it has none, that pending approvals are withdrawn, that the source is cancelled and that the merge can be undone. `mergeTicket` redirects on success; the op swallows that `NEXT_REDIRECT` and reads `mergedIntoId` back. `ticket.update_field` and `ticket.resolve` return the action's own refusal reason (for example the merged-ticket status guard) instead of the generic one. `ticket.set_parent` reports "already a child of" / "has no parent" when nothing would change. The `get_ticket` read tool and the ticket-scoped chat context (`loadTicketContext` in `lib/actions/ai.ts`) both carry parent and merge facts; `get_ticket` returns `parent`, `children` (first 10) with `childCount`, `mergedInto` and `mergedTicketCount` (shaped by `ticketRelations` in `ticket-relations.ts`).
 
 **Refused writes.** The field-update and status ops read the record back after the action runs (`verifyFieldWrite` in `helpers.ts`) and return an error when the write was refused (workflow rule, role, or a request awaiting approval — which can only be cancelled) instead of claiming success.
 

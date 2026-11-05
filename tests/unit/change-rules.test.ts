@@ -127,7 +127,7 @@ describe("ticketListQuery rank sorting", () => {
 
 describe("isWindowEditable", () => {
   it("allows edits before the CAB decides and as a reschedule once approved", () => {
-    for (const status of ["DRAFT", "SUBMITTED", "REJECTED", "APPROVED", "SCHEDULED"]) expect(isWindowEditable(status), status).toBe(true);
+    for (const status of ["DRAFT", "REJECTED", "APPROVED", "SCHEDULED"]) expect(isWindowEditable(status), status).toBe(true);
     for (const status of ["APPROVAL", "IN_PROGRESS", "REVIEW", "CLOSED", "FAILED", "CANCELLED"]) {
       expect(isWindowEditable(status), status).toBe(false);
     }

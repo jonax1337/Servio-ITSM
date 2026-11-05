@@ -62,6 +62,8 @@ model User {
   ownedServices      Service[]               @relation("ServiceOwner")
   catalogApprovals   CatalogItem[]           @relation("CatalogApprover")
   ticketApprovals    TicketApproval[]        @relation("TicketApprover")
+  ticketMerges       TicketMerge[]           @relation("TicketMergedBy")
+  ticketMergeUndos   TicketMerge[]           @relation("TicketMergeUndoneBy")
   managedGroups      Group[]                 @relation("GroupManager")
   apiTokens          ApiToken[]
   auditLogs          AuditLog[]
@@ -541,6 +543,7 @@ model Ticket {
   resolutionCode  String? // FIXED | WORKAROUND | NOT_REPRODUCIBLE | DUPLICATE | NO_ACTION
   resolutionNote  String?
   mergedIntoId    Int?
+  parentId        Int? // parent ticket of a sub-ticket; cleared (SetNull) if the parent is deleted
 
   requesterId       String
   requestedByUserId String?
@@ -598,6 +601,10 @@ model Ticket {
   survey           SurveyResponse?
   mergedInto       Ticket?                 @relation("TicketMerge", fields: [mergedIntoId], references: [id])
   mergedTickets    Ticket[]                @relation("TicketMerge")
+  parent           Ticket?                 @relation("TicketParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Ticket[]                @relation("TicketParent")
+  mergesAsSource   TicketMerge[]           @relation("MergeSource")
+  mergesAsTarget   TicketMerge[]           @relation("MergeTarget")
   linksFrom        TicketLink[]            @relation("LinkSource")
   linksTo          TicketLink[]            @relation("LinkTarget")
   aiProjects       AiProject[]
@@ -608,6 +615,7 @@ model Ticket {
   @@index([requesterId])
   @@index([requestedByUserId])
   @@index([groupId])
+  @@index([parentId])
   @@index([createdAt])
   @@index([resolvedAt])
   @@index([resolveDueAt])
@@ -669,6 +677,38 @@ model WorkLog {
   user   User   @relation(fields: [userId], references: [id])
 
   @@index([ticketId])
+}
+
+/// One ticket merge, with what is needed to undo it: the source's pre-merge state and the
+/// records that were copied onto the target (JSON arrays of ids).
+model TicketMerge {
+  id                    String    @id @default(cuid())
+  sourceId              Int
+  targetId              Int
+  mergedById            String?
+  previousStatus        String
+  previousClosedAt      DateTime?
+  previousApprovalState String?
+  copiedCommentIds      String    @default("[]") // JSON array of TicketComment ids created on the target
+  copiedWatcherIds      String    @default("[]") // JSON array of user ids added as watchers on the target
+  copiedAssetIds        String    @default("[]") // JSON array of asset ids linked to the target
+  movedAttachments      String    @default("[]") // JSON array of {id, commentId}: Attachments re-pointed to the target (commentId = the source comment they hung on, null for ticket-level files)
+  copiedLinkIds         String    @default("[]") // JSON array of TicketLink ids created for the target
+  movedChildIds         String    @default("[]") // JSON array of ticket ids re-parented from the source to the target
+  withdrawnApprovalIds  String    @default("[]") // JSON array of TicketApproval ids that were PENDING on the source and got cancelled
+  adoptedProblemId      Int? // problemId the target took over from the source (it had none)
+  adoptedChangeId       Int? // changeId the target took over from the source (it had none)
+  createdAt             DateTime  @default(now())
+  undoneAt              DateTime?
+  undoneById            String?
+
+  source   Ticket @relation("MergeSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target   Ticket @relation("MergeTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  mergedBy User?  @relation("TicketMergedBy", fields: [mergedById], references: [id], onDelete: SetNull)
+  undoneBy User?  @relation("TicketMergeUndoneBy", fields: [undoneById], references: [id], onDelete: SetNull)
+
+  @@index([sourceId])
+  @@index([targetId])
 }
 
 model TicketLink {
@@ -831,7 +871,7 @@ model Change {
   description        String    @default("") // plaintext twin
   descriptionHtml    String? // sanitized rich-text HTML
   type               String    @default("NORMAL") // STANDARD | NORMAL | EMERGENCY
-  status             String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED | CANCELLED
+  status             String    @default("DRAFT") // DRAFT | APPROVAL | APPROVED | SCHEDULED | IN_PROGRESS | REVIEW | CLOSED | REJECTED | FAILED | CANCELLED
   risk               String    @default("MEDIUM") // LOW | MEDIUM | HIGH
   priority           String    @default("MEDIUM")
   impact             String    @default("MEDIUM")

@@ -264,6 +264,7 @@ which would skip breach stamping, automations and the survey pipeline (else `422
 - The transition is validated against the **admin-configured workflow**
   ([`lib/workflow.ts`](../lib/workflow.ts): built-in map + admin overrides + role
   gates — the same rules the console enforces); a disallowed move returns `409`.
+- A ticket merged into another (`mergedIntoId` set) can only move to `CANCELLED`; any other status returns `409` (undo the merge in the console first).
 - Moving into `PENDING`/`ON_HOLD` pauses the SLA clock (in business time when the
   SLA carries a calendar); moving out resumes it.
 - While a catalog request awaits approval (`approvalState` `PENDING`) the only

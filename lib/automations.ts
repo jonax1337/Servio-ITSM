@@ -6,6 +6,7 @@ import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { safeWebhookFetch } from "@/lib/safe-fetch";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
+import { mergedStatusRefusal } from "@/lib/merge-rules";
 import { isGroupMember } from "@/lib/assignment";
 import { isAgent, type Role } from "@/lib/session";
 import { PRIORITIES, TICKET_STATUSES, ticketRef } from "@/lib/constants";
@@ -104,7 +105,11 @@ export async function runAutomations(trigger: Trigger, ticketId: number) {
           // the SAME SLA/resolution side-effects as the console.
           const next = a.value;
           if (!next || !TICKET_STATUSES.includes(next as (typeof TICKET_STATUSES)[number])) break;
-          if (!approvalAllowsStatus(t.approvalState, next) || !(await canTransitionConfigured("TICKET", t.status, next, AUTOMATION_ROLE))) {
+          if (
+            mergedStatusRefusal(t, next) ||
+            !approvalAllowsStatus(t.approvalState, next) ||
+            !(await canTransitionConfigured("TICKET", t.status, next, AUTOMATION_ROLE))
+          ) {
             await writeAudit({ userId: null, action: "AUTOMATION", entity: "Ticket", entityId: ticketId, summary: `Automation "${rule.name}" skipped disallowed status transition ${t.status} → ${next}` });
             break;
           }
