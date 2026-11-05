@@ -910,7 +910,7 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
 
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    select: { id: true, type: true, prefix: true, title: true, assigneeId: true, groupId: true, requester: { select: { email: true } } },
+    select: { id: true, type: true, prefix: true, title: true, assigneeId: true, groupId: true, requesterId: true, requester: { select: { email: true } } },
   });
   if (!ticket) return { error: "Ticket not found." };
   // Guard the external-exfiltration path: only ADMIN/MANAGER, the assignee, or a
@@ -964,10 +964,16 @@ export async function forwardComment(_prev: ForwardState, formData: FormData): P
   );
   const contentHtml = (note ? textToHtmlParagraphs(note) : "") + historyHtml;
   const threadHeaders = await forwardThreadHeaders(ticketId);
-  // The external party needs the evidence too (screenshots, logs): files on the
-  // ticket itself plus those on the forwarded public messages — never internal ones.
+  // The external party needs the customer's evidence (screenshots, logs): files on
+  // the forwarded public messages, plus ticket-level files the requester or a
+  // customer-side participant uploaded (e.g. the opening email's attachments).
+  // Agent uploads on the ticket itself may be internal or staged — never sent.
+  const customerSide = [
+    ticket.requesterId,
+    ...(await db.ticketParticipant.findMany({ where: { ticketId }, select: { userId: true } })).map((p) => p.userId),
+  ];
   const files = await db.attachment.findMany({
-    where: { OR: [{ ticketId }, { commentId: { in: chain.map((m) => m.id) } }] },
+    where: { OR: [{ commentId: { in: chain.map((m) => m.id) } }, { ticketId, uploadedById: { in: customerSide } }] },
     select: { filename: true, storageKey: true },
   });
   await sendMail({
