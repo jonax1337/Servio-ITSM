@@ -5,17 +5,16 @@
 //
 // The scheduler is single-instance by design: set SCHEDULER_ENABLED=false on any
 // replica that must not fire background ticks (see docs/deployment.md).
+//
+// The Node-only body (which calls `process.on`) lives in
+// `lib/instrumentation-node.ts` and is loaded via a dynamic `import()` gated
+// on NEXT_RUNTIME, per the Next.js instrumentation docs' "Specifying the
+// runtime" guidance — keeping Node-only APIs out of this file avoids a
+// spurious "Node.js API ... not supported in the Edge Runtime" build warning
+// that Turbopack otherwise emits when cross-checking this file against the
+// Edge runtime bundle.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { startScheduler, stopScheduler } = await import("./lib/scheduler");
-  await startScheduler();
-
-  // Graceful shutdown: clear the cron timers so ticks never fire mid-teardown.
-  // Guarded via globalThis so `next dev` HMR reloads don't stack listeners.
-  const g = globalThis as unknown as { __servioSignalsWired?: boolean };
-  if (!g.__servioSignalsWired) {
-    g.__servioSignalsWired = true;
-    process.on("SIGTERM", () => stopScheduler());
-    process.on("SIGINT", () => stopScheduler());
-  }
+  const { registerNode } = await import("./lib/instrumentation-node");
+  await registerNode();
 }

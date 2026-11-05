@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { renderMarkdown, sanitizeCommentHtml } from "@/lib/markdown";
 import { changeArticleStatus, deleteArticle } from "@/lib/actions/knowledge";
 import { ConfirmButton } from "@/components/confirm-dialog";
+import { ArticleHistoryDialog, type ArticleRevisionRow } from "@/components/knowledge/article-history-dialog";
 import { ARTICLE_STATUS_META, ARTICLE_VISIBILITY_META } from "@/lib/constants";
 import { format } from "date-fns";
 
@@ -49,7 +50,15 @@ export default async function ArticlePage({
 
   const article = await db.article.findUnique({
     where: { slug },
-    include: { category: true, author: true, _count: { select: { revisions: true } } },
+    include: {
+      category: true,
+      author: true,
+      _count: { select: { revisions: true } },
+      revisions: {
+        orderBy: { version: "desc" },
+        include: { editor: { select: { name: true, email: true, image: true } } },
+      },
+    },
   });
   if (!article) notFound();
 
@@ -60,6 +69,16 @@ export default async function ArticlePage({
       ? sanitizeCommentHtml(article.body)
       : renderMarkdown(article.body, article.bodyFormat);
   const s = article.status;
+  const revisionRows: ArticleRevisionRow[] = article.revisions.map((r) => ({
+    id: r.id,
+    version: r.version,
+    title: r.title,
+    excerpt: r.excerpt,
+    html: sanitizeCommentHtml(r.body),
+    note: r.note,
+    createdAt: r.createdAt.toISOString(),
+    editor: r.editor,
+  }));
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -88,6 +107,8 @@ export default async function ArticlePage({
               <StatusButton id={article.id} to="RETIRED"><Archive className="size-3.5" /> Retire</StatusButton>
             </>
           ) : null}
+
+          <ArticleHistoryDialog articleId={article.id} revisions={revisionRows} />
 
           <LinkButton href={`/knowledge/${article.slug}/edit`} variant="outline" size="sm">
             <Pencil className="size-3.5" /> Edit

@@ -236,6 +236,68 @@ export async function changeArticleStatus(formData: FormData) {
   revalidatePath(`/portal/knowledge/${article.slug}`);
 }
 
+/**
+ * Restore an article's title/excerpt/body from one of its past revisions.
+ * Non-destructive: writes a NEW revision carrying the old content forward
+ * (append-only history, nothing is deleted or rewritten in place).
+ */
+export async function restoreArticleRevision(formData: FormData) {
+  const me = await requireAgent();
+  if (!me) throw new Error("You need agent access to restore a revision.");
+
+  const articleId = String(formData.get("articleId") ?? "");
+  const revisionId = String(formData.get("revisionId") ?? "");
+
+  const article = await db.article.findUnique({ where: { id: articleId }, select: { id: true, slug: true } });
+  if (!article) throw new Error("Article not found.");
+
+  const revision = await db.articleRevision.findUnique({ where: { id: revisionId } });
+  if (!revision || revision.articleId !== articleId) throw new Error("Revision not found.");
+
+  // Same revision-number race handling as updateArticle above.
+  let saved = false;
+  for (let attempt = 0; attempt < 5 && !saved; attempt++) {
+    const revisionCount = await db.articleRevision.count({ where: { articleId } });
+    try {
+      await db.article.update({
+        where: { id: articleId },
+        data: {
+          title: revision.title,
+          excerpt: revision.excerpt,
+          body: revision.body,
+          bodyFormat: "html",
+          revisions: {
+            create: {
+              version: revisionCount + 1,
+              title: revision.title,
+              excerpt: revision.excerpt,
+              body: revision.body,
+              editorId: me.id,
+              note: `Restored from v${revision.version}`,
+            },
+          },
+        },
+      });
+      saved = true;
+    } catch (e) {
+      if (isUniqueSablelation(e)) continue;
+      throw e;
+    }
+  }
+  if (!saved) throw new Error("Restore conflicted with a concurrent edit, please retry.");
+
+  await writeAudit({
+    userId: me.id,
+    action: "UPDATE",
+    entity: "Article",
+    entityId: articleId,
+    summary: `Restored article "${revision.title}" to v${revision.version}`,
+  });
+  revalidatePath("/knowledge");
+  revalidatePath(`/knowledge/${article.slug}`);
+  revalidatePath(`/portal/knowledge/${article.slug}`);
+}
+
 export async function deleteArticle(formData: FormData) {
   const me = await requireAgent();
   if (!me) throw new Error("You need agent access to delete articles.");

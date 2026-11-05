@@ -133,8 +133,6 @@ schema↔constants enum-comment sync.
 
 ## Known remaining (accepted / low priority)
 
-- Audit-log revision viewer for KB articles still missing (revisions are
-  written, no UI to diff/restore) — feature work, tracked for the next pass.
 - In-memory rate limiting and the scheduler remain single-instance by design
   (documented; swap for Redis/cron when scaling horizontally).
 - `firstResponseBreached` is wall-clock only (documented NB in `lib/sla.ts`).

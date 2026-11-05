@@ -273,8 +273,11 @@ until an object-storage adapter is implemented.**
 
 Servio's sync engine (`SyncSource` in [`prisma/schema.prisma`](../prisma/schema.prisma))
 runs on an **in-process scheduler** started at server boot from
-[`instrumentation.ts`](../instrumentation.ts) → [`lib/scheduler.ts`](../lib/scheduler.ts)
-(Node runtime only, HMR-guarded). The same scheduler runs the inbound-mail poll and a
+[`instrumentation.ts`](../instrumentation.ts) → [`lib/instrumentation-node.ts`](../lib/instrumentation-node.ts) → [`lib/scheduler.ts`](../lib/scheduler.ts)
+(Node runtime only, HMR-guarded; the Node-only body — `process.on` signal handlers —
+lives in `lib/instrumentation-node.ts` so `instrumentation.ts` itself stays free of
+Node-only APIs Turbopack would otherwise flag against the Edge runtime bundle). The
+same scheduler runs the inbound-mail poll and a
 `syncTick` that fires any active source whose `schedule` (cron) is due.
 
 - Cron is parsed with `cron-parser`; a source is due when its next occurrence after
