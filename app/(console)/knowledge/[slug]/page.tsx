@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, Eye, FolderOpen, User as UserIcon, Pencil, History, Send, CheckCircle2, Undo2, Archive, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/session";
+import { hasRole, requireRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -44,7 +44,7 @@ export default async function ArticlePage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  await requireRole("AGENT");
+  const me = await requireRole("AGENT");
   const { slug } = await params;
 
   const article = await db.article.findUnique({
@@ -54,6 +54,7 @@ export default async function ArticlePage({
   if (!article) notFound();
 
   const authorName = article.author?.name ?? article.author?.email ?? null;
+  const canPublish = hasRole(me.role, "MANAGER") && article.authorId !== me.id;
   const html =
     article.bodyFormat === "html"
       ? sanitizeCommentHtml(article.body)
@@ -77,7 +78,8 @@ export default async function ArticlePage({
           {(s === "REVIEW") ? (
             <StatusButton id={article.id} to="DRAFT"><Undo2 className="size-3.5" /> Back to draft</StatusButton>
           ) : null}
-          {(s === "DRAFT" || s === "REVIEW" || s === "RETIRED") ? (
+          {/* Publishing is an editorial sign-off: MANAGER+ and never the author (enforced in changeArticleStatus). */}
+          {(s === "DRAFT" || s === "REVIEW" || s === "RETIRED") && canPublish ? (
             <StatusButton id={article.id} to="PUBLISHED" variant="default"><CheckCircle2 className="size-3.5" /> Publish</StatusButton>
           ) : null}
           {(s === "PUBLISHED") ? (

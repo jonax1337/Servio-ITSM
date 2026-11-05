@@ -19,7 +19,7 @@ import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { ApprovalPanel, type ApprovalRow } from "@/components/changes/approval-panel";
 import { ApprovalProgress } from "@/components/changes/approval-progress";
 import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
-import { evaluateCab } from "@/lib/cab";
+import { approverRolesForRisk, evaluateCab } from "@/lib/cab";
 import { computeImpact } from "@/lib/cmdb-graph";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { CommentThread } from "@/components/comments/comment-thread";
@@ -107,8 +107,15 @@ export default async function ChangeDetailPage({
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const isAgentUser = !!me && isAgent(me.role as Role);
   const approverIds = new Set(change.approvals.map((a) => a.approverId));
+  // Offer only people addChangeApprover will actually seat (role per risk, SoD).
+  const eligibleIds = new Set(
+    (await db.user.findMany({
+      where: { role: { in: approverRolesForRisk(change.risk) }, isActive: true },
+      select: { id: true },
+    })).map((u) => u.id),
+  );
   const agentOptions: ComboOption[] = options.agents
-    .filter((a) => !approverIds.has(a.id) && a.id !== change.assigneeId)
+    .filter((a) => eligibleIds.has(a.id) && !approverIds.has(a.id) && a.id !== change.assigneeId && a.id !== change.createdById)
     .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const approvalRows: ApprovalRow[] = change.approvals.map((a) => ({
     id: a.id,

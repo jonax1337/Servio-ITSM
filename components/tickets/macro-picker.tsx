@@ -6,7 +6,7 @@ import { Zap, Loader2, MessageSquareText, Share2, User as UserIcon } from "lucid
 import { applyMacro } from "@/lib/actions/macros";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -59,25 +59,25 @@ export function MacroPicker({ ticketId, macros }: { ticketId: number; macros: Pi
         ) : (
           <>
             {shared.length > 0 ? (
-              <>
+              <DropdownMenuGroup>
                 <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
                   <Share2 className="size-3.5" /> Shared
                 </DropdownMenuLabel>
                 {shared.map((m) => (
                   <MacroItem key={m.id} macro={m} running={runningId === m.id} disabled={pending} onRun={() => run(m)} />
                 ))}
-              </>
+              </DropdownMenuGroup>
             ) : null}
+            {shared.length > 0 && personal.length > 0 ? <DropdownMenuSeparator /> : null}
             {personal.length > 0 ? (
-              <>
-                {shared.length > 0 ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuGroup>
                 <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
                   <UserIcon className="size-3.5" /> Personal
                 </DropdownMenuLabel>
                 {personal.map((m) => (
                   <MacroItem key={m.id} macro={m} running={runningId === m.id} disabled={pending} onRun={() => run(m)} />
                 ))}
-              </>
+              </DropdownMenuGroup>
             ) : null}
           </>
         )}

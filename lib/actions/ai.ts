@@ -142,6 +142,7 @@ function renderTicket(t: TicketContext): string {
   const assets = t.assets.map((x) => x.asset.name);
 
   const header = [
+    `Ref: ${ticketRef(t.id, t.prefix || t.type)}`,
     `Title: ${t.title}`,
     `Type: ${t.type}`,
     requesterLine,
@@ -199,7 +200,7 @@ async function findSimilarTickets(t: TicketContext) {
     take: 8,
     orderBy: { updatedAt: "desc" },
     select: {
-      id: true, title: true, type: true, priority: true, status: true, resolutionCode: true,
+      id: true, title: true, type: true, prefix: true, priority: true, status: true, resolutionCode: true,
       group: { select: { name: true } }, category: { select: { name: true } },
     },
   });
@@ -287,7 +288,7 @@ export async function suggestTriage(ticketId: number): Promise<TriageState> {
     similar
       .map(
         (s) =>
-          `- ${ticketRef(s.id, s.type)} [${s.status}] "${s.title}" → priority ${s.priority}, team ${s.group?.name ?? "none"}, category ${s.category?.name ?? "none"}${s.resolutionCode ? `, resolved ${s.resolutionCode}` : ""}`,
+          `- ${ticketRef(s.id, s.prefix || s.type)} [${s.status}] "${s.title}" → priority ${s.priority}, team ${s.group?.name ?? "none"}, category ${s.category?.name ?? "none"}${s.resolutionCode ? `, resolved ${s.resolutionCode}` : ""}`,
       )
       .join("\n") || "(no similar tickets found)";
 

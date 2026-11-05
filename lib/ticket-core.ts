@@ -12,8 +12,9 @@ import {
 import { htmlToText, parseMentionIds } from "@/lib/markdown";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
+import { canTransitionConfigured } from "@/lib/workflow";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { slaCreateData, firstResponseData } from "@/lib/sla";
+import { slaCreateData, firstResponseData, customerReplyReopenData } from "@/lib/sla";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -176,6 +177,57 @@ export async function notifyWatchers(
   await Promise.all(
     watchers.filter((w) => w.userId !== exclude).map((w) => notify(w.userId, n)),
   );
+}
+
+/** Notify the ticket's assignee and watchers (once each), except `exclude`. */
+export async function notifyAssigneeAndWatchers(
+  ticketId: number,
+  exclude: string,
+  n: { type?: string; title: string; body?: string; entity?: string; entityId?: string },
+) {
+  const [ticket, watchers] = await Promise.all([
+    db.ticket.findUnique({ where: { id: ticketId }, select: { assigneeId: true } }),
+    db.ticketWatcher.findMany({ where: { ticketId }, select: { userId: true } }),
+  ]);
+  const recipients = new Set(watchers.map((w) => w.userId));
+  if (ticket?.assigneeId) recipients.add(ticket.assigneeId);
+  recipients.delete(exclude);
+  await Promise.all([...recipients].map((uid) => notify(uid, n)));
+}
+
+/**
+ * A requester-side reply (portal or email) arrived: reopen a RESOLVED/CLOSED
+ * ticket so it lands back in the agent queue, and bump its activity timestamp.
+ * Returns true when the ticket was reopened. The caller has authorised `actorId`.
+ */
+export async function reopenOnCustomerReply(ticketId: number, actorId: string): Promise<boolean> {
+  const ticket = await db.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      status: true, resolutionCode: true, resolutionNote: true,
+      responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
+    },
+  });
+  if (!ticket) return false;
+  const reopen = customerReplyReopenData(ticket);
+  const allowed = reopen !== null && (await canTransitionConfigured("TICKET", ticket.status, "OPEN", "USER"));
+  if (!allowed) {
+    await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+    return false;
+  }
+  // Conditional write: an agent's status change between the read and this write wins.
+  const { count } = await db.ticket.updateMany({
+    where: { id: ticketId, status: ticket.status },
+    data: { ...reopen, updatedAt: new Date() },
+  });
+  if (count === 0) return false;
+  // The resolution note stays in the comment thread; keep the cleared code in the audit trail.
+  const was = ticket.resolutionCode ? `${ticket.status}, ${ticket.resolutionCode}` : ticket.status;
+  await writeAudit({
+    userId: actorId, action: "UPDATE", entity: "Ticket", entityId: ticketId,
+    summary: `Reopened by requester reply (was ${was})`,
+  });
+  return true;
 }
 
 /**

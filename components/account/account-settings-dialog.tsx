@@ -55,9 +55,22 @@ export function AccountSettingsDialog({
     };
   }, [open]);
 
-  // Reflect a saved name/avatar change in the surrounding server UI.
+  // React resets an action form to its defaultValues after a submit. Remount it with
+  // the freshly saved values, or a later save in another section would resubmit the
+  // stale values from when the dialog opened (e.g. wiping a just-saved phone number).
+  const [formKey, setFormKey] = useState(0);
   useEffect(() => {
-    if (state?.ok) router.refresh();
+    if (!state?.ok) return;
+    router.refresh(); // reflect a saved name/avatar change in the surrounding server UI
+    let active = true;
+    getMyAccount().then((data) => {
+      if (!active) return;
+      setUser(data);
+      setFormKey((k) => k + 1);
+    });
+    return () => {
+      active = false;
+    };
   }, [state, router]);
 
   const fe = state?.fieldErrors ?? {};
@@ -76,6 +89,7 @@ export function AccountSettingsDialog({
           </div>
         ) : (
           <form
+            key={formKey}
             action={action}
             className="grid h-full min-h-0 sm:grid-cols-[190px_1fr]"
           >

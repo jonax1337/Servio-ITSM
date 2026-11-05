@@ -18,7 +18,11 @@ export function AddApprover({ changeId, agentOptions }: { changeId: number; agen
     fd.set("changeId", String(changeId));
     fd.set("approverId", value);
     start(async () => {
-      await addChangeApprover(fd);
+      const res = await addChangeApprover(fd);
+      if (!res.ok) {
+        toast.error(res.error ?? "Could not add the approver.");
+        return;
+      }
       setValue("none");
       toast.success("Approver added");
     });

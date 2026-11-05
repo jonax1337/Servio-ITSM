@@ -244,6 +244,21 @@ export function statusChangeData(
   return patch;
 }
 
+/** Statuses a requester's reply (portal or email) pulls back into the agent queue. */
+const REOPENED_BY_CUSTOMER_REPLY = ["RESOLVED", "CLOSED"];
+
+/**
+ * The patch that reopens a finished ticket when its requester replies, or null
+ * when the reply leaves the status alone (CANCELLED stays cancelled on purpose).
+ */
+export function customerReplyReopenData(
+  current: Parameters<typeof statusChangeData>[0],
+  now: Date = new Date(),
+): Record<string, unknown> | null {
+  if (!REOPENED_BY_CUSTOMER_REPLY.includes(current.status)) return null;
+  return { status: "OPEN", ...statusChangeData(current, "OPEN", now) };
+}
+
 const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"
 
 /**

@@ -41,6 +41,15 @@ export const CHANGE_TRANSITIONS: TransitionMap = {
   CLOSED: [],
 };
 
+/**
+ * A catalog request whose approval is still PENDING may not be worked, paused or
+ * fulfilled before the approver decides; agents can only cancel it. The approval
+ * flow itself (decideApproval) moves it on and is not routed through here.
+ */
+export function approvalAllowsStatus(approvalState: string | null | undefined, to: string) {
+  return approvalState !== "PENDING" || to === "CANCELLED";
+}
+
 export function canTransition(
   map: TransitionMap,
   from: string | null | undefined,

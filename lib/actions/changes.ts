@@ -303,30 +303,35 @@ export async function submitChangeForApproval(formData: FormData) {
   revalidatePath("/approvals");
 }
 
-export async function addChangeApprover(formData: FormData) {
+export async function addChangeApprover(formData: FormData): Promise<{ ok: boolean; error?: string }> {
   // Manager+ DB-truth gate — the change owner must NOT curate their own board (SoD).
   const me = await requireManagerC();
-  if (!me) return;
+  if (!me) return { ok: false, error: "Only managers can change the approval board." };
   const parsed = addApproverSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
   const { changeId, approverId } = parsed.data;
 
   const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, risk: true, title: true } });
-  if (!change) return;
-  if (change.status !== "APPROVAL") return;
+  if (!change) return { ok: false, error: "Change not found." };
+  if (change.status !== "APPROVAL") return { ok: false, error: "Approvers can only be added while the change is in approval." };
   // SoD — never seat the owner (assignee) or the creator.
-  if (approverId === change.assigneeId || approverId === change.createdById) return;
-  if (!(await isEligibleApprover(approverId, change.risk))) return;
+  if (approverId === change.assigneeId || approverId === change.createdById) {
+    return { ok: false, error: "The change owner or creator cannot approve their own change." };
+  }
+  if (!(await isEligibleApprover(approverId, change.risk))) {
+    return { ok: false, error: `This person's role cannot approve a ${change.risk.toLowerCase()}-risk change.` };
+  }
 
   // Idempotent (honors @@unique([changeId, approverId]) without a P2002 throw).
   const exists = await db.changeApproval.findFirst({ where: { changeId, approverId }, select: { id: true } });
-  if (exists) return;
+  if (exists) return { ok: true };
   await db.changeApproval.create({ data: { changeId, approverId } });
 
   await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: change.title, entity: "Change", entityId: String(changeId) });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: changeId, summary: "Added approver" });
   revalidatePath(`/changes/${changeId}`);
   revalidatePath("/approvals");
+  return { ok: true };
 }
 
 export async function removeChangeApprover(formData: FormData) {

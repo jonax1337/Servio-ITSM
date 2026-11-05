@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/session";
 import { ticketRef } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
  * knowledge articles, published catalog items, and the caller's own tickets.
  */
 export async function GET(req: Request) {
-  const me = await getSessionUser();
-  if (!me) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  // DB truth, not the JWT: a deactivated user must lose portal access immediately.
+  const me = await getCurrentUser();
+  if (!me || !me.isActive) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
 
   const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
   if (q.length < 1) return NextResponse.json({ results: [] });

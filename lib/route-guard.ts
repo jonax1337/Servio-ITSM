@@ -20,9 +20,25 @@ export type RankRole = keyof typeof RANK;
 
 const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey", "/brand"];
 
+/**
+ * Everything a plain USER may reach: the portal pages plus the APIs those pages
+ * call. Each of these route handlers authorises the live DB user itself
+ * (USER-scoped search/assistant, `canUploadTo` / `canViewAttachment` for files).
+ */
+const PORTAL_PREFIXES = ["/portal", "/api/portal", "/api/files"];
+
+function matchesAnyPrefix(path: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 /** Public route namespaces match whole path segments, including static brand assets. */
 export function isPublicPath(path: string): boolean {
-  return PUBLIC_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+  return matchesAnyPrefix(path, PUBLIC_PREFIXES);
+}
+
+/** True for routes that belong to the self-service portal (see PORTAL_PREFIXES). */
+export function isPortalPath(path: string): boolean {
+  return matchesAnyPrefix(path, PORTAL_PREFIXES);
 }
 
 /** Rank of a role string (unknown roles fall back to the lowest rank). */

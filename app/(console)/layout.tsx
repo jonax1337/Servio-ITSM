@@ -37,7 +37,8 @@ export default async function ConsoleLayout({
             notifications={notifications}
             sableEnabled={configured || teaser}
           />
-          <main className="min-w-0 flex-1">{children}</main>
+          {/* Not a <main>: SidebarInset already renders the page's single main landmark. */}
+          <div className="min-w-0 flex-1">{children}</div>
           <SableMount
             configured={configured}
             teaser={teaser}

@@ -28,6 +28,7 @@ import {
   slaCreateData, pauseData, resumeData, statusChangeData, ticketCalendar,
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { approvalAllowsStatus } from "@/lib/transitions";
 import {
   TICKET_TYPES,
   PRIORITIES,
@@ -121,6 +122,7 @@ export async function updateTicketField(formData: FormData) {
       include: { sla: { select: { businessCalendarId: true } } },
     });
     if (!current) return;
+    if (!approvalAllowsStatus(current.approvalState, value)) return;
     // Enforce the configured lifecycle (built-in map + admin overrides + role).
     if (!(await canTransitionConfigured("TICKET", current.status, value, me.role as Role))) return;
     // Shared with the automation engine so both keep the SLA clock consistent.
@@ -518,6 +520,7 @@ export async function setTicketResolution(formData: FormData) {
   });
   if (!current) return;
   if (!(await canActOnTicket(me, current))) return;
+  if (!approvalAllowsStatus(current.approvalState, status)) return;
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   const now = new Date();
@@ -970,9 +973,10 @@ export async function setTicketPending(formData: FormData) {
   const noteInternal = formData.get("isInternal") === "on";
   if (!id || !["PENDING", "ON_HOLD"].includes(status) || !reason) return;
 
-  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, pendingSince: true, assigneeId: true, groupId: true } });
+  const current = await db.ticket.findUnique({ where: { id }, select: { status: true, approvalState: true, pendingSince: true, assigneeId: true, groupId: true } });
   if (!current) return;
   if (!(await canActOnTicket(me, current))) return;
+  if (!approvalAllowsStatus(current.approvalState, status)) return;
   if (!(await canTransitionConfigured("TICKET", current.status, status, me.role as Role))) return;
 
   await db.ticket.update({

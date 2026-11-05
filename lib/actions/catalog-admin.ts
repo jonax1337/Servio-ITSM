@@ -202,7 +202,9 @@ export async function deleteCatalogItem(formData: FormData) {
   if (!me) return;
   const id = String(formData.get("id") ?? "");
   // deleteMany: no throw when the item is already gone; skip revalidate on a no-op.
+  const item = await db.catalogItem.findUnique({ where: { id }, select: { name: true } });
   const gone = await db.catalogItem.deleteMany({ where: { id } }).catch(() => null);
   if (!gone || gone.count === 0) return;
+  await writeAudit({ userId: me.id, action: "DELETE", entity: "CatalogItem", entityId: id, summary: `Deleted catalog item "${item?.name ?? id}"` });
   revalidatePath("/catalog");
 }

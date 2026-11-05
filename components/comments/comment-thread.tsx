@@ -264,6 +264,9 @@ export function CommentThread({
   const [quoteAnchorId, setQuoteAnchorId] = useState<string | null>(null);
   const [showQuote, setShowQuote] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false); // Freshservice-style: collapsed by default
+  // Initial editor content for the NEXT composer mount (the editor only exists while open).
+  const [composerSeedHtml, setComposerSeedHtml] = useState("");
+  const composerMounted = !emailReply || composerOpen;
   const sum = useThreadSummary(aiTicketId, aiTeaser);
 
   // The quoted mail trail (like a mail client's collapsed "•••"): public messages
@@ -293,9 +296,15 @@ export function CommentThread({
 
   // Drop an AI summary into the composer and mark it internal, for a review-then-send flow.
   function addSummaryAsInternal(html: string) {
-    editorRef.current?.setHTML(html);
     setIsInternal(true);
-    editorRef.current?.focus();
+    setMode("note");
+    if (composerMounted) {
+      editorRef.current?.setHTML(html);
+      editorRef.current?.focus();
+    } else {
+      setComposerSeedHtml(html);
+      setComposerOpen(true);
+    }
     toast.success("Added to composer as an internal note. Review and send.");
   }
 
@@ -413,7 +422,7 @@ export function CommentThread({
             </div>
           ) : null}
 
-          {!emailReply || composerOpen ? (
+          {composerMounted ? (
           <form
             ref={ref}
             action={async (fd) => {
@@ -426,6 +435,7 @@ export function CommentThread({
               setQuoteAnchorId(null);
               setShowQuote(false);
               setComposerOpen(false);
+              setComposerSeedHtml("");
               setResetKey((k) => k + 1);
             }}
             className={`mt-1 grid gap-2 rounded-xl border p-3 ${emailReply && mode === "note" ? "border-amber-500/30 bg-amber-500/5" : "bg-card"}`}
@@ -470,6 +480,7 @@ export function CommentThread({
 
             <RichTextEditor
               name="bodyHtml"
+              defaultHTML={composerSeedHtml}
               required
               placeholder={emailReply && mode === "note" ? "Internal note (visible to agents only)…" : placeholder}
               ariaLabel="Reply"
@@ -531,7 +542,7 @@ export function CommentThread({
               </div>
               <div className="flex items-center gap-2">
                 {emailReply ? (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setShowQuote(false); }}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setComposerSeedHtml(""); setShowQuote(false); }}>
                     Cancel
                   </Button>
                 ) : null}

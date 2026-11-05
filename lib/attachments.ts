@@ -36,11 +36,14 @@ export async function canUploadTo(actor: SessionActor, target: UploadTarget): Pr
   if (target.kind === "comment") {
     const c = await db.ticketComment.findUnique({
       where: { id: target.commentId },
-      select: { isInternal: true, ticket: { select: { requesterId: true } } },
+      select: { isInternal: true, authorId: true, ticket: { select: { requesterId: true, status: true } } },
     });
     if (!c) return null;
-    if (agent || (c.ticket.requesterId === actor.id && !c.isInternal)) return { commentId: target.commentId };
-    return null;
+    if (agent) return { commentId: target.commentId };
+    // Requesters may only add files to their OWN public comments on a still-open ticket.
+    const ownComment = c.authorId === actor.id && c.ticket.requesterId === actor.id && !c.isInternal;
+    const ticketOpen = c.ticket.status !== "CLOSED" && c.ticket.status !== "CANCELLED";
+    return ownComment && ticketOpen ? { commentId: target.commentId } : null;
   }
 
   if (target.kind === "aiProject") {

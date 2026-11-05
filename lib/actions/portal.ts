@@ -6,8 +6,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
-import { TICKET_TYPES, PRIORITIES } from "@/lib/constants";
+import { TICKET_TYPES, PRIORITIES, ticketRef } from "@/lib/constants";
 import { createPortalTicketFor, linkStagedAttachments } from "@/lib/portal-tickets";
+import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 
 export type PortalState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
@@ -63,7 +64,9 @@ export async function addPortalComment(formData: FormData) {
   const ticket = await db.ticket.findFirst({
     where: { id, OR: [{ requesterId: me.id }, { participants: { some: { userId: me.id } } }] },
   });
-  if (!ticket) return;
+  // Same rule as the portal page, which hides the reply form on finished tickets
+  // (the requester opens a new request instead); RESOLVED stays replyable.
+  if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return;
 
   // Attach files staged on the requester's own ticket onto this comment (atomic + capped).
   const attachmentIds = formData.getAll("attachmentIds").map(String).filter(Boolean).slice(0, 20);
@@ -77,6 +80,14 @@ export async function addPortalComment(formData: FormData) {
     }
   });
 
-  await db.ticket.update({ where: { id }, data: { updatedAt: new Date() } });
+  await reopenOnCustomerReply(id, me.id);
+  const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+  await notifyAssigneeAndWatchers(id, me.id, {
+    type: "COMMENT",
+    title: `Portal reply on ${ticketRef(id, ticket.prefix || ticket.type)}`,
+    body: snippet,
+    entity: "Ticket",
+    entityId: String(id),
+  });
   revalidatePath(`/portal/tickets/${id}`);
 }

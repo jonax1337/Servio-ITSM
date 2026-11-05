@@ -16,6 +16,7 @@ import { SableMark } from "@/components/sable-mark";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { useSable } from "@/components/assistant/sable-provider";
 import { consoleNav, filterNav } from "@/lib/nav";
+import { isTextEntryTarget } from "@/lib/utils";
 
 type Result = { group: string; href: string; title: string; sub: string };
 
@@ -56,7 +57,7 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if ((e.key === "k" && (e.metaKey || e.ctrlKey)) || e.key === "/") {
-        if (e.key === "/" && /input|textarea/i.test((e.target as HTMLElement)?.tagName)) return;
+        if (e.key === "/" && isTextEntryTarget(e.target)) return;
         e.preventDefault();
         setOpen((o) => !o);
       }

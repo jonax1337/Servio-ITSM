@@ -21,7 +21,7 @@ import {
   changeRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite } from "../helpers";
 
 /**
  * Problems & Changes. Exports `OPERATIONS: AiOperation[]`, one entry per capability.
@@ -158,7 +158,8 @@ export const OPERATIONS: AiOperation[] = [
 
       // updateProblemField re-validates, writes its own audit entry and revalidates.
       await updateProblemField(toFormData({ id: problem.id, field: realField, value: realValue }));
-      return ok(`Updated ${field} on ${problemRef(problem.id)}`);
+      const after = (await db.problem.findUnique({ where: { id: problem.id } })) as Record<string, unknown> | null;
+      return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${problemRef(problem.id)}`);
     },
   },
   {
@@ -318,7 +319,8 @@ export const OPERATIONS: AiOperation[] = [
 
       // updateChangeField re-validates, writes its own audit entry and revalidates.
       await updateChangeField(toFormData({ id: change.id, field: realField, value: realValue }));
-      return ok(`Updated ${field} on ${changeRef(change.id)}`);
+      const after = (await db.change.findUnique({ where: { id: change.id } })) as Record<string, unknown> | null;
+      return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${changeRef(change.id)}`);
     },
   },
   {

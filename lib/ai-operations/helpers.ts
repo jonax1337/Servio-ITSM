@@ -4,6 +4,18 @@ import type { AiOpResult } from "./types";
 export const ok = (summary: string, data?: unknown): AiOpResult => ({ ok: true, summary, data });
 export const err = (error: string): AiOpResult => ({ ok: false, error });
 
+/**
+ * The record actions Sable reuses return silently when a rule refuses a change
+ * (configured workflow, role, approval gate). Compare the value read back after
+ * the write with the requested one so a refused write is never reported as applied.
+ * "none" means "clear the field".
+ */
+export function verifyFieldWrite(stored: unknown, requested: string, success: string): AiOpResult {
+  const want = requested === "none" ? "" : requested;
+  if (String(stored ?? "") === want) return ok(success);
+  return err("Not applied — the change was refused (workflow rule, your role, or a pending approval). Nothing was changed.");
+}
+
 /** Heuristic: does this text already contain HTML tags (vs markdown / plain)? */
 export function looksLikeHtml(s: string): boolean {
   return /<\/?(p|div|ul|ol|li|h[1-6]|pre|code|blockquote|strong|em|a|br|table)\b/i.test(s);

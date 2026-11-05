@@ -22,7 +22,8 @@ export default async function ApprovalsPage() {
   const scope = me.role === "ADMIN" ? {} : { approverId: me.id };
   const [pending, pendingChanges, pendingAdHoc] = await Promise.all([
     db.ticketApproval.findMany({
-      where: { status: "PENDING", ...scope },
+      // Only requests still awaiting a decision — a cancelled request has nothing left to approve.
+      where: { status: "PENDING", ...scope, ticket: { approvalState: "PENDING", status: { not: "CANCELLED" } } },
       orderBy: { createdAt: "asc" },
       include: { ticket: { include: { requester: true, catalogItem: true } }, approver: true },
     }),

@@ -410,7 +410,8 @@ export function TicketProperties({
 
       {/* Save bar — only when there are staged changes */}
       {anyDirty ? (
-        <div className="sticky bottom-0 -mx-4 flex items-center gap-1.5 border-t bg-card/95 px-4 pt-2.5 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
+        // pr-20 keeps the Discard button clear of the floating Sable launcher (bottom-right).
+        <div className="sticky bottom-0 -mx-4 flex items-center gap-1.5 border-t bg-card/95 pt-2.5 pb-1 pl-4 pr-20 backdrop-blur sm:-mx-6 sm:pl-6">
           <Button type="button" size="sm" className="flex-1" onClick={saveChanges} disabled={saving}>
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
             Save changes

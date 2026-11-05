@@ -9,6 +9,7 @@ import { canActOnTicket } from "@/lib/authz";
 import { isGroupMember, autoAssignTicket } from "@/lib/assignment";
 import { statusChangeData, ticketCalendar } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { approvalAllowsStatus } from "@/lib/transitions";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { deliverTicketReply, slaRepricePatch } from "@/lib/ticket-core";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
@@ -223,7 +224,7 @@ export async function applyMacro(formData: FormData) {
     // contract as updateTicketField).
     select: {
       id: true, title: true, type: true, requesterId: true,
-      assigneeId: true, groupId: true, status: true,
+      assigneeId: true, groupId: true, status: true, approvalState: true,
       priority: true, serviceId: true, slaId: true, firstResponseAt: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
       sla: { select: { businessCalendarId: true } },
@@ -255,6 +256,7 @@ export async function applyMacro(formData: FormData) {
     switch (a.type) {
       case "set_status": {
         if (!TICKET_STATUSES.includes(a.value as (typeof TICKET_STATUSES)[number])) break;
+        if (!approvalAllowsStatus(ticket.approvalState, a.value)) break;
         // Enforce the configured lifecycle + role, same as updateTicketField.
         if (!(await canTransitionConfigured("TICKET", ticket.status, a.value, me.role as Role))) break;
         Object.assign(patch, { status: a.value }, statusChangeData(ticket, a.value, new Date(), await ticketCalendar(ticket)));

@@ -9,6 +9,7 @@ import { parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN } from 
 import { isAgent, type Role } from "@/lib/session";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
+import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 
 /** @deprecated Use IntakeFile from @/lib/attachment-intake. Re-exported for callers. */
 export type ProposalAttachment = IntakeFile;
@@ -46,7 +47,15 @@ export async function addPortalReply(userId: string, ticketId: number, body: str
   if (!ticket || ticket.status === "CLOSED" || ticket.status === "CANCELLED") return false;
 
   await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
-  await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+  await reopenOnCustomerReply(ticketId, userId);
+  const ticketMeta = await db.ticket.findUnique({ where: { id: ticketId }, select: { prefix: true, type: true } });
+  await notifyAssigneeAndWatchers(ticketId, userId, {
+    type: "COMMENT",
+    title: `Portal reply on ${ticketRef(ticketId, ticketMeta?.prefix || ticketMeta?.type)}`,
+    body: clean.length > 160 ? `${clean.slice(0, 157)}…` : clean,
+    entity: "Ticket",
+    entityId: String(ticketId),
+  });
   revalidatePath(`/portal/tickets/${ticketId}`);
   revalidatePath(`/tickets/${ticketId}`);
   return true;

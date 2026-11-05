@@ -113,9 +113,13 @@ export function evaluateCab(
   };
 }
 
+/** Roles that may sit on the CAB for a change of this risk. */
+export function approverRolesForRisk(risk: string): string[] {
+  return risk === "HIGH" ? ["ADMIN"] : ["ADMIN", "MANAGER"];
+}
+
 /** Whether a user is eligible to be seated as an approver for a change's risk. */
 export async function isEligibleApprover(userId: string, risk: string): Promise<boolean> {
-  const roles = risk === "HIGH" ? ["ADMIN"] : ["ADMIN", "MANAGER"];
   const u = await db.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true } });
-  return !!u && u.isActive && roles.includes(u.role);
+  return !!u && u.isActive && approverRolesForRisk(risk).includes(u.role);
 }

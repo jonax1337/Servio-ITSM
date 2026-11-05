@@ -29,7 +29,7 @@ import {
   ticketRef,
 } from "@/lib/constants";
 import type { AiOperation } from "../types";
-import { ok, err, str, toFormData, coerceEnum, richHtml } from "../helpers";
+import { ok, err, str, toFormData, coerceEnum, richHtml, verifyFieldWrite } from "../helpers";
 
 /**
  * Tickets. Reference module shape — export `OPERATIONS: AiOperation[]`, one entry
@@ -204,7 +204,8 @@ export const OPERATIONS: AiOperation[] = [
 
       // updateTicketField writes its own audit entry and runs the state-machine/SLA/notifications.
       await updateTicketField(toFormData({ id: ticket.id, field: realField, value: realValue }));
-      return ok(`Updated ${field} on ${ticketRef(ticket.id, ticket.type)}`);
+      const after = (await db.ticket.findUnique({ where: { id: ticket.id } })) as Record<string, unknown> | null;
+      return verifyFieldWrite(after?.[realField], realValue, `Updated ${field} on ${ticketRef(ticket.id, ticket.type)}`);
     },
   },
   {
@@ -279,7 +280,8 @@ export const OPERATIONS: AiOperation[] = [
           isInternal: a.internal === true,
         }),
       );
-      return ok(`Set ${ticketRef(ticket.id, ticket.type)} to ${status}`);
+      const after = await db.ticket.findUnique({ where: { id: ticket.id }, select: { status: true } });
+      return verifyFieldWrite(after?.status, status, `Set ${ticketRef(ticket.id, ticket.type)} to ${status}`);
     },
   },
   {

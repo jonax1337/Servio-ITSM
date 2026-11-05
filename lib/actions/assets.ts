@@ -53,6 +53,10 @@ export async function createAsset(
   }
   const data = parsed.data;
 
+  // assetTag is unique — answer with a field error, not an unhandled 500.
+  if (data.assetTag && (await db.asset.findFirst({ where: { assetTag: data.assetTag }, select: { id: true } }))) {
+    return { error: "Please fix the errors below.", fieldErrors: { assetTag: ["This asset tag is already in use."] } };
+  }
   const asset = await db.asset.create({ data });
 
   await writeAudit({

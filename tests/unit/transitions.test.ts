@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { canTransition, CHANGE_TRANSITIONS, PROBLEM_TRANSITIONS, TICKET_TRANSITIONS } from "@/lib/transitions";
+import { approvalAllowsStatus, canTransition, CHANGE_TRANSITIONS, PROBLEM_TRANSITIONS, TICKET_TRANSITIONS } from "@/lib/transitions";
+
+// A catalog request awaiting approval must not be worked or fulfilled before the
+// approver decides — the only move left to agents is cancelling it.
+describe("approvalAllowsStatus", () => {
+  it.each(["OPEN", "IN_PROGRESS", "PENDING", "ON_HOLD", "RESOLVED", "CLOSED"])("blocks %s while approval is pending", (to) => {
+    expect(approvalAllowsStatus("PENDING", to)).toBe(false);
+  });
+
+  it("allows cancelling a request that is awaiting approval", () => {
+    expect(approvalAllowsStatus("PENDING", "CANCELLED")).toBe(true);
+  });
+
+  it.each([null, undefined, "APPROVED", "REJECTED"])("does not restrict tickets whose approval state is %s", (state) => {
+    expect(approvalAllowsStatus(state, "RESOLVED")).toBe(true);
+  });
+});
 
 // The raw built-in maps document the INTENDED lifecycle: the admin-configured
 // layer (lib/workflow.ts) may only narrow these, never widen them.

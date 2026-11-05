@@ -40,8 +40,13 @@ export function CatalogEditor({
 }) {
   const editing = !!item;
   const [open, setOpen] = useState(false);
+  // Close only on success — a validation error must stay visible with the input intact.
   const [state, action, pending] = useActionState<CatalogAdminState, FormData>(
-    editing ? updateCatalogItem : createCatalogItem,
+    async (prev, fd) => {
+      const result = await (editing ? updateCatalogItem : createCatalogItem)(prev, fd);
+      if (!result?.error) setOpen(false);
+      return result;
+    },
     undefined,
   );
 
@@ -71,7 +76,7 @@ export function CatalogEditor({
           <DialogDescription>What end users can request from the self-service catalog.</DialogDescription>
         </DialogHeader>
 
-        <form action={async (fd) => { await action(fd); setOpen(false); }} className="grid gap-5">
+        <form action={action} className="grid gap-5">
           {item ? <input type="hidden" name="id" value={item.id} /> : null}
           <input type="hidden" name="icon" value={icon} />
           <input type="hidden" name="categoryId" value={categoryId} />

@@ -269,7 +269,7 @@ Enforcement happens in three complementary places:
   (`path === p || path.startsWith(p + "/")`, so `/surveypayload` is not covered by `/survey`);
 - redirects already-logged-in users away from `/login` to `/`;
 - redirects unauthenticated users to `/login?callbackUrl=…`;
-- redirects plain `USER`s to `/portal` if they try to reach any non-portal path.
+- redirects plain `USER`s to `/portal` if they try to reach any non-portal path. Portal paths are `/portal` plus the APIs the portal calls (`/api/portal/*`, `/api/files/*`); those route handlers authorise the live DB user themselves (`isPortalPath` in `lib/route-guard.ts`).
 
 This is a coarse first gate. Note it reads the role from the **JWT** (edge), so it
 cannot see a just-demoted user — that is what the server layer is for.

@@ -4,6 +4,7 @@ import { guard, ok, apiError, preflight, principalIsAgent, validateTicketAssigne
 import { writeAudit } from "@/lib/audit";
 import { slaCreateData, statusChangeData, ticketCalendar } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { approvalAllowsStatus } from "@/lib/transitions";
 import { serializeTicket } from "../../_serializers";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
 import type { Role } from "@/lib/session";
@@ -75,6 +76,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const data = { ...parsed.data } as Record<string, unknown>;
   const to = parsed.data.status;
   if (to && to !== existing.status) {
+    if (!approvalAllowsStatus(existing.approvalState, to)) {
+      return apiError(409, "This request is awaiting approval; it can only be cancelled until it is decided.");
+    }
     // Mirror the server-action lifecycle: guard the ADMIN-CONFIGURED transition
     // map (built-ins + overrides + role gates) and run the shared SLA clock
     // helper, so an API token can't do transitions the console forbids.

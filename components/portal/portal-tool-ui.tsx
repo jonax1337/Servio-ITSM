@@ -144,7 +144,7 @@ function PortalConfirmCard({
             href={created.url}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
           >
-            <Check className="size-3.5" /> Created {created.ref}
+            <Check className="size-3.5" /> {proposal.kind === "comment" ? "Replied to" : "Created"} {created.ref}
             <ArrowUpRight className="size-3.5" />
           </Link>
         ) : (

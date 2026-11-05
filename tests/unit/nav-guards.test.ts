@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { consoleNav, filterNav } from "@/lib/nav";
-import { requiredRoleFor, isPublicPath } from "@/lib/route-guard";
+import { requiredRoleFor, isPublicPath, isPortalPath } from "@/lib/route-guard";
+
+describe("portal namespaces (reachable for USER)", () => {
+  it("covers the portal pages and the APIs the portal calls", () => {
+    for (const path of ["/portal", "/portal/tickets/7", "/api/portal/assistant", "/api/portal/search", "/api/files/upload", "/api/files/abc", "/api/files/abc/preview"]) {
+      expect(isPortalPath(path), path).toBe(true);
+    }
+  });
+
+  it("keeps console pages, console APIs and look-alike prefixes out", () => {
+    for (const path of ["/", "/tickets", "/settings", "/api/search", "/api/export", "/api/assistant/chat", "/api/dashboard/widget", "/portalx", "/api/filesystem"]) {
+      expect(isPortalPath(path), path).toBe(false);
+    }
+  });
+});
 
 describe("public route namespaces", () => {
   it("serves brand icons and manifests before login", () => {

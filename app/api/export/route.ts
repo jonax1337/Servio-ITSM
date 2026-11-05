@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { ticketListQuery } from "@/lib/ticket-list";
 import { requireUser, isAgent } from "@/lib/session";
 import { csvResponse } from "@/lib/csv";
 import { fetchAuditLogForExport, type AuditLogFilters } from "@/lib/actions/audit-log";
@@ -56,8 +57,12 @@ export async function GET(req: Request) {
       if (!isAgent(me.role)) {
         return NextResponse.json({ error: "forbidden" }, { status: 403 });
       }
+      // Exactly the rows the list shows for the same filters/search/sort (lib/ticket-list.ts).
+      // `type` selects the export itself, so the list's ticket-type filter travels as `ticketType`.
+      const { where, orderBy } = ticketListQuery({ ...Object.fromEntries(sp), type: sp.get("ticketType") ?? undefined });
       const tickets = await db.ticket.findMany({
-        orderBy: { updatedAt: "desc" },
+        where,
+        orderBy,
         take: 10_000,
         include: {
           requester: { select: { name: true, email: true } },

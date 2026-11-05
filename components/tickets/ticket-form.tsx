@@ -79,7 +79,12 @@ export function TicketForm({
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Requester" error={fe.requesterId} hint="Who the ticket is for.">
-          <ComboField name="requesterId" defaultValue={requesters[0]?.id} options={userOpts} placeholder="Who it's for" />
+          <ComboField
+            name="requesterId"
+            defaultValue={requesters.some((r) => r.id === currentUserId) ? currentUserId : requesters[0]?.id}
+            options={userOpts}
+            placeholder="Who it's for"
+          />
         </Field>
         <Field label="Requested by" hint="If someone raised this on behalf of the requester.">
           <ComboField name="requestedByUserId" options={userOpts} includeNone noneLabel="— The requester —" placeholder="On behalf of the requester" />

@@ -5,8 +5,8 @@ import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { recordInboundEmail } from "@/lib/mail";
 import { getSetting } from "@/lib/settings";
 import { parseTicketRef, ticketRef } from "@/lib/constants";
-import { writeAudit, notify } from "@/lib/audit";
-import { createTicketCore } from "@/lib/ticket-core";
+import { writeAudit } from "@/lib/audit";
+import { createTicketCore, notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 import type { ParsedInboundMail } from "./types";
 
 export type InboundResult =
@@ -144,16 +144,13 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   await db.ticketComment.update({ where: { id: comment.id }, data: { emailMessageId: email.id } });
   await saveInboundAttachments(mail, { commentId: comment.id }, sender.id);
 
-  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { status: true, type: true, assigneeId: true, requesterId: true } });
+  const t = await db.ticket.findUnique({ where: { id: ticketId }, select: { type: true, requesterId: true } });
   // Only a CUSTOMER reply reopens a resolved/closed ticket — a vendor's internal
   // note shouldn't. Otherwise just bump the activity timestamp.
-  if (!isInternal && t && (t.status === "RESOLVED" || t.status === "CLOSED")) {
-    await db.ticket.update({
-      where: { id: ticketId },
-      data: { status: "OPEN", resolvedAt: null, closedAt: null, resolveBreached: false, updatedAt: new Date() },
-    });
-  } else {
+  if (isInternal) {
     await db.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+  } else {
+    await reopenOnCustomerReply(ticketId, sender.id);
   }
 
   // Customer-side replies grow the participant list (portal access + future CC).
@@ -166,15 +163,9 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   // In-app notify: assignee + watchers (except the sender).
   const snippet = body.length > 160 ? `${body.slice(0, 157)}…` : body;
   const ref = ticketRef(ticketId, t?.type ?? "INC");
-  const watchers = await db.ticketWatcher.findMany({ where: { ticketId }, select: { userId: true } });
-  const recipients = new Set<string>(watchers.map((w) => w.userId));
-  if (t?.assigneeId) recipients.add(t.assigneeId);
-  recipients.delete(sender.id);
-  await Promise.all(
-    [...recipients].map((uid) =>
-      notify(uid, { type: "COMMENT", title: `Email reply on ${ref}`, body: snippet, entity: "Ticket", entityId: String(ticketId) }),
-    ),
-  );
+  await notifyAssigneeAndWatchers(ticketId, sender.id, {
+    type: "COMMENT", title: `Email reply on ${ref}`, body: snippet, entity: "Ticket", entityId: String(ticketId),
+  });
   await writeAudit({ userId: sender.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Email reply received" });
 
   return { action: "appended", ticketId };

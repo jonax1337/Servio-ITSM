@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ToneBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/confirm-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { CatalogEditor } from "@/components/catalog/catalog-editor";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
@@ -92,10 +92,17 @@ export default async function CatalogAdminPage() {
                       fields: parseFormSchema(it.formSchema),
                     }}
                   />
-                  <form action={deleteCatalogItem}>
-                    <input type="hidden" name="id" value={it.id} />
-                    <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete"><Trash2 className="size-4 text-muted-foreground" /></Button>
-                  </form>
+                  <ConfirmButton
+                    action={deleteCatalogItem}
+                    fields={{ id: it.id }}
+                    title="Delete catalog item"
+                    description={`Permanently delete "${it.name}"? End users can no longer request it; existing requests keep their history.`}
+                    confirmLabel="Delete item"
+                    triggerVariant="ghost"
+                    triggerLabel="Delete"
+                  >
+                    <Trash2 className="size-4 text-muted-foreground" />
+                  </ConfirmButton>
                 </div>
               </CardContent>
             </Card>
