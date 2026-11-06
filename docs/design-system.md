@@ -267,6 +267,7 @@ Higher-level, app-specific components live directly in `components/` (not
 | `PageHeader` / `PageBody` | [`components/page-header.tsx`](../components/page-header.tsx) | Standard page title bar (optional icon, description, right-aligned action slot) and padded body wrapper. |
 | `StatCard` | [`components/stat-card.tsx`](../components/stat-card.tsx) | Dashboard KPI tile: big `tabular-nums` value, label, optional hint, icon tone, optional link. Tones: `primary`/`success`/`warning`/`danger`/`muted`. |
 | `EmptyState` | [`components/empty-state.tsx`](../components/empty-state.tsx) | Dashed-border centred placeholder for empty lists (icon, title, description, action slot). |
+| `LocalTime` / `timeAgo` | [`components/local-time.tsx`](../components/local-time.tsx) | Time text in a client component that depends on the viewer's clock or zone ("3 minutes ago", a local date). Renders after hydration, so server and browser never disagree (React error #418). Use it instead of calling `formatDistanceToNow`/`format` directly in client render. |
 | `ToneBadge` / `StatusBadge` | [`components/status-badge.tsx`](../components/status-badge.tsx) | Pill badge driven by a `Meta` (`StatusBadge` looks the meta up from a map + value). See [Status conventions](#status--priority-conventions). |
 | `PriorityDot` | [`components/status-badge.tsx`](../components/status-badge.tsx) | Small coloured dot for compact priority/status signalling (takes a `Tone`). |
 | `VipBadge` | [`components/status-badge.tsx`](../components/status-badge.tsx) | Gold crown badge for VIP requesters. |

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { APPROVAL_META } from "@/lib/constants";
 import { requestSelfApprovalError } from "@/lib/approval-rules";
-import { formatDistanceToNow } from "date-fns";
+import { LocalTime, timeAgo } from "@/components/local-time";
 
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -209,7 +209,7 @@ function ApprovalCard({
           <div className="truncate text-sm font-medium">{row.approver.name ?? row.approver.email}</div>
           <div className="truncate text-xs text-muted-foreground">
             {row.title ? `${row.title} · ` : ""}
-            {row.decidedAt ? `Decided ${formatDistanceToNow(row.decidedAt, { addSuffix: true })}` : "Awaiting decision"}
+            {row.decidedAt ? <>Decided <LocalTime date={row.decidedAt} render={timeAgo} /></> : "Awaiting decision"}
           </div>
         </div>
         <StatusBadge map={APPROVAL_META} value={row.status} />

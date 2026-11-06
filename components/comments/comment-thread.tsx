@@ -23,7 +23,8 @@ import { sanitizeCommentHtml } from "@/lib/markdown";
 import { lowerLead } from "@/lib/utils";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
-import { formatDistanceToNow, format } from "date-fns";
+import { format } from "date-fns";
+import { LocalTime, timeAgo } from "@/components/local-time";
 
 export type ThreadComment = {
   id: string;
@@ -272,7 +273,7 @@ export function CommentThread({
                       <Lock className="size-2.5" /> Internal
                     </span>
                   ) : null}
-                  <span className="text-xs text-muted-foreground">{formatDistanceToNow(c.createdAt, { addSuffix: true })}</span>
+                  <span className="text-xs text-muted-foreground"><LocalTime date={c.createdAt} render={timeAgo} /></span>
                   {(emailReply || enableForward) && !forwarded ? (
                     <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                       {emailReply ? (
@@ -469,7 +470,7 @@ export function CommentThread({
                 <ActivityIcon className="size-3" />
               </span>
               <span>
-                <span className="font-medium text-foreground">{a.who}</span> {lowerLead(a.summary)} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}
+                <span className="font-medium text-foreground">{a.who}</span> {lowerLead(a.summary)} · <LocalTime date={a.createdAt} render={timeAgo} />
               </span>
             </div>
           ))}
