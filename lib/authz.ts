@@ -13,18 +13,27 @@ type ActingTicket = { assigneeId?: string | null; groupId?: string | null };
  * - AGENT may act only on tickets they are assigned to OR whose group they belong
  *   to (GroupMember). An unassigned, un-grouped ticket is actionable by any agent.
  *
- * Pure helper: pass already-loaded user + ticket (or their ids). The group-member
- * lookup is the only DB read, and only for agents on a grouped ticket they don't own.
+ * Pure rule: pass already-loaded user + ticket and a group-membership lookup.
  */
-export async function canActOnTicket(user: ActingUser, ticket: ActingTicket): Promise<boolean> {
+export function mayActOnTicket(
+  user: ActingUser,
+  ticket: ActingTicket,
+  isMember: (groupId: string, userId: string) => boolean,
+): boolean {
   if (hasRole(user.role as Role, "MANAGER")) return true;
   // Below MANAGER: only AGENT-level users get here through the requireAgent gate,
   // but guard anyway so a USER can never act even if this is called elsewhere.
   if (!hasRole(user.role as Role, "AGENT")) return false;
   if (ticket.assigneeId && ticket.assigneeId === user.id) return true;
-  if (ticket.groupId) return isGroupMember(ticket.groupId, user.id);
+  if (ticket.groupId) return isMember(ticket.groupId, user.id);
   // No group and not the assignee → shared queue, any agent may act.
   return true;
+}
+
+/** {@link mayActOnTicket} with the group membership read from the database (only for non-managers on a grouped ticket). */
+export async function canActOnTicket(user: ActingUser, ticket: ActingTicket): Promise<boolean> {
+  const member = ticket.groupId && !hasRole(user.role as Role, "MANAGER") ? await isGroupMember(ticket.groupId, user.id) : false;
+  return mayActOnTicket(user, ticket, () => member);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { PRIORITIES } from "@/lib/constants";
+import { ASSIGNEE_NOT_IN_GROUP, NOT_YOUR_TICKET } from "@/lib/ticket-refusals";
 
 /**
  * Multi-field bulk edit of tickets: the fields one bulk action may set, in the
@@ -44,13 +45,73 @@ export function buildBulkChanges(patch: unknown): BulkChange[] {
   });
 }
 
-export type BulkOutcome = { updated: number; failed: number; error?: string };
+/** What a bulk edit does to one ticket's access, membership and status rules; the server fills it from the database. */
+export type BulkRules = {
+  /** Whether the actor may change a ticket in this state. */
+  canAct(state: BulkTicketState): boolean;
+  isMember(groupId: string, userId: string): boolean;
+  /** Why the ticket may not move to `to` (approval, merge, workflow), or null. */
+  statusRefusal(state: BulkTicketState, to: string): string | null;
+};
+
+export type BulkTicketState = {
+  status: string;
+  groupId: string | null;
+  assigneeId: string | null;
+  approvalState: string | null;
+  mergedIntoId: number | null;
+};
+
+/**
+ * Why a ticket would refuse the whole patch, or null when every change would apply.
+ * Walks the changes in application order on a copy of the ticket, with the same checks
+ * the single-field edit makes before each write, so a ticket is never changed halfway:
+ * moving it to a group the actor cannot act in fails the fields that follow.
+ */
+export function planBulkTicket(ticket: BulkTicketState, changes: readonly BulkChange[], rules: BulkRules): string | null {
+  const state = { ...ticket };
+  for (const { field, value } of changes) {
+    if (!rules.canAct(state)) return NOT_YOUR_TICKET;
+    const target = value === BULK_CLEAR ? null : value;
+    if (field === "groupId") {
+      state.groupId = target;
+      if (target && state.assigneeId && !rules.isMember(target, state.assigneeId)) state.assigneeId = null;
+    } else if (field === "assigneeId") {
+      if (target && state.groupId && !rules.isMember(state.groupId, target)) return ASSIGNEE_NOT_IN_GROUP;
+      state.assigneeId = target;
+    } else if (field === "status") {
+      const refusal = rules.statusRefusal(state, value);
+      if (refusal) return refusal;
+      state.status = value;
+    }
+  }
+  return null;
+}
+
+export type BulkSkip = { ticket: string; reason: string };
+export type BulkOutcome = { updated: number; skipped: BulkSkip[] };
 
 const ticketCount = (n: number) => `${n} ${n === 1 ? "ticket" : "tickets"}`;
 
-/** The one-line result shown after a bulk edit, e.g. "5 tickets updated" or "3 tickets updated, 2 not changed". */
-export function bulkSummary({ updated, failed }: BulkOutcome): string {
-  if (failed === 0) return `${ticketCount(updated)} updated`;
-  if (updated === 0) return `${ticketCount(failed)} not changed`;
-  return `${ticketCount(updated)} updated, ${failed} not changed`;
+/** The one-line result shown after a bulk edit, e.g. "5 tickets updated" or "3 tickets updated, 2 skipped". */
+export function bulkSummary({ updated, skipped }: BulkOutcome): string {
+  if (skipped.length === 0) return `${ticketCount(updated)} updated`;
+  if (updated === 0) return `${ticketCount(skipped.length)} skipped`;
+  return `${ticketCount(updated)} updated, ${skipped.length} skipped`;
+}
+
+const SHOWN_REASONS = 3;
+const SHOWN_TICKETS = 3;
+
+/** Why tickets were skipped, grouped by reason: "Reason (T-1, T-2 and 4 more); Other reason (T-9)". */
+export function bulkSkipDetail(skipped: readonly BulkSkip[]): string {
+  const byReason = new Map<string, string[]>();
+  for (const { ticket, reason } of skipped) byReason.set(reason, [...(byReason.get(reason) ?? []), ticket]);
+  const shown = [...byReason].slice(0, SHOWN_REASONS).map(([reason, tickets]) => {
+    const more = tickets.length - SHOWN_TICKETS;
+    const list = tickets.slice(0, SHOWN_TICKETS).join(", ");
+    return `${reason} (${more > 0 ? `${list} and ${more} more` : list})`;
+  });
+  const hidden = byReason.size - SHOWN_REASONS;
+  return hidden > 0 ? `${shown.join("; ")}; and ${hidden} more ${hidden === 1 ? "reason" : "reasons"}` : shown.join("; ");
 }

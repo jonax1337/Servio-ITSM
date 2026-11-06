@@ -11,7 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { bulkUpdateTickets } from "@/lib/actions/tickets";
-import { BULK_CLEAR, BULK_STATUSES, bulkSummary, buildBulkChanges, type BulkField } from "@/lib/bulk-edit";
+import {
+  BULK_CLEAR, BULK_STATUSES, bulkSkipDetail, bulkSummary, buildBulkChanges, type BulkField,
+} from "@/lib/bulk-edit";
 import { PRIORITIES, PRIORITY_META, TICKET_STATUS_META } from "@/lib/constants";
 
 export type BulkEditOptions = {
@@ -23,6 +25,7 @@ export type BulkEditOptions = {
 type Patch = Partial<Record<BulkField, string>>;
 
 const UNCHANGED = "";
+const REQUEST_FAILED = "The bulk edit could not be sent. Check your connection and try again.";
 const withUnchanged = (clearLabel: string, options: ComboOption[]): ComboOption[] => [
   { value: UNCHANGED, label: "Don't change" },
   { value: BULK_CLEAR, label: clearLabel },
@@ -44,10 +47,14 @@ export function BulkEditDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [patch, setPatch] = useState<Patch>({});
+  const [error, setError] = useState<string | null>(null);
   const [pending, startApply] = useTransition();
 
   const noun = ticketIds.length === 1 ? "ticket" : "tickets";
-  const set = (field: BulkField, value: string) => setPatch((p) => ({ ...p, [field]: value }));
+  const set = (field: BulkField, value: string) => {
+    setError(null);
+    setPatch((p) => ({ ...p, [field]: value }));
+  };
   /** Clicking the chosen chip again takes the field back to "Don't change". */
   const toggle = (field: BulkField, value: string) => set(field, patch[field] === value ? UNCHANGED : value);
 
@@ -56,10 +63,20 @@ export function BulkEditDialog({
     fd.set("ids", ticketIds.join(","));
     fd.set("patch", JSON.stringify(patch));
     startApply(async () => {
-      const result = await bulkUpdateTickets(fd);
+      const failWith = (message: string) => {
+        setError(message);
+        toast.error(message);
+      };
+      let result: Awaited<ReturnType<typeof bulkUpdateTickets>>;
+      try {
+        result = await bulkUpdateTickets(fd);
+      } catch {
+        return failWith(REQUEST_FAILED);
+      }
+      if (!result.ok) return failWith(result.error ?? REQUEST_FAILED);
       const summary = bulkSummary(result);
-      if (result.failed === 0) toast.success(summary);
-      else toast.error(summary, { description: result.error });
+      if (result.skipped.length === 0) toast.success(summary);
+      else toast.warning(summary, { description: bulkSkipDetail(result.skipped) });
       setOpen(false);
       setPatch({});
       onApplied();
@@ -96,6 +113,12 @@ export function BulkEditDialog({
             <ComboField label="Category" value={patch.categoryId} onChange={(v) => set("categoryId", v)} options={withUnchanged("No category", options.categories)} />
           </div>
         </div>
+
+        {error ? (
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
