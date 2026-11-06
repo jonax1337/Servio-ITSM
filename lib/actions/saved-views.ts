@@ -3,14 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { hasRole, type Role, requireAgentUser } from "@/lib/session";
-
-/** Filter params we allow a saved view to carry, per entity. */
-const ALLOWED_KEYS: Record<string, string[]> = {
-  ticket: ["q", "status", "priority", "type", "group", "assignee", "category", "service"],
-  problem: ["q", "status", "priority", "group", "assignee", "category"],
-  change: ["q", "status", "risk", "type", "group", "assignee"],
-  asset: ["q", "type", "status", "owner", "group"],
-};
+import { SAVED_VIEW_KEYS, sanitizeFilters } from "@/lib/saved-view-filters";
 
 const BASE_PATH: Record<string, string> = {
   ticket: "/tickets",
@@ -24,29 +17,12 @@ async function requireAgent() {
   return requireAgentUser();
 }
 
-/** Keep only known keys with short string values → a safe JSON to store. */
-function sanitizeFilters(raw: string, entity: string): string {
-  const allowed = ALLOWED_KEYS[entity] ?? ALLOWED_KEYS.ticket;
-  let parsed: Record<string, unknown> = {};
-  try {
-    parsed = JSON.parse(raw || "{}");
-  } catch {
-    parsed = {};
-  }
-  const clean: Record<string, string> = {};
-  for (const k of allowed) {
-    const v = parsed[k];
-    if (typeof v === "string" && v.trim() && v !== "all") clean[k] = v.slice(0, 120);
-  }
-  return JSON.stringify(clean);
-}
-
 export async function createSavedView(formData: FormData) {
   const me = await requireAgent();
   if (!me) return;
   const name = String(formData.get("name") ?? "").trim().slice(0, 60);
   const entity = String(formData.get("entity") ?? "ticket");
-  if (!name || !(entity in ALLOWED_KEYS)) return;
+  if (!name || !(entity in SAVED_VIEW_KEYS)) return;
 
   const filters = sanitizeFilters(String(formData.get("filters") ?? "{}"), entity);
   // Only managers+ may publish a shared/team view; everyone else gets a personal one.

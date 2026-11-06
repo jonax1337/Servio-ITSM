@@ -54,7 +54,7 @@ export function SavedViewsBar({
 }: {
   entity: string;
   basePath: string;
-  filterKeys: string[];
+  filterKeys: readonly string[];
   builtInViews?: BuiltInView[];
   views: SavedViewRow[];
   currentUserId: string;

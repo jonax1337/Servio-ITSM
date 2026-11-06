@@ -6,6 +6,7 @@ import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getVisibleSavedViews } from "@/lib/board-service";
 import { SavedViewsBar, type BuiltInView } from "@/components/saved-views-bar";
 import { SLA_VIEW_META } from "@/lib/sla-views";
+import { SAVED_VIEW_KEYS } from "@/lib/saved-view-filters";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { findTicketWindow, loadTicketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
@@ -124,7 +125,7 @@ export default async function TicketsPage({
         <SavedViewsBar
           entity="ticket"
           basePath="/tickets"
-          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service", "sla"]}
+          filterKeys={SAVED_VIEW_KEYS.ticket}
           builtInViews={BUILT_IN_VIEWS}
           views={savedViews}
           currentUserId={me?.id ?? ""}
