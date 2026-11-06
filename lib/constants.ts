@@ -147,10 +147,10 @@ export const AI_ASSISTANT_NAME = "Sable";
 
 /**
  * Application version (shown in the sidebar footer and Settings › About).
- * release-please bumps it together with package.json "version" (extra-files in
- * release-please-config.json); a unit test keeps the two equal.
+ * `pnpm release X.Y.Z` (scripts/release.mjs) bumps it together with package.json
+ * and updater/package.json; a unit test keeps the three equal.
  */
-export const APP_VERSION = "0.1.0"; // x-release-please-version
+export const APP_VERSION = "0.1.0";
 
 /** Scope of a standalone Sable conversation (String-enum strategy). */
 export const AI_SCOPES = ["GENERAL", "ADMIN"] as const;
