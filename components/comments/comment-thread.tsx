@@ -246,7 +246,7 @@ export function CommentThread({
       ) : null}
 
       <TabsContent value="comments" className={activity ? "mt-4" : undefined}>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
           {comments.map((c) => {
             // FORWARD = an outbound "you forwarded this" entry (primary). External =
             // an internal reply that came in by email from a forwarded party (Ice tint).
@@ -300,11 +300,11 @@ export function CommentThread({
                 <div className={`mt-1 rounded-lg border p-3 text-sm ${forwarded ? "border-primary/20 bg-primary/5" : external ? "border-brand-ice/40 bg-brand-ice/10" : c.isInternal ? "border-amber-500/20 bg-amber-500/5" : "bg-card"}`}>
                   {c.bodyHtml ? (
                     <div
-                      className="prose prose-sm dark:prose-invert max-w-none [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
+                      className="prose prose-sm dark:prose-invert max-w-none wrap-anywhere prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto [&_[data-mention-id]]:rounded [&_[data-mention-id]]:bg-primary/10 [&_[data-mention-id]]:px-1 [&_[data-mention-id]]:font-medium [&_[data-mention-id]]:text-primary"
                       dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(c.bodyHtml) }}
                     />
                   ) : (
-                    <div className="whitespace-pre-wrap">{c.body}</div>
+                    <div className="whitespace-pre-wrap wrap-anywhere">{c.body}</div>
                   )}
                 </div>
                 <CommentAttachments attachments={c.attachments} />
@@ -415,7 +415,7 @@ export function CommentThread({
                         </div>
                         {m.bodyHtml ? (
                           <div
-                            className="prose prose-sm dark:prose-invert mt-1 max-w-none text-muted-foreground"
+                            className="prose prose-sm dark:prose-invert mt-1 max-w-none wrap-anywhere prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto text-muted-foreground"
                             dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(m.bodyHtml) }}
                           />
                         ) : (

@@ -48,11 +48,14 @@ export function ArticleEditor({
   categories,
   submitLabel,
   defaults = {},
+  sourceTicket,
 }: {
   action: Action;
   categories: { id: string; name: string }[];
   submitLabel: string;
   defaults?: ArticleDefaults;
+  /** The ticket this article is written from; saving links the article to it. */
+  sourceTicket?: { id: number; ref: string };
 }) {
   const [state, formAction, pending] = useActionState<ArticleState, FormData>(action, undefined);
   const submit = useFormSubmit(formAction);
@@ -74,6 +77,7 @@ export function ArticleEditor({
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">
       {defaults.id ? <input type="hidden" name="id" value={defaults.id} /> : null}
+      {sourceTicket ? <input type="hidden" name="linkTicketId" value={sourceTicket.id} /> : null}
 
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -114,6 +118,7 @@ export function ArticleEditor({
         {defaults.id ? null : (
           <p className="text-xs text-muted-foreground">
             New articles start as a <strong>Draft</strong> — publish from the article page once ready.
+            {sourceTicket ? <> Saving also links it to <strong>{sourceTicket.ref}</strong>.</> : null}
           </p>
         )}
       </div>

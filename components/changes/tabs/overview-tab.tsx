@@ -56,13 +56,13 @@ export async function OverviewTab({ change, approvals, isAgent, canEdit }: Chang
       })
     : null;
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       {nextStep ? <NextStepCard changeId={change.id} step={nextStep} /> : null}
       <div className="rounded-xl border bg-card p-4 text-sm leading-relaxed">
         {change.descriptionHtml ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(change.descriptionHtml) }} />
+          <div className="prose prose-sm dark:prose-invert max-w-none wrap-anywhere prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(change.descriptionHtml) }} />
         ) : change.description ? (
-          <div className="whitespace-pre-wrap">{change.description}</div>
+          <div className="whitespace-pre-wrap wrap-anywhere">{change.description}</div>
         ) : (
           <span className="text-muted-foreground">No description provided.</span>
         )}

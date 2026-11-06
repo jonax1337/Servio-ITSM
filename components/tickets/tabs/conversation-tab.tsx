@@ -55,7 +55,7 @@ export async function ConversationTab({
   const isOpen = (OPEN_TICKET_STATUSES as readonly string[]).includes(ticket.status);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       {viewer.isAgent ? <TicketSummaryCard ticketId={ticket.id} /> : null}
       {viewer.isAgent && isOpen ? <SimilarTickets ticketId={ticket.id} variant="hint" canEdit /> : null}
       <CommentThread

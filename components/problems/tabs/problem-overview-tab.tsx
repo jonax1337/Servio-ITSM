@@ -18,12 +18,12 @@ export function ProblemOverviewTab({
   editable: boolean;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="rounded-xl border bg-card p-4 text-sm leading-relaxed">
         {descriptionHtml ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(descriptionHtml) }} />
+          <div className="prose prose-sm dark:prose-invert max-w-none wrap-anywhere prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(descriptionHtml) }} />
         ) : description ? (
-          <div className="whitespace-pre-wrap">{description}</div>
+          <div className="whitespace-pre-wrap wrap-anywhere">{description}</div>
         ) : (
           <span className="text-muted-foreground">No description provided.</span>
         )}
