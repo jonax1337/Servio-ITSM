@@ -224,6 +224,10 @@ docker compose up --build               # app on :3000, Gotenberg internal
 
 CI builds this image and boots it on every pull request (see [releasing.md](./releasing.md)).
 
+### Self-update
+
+`docker-compose.release.yml` runs the published images together with the **updater** sidecar, which lets admins schedule updates from Settings › Updates. The updater runs unprivileged, reaches Docker only through a restricted socket proxy, shares `/data` with `web` and keeps its backups on its own volume; see [updates.md](./updates.md) for setup, security and rollback behaviour. `SERVIO_STATE_DIR` defaults to `/data/state` in the image.
+
 ### Prebuilt images
 
 Every release publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to GHCR. To run

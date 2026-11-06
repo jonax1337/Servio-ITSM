@@ -1,0 +1,137 @@
+name: servio
+
+# Production stack from the PUBLISHED images (no build step), including the
+# updater sidecar that lets admins update Servio from the UI (Settings → Updates).
+# For a local build from source use docker-compose.yml instead.
+#
+#   docker compose -f docker-compose.release.yml up -d
+#
+# Pin the version in .env (SERVIO_VERSION=0.3.0) or leave it on `latest`.
+# NOTE: the updater swaps the `web` container to a new image behind compose's
+# back. A later manual `docker compose up` recreates `web` from the tag below,
+# so keep SERVIO_VERSION in .env in sync with what the UI installed (or use
+# `latest`, which follows the newest stable release), otherwise that command
+# would roll the app back to the pinned tag.
+#
+# SECURITY MODEL (details: updater/README.md)
+#  - The app (`web`) is internet-facing and can write everything on the shared
+#    `servio-data` volume. It never sees the Docker socket or the backups.
+#  - Only `docker-proxy` mounts the Docker socket. It exposes just the API
+#    calls the updater needs, on an internal network shared with the updater.
+#    Docker access is still powerful (creating containers can mean root on the
+#    host): use this stack only on hosts where that is acceptable.
+#  - `updater` runs unprivileged (uid 1000, like the app), read-only, without
+#    capabilities, and keeps database backups on its own volume.
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: ghcr.io/jonax1337/servio:${SERVIO_VERSION:-latest}
+    # A fixed name lets the updater find the container reliably.
+    container_name: servio-web
+    restart: unless-stopped
+    depends_on:
+      gotenberg:
+        condition: service_healthy
+    labels:
+      # Marks the one container the updater may stop, replace and roll back.
+      servio.updater.managed: "true"
+    # Secrets & provider config come from your .env (AUTH_SECRET, AI keys, SMTP…).
+    env_file:
+      - .env
+    environment:
+      GOTENBERG_URL: http://gotenberg:3000
+      DATABASE_URL: file:/data/servio.db
+      UPLOAD_DIR: /data/uploads
+      # Shared with the updater (maintenance flag, update requests and status).
+      SERVIO_STATE_DIR: /data/state
+      # Background cron ticks must run on EXACTLY ONE instance.
+      SCHEDULER_ENABLED: "true"
+    volumes:
+      - servio-data:/data
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # The only service that touches the Docker socket. Everything not enabled
+  # below (exec, volumes, build, swarm, secrets, system info, events, …) is
+  # refused by the proxy. Pinned: review the changelog before bumping.
+  docker-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1      # inspect, list, create, rename, remove the app container
+      IMAGES: 1          # inspect and pull images
+      NETWORKS: 1        # attach the new container to additional networks
+      POST: 1            # write calls (create, rename, pull, connect, DELETE)
+      ALLOW_START: 1     # containers/{id}/start
+      ALLOW_STOP: 1      # containers/{id}/stop
+      PING: 1            # liveness for the heartbeat
+      EVENTS: 0
+      VERSION: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    # No ports are published. On SELinux hosts the proxy may need `privileged: true`
+    # to reach the socket (see the docker-socket-proxy README).
+
+  updater:
+    image: ghcr.io/jonax1337/servio-updater:${SERVIO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - docker-proxy
+    # Let a running update finish when the updater itself is stopped.
+    stop_grace_period: 10m
+    # The image already runs as `node` (uid 1000, the app's uid); these keep the
+    # container from gaining anything more.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Repository only — the version to install always comes from the admin's
+      # request, the image never does.
+      SERVIO_IMAGE: ghcr.io/jonax1337/servio
+      SERVIO_CONTAINER: servio-web
+      SERVIO_STATE_DIR: /data/state
+      DB_FILE: /data/servio.db
+      BACKUP_DIR: /backups
+      DOCKER_HOST: tcp://docker-proxy:2375
+      # Optional: base64url-encoded registry credentials for a private registry.
+      REGISTRY_AUTH: ${REGISTRY_AUTH:-}
+      # Postgres deployments: the updater cannot back up the database itself.
+      # Take your own backup first, then set this to "true".
+      ALLOW_UPDATE_WITHOUT_BACKUP: ${ALLOW_UPDATE_WITHOUT_BACKUP:-false}
+    volumes:
+      - servio-data:/data
+      # Database backups and the crash-recovery journal: mounted ONLY here.
+      - servio-backups:/backups
+    networks:
+      - docker-api
+
+networks:
+  # No route to the outside: the proxy and the updater can only reach each other.
+  docker-api:
+    internal: true
+
+volumes:
+  servio-data:
+  servio-backups:

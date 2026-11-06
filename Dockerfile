@@ -66,6 +66,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
+    SERVIO_STATE_DIR=/data/state \
     PATH="/opt/boot-tools/node_modules/.bin:${PATH}"
 
 COPY --from=prod-deps /app/node_modules ./node_modules

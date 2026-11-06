@@ -97,6 +97,23 @@ jobs:
           tags: servio:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build updater image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: updater
+          file: updater/Dockerfile
+          push: false
+          load: true
+          tags: servio-updater:ci
+          cache-from: type=gha,scope=updater
+          cache-to: type=gha,mode=max,scope=updater
+      - name: Updater image loads its modules and reads its manifest
+        run: |
+          docker run --rm servio-updater:ci node -e "
+            import('./update-flow.mjs')
+              .then(() => import('./config.mjs'))
+              .then((m) => console.log('updater', m.loadConfig({ SERVIO_IMAGE: 'ghcr.io/ci/servio' }).updaterVersion))
+          "
       - name: Container boots and serves /login
         run: |
           docker run -d --name servio-ci -p 3000:3000 \

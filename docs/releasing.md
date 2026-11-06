@@ -63,6 +63,8 @@ Only `feat`, `fix`, `perf` and `security` commits appear in the changelog;
 [`release-please-config.json`](../release-please-config.json) and the current
 version in [`.release-please-manifest.json`](../.release-please-manifest.json).
 
+The in-app version (`APP_VERSION` in `lib/constants.ts`) is bumped by the same release PR: `release-please-config.json` lists `lib/constants.ts` under `extra-files` and the line carries the `x-release-please-version` annotation. A unit test (`tests/unit/app-version.test.ts`) fails when it drifts from `package.json`. The in-app updater ([updates.md](./updates.md)) offers exactly these GitHub Releases.
+
 ### One-time repository setup
 
 - **Settings › Actions › General › Workflow permissions:** enable *Allow GitHub
