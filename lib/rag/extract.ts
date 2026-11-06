@@ -98,13 +98,13 @@ async function extractDocx(buf: Buffer): Promise<string> {
   }
 }
 
-async function extractOffice(buf: Buffer): Promise<string> {
-  // officeparser (pptx/xlsx). If the optional native/OCR bits aren't available
-  // this throws — treat as a graceful no-op.
+/** Plain text of an Office document via officeparser; "" when it can't be parsed. */
+export async function extractOfficeText(buf: Buffer): Promise<string> {
+  // If the optional native/OCR bits aren't available this throws — treat as a graceful no-op.
   try {
     const { parseOffice } = await import("officeparser");
     const ast = await parseOffice(buf);
-    return typeof ast?.toText === "function" ? ast.toText() : "";
+    return (await ast.to("text")).value;
   } catch {
     return "";
   }
@@ -138,7 +138,7 @@ export async function extractText(buf: Buffer, mime: string, filename: string): 
     type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
     type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   ) {
-    out = await extractOffice(buf);
+    out = await extractOfficeText(buf);
   } else {
     out = "";
   }

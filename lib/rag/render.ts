@@ -8,6 +8,7 @@
 // purpose: the lightbox embeds those directly and never round-trips this helper.
 import "server-only";
 import { renderMarkdown, sanitizeDocumentHtml } from "@/lib/markdown";
+import { extractOfficeText } from "@/lib/rag/extract";
 
 /** Hard cap on produced HTML (post-sanitize) so one huge sheet can't blow up the client. */
 const MAX_HTML_CHARS = 2_000_000;
@@ -134,16 +135,8 @@ function renderCsv(buf: Buffer): RenderedFile {
 // Best-effort — render its extracted text as a readable <pre>. NOT pixel-perfect:
 // slide layout, images, and styling are lost; this is a text fallback, not a viewer.
 async function renderOfficeText(buf: Buffer): Promise<RenderedFile> {
-  try {
-    const { parseOffice } = await import("officeparser");
-    const ast = await parseOffice(buf);
-    const text = typeof ast?.toText === "function" ? ast.toText() : "";
-    const trimmed = (text ?? "").trim();
-    if (!trimmed) return { kind: "none" };
-    return { kind: "html", html: preHtml(trimmed) };
-  } catch {
-    return { kind: "none" };
-  }
+  const text = (await extractOfficeText(buf)).trim();
+  return text ? { kind: "html", html: preHtml(text) } : { kind: "none" };
 }
 
 /**
