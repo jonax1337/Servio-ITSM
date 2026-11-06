@@ -6,7 +6,7 @@ import { LocalTime, timeAgo } from "@/components/local-time";
 const UPDATED_AT = "2026-11-06T16:00:00.000Z";
 
 describe("LocalTime", () => {
-  it("leaves the clock-dependent text out of the server render, so hydration cannot mismatch", () => {
+  it("leaves the clock-dependent text out of the server render", () => {
     const html = renderToString(createElement(LocalTime, { date: UPDATED_AT, render: () => "5 minutes ago" }));
     expect(html).toBe(`<time dateTime="${UPDATED_AT}"></time>`);
   });

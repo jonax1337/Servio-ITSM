@@ -5,6 +5,11 @@ import { formatDistanceToNow } from "date-fns";
 
 const subscribeNever = () => () => {};
 
+/** False while rendering on the server and hydrating, true from then on (and on a fresh client mount). */
+export function useHydrated(): boolean {
+  return useSyncExternalStore(subscribeNever, () => true, () => false);
+}
+
 /** "3 minutes ago" — a `render` for {@link LocalTime}. */
 export const timeAgo = (date: Date): string => formatDistanceToNow(date, { addSuffix: true });
 
@@ -15,7 +20,7 @@ export const timeAgo = (date: Date): string => formatDistanceToNow(date, { addSu
  * text appears once the browser has hydrated. Server-formatted text belongs in a server component.
  */
 export function LocalTime({ date, render }: { date: Date | string; render: (date: Date) => string }) {
-  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+  const hydrated = useHydrated();
   const value = new Date(date);
   return <time dateTime={value.toISOString()}>{hydrated ? render(value) : null}</time>;
 }

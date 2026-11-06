@@ -8,6 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { LocalTime, useHydrated } from "@/components/local-time";
 
 export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate: Date | null }) {
   const [open, setOpen] = useState(false);
@@ -23,7 +24,8 @@ export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate
     });
   };
 
-  const overdue = dueDate ? dueDate < new Date() : false;
+  // Overdue depends on the viewer's clock, so it is decided after hydration (see LocalTime).
+  const overdue = useHydrated() && dueDate !== null && dueDate < new Date();
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -39,7 +41,7 @@ export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate
       >
         <CalendarDays className={cn("size-4", overdue ? "text-destructive" : "text-muted-foreground")} />
         {dueDate ? (
-          <span className={overdue ? "font-medium text-destructive" : undefined}>{format(dueDate, "PP")}</span>
+          <span className={overdue ? "font-medium text-destructive" : undefined}><LocalTime date={dueDate} render={(d) => format(d, "PP")} /></span>
         ) : (
           <span className="text-muted-foreground">Set due date…</span>
         )}
