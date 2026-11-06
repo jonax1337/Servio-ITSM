@@ -3,44 +3,62 @@
 A small Node service (no dependencies, no build step) that performs the actual
 Servio update when an admin schedules one in **Settings → Updates**. The app
 container never gets the Docker socket; the updater reaches Docker through a
-socket proxy and runs without privileges.
+filtering socket proxy and runs without privileges or network.
 
 ```
-app ──writes──▶ <state>/updater/request.json ──▶ updater ──tcp──▶ docker-proxy ──▶ docker.sock
-app ◀──reads─── <state>/updater/status.json   ◀──┘
+app ──writes──▶ <state>/updater/request.json ──▶ updater ──unix socket──▶ docker-proxy ──▶ docker.sock
+app ◀──reads─── <state>/updater/status.json   ◀──┘      (docker-api volume, 0600, uid 1000)
 app ◀──reads─── <state>/updater/heartbeat.json ◀─ every 15 s
-                                      updater ──▶ /backups (own volume): database backups + journal
+                                      updater ──▶ /backups (own volume): backups, journal, ledger, liveness
 ```
 
 ## Threat model
 
 The app is internet-facing. Assume an attacker controls everything the app's
 user (`node`, uid 1000) can write on the shared `/data` volume: the database,
-`/data/state/**`, symlinks, huge files, forged requests. The goal is that the
-worst they can do **through the updater** is to trigger an update to a newer,
-legitimate release of `SERVIO_IMAGE`. That is why:
+`/data/state/**`, symlinks, FIFOs, huge files, forged requests. The goal is that
+the worst they can do **through the updater** is to trigger an update to a
+strictly newer, stable, legitimate release of `SERVIO_IMAGE`; and that no crash
+of the updater or intervention of an operator leaves the system without a
+running app, with a migrated database under an older version, or without a
+container the operator put in place. That is why:
 
 | Measure | Where |
 | --- | --- |
-| The updater runs as `node` (uid 1000), `read_only`, `cap_drop: ALL`, `no-new-privileges`. It has no more file privileges than the attacker, so file tricks gain nothing. No chown, no root. | `updater/Dockerfile`, compose |
-| Docker access goes through `tecnativa/docker-socket-proxy`, which allows only containers, images, networks, start/stop and writes. No exec, volumes, build or swarm. The socket is mounted only into the proxy. | compose |
-| Backups and the crash journal live on their own volume (`servio-backups` at `/backups`) that the app never mounts. | compose |
-| Every file under `/data` is `lstat`-checked: the database, `-wal`, `-shm` and `request.json` must be regular files, the state directories must be real directories. Sources are opened with `O_NOFOLLOW`. Backups are created with `wx` (never overwrite), restores go through an exclusive temp file and a rename. | `safe-fs.mjs`, `backup.mjs` |
-| `request.json` is read with a 64 KB cap, `status.json` with 1 MB. Temp files carry a random UUID and are created exclusively. | `state-files.mjs` |
-| The image repository comes only from `SERVIO_IMAGE`; the request supplies a strict `X.Y.Z[-pre]` version, no older than `REQUEST_MAX_AGE_SECONDS` (default 1 h) and at most 5 min in the future. | `config.mjs`, `update-flow.mjs` |
-| Only newer versions are installed (`ALLOW_DOWNGRADE=true` overrides). | `versions.mjs` |
-| The updater only touches the one container labelled `servio.updater.managed=true` and its `-pre-<version>` twin; it exposes no ports. | `managed-container.mjs` |
+| The updater runs as `node` (uid 1000), `read_only`, `cap_drop: ALL`, `no-new-privileges`, `network_mode: none`. It has no more file privileges on `/data` than the attacker; no chown, no root. | `updater/Dockerfile`, compose |
+| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs, uid 1000, mode 0700; the socket itself 0600) that only the proxy and the updater mount; neither has a network, so nothing on the host network or in another container can reach it. Only the method + path pairs the updater uses are allowed (see the compose file), and host bind mounts are refused in create requests. | compose |
+| Backups, the crash journal, the ledger of handled requests and the liveness stamp live on their own volume (`servio-backups` at `/backups`) that the app never mounts. | compose |
+| Every file under `/data` is `lstat`-checked, opened with `O_NOFOLLOW` and `O_NONBLOCK`, then `fstat`-checked: the database and its sidecars (`-wal`, `-shm`, `-journal`) and `request.json` must be regular files, the state directories real directories. A FIFO cannot block a read. | `safe-fs.mjs`, `backup.mjs` |
+| State files are written through a directory descriptor (Linux `/proc/self/fd`), so swapping `/data/state/updater` for a symlink mid-write cannot redirect the write. Temp files carry a random UUID, are created exclusively and fsynced, then renamed, and the directory is fsynced. | `safe-fs.mjs`, `state-files.mjs` |
+| Backups are copied to a temp name, fsynced and hard-linked to their final name (never overwriting); restores go through an exclusive temp file and a rename. | `backup.mjs` |
+| `request.json` is read with a 64 KB cap, `status.json` with 1 MB; a malformed or unreadable `status.json` is ignored. | `state-files.mjs`, `update-flow.mjs` |
+| The image repository comes only from `SERVIO_IMAGE`; the request supplies a strict `X.Y.Z` version (prereleases only with `ALLOW_PRERELEASE=true`), no older than `REQUEST_MAX_AGE_SECONDS` (default 1 h) and at most 5 min in the future. The pulled image must carry `org.opencontainers.image.version` equal to the requested version. | `config.mjs`, `update-flow.mjs` |
+| Only strictly newer versions are installed, and an installed version that cannot be determined is refused (`ALLOW_DOWNGRADE=true` overrides both). | `versions.mjs`, `update-flow.mjs` |
+| Handled request ids are recorded on `/backups` before an update starts, so a forged or lost `status.json` cannot make the updater run a request twice. After an update that took the app down and did not succeed, the same target is refused for `RETRY_COOLDOWN_SECONDS` (default 1 h). | `ledger.mjs` |
+| The updater only touches the one container labelled `servio.updater.managed=true`, its `-pre-<version>` twin and the replacement it created (labelled `servio.updater.request=<request id>`); it exposes no ports. | `managed-container.mjs`, `update-flow.mjs` |
 
-Docker access is still powerful: creating containers can mean root on the host.
-The proxy limits *which calls* the updater can make, not *what the container
-bodies contain*. Use the stack only on hosts where that is acceptable.
+Residual risk. Docker access is still powerful: the proxy filters methods,
+paths and host bind mounts, but not the rest of a create request (privileged
+mode, devices, host namespaces, capabilities), and it cannot limit which
+container ids a call names. Whoever gains code execution **in the updater
+process** (not just write access to `/data`) therefore controls the host. The
+updater only ever sends create bodies derived from the managed container's own
+inspected configuration, which the app cannot change. Use the stack only on
+hosts where this is acceptable.
 
-**Socket vs. proxy.** `DOCKER_HOST=tcp://host:port` (a proxy, recommended) keeps
-the socket out of the updater process and lets the updater run unprivileged.
-`DOCKER_SOCKET=/var/run/docker.sock` mounts the socket into the updater directly:
-simpler, but the updater would need access to the socket's group (usually root)
-and a compromised updater gets the full, unfiltered Docker API. `DOCKER_HOST` wins
-if both are set.
+Two weaker spots remain on the attacker-writable volume, by design of the
+contract: `status.json` and `heartbeat.json` are output the app trusts, so an
+attacker can show admins a false status (but cannot make the updater act on
+it), and `request.json` is read through its parent directories by path, so a
+swapped `/data/state/updater` can at most make the updater ignore a request.
+
+**Socket vs. proxy.** `DOCKER_SOCKET` pointing at the proxy's filtered socket
+is the supported setup. `DOCKER_SOCKET=/var/run/docker.sock` would mount the
+real socket into the updater: simpler, but the updater would need the socket's
+group and a compromised updater gets the unfiltered Docker API.
+`DOCKER_HOST=tcp://host:port` is still accepted for other proxies, but a TCP
+proxy is unauthenticated for everything that can reach it; avoid it.
+`DOCKER_HOST` wins if both are set.
 
 ## Setup
 
@@ -49,15 +67,22 @@ Use [`docker-compose.release.yml`](../docker-compose.release.yml). It runs `web`
 `docker-proxy` and `updater` (image `ghcr.io/<owner>/servio-updater`, tagged with
 the same versions as the app). `web` and `updater` run as the same uid (`node`,
 1000) and share `servio-data` at `/data`; the updater alone has `servio-backups`
-at `/backups`. The `docker-api` network is `internal` and joins only the proxy
-and the updater.
+at `/backups`. The `docker-api` volume holds only the proxy's filtered socket
+and is mounted by the proxy and the updater only.
+
+Set `DOCKER_GID` in `.env` to the group id of the Docker socket
+(`stat -c %g /var/run/docker.sock`); the proxy runs as uid 1000 with that group.
+On SELinux hosts the proxy may additionally need `security_opt: [label=disable]`
+to reach the socket.
 
 Requirements for the managed container:
 
 - the label `servio.updater.managed=true` (the updater refuses any container without it),
 - a HEALTHCHECK (the published image has one; the updater waits for `healthy`),
 - SQLite on the shared volume: `DATABASE_URL=file:<DB_FILE>`, an **absolute** path equal to the
-  updater's `DB_FILE` (relative `file:./…` URLs are refused).
+  updater's `DB_FILE` (relative `file:./…` URLs are refused),
+- named volumes only: the proxy refuses host bind mounts in the new container's create request
+  (`-allowbindmountfrom` in the compose file; list host directories there if `web` needs them).
 
 Compose caveat: the updater replaces `web` outside compose's knowledge. A later
 manual `docker compose up` recreates `web` from `SERVIO_VERSION`, so keep it in
@@ -77,11 +102,13 @@ stable releases; prerelease tags never move `latest`).
 | `HEALTH_TIMEOUT_SECONDS` | `300` | How long the new (and, on rollback, the old) container may take to become healthy. `unhealthy` fails immediately. |
 | `PULL_TIMEOUT_SECONDS` | `1800` | Overall deadline for pulling the image. |
 | `REQUEST_MAX_AGE_SECONDS` | `3600` | Older requests are rejected. |
-| `ALLOW_DOWNGRADE` | `false` | Allow installing a version that is not newer than the installed one. Databases are not migrated back. |
+| `ALLOW_DOWNGRADE` | `false` | Allow installing a version that is not newer than the installed one, or over an installed version that cannot be determined. Databases are not migrated back. |
+| `ALLOW_PRERELEASE` | `false` | Allow installing prerelease versions (`1.2.3-rc.1`). |
+| `RETRY_COOLDOWN_SECONDS` | `3600` | After an update that stopped the app and did not succeed, the same target version is refused for this long. |
 | `ALLOW_UPDATE_WITHOUT_BACKUP` | `false` | Required to update when `DATABASE_URL` is not a `file:` URL (Postgres). |
 | `REGISTRY_AUTH` | – | Base64url-encoded Docker auth config, sent as `X-Registry-Auth` when pulling. |
-| `DOCKER_HOST` | – | `tcp://host:port` of a docker-socket-proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. |
-| `DOCKER_SOCKET` | `/var/run/docker.sock` | Socket (or Windows named pipe) of the Docker daemon. |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Unix socket (or Windows named pipe) to reach Docker; the compose file sets the proxy's `/run/docker-api/docker.sock`. |
+| `DOCKER_HOST` | – | `tcp://host:port` of a TCP proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. Not recommended (unauthenticated). |
 | `DOCKER_API_VERSION` | `v1.44` | Engine API prefix. `v1.44` is accepted by Engine 25+ (Engine 29.0–29.2 refuse older); use `v1.43` for Engine 24. |
 
 ## State files (contract with the app)
@@ -95,50 +122,76 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
 | `status.json` | updater | `{ "id", "state", "fromVersion", "targetVersion", "message", "updatedAt", "log": [{ "at", "state", "message" }] }` |
 | `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image" }` |
 
-`state` is one of `PENDING | PULLING | BACKING_UP | SWITCHING | HEALTH_CHECK | SUCCEEDED | FAILED | ROLLED_BACK`.
-The updater writes `PENDING` only when it has something to say before the pull (e.g. unknown installed version).
+`state` is one of `PENDING | PULLING | BACKING_UP | SWITCHING | HEALTH_CHECK | SUCCEEDED | FAILED | ROLLED_BACK`
+(`PENDING` is part of the contract but not currently written).
 
-- A request is processed when its `id` differs from the `id` in `status.json`. A handled request is never repeated.
-- If `request.json` or `status.json` is not a regular file, or too large, the updater logs it once and does nothing (fail closed).
-- `FAILED` means nothing was changed, except the explicit `ROLLBACK FAILED — manual action required: …` message.
+- A request is processed once: its id is recorded in `BACKUP_DIR/.ledger.json` before the update starts.
+  A request whose id equals the `id` in `status.json` is skipped too.
+- If `request.json` is not a regular file, is too large or cannot be read, the updater logs it once and does nothing.
+  An unreadable or malformed `status.json` is ignored (it is output only).
+- `FAILED` means nothing was changed, except the explicit `ROLLBACK FAILED — manual action required: …` and
+  `MANUAL ACTION REQUIRED — …` messages.
 - The app treats the updater as connected while `heartbeat.at` is younger than 60 s and `dockerOk` is `true`.
+  The container HEALTHCHECK does not use `heartbeat.json` (the app can forge it) but `BACKUP_DIR/.liveness.json`.
 
 ## What an update does
 
-1. **Validate** the request (version format, age), locate the managed container, refuse a
-   downgrade (unless `ALLOW_DOWNGRADE=true`; an installed version that cannot be determined
-   proceeds with a note), check that `DATABASE_URL` equals `file:<DB_FILE>` and that the
-   database and its WAL/SHM are regular files, and make sure no `<name>-pre-<version>`
-   container is left over.
-2. **PULLING** `SERVIO_IMAGE:targetVersion` under `PULL_TIMEOUT_SECONDS`. The pulled image is
-   inspected; its id and digest are logged and the new container is created **from the image id**,
-   so a tag that moves later cannot change what runs.
-3. Re-read `request.json`. If it was removed or replaced during the pull, abort: nothing changed.
-4. **BACKING_UP**: write the journal, stop the container (30 s grace), copy `DB_FILE` and
-   `-wal`/`-shm` to `BACKUP_DIR`. If stop or backup fails, the old container is started again.
-5. **SWITCHING**: rename the old container to `<name>-pre-<fromVersion>`, create the new one
-   under the original name from the old container's configuration, connect additional networks, start it.
+1. **Validate** the request (version format, no prerelease unless allowed, age), refuse while an earlier
+   update's journal is set aside or the target is cooling down, locate the managed container, refuse a
+   downgrade or an unknown installed version (unless `ALLOW_DOWNGRADE=true`), check that `DATABASE_URL`
+   equals `file:<DB_FILE>` and that the database and its sidecars are regular files, and make sure no
+   `<name>-pre-<version>` container is left over.
+2. **PULLING** `SERVIO_IMAGE:targetVersion` under `PULL_TIMEOUT_SECONDS`. The pulled image must be labelled
+   with the requested version; its id and digest are logged and the new container is created **from the image
+   id**, so a tag that moves later cannot change what runs.
+3. Re-read `request.json` (abort if it was removed or replaced during the pull) and check that `/backups` and
+   the database directory have room for a backup and a restore (database size plus 10 %, at least 64 MB).
+4. **BACKING_UP**: write the journal, set the container's restart policy to `no` (so a Docker restart cannot
+   bring the old version up next to the new one), stop it (30 s grace), copy `DB_FILE` and its
+   `-wal`/`-shm`/`-journal` to `BACKUP_DIR`. If stop or backup fails, the policy is restored and the old
+   container started again.
+5. **SWITCHING**: rename the old container to `<name>-pre-<fromVersion>`, create the new one under the original
+   name from the old container's configuration (with its original restart policy and the label
+   `servio.updater.request=<request id>`), connect additional networks, start it.
 6. **HEALTH_CHECK**: poll until Docker reports `healthy`. An exit, a restart or `unhealthy` fails the check;
    a container without HEALTHCHECK counts as healthy after 15 s running.
-7. **SUCCEEDED**: remove the old container, then prune old backups.
-8. **Rollback** on any failure in 5–6: remove the new container, restore the database files
-   (removing `-wal`/`-shm` that did not exist at backup time), rename the old container back, start it
-   and wait until healthy → `ROLLED_BACK`.
+7. **SUCCEEDED**: remove the old container, then prune old backups (and copies left by an interrupted backup).
+8. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
+   that did not exist at backup time, e.g. the hot `-journal` of a migration that was killed), rename the old
+   container back, restore its restart policy, start it and wait until healthy → `ROLLED_BACK`.
+
+The final status is written before the journal is removed, so a crash in between only replays a harmless recovery.
 
 ### Crash recovery
 
-Before the old container is stopped the updater writes `BACKUP_DIR/.journal.json` (old container id,
-names, new container id, backup path, step) and updates it at every step. If the updater dies mid-update,
-the next start finishes or reverts the work:
+Before the old container is stopped the updater writes `BACKUP_DIR/.journal.json` (request id, old container id,
+names, the new image id, the new container id once known, the original restart policy, backup, step) and updates
+it at every step, including `RESTORED` once a rollback has put the database back. If the updater dies
+mid-update, its next start waits for Docker, then (before it reads anything under `/data/state`) finishes or
+reverts the work:
 
-- step `STOPPING`/`BACKED_UP` (nothing switched): start the old container → `FAILED` ("nothing was changed").
-- step `SWITCHING`/`STARTED`: remove the new container (also one that took the managed name but was never
-  recorded), restore the database, rename the old container back, start it → `ROLLED_BACK`.
+- step `STOPPING`/`BACKED_UP` (nothing switched): restore the restart policy, start the old container →
+  `FAILED` ("nothing was changed").
+- step `SWITCHING`/`STARTED`: remove the new container (the recorded one, or one holding the managed name that
+  carries this request's label and the new image), restore the database, rename the old container back, start
+  it → `ROLLED_BACK`.
+- step `RESTORED`: as above without restoring again (the old container may already have written new data).
 - step `SWITCHED` (new container was healthy): remove the old container → `SUCCEEDED`.
 
-The database is never restored underneath an old container that is already running. A recovery that fails
-keeps the journal and reports `ROLLBACK FAILED`; it is retried on the next start. Without a journal, a
-non-terminal status is closed as `FAILED` with a hint to run `docker ps -a`.
+Recovery acts only while Docker still matches the journal: the old container exists (and is stopped while a
+restore is due), the managed name is held by nobody, the old container or this update's replacement, and after a
+healthy switch the new container is running and the old one is not. Otherwise it changes nothing and reports
+`MANUAL ACTION REQUIRED — the containers no longer match the update journal`. That and a failed rollback
+(`ROLLBACK FAILED — manual action required`) set the journal aside as `BACKUP_DIR/.journal.manual-<time>.json`;
+it is never replayed, and **further updates are refused until you delete it**. Once the containers are the way
+you want them:
+
+```bash
+docker compose -f docker-compose.release.yml exec updater ls -a /backups
+docker compose -f docker-compose.release.yml exec updater rm /backups/.journal.manual-<time>.json
+```
+
+Without a journal, a non-terminal status is closed as `FAILED` with a hint to run `docker ps -a`.
 
 ### Leftover `-pre-` container
 
@@ -152,7 +205,8 @@ with `docker rm <name>-pre-<version>` once you have confirmed that the running c
 Like Watchtower, only **user-supplied** settings are carried over: environment entries, labels, `Cmd`,
 `Entrypoint`, `Healthcheck`, `User`, `WorkingDir`, `StopSignal`, `StopTimeout` and `Shell` are compared with the
 old image's defaults, so the new image's defaults win. `HostConfig` (binds, mounts, ports, restart policy, …) is
-copied; anonymous volumes are re-bound by name so their data survives. Networks keep their aliases (without the
+copied (the restart policy as it was before the update); anonymous volumes are re-bound by name so their data
+survives. Networks keep their aliases (without the
 old container's short id), static IPs and driver options. Compose labels are kept, so `docker compose ps` still
 lists the container; the `config-hash` label is stale afterwards.
 
@@ -163,6 +217,14 @@ container was stopped). Not covered: uploads under `/data/uploads`, Postgres dat
 anything the new version did outside the container (outgoing mail, webhooks). A new version that is healthy but
 wrong needs a manual restore from `/backups`.
 
+Backups are copies of a file the app (and so an attacker in it) can write: treat them as untrusted data. Open
+them only with SQLite tools on a machine where a malformed database file does no harm, and do not restore one
+taken after a suspected compromise.
+
+The app image refuses to boot on a database that holds migrations it does not ship (a newer release migrated it
+and no restore happened), so an older version never runs on a newer schema. `ALLOW_UNKNOWN_MIGRATIONS=true`
+on `web` overrides this (see `docker/entrypoint.sh`).
+
 ## Development
 
 ```bash
@@ -172,5 +234,10 @@ node node_modules/vitest/vitest.mjs run tests/unit/updater
 Tests use an in-memory fake Docker (`tests/unit/updater-test-kit.ts`) and temp directories; a fake clock makes
 health timeouts instantaneous and a kill helper simulates the updater dying at a chosen Docker call. The Docker
 client is tested against a real HTTP server on a temp unix socket (a named pipe on Windows) and on TCP. Tests that
-need file symlinks are skipped where the OS refuses to create them (Windows without the symlink privilege);
-directory junctions and "directory instead of file" cases run everywhere.
+need file symlinks are skipped where the OS refuses to create them (Windows without the symlink privilege), and the
+`/proc/self/fd` and FIFO tests run on Linux only; directory junctions and "directory instead of file" cases run
+everywhere.
+
+The CI job `updater-e2e` (`tests/updater-e2e/run.sh`) runs the real updater image behind the real proxy, configured
+by `docker-compose.release.yml`, against a local registry: one update must succeed, and one to a release whose
+health check fails must roll back with the database restored byte for byte and the previous container running.

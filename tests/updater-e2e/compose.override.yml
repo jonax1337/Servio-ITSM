@@ -1,0 +1,22 @@
+# Runs docker-compose.release.yml (the real proxy and updater configuration)
+# against a local registry and the stand-in app from tests/updater-e2e/app.
+# Used by tests/updater-e2e/run.sh in the updater-e2e CI job only.
+services:
+  web:
+    image: localhost:5000/servio-e2e:1.0.0
+    env_file: !reset []
+    depends_on: !reset {}
+    # Same shape as production: a compose-level health check that the updater
+    # carries over to the new container; HEALTHY comes from the image.
+    healthcheck:
+      test: ["CMD-SHELL", "[ \"$$HEALTHY\" = true ] && wget -q -O /dev/null http://127.0.0.1:3000/"]
+      interval: 2s
+      timeout: 2s
+      retries: 1
+      start_period: 0s
+
+  updater:
+    image: servio-updater:e2e
+    environment:
+      SERVIO_IMAGE: localhost:5000/servio-e2e
+      HEALTH_TIMEOUT_SECONDS: "60"

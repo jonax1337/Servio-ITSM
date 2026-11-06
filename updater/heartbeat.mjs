@@ -1,9 +1,15 @@
-// Liveness file the app reads to decide whether updates can be scheduled.
+// Liveness: `heartbeat.json` for the app (it decides whether updates can be
+// scheduled) and a stamp on the updater-only backup volume for the container
+// HEALTHCHECK, which must not trust a file the app can forge.
+import { join } from "node:path";
 import { containerNameOf, findManagedContainer } from "./managed-container.mjs";
 import { writeJsonAtomic } from "./state-files.mjs";
 
 /** The app treats the updater as connected while the heartbeat is younger than this. */
 export const HEARTBEAT_FRESH_MS = 60_000;
+
+/** @param {string} backupDir */
+export const livenessFile = (backupDir) => join(backupDir, ".liveness.json");
 
 /**
  * @param {{
@@ -35,6 +41,10 @@ export function createHeartbeat({ docker, config, paths, now = Date.now, log = c
   }
 
   return async function beat() {
+    const at = new Date(now()).toISOString();
+    // First, so a sabotaged state directory cannot make the updater look dead (or alive).
+    await writeJsonAtomic(livenessFile(config.backupDir), { at }, [config.backupDir]);
+
     let dockerOk = true;
     try {
       await docker.ping();
@@ -47,12 +57,7 @@ export function createHeartbeat({ docker, config, paths, now = Date.now, log = c
 
     await writeJsonAtomic(
       paths.heartbeat,
-      {
-        updaterVersion: config.updaterVersion,
-        at: new Date(now()).toISOString(),
-        dockerOk,
-        ...(await describeManagedContainer(dockerOk)),
-      },
+      { updaterVersion: config.updaterVersion, at, dockerOk, ...(await describeManagedContainer(dockerOk)) },
       [paths.stateDir, paths.updaterDir],
     );
   };

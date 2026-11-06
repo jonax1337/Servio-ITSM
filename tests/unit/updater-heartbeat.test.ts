@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../updater/config.mjs";
-import { isHeartbeatFresh } from "../../updater/healthcheck.mjs";
-import { createHeartbeat } from "../../updater/heartbeat.mjs";
+import { isLivenessFresh } from "../../updater/healthcheck.mjs";
+import { createHeartbeat, livenessFile } from "../../updater/heartbeat.mjs";
 import { MAX_SMALL_JSON_BYTES, readJsonFile, statePaths, writeJsonAtomic } from "../../updater/state-files.mjs";
 import { CONTAINER_NAME, IMAGE_REPO, OLD_VERSION, FakeDocker, servioContainer } from "./updater-test-kit";
 
@@ -20,7 +20,7 @@ beforeEach(async () => {
 afterEach(() => rm(root, { recursive: true, force: true }));
 
 const config = (env: Record<string, string> = {}) =>
-  loadConfig({ SERVIO_IMAGE: IMAGE_REPO, SERVIO_CONTAINER: CONTAINER_NAME, ...env });
+  loadConfig({ SERVIO_IMAGE: IMAGE_REPO, SERVIO_CONTAINER: CONTAINER_NAME, BACKUP_DIR: root, ...env });
 
 function heartbeatFor(docker: FakeDocker, logLines: string[] = []) {
   return createHeartbeat({
@@ -83,13 +83,23 @@ describe("heartbeat", () => {
   });
 });
 
-describe("container healthcheck", () => {
-  it("is healthy for a fresh heartbeat and unhealthy for a stale or missing one", async () => {
-    await writeJsonAtomic(heartbeatFile, { at: new Date(NOW - 20_000).toISOString() });
+describe("container healthcheck (finding L9)", () => {
+  it("is healthy for a fresh liveness stamp and unhealthy for a stale or missing one", async () => {
+    await writeJsonAtomic(livenessFile(root), { at: new Date(NOW - 20_000).toISOString() });
 
-    expect(await isHeartbeatFresh(heartbeatFile, NOW)).toBe(true);
-    expect(await isHeartbeatFresh(heartbeatFile, NOW + 45_000)).toBe(false);
-    expect(await isHeartbeatFresh(join(root, "missing.json"), NOW)).toBe(false);
+    expect(await isLivenessFresh(livenessFile(root), NOW)).toBe(true);
+    expect(await isLivenessFresh(livenessFile(root), NOW + 45_000)).toBe(false);
+    expect(await isLivenessFresh(join(root, "missing.json"), NOW)).toBe(false);
+  });
+
+  it("is fed by the heartbeat loop on the backup volume, not by the app-writable heartbeat.json", async () => {
+    const docker = new FakeDocker();
+    await rm(join(root, "updater"), { recursive: true });
+    await writeFile(join(root, "updater"), "the app replaced the directory with a file");
+
+    await expect(heartbeatFor(docker)()).rejects.toThrow();
+
+    expect(await isLivenessFresh(livenessFile(root), NOW)).toBe(true);
   });
 });
 
@@ -133,7 +143,7 @@ describe("configuration", () => {
   });
 
   it("applies the documented defaults", () => {
-    expect(config()).toMatchObject({
+    expect(loadConfig({ SERVIO_IMAGE: IMAGE_REPO })).toMatchObject({
       stateDir: "/data/state",
       dbFile: "/data/servio.db",
       backupDir: "/backups",
@@ -143,6 +153,8 @@ describe("configuration", () => {
       dockerEndpoint: { socketPath: "/var/run/docker.sock" },
       apiVersion: "v1.44",
       allowDowngrade: false,
+      allowPrerelease: false,
+      retryCooldownMs: 3_600_000,
       pullTimeoutMs: 1_800_000,
       requestMaxAgeMs: 3_600_000,
     });

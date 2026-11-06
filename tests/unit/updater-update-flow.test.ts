@@ -78,7 +78,7 @@ describe("update flow: success", () => {
   it("writes a backup of the database and its WAL into the backup directory", async () => {
     await runRequest();
 
-    const backups = await readdir(harness.backupDir);
+    const backups = await harness.backupFiles();
     const database = backups.find((name) => name.endsWith(".db"));
     expect(database).toMatch(new RegExp(`^servio-${OLD_VERSION}-\\d{8}T\\d{6}Z\\.db$`));
     expect(backups).toContain(`${database}-wal`);
@@ -120,7 +120,7 @@ describe("update flow: failures before anything changed", () => {
     expect(harness.docker.callsTo("stop")).toEqual([]);
     expect(harness.docker.callsTo("rename")).toEqual([]);
     expect(harness.docker.byName(CONTAINER_NAME)?.State.Running).toBe(true);
-    expect(await readdir(harness.backupDir)).toEqual([]);
+    expect(await harness.backupFiles()).toEqual([]);
   });
 
   it("refuses a Postgres URL without ALLOW_UPDATE_WITHOUT_BACKUP and leaves the container running", async () => {
@@ -146,7 +146,7 @@ describe("update flow: failures before anything changed", () => {
 
     const status = await harness.readStatus();
     expect(status.state).toBe("SUCCEEDED");
-    expect(await readdir(harness.backupDir)).toEqual([]);
+    expect(await harness.backupFiles()).toEqual([]);
   });
 
   it("refuses when DATABASE_URL points at a different file than DB_FILE", async () => {
@@ -195,7 +195,7 @@ describe("update flow: failures before anything changed", () => {
     expect(harness.docker.callsTo("start")).toEqual([`start ${CONTAINER_NAME}`]);
     expect(harness.docker.byName(CONTAINER_NAME)?.State.Running).toBe(true);
     expect(harness.docker.callsTo("rename")).toEqual([]);
-    expect(await readdir(harness.backupDir)).toEqual([`servio-${OLD_VERSION}-20261106T100000Z.db`]);
+    expect(await harness.backupFiles()).toEqual([`servio-${OLD_VERSION}-20261106T100000Z.db`]);
   });
 
   it("refuses before stopping anything when the database file is missing", async () => {
@@ -230,10 +230,22 @@ describe("update flow: request validation", () => {
     expect(harness.docker.calls.filter((call) => !call.startsWith("inspect"))).toEqual([]);
   });
 
-  it("accepts prerelease versions", async () => {
+  it("rejects prerelease versions by default", async () => {
+    await runRequest({ id: "pre-1", targetVersion: "1.0.0-rc.1", requestedAt: FRESH_REQUESTED_AT });
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("ALLOW_PRERELEASE=true");
+    expect(harness.docker.callsTo("pull")).toEqual([]);
+  });
+
+  it("installs prerelease versions when ALLOW_PRERELEASE=true", async () => {
+    await harness.cleanup();
+    harness = await createHarness({ env: { ALLOW_PRERELEASE: "true" } });
     await runRequest({ id: "pre-1", targetVersion: "1.0.0-rc.1", requestedAt: FRESH_REQUESTED_AT });
 
     expect(harness.docker.callsTo("pull")).toEqual([`pull ${IMAGE_REPO}:1.0.0-rc.1`]);
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
   });
 
   it("only ever pulls the image repository from the updater's own configuration", async () => {
@@ -315,6 +327,65 @@ describe("update flow: idempotency", () => {
   });
 });
 
+describe("update flow: limits on repeated and oversized updates", () => {
+  it("refuses another attempt at a target that was just rolled back, but not at another target (finding L7)", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    await runRequest();
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    const stops = harness.docker.callsTo("stop").length;
+
+    await runRequest({ ...REQUEST, id: "win-2" });
+    const refused = await harness.readStatus();
+    expect(refused).toMatchObject({ id: "win-2", state: "FAILED" });
+    expect(refused.message).toContain("failed recently");
+    expect(harness.docker.callsTo("stop")).toHaveLength(stops);
+
+    harness.docker.newContainerPlan = "healthy";
+    await runRequest({ ...REQUEST, id: "win-3", targetVersion: "0.3.1" });
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+
+  it("allows the target again once RETRY_COOLDOWN_SECONDS have passed", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    await runRequest();
+    await harness.clock.sleep(3600_000);
+    harness.docker.newContainerPlan = "healthy";
+
+    await runRequest({ ...REQUEST, id: "win-2", requestedAt: new Date(harness.clock.now()).toISOString() });
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+
+  it("does not start a cooldown for a failure that never stopped the app", async () => {
+    harness.docker.pullError = new DockerApiError("registry down", 500);
+    await runRequest();
+    harness.docker.pullError = null;
+
+    await runRequest({ ...REQUEST, id: "win-2" });
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+
+  it("refuses before stopping anything when a backup and its restore would not fit (finding L10)", async () => {
+    await harness.cleanup();
+    harness = await createHarness({ freeBytes: 1024 });
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("Not enough free space");
+    expect(harness.docker.callsTo("stop")).toEqual([]);
+  });
+
+  it("proceeds when there is room for the backup and the restore", async () => {
+    await harness.cleanup();
+    harness = await createHarness({ freeBytes: 1024 ** 3 });
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+});
+
 describe("update flow: rollback", () => {
   const corruptDatabaseOnStart = (harness: Harness) => {
     harness.docker.onStart = async (container) => {
@@ -345,6 +416,20 @@ describe("update flow: rollback", () => {
     expect(restored?.Config.Image).toBe(`${IMAGE_REPO}:${OLD_VERSION}`);
     expect(restored?.State.Running).toBe(true);
     expect([...docker.containers.keys()].filter((id) => id.startsWith("new-"))).toEqual([]);
+  });
+
+  it("removes a hot rollback journal the killed new container left, so the old version does not replay it (finding H1)", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    harness.docker.onStart = async (container) => {
+      if (!container.Id.startsWith("new-")) return;
+      await writeFile(harness.dbFile, "half-migrated");
+      await writeFile(`${harness.dbFile}-journal`, "hot-journal-of-the-interrupted-migration");
+    };
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
+    await expect(stat(`${harness.dbFile}-journal`)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rolls back when the new container exits while health is being checked", async () => {

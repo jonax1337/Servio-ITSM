@@ -2,9 +2,9 @@
 #
 # Build context is the updater/ directory (CI and release.yml pass `context: updater`).
 # Runs as the unprivileged `node` user (uid 1000, the same uid as the app) and
-# needs no Docker socket: it talks to a docker-socket-proxy over TCP
-# (DOCKER_HOST=tcp://docker-proxy:2375, see docker-compose.release.yml).
-# Exposes no ports. See updater/README.md.
+# never sees the Docker socket: it talks to the socket proxy's filtered unix
+# socket (DOCKER_SOCKET=/run/docker-api/docker.sock, see docker-compose.release.yml).
+# Needs no network and exposes no ports. See updater/README.md.
 FROM node:22-alpine
 
 # Named volumes take their initial ownership from the image path they are
@@ -23,7 +23,8 @@ COPY *.mjs ./
 
 USER node
 
-# Healthy while the heartbeat file is fresh (written every 15 s, stale after 60 s).
+# Healthy while the liveness stamp on /backups is fresh (written every 15 s,
+# stale after 60 s); the app-writable heartbeat.json is not trusted for this.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "healthcheck.mjs"]
 

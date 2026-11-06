@@ -2,8 +2,8 @@
 // flow needs; reference: https://docs.docker.com/reference/api/engine/
 import http from "node:http";
 
-// The daemon is reached over a unix socket / named pipe, or over TCP through a
-// docker-socket-proxy (DOCKER_HOST=tcp://host:port); see updater/README.md.
+// The daemon is reached over a unix socket (in the supported setup: the filtered
+// socket of the socket proxy), a named pipe, or TCP (DOCKER_HOST); see updater/README.md.
 
 /**
  * Engine API version prefix. v1.44 is the oldest version every supported
@@ -243,6 +243,16 @@ export function createDockerClient({
     /** 304 (already started) counts as success. @param {string} id */
     startContainer(id) {
       return callVoid("POST", `${containerPath(id)}/start`, [204, 304]);
+    },
+
+    /**
+     * Changes settings of an existing container (the updater only sets `RestartPolicy`).
+     *
+     * @param {string} id
+     * @param {Record<string, any>} settings body for `POST /containers/{id}/update`
+     */
+    updateContainer(id, settings) {
+      return callVoid("POST", `${containerPath(id)}/update`, [200], { body: settings });
     },
 
     /**

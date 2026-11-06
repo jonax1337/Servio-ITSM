@@ -168,6 +168,15 @@ describe("docker client over a local socket", () => {
     ]);
   });
 
+  it("updates a container's restart policy with a JSON body", async () => {
+    handler = (_request, response) => json(response, 200, { Warnings: [] });
+
+    await client().updateContainer("abc", { RestartPolicy: { Name: "no" } });
+
+    expect(requests[0]).toMatchObject({ method: "POST", url: `/${DEFAULT_API_VERSION}/containers/abc/update` });
+    expect(JSON.parse(requests[0].body)).toEqual({ RestartPolicy: { Name: "no" } });
+  });
+
   it("creates a container by name with the spec as JSON body and returns its id", async () => {
     handler = (_request, response) => json(response, 201, { Id: "new123", Warnings: [] });
     const spec = { Image: "ghcr.io/jonax1337/servio:0.3.0", HostConfig: { Binds: ["v:/data"] }, NetworkingConfig: { EndpointsConfig: {} } };

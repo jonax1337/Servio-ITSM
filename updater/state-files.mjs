@@ -1,12 +1,13 @@
 // Shared state directory helpers (contract: SERVIO_STATE_DIR, see updater/README.md).
-// JSON files are written atomically; readers treat a missing or half-written file as absent.
-// The directory is writable by the app, so nothing here follows symlinks.
+// JSON files are written atomically and durably; readers treat a missing or
+// half-written file as absent. The directory is writable by the app, so nothing
+// here follows symlinks.
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { assertRealDirectory, readRegularFile } from "./safe-fs.mjs";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { assertRealDirectory, inPinnedDirectory, readRegularFile, writeNewFileDurably } from "./safe-fs.mjs";
 
-/** Cap for `request.json` and the journal: both are a few hundred bytes. */
+/** Cap for `request.json`, the journal and the ledger: each is at most a few kilobytes. */
 export const MAX_SMALL_JSON_BYTES = 64 * 1024;
 /** Cap for `status.json`, which carries the step log. */
 export const MAX_STATUS_BYTES = 1024 * 1024;
@@ -43,23 +44,28 @@ export async function readJsonFile(file, maxBytes) {
 }
 
 /**
- * Writes `<file>.tmp-<uuid>` (exclusively created) and renames it over `file`.
- * `guardedDirs` must all be real directories (no symlinks) at write time.
+ * Writes `<file>.tmp-<uuid>` (exclusively created, fsynced) and renames it over
+ * `file`, then fsyncs the directory. `guardedDirs` lead from a trusted directory
+ * down to the file's directory; none of them may be a symlink, and on Linux the
+ * write cannot be redirected by swapping one of them mid-write.
  *
  * @param {string} file
  * @param {unknown} value
  * @param {string[]} [guardedDirs] defaults to the file's directory
  */
 export async function writeJsonAtomic(file, value, guardedDirs = [dirname(file)]) {
-  for (const dir of guardedDirs) await assertRealDirectory(dir);
-  const temporary = `${file}.tmp-${randomUUID()}`;
-  try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o644 });
-    await rename(temporary, file);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+  if (guardedDirs.at(-1) !== dirname(file)) throw new Error(`${file} is not inside ${guardedDirs.at(-1)}`);
+  await inPinnedDirectory(guardedDirs, async (dir) => {
+    const target = join(dir, basename(file));
+    const temporary = `${target}.tmp-${randomUUID()}`;
+    try {
+      await writeNewFileDurably(temporary, `${JSON.stringify(value, null, 2)}\n`, 0o644);
+      await rename(temporary, target);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
+    }
+  });
 }
 
 /**

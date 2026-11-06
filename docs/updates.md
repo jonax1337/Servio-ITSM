@@ -33,12 +33,13 @@ Window states: `SCHEDULED` → `IN_PROGRESS` → `COMPLETED` / `FAILED` / `ROLLE
 The published image targets SQLite (`DATABASE_URL=file:/data/servio.db`). Use [`docker-compose.release.yml`](../docker-compose.release.yml): it runs `web`, `gotenberg`, a **`docker-proxy`** and the **`updater`** sidecar from published images.
 
 - `web` and `updater` run as the same unprivileged user (`node`, uid 1000) and share the `servio-data` volume at `/data`. `SERVIO_STATE_DIR` is `/data/state` in the image.
-- Only `docker-proxy` ([docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy), pinned) mounts `/var/run/docker.sock`. The updater reaches it with `DOCKER_HOST=tcp://docker-proxy:2375` over an `internal` network that contains only the two of them; no ports are published. The proxy allows containers, images, networks, start/stop and writes, and nothing else.
-- The updater has its own volume `servio-backups` at `/backups` (database backups and the crash-recovery journal). The app never mounts it.
+- Only `docker-proxy` ([wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy), pinned by digest) mounts `/var/run/docker.sock`. It serves a filtered unix socket (mode 0600, uid 1000) on the `docker-api` volume, which only the proxy and the updater mount; both run without a network, so nothing else can reach the filtered API. It allows exactly the Docker calls the updater makes and refuses host bind mounts. Set `DOCKER_GID` in `.env` to the group of the Docker socket (`stat -c %g /var/run/docker.sock`).
+- The updater has its own volume `servio-backups` at `/backups` (database backups, the crash-recovery journal, the record of handled requests and its liveness stamp). The app never mounts it.
 - The updater only ever pulls `SERVIO_IMAGE` (set by the updater's own environment, never taken from a request) and only manages the container labelled `servio.updater.managed=true` (`SERVIO_CONTAINER` names it).
 - The web container's `DATABASE_URL` must be an absolute `file:` URL equal to the updater's `DB_FILE` (`file:/data/servio.db`); relative URLs are refused.
 - Keep `SERVIO_VERSION` in `.env` in sync with what the updater installed, or use `latest` (it follows stable releases only): a later manual `docker compose up` recreates `web` from the compose tag and would otherwise roll the update back.
-- An operator who prefers to skip the proxy can mount the socket into the updater (`DOCKER_SOCKET`), but then the updater needs access to the socket's group and a compromised updater gets the unfiltered Docker API. The proxy is the supported setup. Full variable list: [`updater/README.md`](../updater/README.md).
+- An operator who prefers to skip the proxy can mount the socket into the updater (`DOCKER_SOCKET=/var/run/docker.sock`), but then the updater needs access to the socket's group and a compromised updater gets the unfiltered Docker API. The proxy is the supported setup. Full variable list: [`updater/README.md`](../updater/README.md).
+- Prereleases are installed only with `ALLOW_PRERELEASE=true` on the updater.
 
 `/settings/updates` shows the updater as **Connected** when its heartbeat is less than 60 seconds old and Docker is reachable. Without it, update windows cannot be scheduled (general maintenance still works).
 
@@ -46,27 +47,30 @@ Outside Docker (`pnpm dev`, a plain Node deployment) the app writes the state fi
 
 ## Security
 
-The app is internet-facing, so the updater assumes that everything the app's user can write on `/data` is attacker-controlled. The worst that should be possible through the updater is to trigger an update to a newer, legitimate release of `SERVIO_IMAGE`.
+The app is internet-facing, so the updater assumes that everything the app's user can write on `/data` is attacker-controlled. The worst that should be possible through the updater is to trigger an update to a strictly newer, stable, legitimate release of `SERVIO_IMAGE`.
 
-- **Docker access is powerful.** Creating containers can mean root on the host. Only `docker-proxy` touches the socket; the app never does, and the proxy refuses exec, volumes, build, swarm, secrets and system calls. It cannot inspect request bodies, so use the stack only on hosts where this level of Docker access is acceptable.
-- **No root file work.** The updater runs as `node` (uid 1000) with a read-only root filesystem, no capabilities and `no-new-privileges`. It has no more file privileges than the app, so planted symlinks and forged files cannot be turned into privilege.
-- **Defence in depth on `/data`.** The database, `-wal`, `-shm` and `request.json` must be regular files and the state directories real directories (symlinks are refused); `request.json` may not exceed 64 KB; backups never overwrite an existing file; a restore goes through a temporary file and a rename.
-- **Requests.** The updater accepts a strict `X.Y.Z[-prerelease]` version, builds the image reference itself, installs only versions newer than the running one (`ALLOW_DOWNGRADE=true` overrides), rejects requests older than an hour (`REQUEST_MAX_AGE_SECONDS`) or from the future, and re-reads the request before stopping the app. The container is created from the pulled image's id, and the id and digest are logged in the window's log.
-- `maintenance.json` and the `updater/` files are plain JSON on the shared volume; a compromised app can ask for an update to a newer release, nothing more.
+- **Docker access is powerful.** Creating containers can mean root on the host. Only `docker-proxy` touches the socket; the app never does. The proxy's socket is reachable only by the updater, allows only the calls the updater makes (inspect, pull, create, start, stop, rename, update, connect, remove, ping) and refuses host bind mounts. It cannot inspect the rest of a create request (privileged mode, devices), so code execution inside the updater process still means control of the host: use the stack only on hosts where that is acceptable.
+- **No root file work.** The updater runs as `node` (uid 1000) with a read-only root filesystem, no capabilities, no network and `no-new-privileges`. It has no more file privileges on `/data` than the app, and the shared files are only ever data to it. Its state of record (journal, handled requests, liveness for the container health check) lives on `/backups`, not on `/data`.
+- **Defence in depth on `/data`.** The database, its `-wal`, `-shm` and `-journal` files and `request.json` must be regular files and the state directories real directories (symlinks are refused, FIFOs cannot block); `request.json` may not exceed 64 KB; status writes cannot be redirected by swapping a directory; backups never overwrite an existing file; a restore goes through a temporary file and a rename.
+- **Requests.** The updater accepts a strict `X.Y.Z` version (prereleases with `ALLOW_PRERELEASE=true`), builds the image reference itself, installs only versions newer than the running one and refuses when the running version is unknown (`ALLOW_DOWNGRADE=true` overrides both), rejects requests older than an hour (`REQUEST_MAX_AGE_SECONDS`) or from the future, re-reads the request before stopping the app, and requires the pulled image's version label to match. The container is created from the pulled image's id, and the id and digest are logged in the window's log. A request id runs at most once, and after an update that took the app down without succeeding the same version is refused for an hour (`RETRY_COOLDOWN_SECONDS`).
+- `maintenance.json` and the `updater/` files are plain JSON on the shared volume; a compromised app can ask for an update to a newer release, or show admins a false status, nothing more.
+- **Backups are untrusted data.** They are copies of a file the app can write. Inspect them only with SQLite tools where a malformed file does no harm, and do not restore one taken after a suspected compromise.
 - `GET /api/maintenance` is public and returns only the title, message, planned end and kind.
 
 ## What rollback does and does not cover
 
 When the new container fails its health check or exits, the updater stops it, restores the database copy taken just before the switch, renames the old container back and starts it. The window ends as `ROLLED_BACK`.
 
-- **Covered:** the SQLite database file (`servio.db` plus `-wal`/`-shm`) as it was at the start of the update, and the old container with its original configuration.
+- **Covered:** the SQLite database file (`servio.db` plus `-wal`/`-shm`/`-journal`) as it was at the start of the update, and the old container with its original configuration and restart policy.
 - **Not covered:** attachments written to the upload volume during the window (they are not part of the backup), changes in external systems, and anything users did between the backup and the restore (users are locked out during the window if it blocks access, so this only matters for non-blocking windows).
 - If the rollback itself fails, the window ends `FAILED` with a "ROLLBACK FAILED — manual action required" message that names the backup path and the old container.
 - A failure *before* the switch (pull failed, validation failed) leaves the running container untouched and ends `FAILED`.
 
 Backups live on the updater's own volume at `/backups` (newest five by default, pruned only after a successful update and never including the backup of the running update).
 
-Before stopping the app the updater writes a journal next to the backups. If the updater itself is killed mid-update, its next start finishes or reverts the work: the old container is started again (database restored if the switch had begun) or, if the new container had already proved healthy, the old container is removed and the window ends `COMPLETED`. A leftover `<name>-pre-<version>` container (from a failed removal or rollback) blocks further updates until you remove it with `docker rm`, because it may be the only copy of the previous version.
+Before stopping the app the updater writes a journal next to the backups. If the updater itself is killed mid-update, its next start finishes or reverts the work: the old container is started again (database restored if the switch had begun and no restore happened yet) or, if the new container had already proved healthy, the old container is removed and the window ends `COMPLETED`. It does so only while the containers still look the way the journal says; if you changed them by hand, or a rollback failed, it touches nothing, reports `MANUAL ACTION REQUIRED` / `ROLLBACK FAILED`, and keeps the journal as `/backups/.journal.manual-<time>.json`. Further updates are refused until you have fixed the containers and deleted that file (`docker compose -f docker-compose.release.yml exec updater rm /backups/.journal.manual-<time>.json`). A leftover `<name>-pre-<version>` container (from a failed removal or rollback) also blocks further updates until you remove it with `docker rm`, because it may be the only copy of the previous version.
+
+The app image itself refuses to start on a database that holds migrations it does not ship, so an older version never runs on a schema a newer one migrated (`ALLOW_UNKNOWN_MIGRATIONS=true` on `web` overrides this).
 
 ## Postgres
 
@@ -88,7 +92,10 @@ While the app is up and a window blocks access, Servio itself serves the mainten
 | Symptom | Likely cause |
 | --- | --- |
 | Updater shows "Not detected" | The `updater` container is not running or does not share the `servio-data` volume. |
-| Update failed with "Refusing to install …" | The requested version is not newer than the installed one. Set `ALLOW_DOWNGRADE=true` on the updater only if you really want to go back (the database is not migrated back). |
+| Update failed with "Refusing to install …" | The requested version is not newer than the installed one, or the installed version is unknown (no version label). Set `ALLOW_DOWNGRADE=true` on the updater only if you really want that (the database is not migrated back). |
+| Update failed with "An earlier update needs manual attention" | A journal was set aside after a failed rollback or a manual change. Check `docker ps -a`, then delete `/backups/.journal.manual-*.json` in the updater container. |
+| Update failed with "failed recently; it can be retried after …" | The same version failed less than `RETRY_COOLDOWN_SECONDS` ago. Wait, or pick another release. |
+| Updater shows "Not responding" right after setup | `DOCKER_GID` does not match the group of `/var/run/docker.sock`, so the proxy cannot reach Docker (`dockerOk: false`). |
 | Update failed with "must be an absolute file: URL equal to the updater's DB_FILE" | `DATABASE_URL` of the web container differs from the updater's `DB_FILE`, or is relative. |
 | Update failed with "already exists from an earlier update" | A `servio-web-pre-<version>` container is left over. Check which container is the right one, then `docker rm` the other. |
 | Updater shows "Not responding" | Heartbeat older than 60 s: the updater crashed, or Docker is unreachable from it (`dockerOk: false`). |

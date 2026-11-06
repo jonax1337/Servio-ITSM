@@ -31,6 +31,8 @@ export function loadConfig(env = process.env) {
     backupKeep: positiveInteger(env.BACKUP_KEEP, 5, "BACKUP_KEEP"),
     allowUpdateWithoutBackup: env.ALLOW_UPDATE_WITHOUT_BACKUP === "true",
     allowDowngrade: env.ALLOW_DOWNGRADE === "true",
+    allowPrerelease: env.ALLOW_PRERELEASE === "true",
+    retryCooldownMs: positiveInteger(env.RETRY_COOLDOWN_SECONDS, 3600, "RETRY_COOLDOWN_SECONDS") * 1000,
     pullTimeoutMs: positiveInteger(env.PULL_TIMEOUT_SECONDS, 1800, "PULL_TIMEOUT_SECONDS") * 1000,
     requestMaxAgeMs: positiveInteger(env.REQUEST_MAX_AGE_SECONDS, 3600, "REQUEST_MAX_AGE_SECONDS") * 1000,
     healthTimeoutMs: positiveInteger(env.HEALTH_TIMEOUT_SECONDS, 300, "HEALTH_TIMEOUT_SECONDS") * 1000,
@@ -47,7 +49,8 @@ export function loadConfig(env = process.env) {
 }
 
 /**
- * `DOCKER_HOST=tcp://host:port` (a docker-socket-proxy) wins over `DOCKER_SOCKET`.
+ * `DOCKER_HOST=tcp://host:port` wins over `DOCKER_SOCKET` (the supported setup
+ * points `DOCKER_SOCKET` at the socket proxy's filtered unix socket).
  *
  * @param {Record<string, string | undefined>} env
  * @returns {import("./docker-client.mjs").DockerEndpoint}

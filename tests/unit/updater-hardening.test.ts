@@ -67,7 +67,7 @@ describe("downgrade protection (finding 3)", () => {
     ["prerelease of the installed release", "0.2.0-rc.1"],
     ["older prerelease line", "0.1.9-rc.2"],
   ])("refuses %s without touching Docker", async (_label, targetVersion) => {
-    const status = await run({}, { ...REQUEST, targetVersion });
+    const status = await run({ env: { ALLOW_PRERELEASE: "true" } }, { ...REQUEST, targetVersion });
 
     expect(status.state).toBe("FAILED");
     expect(status.message).toContain(`Refusing to install ${targetVersion}`);
@@ -93,17 +93,51 @@ describe("downgrade protection (finding 3)", () => {
     expect((await harness.readStatus()).state).toBe("SUCCEEDED");
   });
 
-  it("proceeds with a note when the installed version is unknown", async () => {
-    harness = await createHarness();
+  /** The image the container was created from carries no version label, and its tag is not a version. */
+  const forgetInstalledVersion = () => {
     const container = harness.docker.byName(CONTAINER_NAME)!;
     delete container.Config.Labels["org.opencontainers.image.version"];
     container.Config.Image = `${IMAGE_REPO}:latest`;
+  };
+
+  it("refuses to update when the installed version is unknown", async () => {
+    harness = await createHarness();
+    forgetInstalledVersion();
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
 
     const status = await harness.readStatus();
-    expect(status.state).toBe("SUCCEEDED");
-    expect(status.log.some((entry: { message: string }) => entry.message.includes("Installed version is unknown"))).toBe(true);
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("installed version is unknown (latest)");
+    expect(status.message).toContain("ALLOW_DOWNGRADE=true");
+    expect(harness.docker.callsTo("pull")).toEqual([]);
+    expect(harness.docker.callsTo("stop")).toEqual([]);
+  });
+
+  it("updates from an unknown installed version when ALLOW_DOWNGRADE=true", async () => {
+    harness = await createHarness({ env: { ALLOW_DOWNGRADE: "true" } });
+    forgetInstalledVersion();
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+});
+
+describe("pulled image identity (finding M2)", () => {
+  it.each([
+    ["a different version", { "org.opencontainers.image.version": "0.2.9" }, '"0.2.9"'],
+    ["no version", {}, "missing"],
+  ])("refuses an image whose version label says %s, before stopping anything", async (_label, labels, shown) => {
+    harness = await createHarness();
+    harness.docker.images[`${IMAGE_REPO}:${NEW_VERSION}`] = { Id: "sha256:mislabelled", RepoDigests: [], Config: { Labels: labels } };
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain(`label is ${shown}, not ${NEW_VERSION}`);
+    expect(harness.docker.callsTo("stop")).toEqual([]);
   });
 });
 
@@ -187,7 +221,7 @@ describe("pull deadline and request freshness (finding 7)", () => {
     expect(status).toMatchObject({ id: "win-1", state: "FAILED" });
     expect(status.message).toContain("withdrawn or replaced");
     expect(harness.docker.callsTo("stop")).toEqual([]);
-    expect(await readdir(harness.backupDir)).toEqual([]);
+    expect(await harness.backupFiles()).toEqual([]);
   });
 
   it("aborts when the request file was removed while the image was pulling", async () => {

@@ -134,11 +134,13 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(needs.release-please.outputs.tag, '-') }}
       - name: Create manifest list
         working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
-          docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
 
   release-notes:
     name: Add pull commands to the release notes

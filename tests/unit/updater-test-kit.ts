@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Docker inspect/create payloads are untyped Engine API JSON */
 // Shared fixtures for the updater tests: an in-memory Docker, a sample Servio
 // container and a temp-dir harness with a fake clock. Not a test file itself.
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DockerApiError } from "../../updater/docker-client.mjs";
@@ -105,11 +105,10 @@ export class FakeDocker {
 
   async inspectImage(ref: string) {
     this.record("inspectImage", ref);
-    return structuredClone(
-      this.images[ref] ?? { Id: `sha256:id-of-${ref}`, RepoDigests: [`${IMAGE_REPO}@sha256:digest-of-${ref}`], Config: {} },
-    );
+    return structuredClone(this.images[ref] ?? releaseImage(ref));
   }
 
+  /** Images by reference; anything else is a published release whose version label matches its tag. */
   images: Record<string, any> = {};
 
   async listContainers(label: string) {
@@ -143,6 +142,12 @@ export class FakeDocker {
     await this.onStart(container);
   }
 
+  async updateContainer(nameOrId: string, settings: Record<string, any>) {
+    const container = this.require(nameOrId);
+    this.record("update", container.Name.slice(1), settings);
+    Object.assign(container.HostConfig, settings);
+  }
+
   async renameContainer(nameOrId: string, name: string) {
     const container = this.require(nameOrId);
     this.record("rename", container.Name.slice(1), name);
@@ -158,7 +163,7 @@ export class FakeDocker {
     const container = this.add({
       Id: `new-${this.created}`,
       Name: `/${name}`,
-      Image: `sha256:new${this.created}`,
+      Image: Config.Image,
       Config,
       HostConfig,
       NetworkSettings: { Networks: { ...(NetworkingConfig?.EndpointsConfig ?? {}) } },
@@ -182,6 +187,16 @@ export class FakeDocker {
   asClient(): DockerClient {
     return this as unknown as DockerClient;
   }
+}
+
+/** `inspectImage` of a release image pulled as `repo:tag`. */
+function releaseImage(ref: string) {
+  const tag = ref.slice(ref.lastIndexOf(":") + 1);
+  return {
+    Id: `sha256:id-of-${ref}`,
+    RepoDigests: [`${IMAGE_REPO}@sha256:digest-of-${ref}`],
+    Config: { Labels: { "org.opencontainers.image.version": tag } },
+  };
 }
 
 /** A Servio container as `docker compose` creates it, running the old version. */
@@ -256,11 +271,14 @@ export interface Harness {
   config: ReturnType<typeof loadConfig>;
   dbFile: string;
   backupDir: string;
+  /** Database backup files in the backup directory (not the journal, ledger or liveness stamp). */
+  backupFiles(): Promise<string[]>;
   logLines: string[];
   writeRequest(request: Record<string, unknown>): Promise<void>;
   readStatus(): Promise<any>;
   stateDir: string;
   newFlow(docker?: DockerClient): ReturnType<typeof createUpdateFlow>;
+  clock: { now: () => number; sleep: (ms: number) => Promise<void>; timeoutSignal: () => AbortSignal };
   /** Fires the pull deadline signal. */
   expirePullDeadline(): void;
   /** Milliseconds the fake clock advanced (health polling sleeps). */
@@ -271,7 +289,7 @@ export interface Harness {
 }
 
 export async function createHarness(
-  options: { env?: Record<string, string>; databaseUrl?: string } = {},
+  options: { env?: Record<string, string>; databaseUrl?: string; freeBytes?: number } = {},
 ): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "servio-updater-"));
   const stateDir = join(root, "state");
@@ -319,7 +337,13 @@ export async function createHarness(
   };
   const logLines: string[] = [];
   const newFlow = (client: DockerClient = docker.asClient()) =>
-    createUpdateFlow({ docker: client, config, clock, log: (line) => logLines.push(line) });
+    createUpdateFlow({
+      docker: client,
+      config,
+      clock,
+      log: (line) => logLines.push(line),
+      ...(options.freeBytes === undefined ? {} : { freeBytes: async () => options.freeBytes as number }),
+    });
 
   return {
     root,
@@ -328,11 +352,13 @@ export async function createHarness(
     config,
     dbFile,
     backupDir,
+    backupFiles: async () => (await readdir(backupDir)).filter((name) => name.startsWith("servio-")).sort(),
     logLines,
     writeRequest: (request) => writeFile(join(stateDir, "updater", "request.json"), JSON.stringify(request)),
     readStatus: async () => JSON.parse(await readFile(join(stateDir, "updater", "status.json"), "utf8")),
     stateDir,
     newFlow,
+    clock,
     expirePullDeadline: () => pullDeadline.abort(new Error("deadline")),
     elapsedMs: () => time - start,
     container,

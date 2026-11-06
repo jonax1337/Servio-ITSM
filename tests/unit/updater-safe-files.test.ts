@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { renameSync, symlinkSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +11,7 @@ import { UnsafeFileError, copyRegularFile, readRegularFile } from "../../updater
 import { MAX_SMALL_JSON_BYTES, ensureDirectory, statePaths, writeJsonAtomic } from "../../updater/state-files.mjs";
 import { compareVersions } from "../../updater/versions.mjs";
 import {
+  CONTAINER_NAME,
   FRESH_REQUESTED_AT,
   IMAGE_REPO,
   NEW_VERSION,
@@ -78,7 +81,7 @@ describe("database files that are not regular files (finding 1)", () => {
     expect(status.state).toBe("FAILED");
     expect(status.message).toContain("is not a regular file");
     expect(harness.docker.callsTo("stop")).toEqual([]);
-    expect(await readdir(harness.backupDir)).toEqual([]);
+    expect(await harness.backupFiles()).toEqual([]);
   });
 
   itWithSymlinks.each([["database", ""], ["WAL", "-wal"]])("refuses a symlink in place of the %s and never reads through it", async (_label, suffix) => {
@@ -90,7 +93,7 @@ describe("database files that are not regular files (finding 1)", () => {
     expect(status.message).toContain("not a regular file");
     expect(harness.docker.callsTo("stop")).toEqual([]);
     expect(await readFile(victim, "utf8")).toBe("victim");
-    expect(await readdir(harness.backupDir)).toEqual([]);
+    expect(await harness.backupFiles()).toEqual([]);
   });
 
   itWithSymlinks("replaces a symlink planted at the database path during the update instead of writing through it", async () => {
@@ -109,17 +112,15 @@ describe("database files that are not regular files (finding 1)", () => {
     expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
   });
 
-  it("refuses to copy a backup when the backup directory is a symlink or junction", async () => {
+  it("starts no update at all when the backup directory is a symlink or junction", async () => {
     const elsewhere = join(outside, "elsewhere");
     await mkdir(elsewhere);
     await rm(harness.backupDir, { recursive: true });
     await symlink(elsewhere, harness.backupDir, "junction");
-    await runUpdate();
+    await harness.writeRequest(REQUEST);
 
-    const status = await harness.readStatus();
-    expect(status.state).toBe("FAILED");
-    expect(status.message).toContain("is not a real directory");
-    expect(harness.docker.callsTo("stop")).toEqual([]);
+    await expect(harness.flow.processPendingRequest()).rejects.toThrow("is not a real directory");
+    expect(harness.docker.calls).toEqual([]);
     expect(await readdir(elsewhere)).toEqual([]);
   });
 });
@@ -155,12 +156,25 @@ describe("request and status files (finding 1)", () => {
     expect((await harness.readStatus()).state).toBe("SUCCEEDED");
   });
 
-  it("fails closed when status.json is not a regular file instead of replaying the request", async () => {
-    await harness.writeRequest(REQUEST);
+  it("never replays a handled request when status.json is replaced by something unreadable", async () => {
+    await runUpdate();
+    const calls = harness.docker.calls.length;
     await replaceWithDirectory(statusFile());
 
-    expect(await harness.flow.processPendingRequest()).toBe("ignored");
-    expect(harness.docker.calls).toEqual([]);
+    const restarted = harness.newFlow();
+    await restarted.recoverInterrupted();
+
+    expect(await restarted.processPendingRequest()).toBe("idle");
+    expect(harness.docker.calls).toHaveLength(calls);
+  });
+
+  it("runs a new request although status.json is unreadable, and still reports to the log", async () => {
+    await replaceWithDirectory(statusFile());
+
+    await runUpdate();
+
+    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toMatch(/^sha256:/);
+    expect(harness.logLines.some((line) => line.includes("could not write status.json"))).toBe(true);
   });
 });
 
@@ -269,6 +283,36 @@ describe("safe file primitives (finding 1)", () => {
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ n: 2 });
     expect(await readdir(outside)).toEqual(["state.json"]);
     expect((await stat(target)).isFile()).toBe(true);
+  });
+});
+
+describe("Linux-only guarantees (findings L1, L2)", () => {
+  const onLinux = it.skipIf(process.platform !== "linux");
+
+  onLinux("keeps writing into the checked directory when its path is swapped for a symlink mid-write", async () => {
+    const updaterDir = join(harness.stateDir, "updater");
+    const elsewhere = join(outside, "elsewhere");
+    await mkdir(elsewhere);
+    const swapWhileSerialising = {
+      toJSON() {
+        renameSync(updaterDir, `${updaterDir}-real`);
+        symlinkSync(elsewhere, updaterDir, "dir");
+        return { id: "status" };
+      },
+    };
+
+    await writeJsonAtomic(statusFile(), swapWhileSerialising, [harness.stateDir, updaterDir]);
+
+    expect(await readdir(elsewhere)).toEqual([]);
+    expect(JSON.parse(await readFile(join(`${updaterDir}-real`, "status.json"), "utf8"))).toEqual({ id: "status" });
+  });
+
+  onLinux("rejects a FIFO in place of request.json without blocking", async () => {
+    await rm(requestFile(), { force: true });
+    execFileSync("mkfifo", [requestFile()]);
+
+    expect(await harness.flow.processPendingRequest()).toBe("ignored");
+    await expect(readRegularFile(requestFile(), 10)).rejects.toBeInstanceOf(UnsafeFileError);
   });
 });
 

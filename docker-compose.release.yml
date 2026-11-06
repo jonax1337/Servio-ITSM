@@ -16,12 +16,17 @@ name: servio
 # SECURITY MODEL (details: updater/README.md)
 #  - The app (`web`) is internet-facing and can write everything on the shared
 #    `servio-data` volume. It never sees the Docker socket or the backups.
-#  - Only `docker-proxy` mounts the Docker socket. It exposes just the API
-#    calls the updater needs, on an internal network shared with the updater.
-#    Docker access is still powerful (creating containers can mean root on the
-#    host): use this stack only on hosts where that is acceptable.
+#  - Only `docker-proxy` mounts the Docker socket. It serves a filtered copy as
+#    a unix socket (mode 0600, uid 1000) on the `docker-api` volume, which only
+#    the proxy and the updater mount. Neither has a network: nothing on the host
+#    or in another container can reach the filtered API. The proxy allows exactly
+#    the calls the updater makes and no host bind mounts. It cannot inspect the
+#    rest of a create request (privileged mode, devices, …): whoever controls the
+#    updater process controls the host. Use this stack only where that is acceptable.
 #  - `updater` runs unprivileged (uid 1000, like the app), read-only, without
 #    capabilities, and keeps database backups on its own volume.
+#  - Set DOCKER_GID in .env to the group of the Docker socket:
+#      DOCKER_GID=$(stat -c %g /var/run/docker.sock)
 
 services:
   gotenberg:
@@ -67,30 +72,44 @@ services:
       retries: 3
       start_period: 60s
 
-  # The only service that touches the Docker socket. Everything not enabled
-  # below (exec, volumes, build, swarm, secrets, system info, events, …) is
-  # refused by the proxy. Pinned: review the changelog before bumping.
+  # The only service that touches the Docker socket. Every request that does not
+  # match an allow rule below (method + path, anchored) is refused with 403/405;
+  # that excludes exec, attach, archive, logs, volumes, build, swarm, system, …
+  # Pinned by digest (wollomatic/socket-proxy 1.13.2): review the changelog before bumping.
   docker-proxy:
-    image: ghcr.io/tecnativa/docker-socket-proxy:v0.5.0
+    image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
     restart: unless-stopped
-    environment:
-      CONTAINERS: 1      # inspect, list, create, rename, remove the app container
-      IMAGES: 1          # inspect and pull images
-      NETWORKS: 1        # attach the new container to additional networks
-      POST: 1            # write calls (create, rename, pull, connect, DELETE)
-      ALLOW_START: 1     # containers/{id}/start
-      ALLOW_STOP: 1      # containers/{id}/stop
-      PING: 1            # liveness for the heartbeat
-      EVENTS: 0
-      VERSION: 0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - docker-api
+    # uid 1000 owns the filtered socket (the updater's uid); the socket's group
+    # grants access to /var/run/docker.sock.
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env to the group id of /var/run/docker.sock}"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
-    # No ports are published. On SELinux hosts the proxy may need `privileged: true`
-    # to reach the socket (see the docker-socket-proxy README).
+    mem_limit: 64m
+    command:
+      - -proxysocketendpoint=/run/docker-api/docker.sock
+      - -proxysocketendpointfilemode=0600
+      # Host bind mounts only from this directory, which does not exist: named
+      # volumes pass, host paths are refused. A `web` with host binds needs them listed here.
+      - -allowbindmountfrom=/servio-no-host-binds
+      - -allowGET=/_ping
+      - -allowGET=/v1\.[0-9]+/containers/([A-Za-z0-9][A-Za-z0-9_.-]*/)?json
+      - -allowGET=/v1\.[0-9]+/images/[A-Za-z0-9][A-Za-z0-9_.:/@-]*/json
+      - -allowPOST=/v1\.[0-9]+/images/create
+      - -allowPOST=/v1\.[0-9]+/containers/create
+      - -allowPOST=/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*/(start|stop|rename|update)
+      - -allowPOST=/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect
+      - -allowDELETE=/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*
+      - -shutdowngracetime=10
+    volumes:
+      # A unix socket gives full API access whatever the mount mode says.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker-api:/run/docker-api
 
   updater:
     image: ghcr.io/jonax1337/servio-updater:${SERVIO_VERSION:-latest}
@@ -99,6 +118,9 @@ services:
       - docker-proxy
     # Let a running update finish when the updater itself is stopped.
     stop_grace_period: 10m
+    # The updater needs no network: Docker pulls images, the updater only talks
+    # to the proxy's socket.
+    network_mode: none
     # The image already runs as `node` (uid 1000, the app's uid); these keep the
     # container from gaining anything more.
     read_only: true
@@ -114,7 +136,7 @@ services:
       SERVIO_STATE_DIR: /data/state
       DB_FILE: /data/servio.db
       BACKUP_DIR: /backups
-      DOCKER_HOST: tcp://docker-proxy:2375
+      DOCKER_SOCKET: /run/docker-api/docker.sock
       # Optional: base64url-encoded registry credentials for a private registry.
       REGISTRY_AUTH: ${REGISTRY_AUTH:-}
       # Postgres deployments: the updater cannot back up the database itself.
@@ -122,16 +144,17 @@ services:
       ALLOW_UPDATE_WITHOUT_BACKUP: ${ALLOW_UPDATE_WITHOUT_BACKUP:-false}
     volumes:
       - servio-data:/data
-      # Database backups and the crash-recovery journal: mounted ONLY here.
+      # Database backups, the crash-recovery journal and the ledger: mounted ONLY here.
       - servio-backups:/backups
-    networks:
-      - docker-api
-
-networks:
-  # No route to the outside: the proxy and the updater can only reach each other.
-  docker-api:
-    internal: true
+      - docker-api:/run/docker-api
 
 volumes:
   servio-data:
   servio-backups:
+  # Holds only the proxy's filtered socket. tmpfs, owned by uid 1000, mode 0700.
+  docker-api:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=64k,uid=1000,gid=1000,mode=0700,noexec,nosuid,nodev"

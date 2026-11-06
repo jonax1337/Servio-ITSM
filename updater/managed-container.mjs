@@ -2,7 +2,13 @@
 
 /** Label that marks the managed container (set in docker-compose.release.yml). */
 export const MANAGED_LABEL = "servio.updater.managed";
-const VERSION_LABEL = "org.opencontainers.image.version";
+/**
+ * Set by the updater on every container it creates, to the id of the request that
+ * created it: crash recovery removes only containers carrying its own request id.
+ */
+export const UPDATE_REQUEST_LABEL = "servio.updater.request";
+/** Release version of an image (set by the release workflow); containers inherit it. */
+export const VERSION_LABEL = "org.opencontainers.image.version";
 
 /**
  * Resolves the managed container by name (`SERVIO_CONTAINER`) or, without a

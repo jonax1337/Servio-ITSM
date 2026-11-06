@@ -77,6 +77,13 @@ describe("buildCreateSpec: image-derived settings", () => {
     for (const field of ["Cmd", "Entrypoint", "Healthcheck", "User"]) expect(body).not.toHaveProperty(field);
   });
 
+  it("drops an old default Cmd so the new image's changed CMD runs (pnpm start -> next start)", () => {
+    // The image CMD changed between releases; the container only repeats the old image's default.
+    const { body } = buildCreateSpec(containerWith({ Cmd: ["pnpm", "start"] }), oldImage({ Cmd: ["pnpm", "start"] }), NEW_REF);
+
+    expect(body).not.toHaveProperty("Cmd");
+  });
+
   it("keeps Cmd, Entrypoint and Healthcheck that were overridden", () => {
     const override = {
       Cmd: ["node", "custom.js"],
