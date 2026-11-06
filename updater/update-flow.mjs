@@ -12,8 +12,9 @@
 // place is never removed. Whatever needs a human (a failed rollback, a changed
 // world) sets the journal aside and blocks further updates until it is deleted.
 import { readdir, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { assertFreeSpace, createBackup, findBackupSources, freeBytesOn, pruneBackups, restoreBackup } from "./backup.mjs";
+import { retryWhileUnreachable, withRetries } from "./docker-retry.mjs";
 import { createLedger } from "./ledger.mjs";
 import { UPDATE_REQUEST_LABEL, VERSION_LABEL, containerNameOf, findManagedContainer, installedVersionOf } from "./managed-container.mjs";
 import { buildCreateSpec } from "./recreate.mjs";
@@ -34,7 +35,11 @@ const SHORT_ID_LENGTH = 12;
 const UPDATER_STATES = new Set(["PENDING", "PULLING", "BACKING_UP", "SWITCHING", "HEALTH_CHECK", "SUCCEEDED", "FAILED", "ROLLED_BACK"]);
 const TERMINAL_STATES = new Set(["SUCCEEDED", "FAILED", "ROLLED_BACK"]);
 const JOURNAL_STEPS = new Set(["STOPPING", "BACKED_UP", "SWITCHING", "STARTED", "SWITCHED", "RESTORED"]);
-/** Journal steps in which the new container may have touched the database and the backup is not back yet. */
+/**
+ * Journal steps in which the new container may have touched the database and the
+ * rollback has not dealt with it yet. `RESTORED` follows them: the backup is back,
+ * or there was none to restore.
+ */
 const RESTORE_STEPS = new Set(["SWITCHING", "STARTED"]);
 /** Journal steps in which the old container has not been renamed or replaced. */
 const PRE_SWITCH_STEPS = new Set(["STOPPING", "BACKED_UP"]);
@@ -81,7 +86,9 @@ const shortId = (id) => id.replace(/^sha256:/, "").slice(0, SHORT_ID_LENGTH);
  *   freeBytes?: (dir: string) => Promise<number>,
  * }} deps
  */
-export function createUpdateFlow({ docker, config, clock = systemClock, log = console.log, freeBytes = freeBytesOn }) {
+export function createUpdateFlow({ docker: rawDocker, config, clock = systemClock, log = console.log, freeBytes = freeBytesOn }) {
+  const retryOptions = { clock, windowMs: config.dockerRetryWindowMs, intervalMs: config.dockerRetryIntervalMs, log };
+  const docker = withRetries(rawDocker, retryOptions);
   const paths = statePaths(config.stateDir);
   const journalFile = join(config.backupDir, JOURNAL_FILE);
   const ledger = createLedger({ backupDir: config.backupDir, now: clock.now });
@@ -153,30 +160,56 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
   async function runUpdate(request) {
     const run = {
       reporter: createReporter(newStatus(request.id, String(request.targetVersion).slice(0, MAX_VERSION_LENGTH), null)),
-      /** Set once the journal exists, i.e. once the app may be taken down. */
-      downtime: false,
+      /** @type {Journal | null} set once the journal exists, i.e. once the app may be taken down */
+      journal: null,
     };
     const outcome = await settle(performUpdate(request, run));
-    await finish(outcome, run.reporter, run.downtime ? request.targetVersion : null);
+    await finish(outcome, run.reporter, run.journal);
   }
 
   /**
-   * Reports the outcome before the journal goes away, so a crash in between
-   * replays a (harmless) recovery instead of leaving a non-terminal status.
+   * Ends an update. A manual-action outcome sets the journal aside before it is
+   * reported; any other outcome is reported before the journal goes away. A crash
+   * in between therefore leaves either a set-aside journal or a (harmless) replay.
    *
    * @param {Outcome} outcome
    * @param {ReturnType<typeof createReporter>} reporter
-   * @param {string | null} cooldownTarget the target version whose update took the app down
+   * @param {Journal | null} journal null when the update ended before the app was touched
    */
-  async function finish(outcome, reporter, cooldownTarget) {
-    await reporter.report(outcome.state, outcome.message);
-    if (cooldownTarget && outcome.state !== "SUCCEEDED") await ledger.startCooldown(cooldownTarget, config.retryCooldownMs);
+  async function finish(outcome, reporter, journal) {
+    let { message } = outcome;
     if (outcome.manual) {
       const aside = await setJournalAside();
-      if (aside) log(`[updater] journal kept for the operator at ${aside}; delete it once the containers are fixed`);
-    } else {
+      if (aside) message += ` The update journal is kept at ${aside}.`;
+    }
+    message += await pruneOldBackups(journal?.data.backup?.path ?? null);
+    await reporter.report(outcome.state, message);
+    if (journal && outcome.state !== "SUCCEEDED") await startCooldown(journal.data.targetVersion);
+    if (!outcome.manual) {
       await rm(journalFile, { force: true });
       await syncDirectory(config.backupDir);
+    }
+  }
+
+  /**
+   * @param {string | null} protectedPath the backup of this update, which is never pruned
+   * @returns {Promise<string>} a note for the status when pruning failed
+   */
+  async function pruneOldBackups(protectedPath) {
+    try {
+      await pruneBackups(config.backupDir, config.backupKeep, protectedPath);
+      return "";
+    } catch (error) {
+      return ` Old backups could not be pruned (${messageOf(error)}).`;
+    }
+  }
+
+  /** A missing cooldown only allows an earlier retry; it must not stop the update from ending. @param {string} version */
+  async function startCooldown(version) {
+    try {
+      await ledger.startCooldown(version, config.retryCooldownMs);
+    } catch (error) {
+      log(`[updater] could not record the retry cooldown for ${version}: ${messageOf(error)}`);
     }
   }
 
@@ -246,7 +279,7 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
 
   /**
    * @param {any} request
-   * @param {{ reporter: ReturnType<typeof createReporter>, downtime: boolean }} run
+   * @param {{ reporter: ReturnType<typeof createReporter>, journal: Journal | null }} run
    * @returns {Promise<Outcome>}
    */
   async function performUpdate(request, run) {
@@ -262,14 +295,16 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
     reporter.setFromVersion(fromVersion);
     assertUpgrade(fromVersion, targetVersion);
     const backupMode = backupModeFor(current);
-    const sidecars = backupMode === "file" ? await findBackupSources(config.dbFile) : [];
+    if (backupMode === "file") await findBackupSources(config.dbFile);
+    assertBindMountsAllowed(current);
     const preName = `${name}-pre-${(fromVersion ?? "unknown").replace(/[^0-9A-Za-z.-]/g, "_")}`;
     await assertNameFree(preName);
 
     const image = await pullAndPin(imageRef, targetVersion, reporter);
     const currentImage = await docker.inspectImage(current.Image);
     await assertRequestStillCurrent(request);
-    if (backupMode === "file") await assertFreeSpace({ dbFile: config.dbFile, sidecars, backupDir: config.backupDir, freeBytes });
+    if (backupMode === "file") await assertFreeSpace({ dbFile: config.dbFile, backupDir: config.backupDir, freeBytes });
+    const latest = await assertUnchangedSincePull(current);
 
     const journal = journalFor({
       requestId: request.id,
@@ -280,16 +315,58 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
       oldId: current.Id,
       newId: null,
       newImageId: image.Id,
-      restartPolicy: current.HostConfig?.RestartPolicy ?? null,
+      restartPolicy: latest.HostConfig?.RestartPolicy ?? null,
       backup: null,
       step: "STOPPING",
     });
     await journal.save({});
-    run.downtime = true;
+    run.journal = journal;
     await reporter.report("BACKING_UP", `Stopping ${name} and backing up the database`);
-    await stopAndBackUp({ current, backupMode, journal, reporter });
+    await stopAndBackUp({ current: latest, backupMode, journal, reporter });
 
-    return switchOver({ current, currentImage, image, imageRef, journal, reporter });
+    return switchOver({ current: latest, currentImage, image, imageRef, journal, reporter });
+  }
+
+  /**
+   * The pull can take many minutes; an operator may have recreated the container
+   * meanwhile. Everything after this point works on the container as it is now.
+   *
+   * @param {any} current the container as inspected before the pull
+   * @returns {Promise<any>} the same container, inspected again
+   */
+  async function assertUnchangedSincePull(current) {
+    const name = containerNameOf(current);
+    const latest = await inspectOrNull(name);
+    if (latest?.Id !== current.Id) {
+      throw new Error(
+        `${name} was ${latest ? `replaced by container ${shortId(latest.Id)}` : "removed"} while the image was pulling. Nothing was changed.`,
+      );
+    }
+    return latest;
+  }
+
+  /**
+   * The socket proxy refuses host bind mounts outside its `-allowbindmountfrom`
+   * when the new container is created; finding that out after the old container
+   * stopped would mean downtime and a rollback.
+   *
+   * @param {any} container
+   */
+  function assertBindMountsAllowed(container) {
+    const sources = [
+      ...(container.HostConfig?.Binds ?? []).map((/** @type {string} */ bind) => bind.split(":")[0]).filter((source) => source.startsWith("/")),
+      ...(container.HostConfig?.Mounts ?? []).filter((/** @type {any} */ mount) => mount.Type === "bind").map((/** @type {any} */ mount) => String(mount.Source)),
+    ].map((source) => posix.normalize(source));
+    const refused = sources.filter(
+      (source) => !config.allowedBindSources.some((dir) => dir === "/" || source === dir || source.startsWith(`${dir}/`)),
+    );
+    if (refused.length > 0) {
+      throw new Error(
+        `${containerNameOf(container)} bind-mounts host paths (${refused.join(", ")}), which the socket proxy refuses for the new ` +
+          "container. Use named volumes, or list the directories in the proxy's -allowbindmountfrom and the updater's " +
+          "ALLOW_BIND_MOUNTS_FROM. Nothing was changed.",
+      );
+    }
   }
 
   /**
@@ -473,9 +550,24 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
       }
       await journal.save({ step: "BACKED_UP", backup });
     } catch (error) {
+      if (await isGone(journal.data.oldId)) {
+        throw new Error(`${journal.data.name} disappeared before the update could stop it (${messageOf(error)}). Nothing was changed.`);
+      }
       await restartAfterAbortedBackup(journal.data, error, reporter);
       throw error;
     }
+  }
+
+  /**
+   * @param {string} id
+   * @returns {Promise<boolean>} true only when Docker says the container does not exist;
+   *   when Docker cannot tell, the caller must assume it is still there
+   */
+  async function isGone(id) {
+    return inspectOrNull(id).then(
+      (container) => container === null,
+      () => false,
+    );
   }
 
   /**
@@ -500,7 +592,7 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
       await docker.updateContainer(data.oldId, { RestartPolicy: data.restartPolicy });
       return null;
     } catch (error) {
-      return `The restart policy of ${data.name} could not be restored (${messageOf(error)}); run \`docker update --restart ${data.restartPolicy?.Name} ${data.name}\`.`;
+      return `The restart policy of ${data.name} could not be restored (${messageOf(error)}); run \`${restartCommand(data)}\`.`;
     }
   }
 
@@ -517,7 +609,7 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
     } catch (restartError) {
       throw new ManualActionRequired(
         `ROLLBACK FAILED — manual action required: the update was aborted (${messageOf(cause)}) and ` +
-          `${data.name} could not be restarted (${messageOf(restartError)}).`,
+          `${data.name} could not be restarted (${messageOf(restartError)}).${restartPolicyHint(data)}`,
       );
     }
   }
@@ -543,22 +635,35 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
 
       await reporter.report("HEALTH_CHECK", `Waiting for ${name} (${imageRef}) to become healthy`);
       await waitUntilHealthy(created.Id, name);
+      await assertNewContainerServing(journal.data);
       await journal.save({ step: "SWITCHED" });
     } catch (error) {
       return rollBack(journal, messageOf(error), reporter);
     }
-    return completeSwitch(journal.data, { prune: true });
+    return completeSwitch(journal.data);
   }
 
   /**
-   * The new container is healthy: remove the old one and trim old backups.
-   * Pruning happens only now, and never touches the backup of this update.
+   * Last check before the switch counts as done: a new container that died right
+   * after its health check is a failed update (rolled back with the database), not
+   * a changed world.
    *
    * @param {JournalData} data
-   * @param {{ prune?: boolean }} [options]
+   */
+  async function assertNewContainerServing(data) {
+    const occupant = await inspectOrNull(data.name);
+    if (occupant?.Id !== data.newId || !occupant.State?.Running) {
+      throw new Error(`${data.name} stopped or was replaced right after becoming healthy`);
+    }
+  }
+
+  /**
+   * The new container is healthy: remove the old one.
+   *
+   * @param {JournalData} data
    * @returns {Promise<Outcome>}
    */
-  async function completeSwitch(data, { prune = false } = {}) {
+  async function completeSwitch(data) {
     const { oldId, preName, fromVersion, targetVersion, backup } = data;
     await assertSwitchStillInPlace(data);
     const notes = [];
@@ -572,11 +677,6 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
         );
       },
     );
-    if (prune && backup) {
-      await pruneBackups(config.backupDir, config.backupKeep, backup.path).catch((/** @type {Error} */ error) => {
-        notes.push(`Old backups could not be pruned (${error.message}).`);
-      });
-    }
     if (backup) notes.push(`Database backup: ${backup.path}.`);
     return { state: "SUCCEEDED", message: `Updated from ${fromVersion ?? "unknown"} to ${targetVersion}. ${notes.join(" ")}` };
   }
@@ -585,7 +685,8 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
    * Undoes a failed or interrupted switch: replacement container out, database
    * back (unless an earlier attempt already restored it), old container renamed,
    * its restart policy restored, started. Every step is idempotent, so a recovery
-   * can repeat it after a crash at any point.
+   * can repeat it after a crash at any point, and Docker calls are retried while
+   * Docker does not answer, so a restarting proxy does not leave the app down.
    *
    * @param {Journal} journal
    * @param {string} reason
@@ -597,13 +698,14 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
     const notes = [];
     try {
       await reporter.note(`Update failed (${reason}); rolling back`);
-      const old = await assertRollbackStillPossible(journal.data);
+      await docker.ping();
+      await assertRollbackStillPossible(journal.data);
       await removeReplacement(journal.data);
-      if (backup && RESTORE_STEPS.has(step)) {
-        await restoreBackup(config.dbFile, backup);
+      if (RESTORE_STEPS.has(step)) {
+        if (backup) await restoreBackup(config.dbFile, backup);
         await journal.save({ step: "RESTORED" });
       }
-      if (containerNameOf(old) !== name) await docker.renameContainer(oldId, name);
+      await renameBack(oldId, name);
       const policyNote = await reinstateRestartPolicy(journal.data);
       if (policyNote) notes.push(policyNote);
       await docker.startContainer(oldId);
@@ -612,7 +714,7 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
       if (rollbackError instanceof ManualActionRequired) throw rollbackError;
       throw new ManualActionRequired(
         `ROLLBACK FAILED — manual action required: ${messageOf(rollbackError)}. Original failure: ${reason}. ` +
-          `Previous container: ${preName} (or ${name}). Database backup: ${backup?.path ?? "none"}.`,
+          `Previous container: ${preName} (or ${name}). Database backup: ${backup?.path ?? "none"}.${restartPolicyHint(journal.data)}`,
       );
     }
     if (PRE_SWITCH_STEPS.has(step)) {
@@ -633,19 +735,30 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
    * something else) changed it and nothing may be removed or restored.
    *
    * @param {JournalData} data
-   * @returns {Promise<any>} the inspected old container
    */
   async function assertRollbackStillPossible(data) {
     const old = await inspectOrNull(data.oldId);
-    if (!old) throw worldChanged(`the previous container ${shortId(data.oldId)} no longer exists`);
+    if (!old) throw worldChanged(data, `the previous container ${shortId(data.oldId)} no longer exists`);
     const occupant = await inspectOrNull(data.name);
     if (occupant && occupant.Id !== data.oldId && !isOurReplacement(occupant, data)) {
-      throw worldChanged(`${data.name} is now container ${shortId(occupant.Id)}, which this update did not create`);
+      throw worldChanged(data, `${data.name} is now container ${shortId(occupant.Id)}, which this update did not create`);
     }
     if (old.State?.Running && RESTORE_STEPS.has(data.step)) {
-      throw worldChanged(`the previous container ${containerNameOf(old)} is running although the update had stopped it`);
+      throw worldChanged(data, `the previous container ${containerNameOf(old)} is running although the update had stopped it`);
     }
-    return old;
+  }
+
+  /**
+   * Gives the old container its name back. Checked and repeated as one step: a
+   * rename whose answer was lost would otherwise fail when retried.
+   *
+   * @param {string} oldId
+   * @param {string} name
+   */
+  async function renameBack(oldId, name) {
+    await retryWhileUnreachable(async () => {
+      if (containerNameOf(await docker.inspectContainer(oldId)) !== name) await docker.renameContainer(oldId, name);
+    }, retryOptions);
   }
 
   /**
@@ -661,19 +774,22 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
       occupant = await inspectOrNull(data.name);
       old = await inspectOrNull(data.oldId);
     } catch (error) {
-      throw worldChanged(`the containers could not be inspected (${messageOf(error)})`);
+      throw worldChanged(data, `the containers could not be inspected (${messageOf(error)})`);
     }
     if (occupant?.Id !== data.newId || !occupant.State?.Running) {
-      throw worldChanged(`${data.name} is no longer the running container ${shortId(data.newId ?? "")} this update created`);
+      throw worldChanged(data, `${data.name} is no longer the running container ${shortId(data.newId ?? "")} this update created`);
     }
-    if (old?.State?.Running) throw worldChanged(`the previous container ${containerNameOf(old)} is running again`);
+    if (old?.State?.Running) throw worldChanged(data, `the previous container ${containerNameOf(old)} is running again`);
   }
 
-  /** @param {string} detail */
-  function worldChanged(detail) {
+  /**
+   * @param {JournalData} data
+   * @param {string} detail
+   */
+  function worldChanged(data, detail) {
     return new ManualActionRequired(
       `MANUAL ACTION REQUIRED — the containers no longer match the update journal: ${detail}. ` +
-        "The updater left them alone. Fix them by hand, then delete the .journal.manual-*.json file in BACKUP_DIR to allow updates again.",
+        `The updater left them alone. Fix them by hand, then delete the set-aside journal to allow updates again.${restartPolicyHint(data)}`,
     );
   }
 
@@ -702,7 +818,7 @@ export function createUpdateFlow({ docker, config, clock = systemClock, log = co
     const journal = journalFor(data);
     const outcome = await settle(data.step === "SWITCHED" ? completeSwitch(data) : rollBack(journal, reason, reporter));
     const prefix = outcome.manual ? `After an updater restart (${reason}): ` : "Recovered after an updater restart. ";
-    await finish({ ...outcome, message: prefix + outcome.message }, reporter, data.targetVersion);
+    await finish({ ...outcome, message: prefix + outcome.message }, reporter, journal);
   }
 
   /**
@@ -808,6 +924,23 @@ function isOurReplacement(container, data) {
 /** @param {RestartPolicy | null} policy */
 function hasRestartPolicy(policy) {
   return Boolean(policy?.Name) && policy?.Name !== "no";
+}
+
+/** @param {JournalData} data the command that gives the old container its restart policy back */
+function restartCommand(data) {
+  const { Name, MaximumRetryCount } = /** @type {RestartPolicy} */ (data.restartPolicy);
+  return `docker update --restart ${Name}${MaximumRetryCount ? `:${MaximumRetryCount}` : ""} ${shortId(data.oldId)}`;
+}
+
+/**
+ * The update set the old container's restart policy to "no"; an operator taking
+ * over must know to put it back.
+ *
+ * @param {JournalData} data
+ */
+function restartPolicyHint(data) {
+  if (!hasRestartPolicy(data.restartPolicy)) return "";
+  return ` The previous container may still have restart policy "no": once it is the one you keep, run \`${restartCommand(data)}\`.`;
 }
 
 /**

@@ -248,8 +248,11 @@ describe("recovery when the containers no longer match the journal (finding H2)"
     const status = await harness.readStatus();
     expect(status.state).toBe("FAILED");
     expect(status.message).toContain("MANUAL ACTION REQUIRED");
+    // The old container may still carry the suspended policy (review item 6).
+    expect(status.message).toContain(`docker update --restart unless-stopped ${oldId.slice(0, 12)}`);
     expect(await exists(journalPath())).toBe(false);
     expect(await asideJournals()).toHaveLength(1);
+    expect(status.message).toContain(join(harness.backupDir, (await asideJournals())[0]));
   }
 
   it("leaves a managed container that it did not create in place", async () => {
@@ -373,6 +376,47 @@ describe("recovery when the containers no longer match the journal (finding H2)"
     await harness.writeRequest({ ...REQUEST, id: "win-3", targetVersion: "0.4.0" });
     await restarted.processPendingRequest();
     expect(harness.docker.callsTo("pull")).toEqual([`pull ${IMAGE_REPO}:${NEW_VERSION}`, `pull ${IMAGE_REPO}:0.4.0`]);
+  });
+});
+
+describe("recovery details (review items 2, 3)", () => {
+  it("finishes a rollback without a backup that was killed after the old container started", async () => {
+    await harness.cleanup();
+    harness = await createHarness({ env: { ALLOW_UPDATE_WITHOUT_BACKUP: "true" }, databaseUrl: "postgresql://servio@db/servio" });
+    oldId = harness.docker.byName(CONTAINER_NAME)!.Id;
+    harness.docker.newContainerPlan = "never-healthy";
+    await killAt("startContainer", "after", (args) => args[0] === oldId);
+    expect((await readJournal()).step).toBe("RESTORED");
+
+    await restartUpdater();
+
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(await asideJournals()).toEqual([]);
+    expect(runningManaged().map((c) => c.Id)).toEqual([oldId]);
+  });
+
+  it("recovers although Docker refuses connections for a while after the restart", async () => {
+    await killAt("startContainer", "after", (args) => args[0].startsWith("new-"));
+    let refusals = 0;
+    harness.docker.failOn("ping", new Error("connect ENOENT /run/docker-api/docker.sock"), () => ++refusals <= 5);
+
+    await restartUpdater();
+
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
+    expect(runningManaged().map((c) => c.Id)).toEqual([oldId]);
+  });
+
+  it("asks for manual action once Docker stays unreachable for the whole retry window", async () => {
+    await killAt("startContainer", "after", (args) => args[0].startsWith("new-"));
+    harness.docker.failOn("ping", new Error("connect ENOENT /run/docker-api/docker.sock"));
+
+    await restartUpdater();
+
+    const status = await harness.readStatus();
+    expect(status.message).toContain("ROLLBACK FAILED — manual action required");
+    expect(status.message).toContain("ENOENT");
+    expect(await asideJournals()).toHaveLength(1);
   });
 });
 

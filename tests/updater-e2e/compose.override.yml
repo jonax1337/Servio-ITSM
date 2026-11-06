@@ -7,12 +7,14 @@ services:
     env_file: !reset []
     depends_on: !reset {}
     # Same shape as production: a compose-level health check that the updater
-    # carries over to the new container; HEALTHY comes from the image.
+    # carries over to the new container; HEALTHY comes from the image. A broken
+    # release turns unhealthy after about 10 s, long enough to kill the updater
+    # while it waits.
     healthcheck:
       test: ["CMD-SHELL", "[ \"$$HEALTHY\" = true ] && wget -q -O /dev/null http://127.0.0.1:3000/"]
       interval: 2s
       timeout: 2s
-      retries: 1
+      retries: 5
       start_period: 0s
 
   updater:

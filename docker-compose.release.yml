@@ -17,14 +17,17 @@ name: servio
 #  - The app (`web`) is internet-facing and can write everything on the shared
 #    `servio-data` volume. It never sees the Docker socket or the backups.
 #  - Only `docker-proxy` mounts the Docker socket. It serves a filtered copy as
-#    a unix socket (mode 0600, uid 1000) on the `docker-api` volume, which only
-#    the proxy and the updater mount. Neither has a network: nothing on the host
-#    or in another container can reach the filtered API. The proxy allows exactly
-#    the calls the updater makes and no host bind mounts. It cannot inspect the
-#    rest of a create request (privileged mode, devices, …): whoever controls the
-#    updater process controls the host. Use this stack only where that is acceptable.
-#  - `updater` runs unprivileged (uid 1000, like the app), read-only, without
-#    capabilities, and keeps database backups on its own volume.
+#    a unix socket on the `docker-api` volume, owned by a uid/gid (64999) that
+#    nothing else uses (socket 0660, directory 0750). Only the proxy and the
+#    updater mount it, and only they are in that group; neither has a network.
+#  - The proxy enforces a method + path allowlist (the calls the updater makes)
+#    and refuses host bind mounts in create requests. It does not inspect the
+#    rest of request bodies or query strings: a privileged container or an
+#    image import (`images/create?fromSrc=`) would pass. That matters only if
+#    the updater process itself is compromised; whoever controls it controls
+#    the host. Use this stack only where that is acceptable.
+#  - `updater` runs unprivileged (uid 1000, like the app, plus the socket group),
+#    read-only, without capabilities, and keeps database backups on its own volume.
 #  - Set DOCKER_GID in .env to the group of the Docker socket:
 #      DOCKER_GID=$(stat -c %g /var/run/docker.sock)
 
@@ -72,16 +75,18 @@ services:
       retries: 3
       start_period: 60s
 
-  # The only service that touches the Docker socket. Every request that does not
-  # match an allow rule below (method + path, anchored) is refused with 403/405;
-  # that excludes exec, attach, archive, logs, volumes, build, swarm, system, …
+  # The only service that touches the Docker socket. Every request whose method
+  # and path do not match an allow rule below is refused with 403/405; that
+  # excludes exec, attach, archive, logs, volumes, build, swarm, system, …
+  # (`$$` is compose's escape for a literal `$`.)
   # Pinned by digest (wollomatic/socket-proxy 1.13.2): review the changelog before bumping.
   docker-proxy:
     image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
     restart: unless-stopped
-    # uid 1000 owns the filtered socket (the updater's uid); the socket's group
+    # A uid/gid of its own owns the filtered socket, so a host user that happens
+    # to have uid 1000 (the app's and updater's uid) cannot reach it. DOCKER_GID
     # grants access to /var/run/docker.sock.
-    user: "1000:1000"
+    user: "64999:64999"
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID in .env to the group id of /var/run/docker.sock}"
     network_mode: none
@@ -93,18 +98,19 @@ services:
     mem_limit: 64m
     command:
       - -proxysocketendpoint=/run/docker-api/docker.sock
-      - -proxysocketendpointfilemode=0600
+      - -proxysocketendpointfilemode=0660
       # Host bind mounts only from this directory, which does not exist: named
-      # volumes pass, host paths are refused. A `web` with host binds needs them listed here.
+      # volumes pass, host paths are refused. A `web` with host binds needs them
+      # listed here AND in the updater's ALLOW_BIND_MOUNTS_FROM.
       - -allowbindmountfrom=/servio-no-host-binds
-      - -allowGET=/_ping
-      - -allowGET=/v1\.[0-9]+/containers/([A-Za-z0-9][A-Za-z0-9_.-]*/)?json
-      - -allowGET=/v1\.[0-9]+/images/[A-Za-z0-9][A-Za-z0-9_.:/@-]*/json
-      - -allowPOST=/v1\.[0-9]+/images/create
-      - -allowPOST=/v1\.[0-9]+/containers/create
-      - -allowPOST=/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*/(start|stop|rename|update)
-      - -allowPOST=/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect
-      - -allowDELETE=/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*
+      - -allowGET=^/_ping$$
+      - -allowGET=^/v1\.[0-9]+/containers/([A-Za-z0-9][A-Za-z0-9_.-]*/)?json$$
+      - -allowGET=^/v1\.[0-9]+/images/[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*/json$$
+      - -allowPOST=^/v1\.[0-9]+/images/create$$
+      - -allowPOST=^/v1\.[0-9]+/containers/create$$
+      - -allowPOST=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*/(start|stop|rename|update)$$
+      - -allowPOST=^/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect$$
+      - -allowDELETE=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*$$
       - -shutdowngracetime=10
     volumes:
       # A unix socket gives full API access whatever the mount mode says.
@@ -121,8 +127,10 @@ services:
     # The updater needs no network: Docker pulls images, the updater only talks
     # to the proxy's socket.
     network_mode: none
-    # The image already runs as `node` (uid 1000, the app's uid); these keep the
-    # container from gaining anything more.
+    # The image already runs as `node` (uid 1000, the app's uid, needed for /data);
+    # the extra group opens the proxy's socket. The rest keeps it from gaining more.
+    group_add:
+      - "64999"
     read_only: true
     cap_drop:
       - ALL
@@ -142,6 +150,8 @@ services:
       # Postgres deployments: the updater cannot back up the database itself.
       # Take your own backup first, then set this to "true".
       ALLOW_UPDATE_WITHOUT_BACKUP: ${ALLOW_UPDATE_WITHOUT_BACKUP:-false}
+      # Host directories `web` bind-mounts; keep in sync with the proxy's -allowbindmountfrom.
+      ALLOW_BIND_MOUNTS_FROM: ${ALLOW_BIND_MOUNTS_FROM:-}
     volumes:
       - servio-data:/data
       # Database backups, the crash-recovery journal and the ledger: mounted ONLY here.
@@ -151,10 +161,11 @@ services:
 volumes:
   servio-data:
   servio-backups:
-  # Holds only the proxy's filtered socket. tmpfs, owned by uid 1000, mode 0700.
+  # Holds only the proxy's filtered socket: tmpfs owned by the proxy's own
+  # uid/gid, readable by that group only (the updater is a member).
   docker-api:
     driver: local
     driver_opts:
       type: tmpfs
       device: tmpfs
-      o: "size=64k,uid=1000,gid=1000,mode=0700,noexec,nosuid,nodev"
+      o: "size=64k,uid=64999,gid=64999,mode=0750,noexec,nosuid,nodev"

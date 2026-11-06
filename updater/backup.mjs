@@ -137,14 +137,15 @@ export async function freeBytesOn(dir) {
  * Refuses an update that could not finish its backup, or could not restore it on
  * rollback: the backup directory needs room for a copy of the database, the
  * database directory for the temp copy a restore writes (both together when
- * they share a filesystem), each plus a margin.
+ * they share a filesystem), each plus a margin. The app is still running, so a
+ * rollback journal can come and go between listing and measuring it.
  *
- * @param {{ dbFile: string, sidecars: string[], backupDir: string, freeBytes: (dir: string) => Promise<number> }} options
+ * @param {{ dbFile: string, backupDir: string, freeBytes: (dir: string) => Promise<number> }} options
  * @throws {Error} when either directory lacks the space
  */
-export async function assertFreeSpace({ dbFile, sidecars, backupDir, freeBytes }) {
+export async function assertFreeSpace({ dbFile, backupDir, freeBytes }) {
   let databaseBytes = 0;
-  for (const path of [dbFile, ...sidecars.map((suffix) => dbFile + suffix)]) databaseBytes += (await lstat(path)).size;
+  for (const suffix of ["", ...(await findBackupSources(dbFile))]) databaseBytes += await sizeIfPresent(dbFile + suffix);
   const dataDir = dirname(dbFile);
   const shared = (await stat(dataDir)).dev === (await stat(backupDir)).dev;
   const copies = shared ? 2 : 1;
@@ -161,8 +162,21 @@ export async function assertFreeSpace({ dbFile, sidecars, backupDir, freeBytes }
   }
 }
 
+/**
+ * @param {string} path
+ * @returns {Promise<number>} the size, or 0 for a file that no longer exists
+ */
+async function sizeIfPresent(path) {
+  try {
+    return (await lstat(path)).size;
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === "ENOENT") return 0;
+    throw error;
+  }
+}
+
 /** @param {number} bytes */
-const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
+const megabytes =(bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
 
 /**
  * Deletes all but the newest `keep` backups (by the timestamp in the file name)
@@ -171,7 +185,7 @@ const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
  *
  * @param {string} backupDir
  * @param {number} keep
- * @param {string} protectedPath
+ * @param {string | null} protectedPath the backup of the update that just ran, if it made one
  * @returns {Promise<string[]>} paths of the deleted database backups
  */
 export async function pruneBackups(backupDir, keep, protectedPath) {

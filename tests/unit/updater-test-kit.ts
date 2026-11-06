@@ -16,8 +16,8 @@ export const NEW_VERSION = "0.3.0";
 export const OLD_DB = Buffer.from("old-database-bytes");
 export const OLD_WAL = Buffer.from("old-wal-bytes");
 
-/** What a container does after `start`: becomes healthy, never does, or exits. */
-type Plan = "healthy" | "never-healthy" | "unhealthy" | "exits";
+/** What a container does after `start`: becomes healthy, never does, exits, or exits right after becoming healthy. */
+type Plan = "healthy" | "never-healthy" | "unhealthy" | "exits" | "dies-after-healthy";
 
 export interface FakeContainer {
   Id: string;
@@ -93,7 +93,11 @@ export class FakeDocker {
     const behaviour = this.plans.get(container.Id);
     if (behaviour && container.State.Running) {
       behaviour.inspections += 1;
-      if (behaviour.plan === "healthy" && behaviour.inspections >= 2) container.State.Health = { Status: "healthy" };
+      if (["healthy", "dies-after-healthy"].includes(behaviour.plan) && behaviour.inspections >= 2) container.State.Health = { Status: "healthy" };
+      if (behaviour.plan === "dies-after-healthy" && behaviour.inspections >= 3) {
+        container.State.Running = false;
+        container.State.ExitCode = 137;
+      }
       if (behaviour.plan === "unhealthy" && behaviour.inspections >= 2) container.State.Health = { Status: "unhealthy" };
       if (behaviour.plan === "exits" && behaviour.inspections >= 2) {
         container.State.Running = false;

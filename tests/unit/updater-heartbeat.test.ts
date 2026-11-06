@@ -160,6 +160,12 @@ describe("configuration", () => {
     });
   });
 
+  it("reads ALLOW_BIND_MOUNTS_FROM as absolute directories and refuses relative ones", () => {
+    expect(loadConfig({ SERVIO_IMAGE: IMAGE_REPO }).allowedBindSources).toEqual([]);
+    expect(config({ ALLOW_BIND_MOUNTS_FROM: "/srv/servio/, /var/log" }).allowedBindSources).toEqual(["/srv/servio", "/var/log"]);
+    expect(() => config({ ALLOW_BIND_MOUNTS_FROM: "data" })).toThrow("ALLOW_BIND_MOUNTS_FROM");
+  });
+
   it("reports the version from updater/package.json", () => {
     expect(config().updaterVersion).toMatch(/^\d+\.\d+\.\d+/);
   });

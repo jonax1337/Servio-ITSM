@@ -1,7 +1,8 @@
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DockerApiError } from "../../updater/docker-client.mjs";
+import type { DockerClient } from "../../updater/docker-client.mjs";
 import {
   CONTAINER_NAME,
   FRESH_REQUESTED_AT,
@@ -327,6 +328,110 @@ describe("update flow: idempotency", () => {
   });
 });
 
+describe("update flow: the world changing while the image pulls (review items 1, 4, 9)", () => {
+  it("measures the database again when its rollback journal vanished during the pull", async () => {
+    await writeFile(`${harness.dbFile}-journal`, "transient-journal-of-a-tick");
+    harness.docker.onPull = () => rm(`${harness.dbFile}-journal`);
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+
+  it("changes nothing when the container was recreated while the image was pulling", async () => {
+    harness.docker.onPull = () => {
+      harness.docker.containers.clear();
+      harness.docker.add(harness.container({ Id: "recreated-by-the-operator" }));
+    };
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("replaced by container recreated-by");
+    expect(status.message).toContain("Nothing was changed");
+    expect(harness.docker.calls.filter((call) => /^(update|stop|rename|create) /.test(call))).toEqual([]);
+  });
+
+  it("changes nothing when the container was removed while the image was pulling", async () => {
+    harness.docker.onPull = () => harness.docker.containers.clear();
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("was removed while the image was pulling");
+    expect(await harness.backupFiles()).toEqual([]);
+  });
+
+  it("reports nothing changed, not ROLLBACK FAILED, when the container vanishes right before it is stopped", async () => {
+    const vanishing = new Proxy(harness.docker, {
+      get(target, property) {
+        const value = Reflect.get(target, property) as unknown;
+        if (typeof value !== "function") return value;
+        if (property !== "updateContainer") return value.bind(target);
+        return async () => {
+          target.containers.clear();
+          throw new DockerApiError("No such container", 404);
+        };
+      },
+    }) as unknown as DockerClient;
+    await harness.writeRequest(REQUEST);
+    await harness.newFlow(vanishing).processPendingRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("disappeared before the update could stop it");
+    expect(status.message).not.toContain("ROLLBACK FAILED");
+    expect((await readdir(harness.backupDir)).filter((name) => name.startsWith(".journal"))).toEqual([]);
+  });
+
+  it.each([
+    ["a host path in Binds", "", { Binds: ["/srv/servio/uploads:/data/uploads", "servio_servio-data:/data"] }, "/srv/servio/uploads"],
+    ["a bind mount in Mounts", "/srv/servio", { Mounts: [{ Type: "bind", Source: "/etc", Target: "/host-etc" }] }, "/etc"],
+    ["a path that climbs out of an allowed directory", "/srv/servio", { Binds: ["/srv/servio/../../etc:/x"] }, "/etc"],
+  ])("refuses %s before pulling, since the proxy would refuse the new container", async (_label, allowed, hostConfig, shown) => {
+    await harness.cleanup();
+    harness = await createHarness({ env: { ALLOW_BIND_MOUNTS_FROM: allowed } });
+    Object.assign(harness.docker.byName(CONTAINER_NAME)!.HostConfig, hostConfig);
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain(`bind-mounts host paths (${shown})`);
+    expect(status.message).toContain("-allowbindmountfrom");
+    expect(harness.docker.callsTo("pull")).toEqual([]);
+  });
+
+  it("updates a container whose host bind mounts are inside ALLOW_BIND_MOUNTS_FROM", async () => {
+    await harness.cleanup();
+    harness = await createHarness({ env: { ALLOW_BIND_MOUNTS_FROM: "/srv/servio/" } });
+    harness.docker.byName(CONTAINER_NAME)!.HostConfig.Binds = ["/srv/servio/uploads:/data/uploads", "servio_servio-data:/data"];
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+  });
+});
+
+describe("update flow: Docker not answering during a rollback (review item 2)", () => {
+  it("waits for Docker and finishes the rollback instead of asking for manual action", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    let refusals = 0;
+    harness.docker.failOn("start", new Error("connect ECONNREFUSED /run/docker-api/docker.sock"), (args) => !args[0].startsWith("new-") && ++refusals <= 3);
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("ROLLED_BACK");
+    expect(harness.logLines.some((line) => line.includes("Docker is not answering"))).toBe(true);
+  });
+
+  it("does not retry a real answer from Docker", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    harness.docker.failOn("rename", new DockerApiError("Conflict", 409), (args) => args[1] === CONTAINER_NAME);
+    await runRequest();
+
+    expect((await harness.readStatus()).message).toContain("ROLLBACK FAILED");
+    expect(harness.docker.callsTo("rename").filter((call) => call.endsWith(` ${CONTAINER_NAME}`))).toHaveLength(1);
+  });
+});
+
 describe("update flow: limits on repeated and oversized updates", () => {
   it("refuses another attempt at a target that was just rolled back, but not at another target (finding L7)", async () => {
     harness.docker.newContainerPlan = "never-healthy";
@@ -432,6 +537,18 @@ describe("update flow: rollback", () => {
     await expect(stat(`${harness.dbFile}-journal`)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("rolls back with the database when the new container dies right after becoming healthy (review item 5)", async () => {
+    corruptDatabaseOnStart(harness);
+    harness.docker.newContainerPlan = "dies-after-healthy";
+    await runRequest();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("ROLLED_BACK");
+    expect(status.message).toContain("stopped or was replaced right after becoming healthy");
+    expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
+    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`${IMAGE_REPO}:${OLD_VERSION}`);
+  });
+
   it("rolls back when the new container exits while health is being checked", async () => {
     harness.docker.newContainerPlan = "exits";
     await runRequest();
@@ -466,6 +583,22 @@ describe("update flow: rollback", () => {
     expect(status.message).toContain("daemon unavailable");
     expect(status.message).toContain(PRE_NAME);
     expect(status.message).toContain(join(harness.backupDir, backupFile));
+    expect(status.message).toContain("docker update --restart unless-stopped 0123456789ab");
+    expect(status.message).toContain("The update journal is kept at");
+  });
+
+  it("still ends the update when the retry cooldown cannot be recorded (review item 7)", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    harness.docker.onStart = async (container) => {
+      if (!container.Id.startsWith("new-")) return;
+      await rm(join(harness.backupDir, ".ledger.json"));
+      await mkdir(join(harness.backupDir, ".ledger.json"));
+    };
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(harness.logLines.some((line) => line.includes("could not record the retry cooldown"))).toBe(true);
+    expect((await readdir(harness.backupDir)).filter((name) => name.startsWith(".journal"))).toEqual([]);
   });
 
   it("reports ROLLBACK FAILED when the old container does not become healthy again", async () => {

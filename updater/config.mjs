@@ -38,6 +38,10 @@ export function loadConfig(env = process.env) {
     healthTimeoutMs: positiveInteger(env.HEALTH_TIMEOUT_SECONDS, 300, "HEALTH_TIMEOUT_SECONDS") * 1000,
     healthIntervalMs: 3000,
     noHealthcheckSettleMs: 15_000,
+    /** How long repeatable Docker calls are retried while Docker or the proxy does not answer. */
+    dockerRetryWindowMs: 180_000,
+    dockerRetryIntervalMs: 2000,
+    allowedBindSources: bindSourcesFrom(env.ALLOW_BIND_MOUNTS_FROM),
     stopTimeoutSec: 30,
     pollIntervalMs: 5000,
     heartbeatIntervalMs: 15_000,
@@ -63,6 +67,19 @@ function dockerEndpointFrom(env) {
     throw new Error(`DOCKER_HOST must look like tcp://host:port, got: ${dockerHost}`);
   }
   return { host: url.hostname.replace(/^\[(.*)\]$/, "$1"), port: Number(url.port) || 2375 };
+}
+
+/**
+ * Host directories the managed container may bind-mount; they must also be in
+ * the socket proxy's `-allowbindmountfrom`.
+ *
+ * @param {string | undefined} value comma-separated absolute paths
+ */
+function bindSourcesFrom(value) {
+  const dirs = (value ?? "").split(",").map((dir) => dir.trim()).filter(Boolean);
+  const relative = dirs.find((dir) => !dir.startsWith("/"));
+  if (relative) throw new Error(`ALLOW_BIND_MOUNTS_FROM entries must be absolute paths, got: ${relative}`);
+  return dirs.map((dir) => dir.replace(/\/+$/, "") || "/");
 }
 
 /** @param {string | undefined} value */

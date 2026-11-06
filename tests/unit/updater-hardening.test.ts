@@ -48,15 +48,28 @@ describe("pruning (finding 2)", () => {
     expect(await backupFiles()).toEqual([`servio-${OLD_VERSION}-20261106T100000Z.db`]);
   });
 
-  it("keeps every backup when the update is rolled back", async () => {
+  it("prunes after a rollback too, but never this update's backup (review item 8)", async () => {
     harness = await createHarness({ env: { BACKUP_KEEP: "1" } });
     harness.docker.newContainerPlan = "never-healthy";
     await writeFile(join(harness.backupDir, "servio-0.0.1-20200101T000000Z.db"), "old");
+    await writeFile(join(harness.backupDir, "servio-9.9.9-20991231T000000Z.db"), "newer-looking");
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
 
     expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
-    expect(await backupFiles()).toEqual(["servio-0.0.1-20200101T000000Z.db", `servio-${OLD_VERSION}-20261106T100000Z.db`]);
+    expect(await backupFiles()).toEqual([`servio-${OLD_VERSION}-20261106T100000Z.db`, "servio-9.9.9-20991231T000000Z.db"]);
+  });
+
+  it("prunes after a failure before the stop as well", async () => {
+    harness = await createHarness({ env: { BACKUP_KEEP: "1" } });
+    await writeFile(join(harness.backupDir, "servio-0.0.1-20200101T000000Z.db"), "old");
+    await writeFile(join(harness.backupDir, "servio-0.0.2-20200102T000000Z.db"), "old");
+    harness.docker.pullError = new Error("registry down");
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect((await harness.readStatus()).state).toBe("FAILED");
+    expect(await backupFiles()).toEqual(["servio-0.0.2-20200102T000000Z.db"]);
   });
 });
 

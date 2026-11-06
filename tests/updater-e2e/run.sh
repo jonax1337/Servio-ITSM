@@ -6,7 +6,10 @@
 #   1. 1.0.0 -> 1.1.0 must end SUCCEEDED, 1.1.0 serving, the old container gone.
 #   2. 1.1.0 -> 1.2.0 (health check always fails) must end ROLLED_BACK with the
 #      same 1.1.0 container running and the database restored byte for byte.
-# The proxy must refuse calls outside its allowlist and host bind mounts.
+#   3. 1.1.0 -> 1.3.0 (broken too) with the updater killed during HEALTH_CHECK
+#      must end ROLLED_BACK through start-up recovery.
+# The proxy must refuse calls outside its allowlist and host bind mounts, and
+# keep working after a restart.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -34,7 +37,8 @@ in_data() { docker run --rm -v servio_servio-data:/data:ro "$BUSYBOX" "$@"; }
 in_backups() { docker run --rm -v servio_servio-backups:/backups:ro "$BUSYBOX" "$@"; }
 inspect_web() { docker inspect --format "$1" servio-web; }
 web_is_healthy() { [[ $(inspect_web '{{.State.Health.Status}}') == healthy ]]; }
-updater_is_healthy() { [[ $(docker inspect --format '{{.State.Health.Status}}' "$("${COMPOSE[@]}" ps -q updater)") == healthy ]]; }
+updater_id() { "${COMPOSE[@]}" ps --all --quiet updater; }
+updater_is_healthy() { [[ $(docker inspect --format '{{.State.Health.Status}}' "$(updater_id)") == healthy ]]; }
 heartbeat_reports_docker() { in_data cat /data/state/updater/heartbeat.json | jq -e '.dockerOk == true'; }
 
 # wait_for <seconds> <description> <command...>: polls once a second.
@@ -90,8 +94,9 @@ wait_for 30 "the registry" curl -fsS http://localhost:5000/v2/
 build_release 1.0.0 true
 build_release 1.1.0 true
 build_release 1.2.0 false
+build_release 1.3.0 false
 # The updater must really pull the new releases.
-docker image rm "$REPO:1.1.0" "$REPO:1.2.0" >/dev/null
+docker image rm "$REPO:1.1.0" "$REPO:1.2.0" "$REPO:1.3.0" >/dev/null
 docker build --quiet --tag servio-updater:e2e updater
 
 echo "== stack"
@@ -102,15 +107,29 @@ wait_for 60 "the updater heartbeat" heartbeat_reports_docker
 echo "== socket proxy allowlist"
 [[ $(proxy_call GET /_ping) == 200 ]] || fail "the proxy refused /_ping"
 [[ $(proxy_call GET /v1.44/containers/servio-web/json) == 200 ]] || fail "the proxy refused container inspect"
-for call in "GET /v1.44/info" "GET /v1.44/containers/servio-web/logs" "POST /v1.44/containers/servio-web/exec" "POST /v1.44/volumes/create" "DELETE /v1.44/images/$REPO:1.0.0"; do
+for call in "GET /v1.44/info" "GET /v1.44/x/_ping" "GET /v1.44/containers/servio-web/logs" "POST /v1.44/containers/servio-web/exec" \
+  "POST /v1.44/volumes/create" "DELETE /v1.44/images/$REPO:1.0.0"; do
   # shellcheck disable=SC2086 # method and path are meant to split
   status=$(proxy_call $call)
   [[ $status == 403 || $status == 405 ]] || fail "the proxy allowed $call ($status)"
 done
-status=$(proxy_call POST /v1.44/containers/create '{"Image":"e2e/none:0","HostConfig":{"Binds":["/etc:/host-etc"]}}')
-[[ $status == 403 ]] || fail "the proxy allowed a host bind mount ($status)"
-socket_mode=$("${COMPOSE[@]}" exec -T updater node -e 'const s = require("node:fs").statSync("/run/docker-api/docker.sock"); console.log((s.mode & 0o777).toString(8), s.uid)')
-[[ $socket_mode == "600 1000" ]] || fail "filtered socket has mode/owner $socket_mode, expected 600 1000"
+for body in '{"Image":"e2e/none:0","HostConfig":{"Binds":["/etc:/host-etc"]}}' \
+  '{"Image":"e2e/none:0","HostConfig":{"Mounts":[{"Type":"bind","Source":"/etc","Target":"/x"}]}}' \
+  '{"Image":"e2e/none:0","HostConfig":{"Binds":["/servio-no-host-binds/../etc:/x"]}}'; do
+  status=$(proxy_call POST /v1.44/containers/create "$body")
+  [[ $status == 403 ]] || fail "the proxy allowed a host bind mount ($status): $body"
+done
+socket_mode=$("${COMPOSE[@]}" exec -T updater node -e '
+  const fs = require("node:fs");
+  const describe = (path) => { const s = fs.statSync(path); return `${(s.mode & 0o777).toString(8)} ${s.uid}:${s.gid}`; };
+  console.log(describe("/run/docker-api"), describe("/run/docker-api/docker.sock"));
+')
+[[ $socket_mode == "750 64999:64999 660 64999:64999" ]] || fail "filtered socket directory/socket are $socket_mode"
+
+echo "== socket proxy restart (stale socket file)"
+docker restart "$("${COMPOSE[@]}" ps --quiet docker-proxy)" >/dev/null
+proxy_answers() { [[ $(proxy_call GET /_ping) == 200 ]]; }
+wait_for 30 "the restarted proxy to answer" proxy_answers
 
 echo "== update 1.0.0 -> 1.1.0"
 request_update e2e-1 1.1.0
@@ -131,8 +150,25 @@ expect_status e2e-2 ROLLED_BACK
 [[ $(inspect_web '{{.HostConfig.RestartPolicy.Name}}') == unless-stopped ]] || fail "the rollback did not restore the restart policy"
 [[ $(in_data sha256sum /data/servio.db) == "$database_sha" ]] || fail "the database was not restored byte for byte"
 [[ -z $(docker ps -aq --filter label=org.opencontainers.image.version=1.2.0) ]] || fail "the 1.2.0 container was left behind"
+in_data test -f /data/ran-1.2.0 || fail "1.2.0 never ran, so the rollback proved nothing"
+! in_data test -e /data/servio.db-journal || fail "the hot journal 1.2.0 left was not removed"
 in_backups ls -a /backups | grep -q '^servio-1.1.0-.*\.db$' || fail "no backup of 1.1.0"
 ! in_backups ls -a /backups | grep -q '^\.journal' || fail "a journal was left behind"
+
+echo "== update 1.1.0 -> 1.3.0 (broken), updater killed during HEALTH_CHECK"
+request_update e2e-3 1.3.0
+# Not `grep -q`: with pipefail, a grep that stops reading early fails the pipeline.
+waiting_for_1_3_0() { docker logs "$(updater_id)" 2>&1 | grep -F "HEALTH_CHECK: Waiting for servio-web ($REPO:1.3.0)" >/dev/null; }
+wait_for 120 "the updater to wait for 1.3.0's health check" waiting_for_1_3_0
+docker kill "$(updater_id)" >/dev/null
+"${COMPOSE[@]}" up --detach updater
+expect_status e2e-3 ROLLED_BACK
+in_data cat /data/state/updater/status.json | jq -e '.message | contains("Recovered after an updater restart")' >/dev/null ||
+  fail "the rollback did not come from start-up recovery"
+[[ $(inspect_web '{{.Id}}') == "$serving_id" ]] || fail "a different container serves after the recovery"
+[[ $(inspect_web '{{index .Config.Labels "org.opencontainers.image.version"}} {{.State.Running}}') == "1.1.0 true" ]] || fail "1.1.0 is not running after the recovery"
+[[ $(in_data sha256sum /data/servio.db) == "$database_sha" ]] || fail "the recovery did not restore the database byte for byte"
+[[ -z $(docker ps -aq --filter label=org.opencontainers.image.version=1.3.0) ]] || fail "the 1.3.0 container was left behind"
 
 echo "== updater container health (liveness stamp on /backups)"
 wait_for 90 "the updater to be healthy" updater_is_healthy
