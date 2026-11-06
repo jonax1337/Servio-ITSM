@@ -5,7 +5,7 @@
 <g font-family="Manrope, Inter, 'Segoe UI', Helvetica, Arial, sans-serif" style="font-variant-numeric: tabular-nums">
   <text x="72" y="96" font-size="44" font-weight="800" fill="#FFFFFF">Clicks for 17 everyday service-desk tasks</text>
   <text x="72" y="140" font-size="22" fill="#9DACBF">Fewer is better. Same tasks and seed data in every system, scripted with Playwright · November 2026</text>
-  <text x="72" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SYSTEM</text><text x="320" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">TOTAL CLICKS</text><text x="1180" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">FULLY DONE</text><text x="1430" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SCRIPT TIME</text>
+  <text x="72" y="210" text-anchor="start" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SYSTEM</text><text x="320" y="210" text-anchor="start" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">TOTAL CLICKS</text><text x="1180" y="210" text-anchor="start" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">FULLY DONE</text><text x="1430" y="210" text-anchor="start" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SCRIPT TIME</text>
   <line x1="72" x2="1528" y1="222" y2="222" stroke="#26405F" stroke-width="2"/>
   
   <text x="72" y="267" font-size="30" font-weight="800" fill="#FFFFFF">Servio</text>

@@ -635,346 +635,632 @@
       }
     }
   },
-  "features": {
-    "servio": [
-      {
-        "feature": "Incident",
-        "support": "yes"
-      },
-      {
-        "feature": "Service request + catalog",
-        "support": "yes"
-      },
-      {
-        "feature": "Problem",
-        "support": "yes"
-      },
-      {
-        "feature": "Change (+ CAB/approvals, calendar, freeze)",
-        "support": "yes"
-      },
-      {
-        "feature": "Release",
-        "support": "yes"
-      },
-      {
-        "feature": "CMDB/asset + relationships",
-        "support": "yes"
-      },
-      {
-        "feature": "Knowledge base",
-        "support": "yes"
-      },
-      {
-        "feature": "Self-service portal",
-        "support": "yes"
-      },
-      {
-        "feature": "SLA (business hours, escalation)",
-        "support": "yes"
-      },
-      {
-        "feature": "Email in/out + threading",
-        "support": "yes"
-      },
-      {
-        "feature": "Automations/workflows",
-        "support": "yes"
-      },
-      {
-        "feature": "Reporting/dashboards",
-        "support": "partial"
-      },
-      {
-        "feature": "REST API",
-        "support": "yes"
-      },
-      {
-        "feature": "SSO/LDAP sync",
-        "support": "yes"
-      },
-      {
-        "feature": "Custom fields",
-        "support": "yes"
-      },
-      {
-        "feature": "Status page",
-        "support": "yes"
-      },
-      {
-        "feature": "On-call",
-        "support": "yes"
-      },
-      {
-        "feature": "Contracts/licenses",
-        "support": "yes"
-      },
-      {
-        "feature": "AI assistance",
-        "support": "partial"
-      },
-      {
-        "feature": "Mobile/responsive UI",
-        "support": "partial"
-      },
-      {
-        "feature": "Accessibility basics (keyboard, labels, contrast)",
-        "support": "partial"
-      },
-      {
-        "feature": "i18n",
-        "support": "no"
-      },
-      {
-        "feature": "Install effort (time + steps to first ticket)",
-        "support": "yes"
+  "features": [
+    {
+      "key": "incident",
+      "group": "service",
+      "label": "Incidents",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Tickets of type Incident (INC- prefix), priority/impact/urgency, SLA, major-incident flag, merge/parent-child, similar-ticket suggestions. Exercised in T1-T8."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Tickets of type Incident; self-service 'Report an issue' form, categories, urgency/impact/priority matrix, assignment, followups, tasks, solutions, status lifecycle (New, Processing assigned/planned, Pending, Solved, Closed)."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Incident class with lifecycle New > Assigned > Resolved > Closed (T5-T8); priority is computed from impact x urgency."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Ticket types (Incident, Incident::Major, ServiceRequest, Problem, RfC) plus ITSM Incident/Problem Management (impact/criticality -> priority matrix, incident state of CIs, Decision workflow)."
+        }
       }
-    ],
-    "glpi": [
-      {
-        "feature": "Incident",
-        "support": "yes"
-      },
-      {
-        "feature": "Service request + catalog",
-        "support": "yes"
-      },
-      {
-        "feature": "Problem",
-        "support": "yes"
-      },
-      {
-        "feature": "Change (+ CAB/approvals, calendar, freeze)",
-        "support": "partial"
-      },
-      {
-        "feature": "Release",
-        "support": "no"
-      },
-      {
-        "feature": "CMDB/asset + relationships",
-        "support": "yes"
-      },
-      {
-        "feature": "Knowledge base",
-        "support": "yes"
-      },
-      {
-        "feature": "Self-service portal",
-        "support": "yes"
-      },
-      {
-        "feature": "SLA (business hours, escalation)",
-        "support": "yes"
-      },
-      {
-        "feature": "Email in/out + threading",
-        "support": "yes"
-      },
-      {
-        "feature": "Automations/workflows",
-        "support": "yes"
-      },
-      {
-        "feature": "Reporting/dashboards",
-        "support": "partial"
-      },
-      {
-        "feature": "REST API",
-        "support": "yes"
-      },
-      {
-        "feature": "SSO/LDAP sync",
-        "support": "yes"
-      },
-      {
-        "feature": "Custom fields",
-        "support": "partial"
-      },
-      {
-        "feature": "Status page",
-        "support": "no"
-      },
-      {
-        "feature": "On-call",
-        "support": "no"
-      },
-      {
-        "feature": "Contracts/licenses",
-        "support": "yes"
-      },
-      {
-        "feature": "AI assistance",
-        "support": "no"
-      },
-      {
-        "feature": "Mobile/responsive UI",
-        "support": "partial"
-      },
-      {
-        "feature": "Accessibility basics (keyboard, labels, contrast)",
-        "support": "partial"
-      },
-      {
-        "feature": "i18n",
-        "support": "yes"
+    },
+    {
+      "key": "service",
+      "group": "service",
+      "label": "Service requests + catalog",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Portal catalog with per-item dynamic forms (select/text/textarea/date), optional multi-stage approval; REQ- tickets. Exercised in T4/T13 (approvals inbox)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "GLPI 12 form builder (Assistance > Forms) with a Service catalog (Self-Service > Service catalog, search, categories, tiles). 'New laptop' form with a custom short-text question creates a Request ticket. No stock/fulfilment workflow, no approval step wired in by default."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "User Request + Service > Service subcategory catalog shown in the portal (T4, T17); custom form fields limited (T4 partial)."
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "No service catalog. Ticket type ServiceRequest + Service/SLA pickers exist; a 'New laptop'-style item with its own form needs Process Management (activity dialogs + dynamic fields), which is a flowchart editor in the admin UI."
+        }
       }
-    ],
-    "itop": [
-      {
-        "feature": "Incident",
-        "support": "yes"
-      },
-      {
-        "feature": "Service request + catalog",
-        "support": "yes"
-      },
-      {
-        "feature": "Problem",
-        "support": "partial"
-      },
-      {
-        "feature": "Change (CAB/approvals)",
-        "support": "partial"
-      },
-      {
-        "feature": "Release",
-        "support": "no"
-      },
-      {
-        "feature": "CMDB / asset + relationships",
-        "support": "yes"
-      },
-      {
-        "feature": "Knowledge base",
-        "support": "partial"
-      },
-      {
-        "feature": "Self-service portal",
-        "support": "yes"
-      },
-      {
-        "feature": "SLA",
-        "support": "partial"
-      },
-      {
-        "feature": "Bulk actions",
-        "support": "partial"
-      },
-      {
-        "feature": "User/group administration",
-        "support": "yes"
-      },
-      {
-        "feature": "Contracts/licenses",
-        "support": "partial"
-      },
-      {
-        "feature": "REST API",
-        "support": "yes"
-      },
-      {
-        "feature": "Reporting/dashboards",
-        "support": "partial"
-      },
-      {
-        "feature": "i18n",
-        "support": "yes"
-      },
-      {
-        "feature": "Email in/out, automations, SSO/LDAP, custom fields, status page, on-call, AI assistance, mobile/responsive UI, accessibility basics",
-        "support": "unknown"
+    },
+    {
+      "key": "problem",
+      "group": "service",
+      "label": "Problem management",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Problem records with root cause/workaround/known error status and linked incidents + fix changes. No 'create problem from selected incidents' shortcut (T9: 12 clicks); Sable Insights can propose a problem from incident clusters (not exercised)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Problems with root-cause/impact/symptom fields, link to tickets, 'Create a problem from this ticket' action on the ticket Problems tab; Known-error style handled via status + KB link, no dedicated KEDB object."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Problem + Known Error exist, but no create-from-incident action; linking incidents is via Parent problem field / bulk modify (T9)."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Ticket type Problem; ITSMIncidentProblemManagement package (Known Error state, link incidents to a problem). Created by creating a Problem ticket and linking incidents; no 'create problem from selected incidents' button."
+        }
       }
-    ],
-    "znuny": [
-      {
-        "feature": "Incident",
-        "support": "yes"
-      },
-      {
-        "feature": "Service request + catalog",
-        "support": "partial"
-      },
-      {
-        "feature": "Problem",
-        "support": "yes"
-      },
-      {
-        "feature": "Change (+ CAB/approvals, calendar, freeze)",
-        "support": "yes"
-      },
-      {
-        "feature": "Release",
-        "support": "no"
-      },
-      {
-        "feature": "CMDB/asset + relationships",
-        "support": "yes"
-      },
-      {
-        "feature": "Knowledge base",
-        "support": "partial"
-      },
-      {
-        "feature": "Self-service portal",
-        "support": "yes"
-      },
-      {
-        "feature": "SLA (business hours, escalation)",
-        "support": "yes"
-      },
-      {
-        "feature": "Email in/out + threading",
-        "support": "yes"
-      },
-      {
-        "feature": "Automations/workflows",
-        "support": "yes"
-      },
-      {
-        "feature": "Reporting/dashboards",
-        "support": "partial"
-      },
-      {
-        "feature": "REST API",
-        "support": "yes"
-      },
-      {
-        "feature": "SSO/LDAP sync",
-        "support": "yes"
-      },
-      {
-        "feature": "Custom fields",
-        "support": "yes"
-      },
-      {
-        "feature": "Status page",
-        "support": "no"
-      },
-      {
-        "feature": "On-call",
-        "support": "no"
-      },
-      {
-        "feature": "Contracts/licenses",
-        "support": "partial"
-      },
-      {
-        "feature": "AI assistance",
-        "support": "no"
-      },
-      {
-        "feature": "Mobile/responsive UI",
-        "support": "partial"
-      },
-      {
-        "feature": "Accessibility basics",
-        "support": "partial"
-      },
-      {
-        "feature": "i18n",
-        "support": "yes"
+    },
+    {
+      "key": "change",
+      "group": "service",
+      "label": "Changes + CAB approvals",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Normal/standard/emergency changes with templates, risk, plans, affected CIs with blast radius, CAB approvals with decision rule (unanimous/quorum/percent), change calendar and freeze windows (docs + sidebar 'Change Calendar'; creation/submission/approval exercised in T12/T13, freeze page not opened)."
+        },
+        "glpi": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Changes with impact/control/rollout/backout/checklist text areas, approval requests (user / group / group-user, multi-step with required percentage), tasks. No dedicated planned start/end or risk fields, no CAB meeting/voting object, no change freeze windows; Assistance > Planning is a personal task calendar, not a change calendar."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Normal/Routine/Emergency change with Validate > Assign > Plan > Approve lifecycle and approver queue (T12/T13); no Risk field, single approver rather than CAB voting. Change calendar/freeze not found in menus."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "ITSMChangeManagement 7.3.4: changes, work orders, templates, CAB (agents/customers), approval work orders, change calendar view and PSA-style 'planned start/end', conflict detection. Freeze windows: no first-class 'change freeze' object seen."
+        }
       }
-    ]
-  }
+    },
+    {
+      "key": "release",
+      "group": "service",
+      "label": "Release management",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Releases module in the sidebar linking changes (Release model); listing seen, not exercised."
+        },
+        "glpi": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No release/deployment object in the Assistance menu (only Tickets, Problems, Changes, Planning, Statistics, recurrent tickets/changes)."
+        },
+        "itop": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No release module in the installed ITIL set (no menu entry seen)."
+        },
+        "znuny": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No release management in the ITSM bundle."
+        }
+      }
+    },
+    {
+      "key": "cmdb",
+      "group": "service",
+      "label": "CMDB + relationships",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Assets with serial/tag/owner/warranty, AssetRelation dependency graph, assets linkable to tickets/changes (T7/T12); global search by serial works (T10). Relationship UI not exercised beyond change impact."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Assets menu (Computers, Monitors, Software, Network devices, Peripherals, Printers, Phones, Racks, Enclosures, PDUs, Cables, ... plus Setup > Asset definitions for custom asset types), assets link to tickets/changes/problems via the Items panel and to each other (connections, components). Changes have an 'Impact analysis' tab (graph of linked items). Not a full CI relationship model with typed dependency maps."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Configuration management with CI classes, serial numbers, impact analysis tab; CI links on tickets (T7, T12). Global search finds CI by serial (T10)."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "ITSMConfigurationManagement: classes Computer/Hardware/Location/Network/Software, YAML-defined attributes, versions, link types (DependsOn, RunsOn, ...), incident-state propagation, import/export."
+        }
+      }
+    },
+    {
+      "key": "knowledge",
+      "group": "service",
+      "label": "Knowledge base",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Articles with draft/review/published, internal vs public visibility, categories, revisions; portal search. Create-from-ticket is missing in the human UI (T14 partial)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Tools > Knowledge base with categories, visibility by entity/profile/group/user, FAQ flag shown in the self-service FAQ and home search; 'Save and add to the knowledge base' toggle while solving a ticket."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "FAQ module (categories + FAQs), portal FAQ list; no create-from-ticket (T14), no ticket linkage."
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Only with the separate FAQ package (installed FAQ 7.3.11): categories, approval, public/internal/external states, agent + customer search/explorer, links to tickets. Not in core/ITSM bundle."
+        }
+      }
+    },
+    {
+      "key": "selfservice",
+      "group": "service",
+      "label": "Self-service portal",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "/portal for end users: home with live search, report an issue, catalog, my tickets with threaded replies and attachments, knowledge, status. Responsive at 390px (no horizontal overflow)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Self-Service profile = simplified interface: home with search over KB and forms, service catalog, own tickets list with status, reservations, FAQ."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Enhanced portal: New request, Ongoing requests, FAQ (T1-T4)."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Built-in customer.pl: create ticket, my/company tickets, ticket search, FAQ (with package). Classic-looking forms, no catalog tiles."
+        }
+      }
+    },
+    {
+      "key": "sla",
+      "group": "service",
+      "label": "SLAs with business hours",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "SLAs per priority with response/resolve targets, business calendars (SLA.businessCalendarId), escalation rules and at-risk/nudge ticks (seed-extras seeds calendars + escalations). No UI list/filter for 'at risk' tickets, breached only via dashboard widget filter (T15 partial)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Setup > Service levels: SLM with SLA/OLA, TTO and TTR, calendars (business hours), escalation levels with actions; breached tickets are flagged in lists. Evaluated via the cron 'automatic actions'."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "SLA/SLT/Customer contract objects and 'Under escalation' lists exist; no SLA breach/at-risk dashboard (T15); list empty in seed, not verified with live breaches."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "SLAs with calendars, first response / update / solution times, escalation notifications, escalation view + dashboard widget. SLA/service must be assigned per customer user."
+        }
+      }
+    },
+    {
+      "key": "email",
+      "group": "platform",
+      "label": "Email in/out + threading",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Per docs/code: SMTP outbound, inbound IMAP polling with threading (EmailMessage anchor), HTML + CC. Not exercised here (scheduler disabled, no mail server)."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Setup > Receivers (IMAP/POP mail collectors that create/append tickets) and Setup > Notifications (outbound templates, queued mail). Not exercised in this bench (no mail server in the stack)."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "documentation",
+          "note": "Outbound notifications are core; the free Combodo extension Mail to Ticket Automation turns IMAP mail into tickets and threads replies via Message-ID or the ticket reference in the subject.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=extensions%3Aticket-from-email",
+            "https://store.itophub.io/en_US/products/combodo-mail-to-ticket-automation"
+          ]
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "PostMaster/PostMasterPOP3/IMAP mail accounts, ticket-number threading, notification events, outbound via sendmail/SMTP."
+        }
+      }
+    },
+    {
+      "key": "automations",
+      "group": "platform",
+      "label": "Automations / workflows",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Automations admin page (rules run on ticket events; e.g. the VIP internal note on new tickets was created by an automation), macros, escalation rules. Not authored in this benchmark."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Administration > Rules (business rules on ticket/change/user creation and update), Automatic actions (cron), Webhooks (Setup > Webhooks), recurrent tickets/changes, solution/followup templates. No visual workflow designer."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "documentation",
+          "note": "Core triggers (lifecycle, TTO/TTR thresholds, object changes) with email, webhook and newsroom actions; no rule-based routing or auto-assignment found in Community.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=latest%3Aadmin%3Anotifications"
+          ]
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "GenericAgent (cron-like), Process Management, ACLs, ticket event notifications, web-service invokers."
+        }
+      }
+    },
+    {
+      "key": "reporting",
+      "group": "platform",
+      "label": "Dashboards / reporting",
+      "ratings": {
+        "servio": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Customizable widget dashboards (number, trend, breakdown, aging, CSAT, SLA and MTTR) with per-widget filters, SLA tiles that open the filtered ticket list, CSV export of tickets. No report builder or scheduled reports."
+        },
+        "glpi": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Home 'Global View' shows status counts per ITIL object, Assistance > Statistics (after choosing report type and dates), Tools > Reports, saved searches/exports, central dashboards for permitted profiles. No ready SLA-breach report for a Supervisor (see T15)."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Overview dashboards per module (priority pie, status/agent/customer tables); no SLA widgets in the default ones."
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Agent dashboard widgets (escalated, reminder, new, open tickets, 7-day stats), Statistics module (needs stats group), no BI-style custom dashboards."
+        }
+      }
+    },
+    {
+      "key": "rest",
+      "group": "platform",
+      "label": "REST API",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Versioned /api/v1 with scoped bearer tokens, envelope, pagination (docs/rest-api.md); not called in this benchmark."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Legacy /apirest.php (enable in Setup > General > API, token or basic login, client IP allow-list) and the newer high-level API (/api.php); used here for seeding and verification."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "webservices/rest.php used for seeding and test fixtures (core/create, core/get, core/apply_stimulus)."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "GenericInterface: REST/SOAP web services (Ticket connector, ITSM ConfigItem connector) must be configured per operation in the admin UI before use."
+        }
+      }
+    },
+    {
+      "key": "sso",
+      "group": "platform",
+      "label": "SSO / LDAP sync",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "OIDC SSO via env (AUTH_OIDC_*), and a Syncs module with spec-driven connectors for LDAP/AD/Azure/CSV/REST importing users and assets (per docs/sidebar 'Syncs'); not exercised."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Setup > Authentication: LDAP/AD directories (+ `ldap:synchronize_users` console), OAuth/IMAP/CAS/header-based external auth, SAML via plugin; Administration > Rules for profile assignment on import."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "documentation",
+          "note": "LDAP authentication is built in; SAML and OpenID Connect are free Combodo extensions; an LDAP data collector imports people and users.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=extensions%3Aauthent-ldap",
+            "https://store.itophub.io/en_US/products/combodo-saml",
+            "https://store.itophub.io/en_US/products/combodo-hybridauth"
+          ]
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "LDAP/AD, SAML/OAuth via add-ons, HTTPBasicAuth; configured in SysConfig/Config.pm."
+        }
+      }
+    },
+    {
+      "key": "custom",
+      "group": "platform",
+      "label": "Custom fields",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Admin-defined custom fields (CustomFieldDef) on tickets/problems/changes shown in create forms; catalog items define per-request form fields (T4)."
+        },
+        "glpi": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Form builder questions (portal forms), asset definitions with custom fields, ticket templates (mandatory/hidden/predefined fields). Free custom fields on built-in Ticket/Change objects need the Fields plugin (marketplace, not core)."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "documentation",
+          "note": "Community adds fields through an XML datamodel extension; the no-code ITSM Designer is a paid offer.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=3_0_0%3Acustomization%3Aadd-attribute-sample",
+            "https://combodo.com/offers-services/"
+          ]
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Dynamic Fields (text, dropdown, date, multiselect, checkbox, ...) for tickets/articles/CIs with per-screen visibility config."
+        }
+      }
+    },
+    {
+      "key": "i18n",
+      "group": "platform",
+      "label": "Multiple UI languages",
+      "ratings": {
+        "servio": {
+          "support": "no",
+          "basis": "observed",
+          "note": "English-only UI; no i18n library or locale files in package.json/repo."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Large set of translated locales (language selector lists dozens incl. RTL), per-user language, timezone and date formats."
+        },
+        "itop": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Language selectable per user (seen in the user form)."
+        },
+        "znuny": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "30+ UI languages, per-user language and time zone."
+        }
+      }
+    },
+    {
+      "key": "status",
+      "group": "beyond",
+      "label": "Public status page",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Console 'Status' (incident publishing, StatusIncident model) and a portal Status page; not exercised."
+        },
+        "glpi": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No public status page / service status object in core."
+        },
+        "itop": {
+          "support": "no",
+          "basis": "documentation",
+          "note": "No public status page in core or in the official extension list; Communications to the Customers only shows announcements inside iTop.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=extensions%3Astart",
+            "https://www.itophub.io/wiki/page?id=extensions%3Aitop-communications"
+          ]
+        },
+        "znuny": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No public status page."
+        }
+      }
+    },
+    {
+      "key": "oncall",
+      "group": "beyond",
+      "label": "On-call schedules",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "On-call schedules/members/overrides module in the sidebar; not exercised."
+        },
+        "glpi": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No on-call rota; Planning/reservations only."
+        },
+        "itop": {
+          "support": "no",
+          "basis": "documentation",
+          "note": "No on-call or rotation feature in core or in the official extension list.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=extensions%3Astart"
+          ]
+        },
+        "znuny": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No on-call/rota scheduling (only agent absence/out-of-office, calendars)."
+        }
+      }
+    },
+    {
+      "key": "contracts",
+      "group": "beyond",
+      "label": "Contracts / licenses",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Contracts module (contract assets, license assignments in schema/sidebar); not exercised."
+        },
+        "glpi": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Management > Contracts (with alerts: expiring contracts counters on the Global View), Licenses, Budgets, Suppliers, Certificates, Domains."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Customer and provider contracts present in Service management; license management not checked."
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Service Level Management package covers service-level agreements / underpinning contracts as objects; no license management."
+        }
+      }
+    },
+    {
+      "key": "ai",
+      "group": "beyond",
+      "label": "Built-in AI assistant",
+      "ratings": {
+        "servio": {
+          "support": "yes",
+          "basis": "observed",
+          "note": "Built-in Sable agent: chat, read tools, approve-first write operations, insights, portal assistant. Present in the UI; answer quality was not benchmarked because no AI provider was configured for the run."
+        },
+        "glpi": {
+          "support": "no",
+          "basis": "observed",
+          "note": "No AI agent/assistant in core GLPI 12.0.1 (the UI exposes none)."
+        },
+        "itop": {
+          "support": "no",
+          "basis": "documentation",
+          "note": "No built-in AI; Combodo publishes an early MCP server (v0.0.1) that lets external AI clients call the REST API.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=extensions%3Aitop-mcp"
+          ]
+        },
+        "znuny": {
+          "support": "no",
+          "basis": "observed",
+          "note": "None in the OSS edition."
+        }
+      }
+    },
+    {
+      "key": "mobile",
+      "group": "experience",
+      "label": "Mobile / responsive UI",
+      "ratings": {
+        "servio": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Measured before the mobile fixes in this release: the portal fitted 390 px without horizontal overflow, the console ticket page overflowed (similar-tickets row, conversation bubbles) although the shell collapses to a top bar. Not re-measured since."
+        },
+        "glpi": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Tabler-based layout with collapsible sidebar and viewport meta; not formally tested on a phone viewport in this bench (desktop 1440x900 only), and wide list/ticket screens with a side panel are dense on small widths."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "documentation",
+          "note": "The end-user portal is responsive; the back-office console is not designed for phones.",
+          "sources": [
+            "https://www.itophub.io/wiki/page?id=latest%3Aportal%3Aportal_v2"
+          ]
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "7.x ships a refreshed skin that scales, but agent forms are dense desktop forms and some actions open pop-up windows."
+        }
+      }
+    },
+    {
+      "key": "accessibility",
+      "group": "experience",
+      "label": "Accessibility basics",
+      "ratings": {
+        "servio": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Programmatic scan of /tickets, /tickets/:id, /problems: 0 visible controls without an accessible name, html lang=en, one h1, checkbox rows have aria-labels; command palette via Ctrl/Cmd+K. No skip-to-content link. Contrast not measured. Select/combobox controls are custom (button-based) widgets."
+        },
+        "glpi": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Skip links ('Go to main content', 'Go to main navigation'), ARIA roles on tabs/menus, labelled form fields, high-contrast option in user preferences. Gaps seen: icon-only controls without text (solution/KB toggles, ticket footer chevron/dots), select2 dropdowns everywhere, many hidden duplicate form copies in the ticket DOM."
+        },
+        "itop": {
+          "support": "partial",
+          "basis": "documentation",
+          "note": "iTop 3.2 adds WCAG AA colour-blind and high-contrast console themes in Community; keyboard use and labels were not verified.",
+          "sources": [
+            "https://combodo.com/itop/itsm-accessible-for-everyone-with-itop/"
+          ]
+        },
+        "znuny": {
+          "support": "partial",
+          "basis": "observed",
+          "note": "Labels and aria on most inputs, keyboard shortcuts (q/w/...); modern dropdown widget replaces native selects (needs mouse/arrow keys), contrast is mid."
+        }
+      }
+    }
+  ]
 }

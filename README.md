@@ -90,7 +90,17 @@ category, and ran them in Servio, GLPI, iTop and Znuny with the same seed data. 
 **73 clicks** for all of them (GLPI 120, Znuny 132, iTop 146) and is the only one of the four
 that completes every task without a workaround.
 
-Per-task numbers, versions, method and the limits of the comparison → [docs/benchmark.md](docs/benchmark.md)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark/features-dark.svg">
+  <img src="docs/benchmark/features-light.svg" alt="Feature matrix for Servio, GLPI, iTop and Znuny across 22 capabilities" width="100%">
+</picture>
+
+Feature for feature, Servio covers the ITSM core the others do and adds release management,
+a public status page, on-call schedules and a built-in AI assistant. Where it is behind: the UI
+is English-only, and reporting is dashboards rather than a report builder.
+
+Per-task numbers, notes and sources for every feature cell, versions, method and the limits of
+the comparison → [docs/benchmark.md](docs/benchmark.md)
 
 ---
 
