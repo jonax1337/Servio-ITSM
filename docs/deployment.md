@@ -204,7 +204,8 @@ docker compose up --build               # app on :3000, Gotenberg internal
   `UPLOAD_DIR`, so DB + files persist together.
 - **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma migrate deploy`
   (the committed baseline migration is kept current) and seeds once per volume,
-  then starts Next via `pnpm start`. Migration failures abort boot (`set -e`).
+  then starts Next with `next start` (not `pnpm start`, whose dependency check would try to
+  write to the read-only `/app`). Migration failures abort boot (`set -e`).
 - **Health.** The image defines a `HEALTHCHECK` (GET `/login`) and the compose file adds
   matching healthchecks for `web` and `gotenberg`; `web` waits for Gotenberg's `/health`
   before starting.
