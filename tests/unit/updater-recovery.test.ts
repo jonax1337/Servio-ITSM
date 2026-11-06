@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DockerClient } from "../../updater/docker-client.mjs";
+import { DockerApiError, type DockerClient } from "../../updater/docker-client.mjs";
 import {
   CONTAINER_NAME,
   FRESH_REQUESTED_AT,
@@ -11,12 +11,14 @@ import {
   OLD_VERSION,
   createHarness,
   killOn,
+  unreachable,
   type Harness,
 } from "./updater-test-kit";
 
 const REQUEST = { id: "win-1", targetVersion: NEW_VERSION, requestedAt: FRESH_REQUESTED_AT, requestedBy: "admin@x" };
 const PRE_NAME = `${CONTAINER_NAME}-pre-${OLD_VERSION}`;
 const ORIGINAL_POLICY = { Name: "unless-stopped" };
+const TERMINAL = ["SUCCEEDED", "FAILED", "ROLLED_BACK"];
 
 let harness: Harness;
 let oldId: string;
@@ -250,6 +252,7 @@ describe("recovery when the containers no longer match the journal (finding H2)"
     expect(status.message).toContain("MANUAL ACTION REQUIRED");
     // The old container may still carry the suspended policy (review item 6).
     expect(status.message).toContain(`docker update --restart unless-stopped ${oldId.slice(0, 12)}`);
+    expect(status.message).toContain("Database backup: "); // review S3
     expect(await exists(journalPath())).toBe(false);
     expect(await asideJournals()).toHaveLength(1);
     expect(status.message).toContain(join(harness.backupDir, (await asideJournals())[0]));
@@ -318,21 +321,63 @@ describe("recovery when the containers no longer match the journal (finding H2)"
     expect(runningManaged().map((c) => c.Id)).toEqual([oldId]);
   });
 
-  it("keeps the journal when the containers cannot be inspected while finishing a healthy switch", async () => {
+  it("keeps the journal live and removes nothing while Docker cannot be asked whether the switch still holds", async () => {
     await killAt("removeContainer", "before", (args) => args[0] === oldId);
+    let dockerAway = true;
     const failing = new Proxy(harness.docker, {
       get(target, property) {
         const value = Reflect.get(target, property) as unknown;
         if (typeof value !== "function") return value;
-        if (property === "inspectContainer") return () => Promise.reject(new Error("connect ENOENT /run/docker-api/docker.sock"));
+        if (property === "inspectContainer" && dockerAway) return () => Promise.reject(unreachable());
         return value.bind(target);
       },
     }) as unknown as DockerClient;
+    const restarted = harness.newFlow(failing);
 
-    await harness.newFlow(failing).recoverInterrupted();
+    await restarted.recoverInterrupted();
+    expect(await exists(journalPath())).toBe(true);
+    expect(await asideJournals()).toEqual([]);
+    expect(harness.docker.containers.has(oldId)).toBe(true);
+    expect((await harness.readStatus()).message).toContain("retried from the journal");
+
+    dockerAway = false;
+    await restarted.processPendingRequest();
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+    expect(harness.docker.containers.has(oldId)).toBe(false);
+  });
+
+  it.each([
+    ["was restarted by its restart policy", (c: { RestartCount?: number; State: { StartedAt?: string } }) => {
+      c.RestartCount = 1;
+      c.State.StartedAt = "restart-1";
+    }],
+    ["is no longer healthy", (c: { State: { Health?: { Status: string } } }) => {
+      c.State.Health = { Status: "starting" };
+    }],
+  ])("keeps the old container when the new one %s after the switch (review M1)", async (_label, change) => {
+    await killAt("removeContainer", "before", (args) => args[0] === oldId);
+    change(harness.docker.byName(CONTAINER_NAME)!);
+
+    await restartUpdater();
 
     await expectLeftAloneForTheOperator();
     expect(harness.docker.containers.has(oldId)).toBe(true);
+  });
+
+  it("still reports the outcome when the journal cannot be set aside (review S4)", async () => {
+    await killAt("renameContainer", "after");
+    harness.docker.byName(PRE_NAME)!.State.Running = false;
+    operatorContainer();
+    // The clock stands at 10:00:00Z, so the name the journal would be moved to is known: block it.
+    await mkdir(join(harness.backupDir, ".journal.manual-20261106T100000Z.json"));
+
+    await restartUpdater();
+
+    const status = await harness.readStatus();
+    expect(status.state).toBe("FAILED");
+    expect(status.message).toContain("MANUAL ACTION REQUIRED");
+    expect(status.message).toContain("could not be set aside");
+    expect(await exists(journalPath())).toBe(true);
   });
 
   it("sets the journal aside after a failed rollback and never replays it on later starts", async () => {
@@ -398,7 +443,7 @@ describe("recovery details (review items 2, 3)", () => {
   it("recovers although Docker refuses connections for a while after the restart", async () => {
     await killAt("startContainer", "after", (args) => args[0].startsWith("new-"));
     let refusals = 0;
-    harness.docker.failOn("ping", new Error("connect ENOENT /run/docker-api/docker.sock"), () => ++refusals <= 5);
+    harness.docker.failOn("ping", unreachable(), () => ++refusals <= 5);
 
     await restartUpdater();
 
@@ -407,16 +452,34 @@ describe("recovery details (review items 2, 3)", () => {
     expect(runningManaged().map((c) => c.Id)).toEqual([oldId]);
   });
 
-  it("asks for manual action once Docker stays unreachable for the whole retry window", async () => {
+  it("keeps the journal live when Docker stays away past the retry window, and finishes on a later poll (review S2)", async () => {
     await killAt("startContainer", "after", (args) => args[0].startsWith("new-"));
-    harness.docker.failOn("ping", new Error("connect ENOENT /run/docker-api/docker.sock"));
+    let dockerAway = true;
+    harness.docker.failOn("ping", unreachable(), () => dockerAway);
+
+    const restarted = await restartUpdater();
+    const waiting = await harness.readStatus();
+    expect(TERMINAL).not.toContain(waiting.state);
+    expect(waiting.message).toContain("retried from the journal");
+    expect(await exists(journalPath())).toBe(true);
+    expect(await asideJournals()).toEqual([]);
+
+    dockerAway = false;
+    await restarted.processPendingRequest();
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
+    expect(await exists(journalPath())).toBe(false);
+  });
+
+  it("does not wait for a 500 from Docker, which is usually final (review S1)", async () => {
+    await killAt("startContainer", "after", (args) => args[0].startsWith("new-"));
+    harness.docker.failOn("start", new DockerApiError("driver failed programming external connectivity: port is already allocated", 500));
 
     await restartUpdater();
 
-    const status = await harness.readStatus();
-    expect(status.message).toContain("ROLLBACK FAILED — manual action required");
-    expect(status.message).toContain("ENOENT");
-    expect(await asideJournals()).toHaveLength(1);
+    expect((await harness.readStatus()).message).toContain("ROLLBACK FAILED — manual action required");
+    // The new container's start before the kill, then a single attempt for the old one.
+    expect(harness.docker.callsTo("start").filter((call) => call === `start ${CONTAINER_NAME}`)).toHaveLength(2);
   });
 });
 

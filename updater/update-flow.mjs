@@ -14,11 +14,11 @@
 import { readdir, rename, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { assertFreeSpace, createBackup, findBackupSources, freeBytesOn, pruneBackups, restoreBackup } from "./backup.mjs";
-import { retryWhileUnreachable, withRetries } from "./docker-retry.mjs";
+import { isTransientDockerError, retryWhileUnreachable, withRetries } from "./docker-retry.mjs";
 import { createLedger } from "./ledger.mjs";
 import { UPDATE_REQUEST_LABEL, VERSION_LABEL, containerNameOf, findManagedContainer, installedVersionOf } from "./managed-container.mjs";
 import { buildCreateSpec } from "./recreate.mjs";
-import { UnsafeFileError, syncDirectory } from "./safe-fs.mjs";
+import { UnsafeFileError, regularFileExists, syncDirectory } from "./safe-fs.mjs";
 import { MAX_SMALL_JSON_BYTES, MAX_STATUS_BYTES, readJsonFile, statePaths, writeJsonAtomic } from "./state-files.mjs";
 import { compareVersions } from "./versions.mjs";
 
@@ -32,6 +32,12 @@ const JOURNAL_FILE = ".journal.json";
 const JOURNAL_NAMES = /^\.journal(\.manual-[\w.-]+)?\.json$/;
 const MAX_LOG_ENTRIES = 500;
 const SHORT_ID_LENGTH = 12;
+/**
+ * Health polls a new container must pass after its first "healthy" before the
+ * switch counts as done: a container that crashes right away (and is restarted
+ * by its restart policy) must be rolled back, not kept.
+ */
+const SOAK_POLLS = 2;
 const UPDATER_STATES = new Set(["PENDING", "PULLING", "BACKING_UP", "SWITCHING", "HEALTH_CHECK", "SUCCEEDED", "FAILED", "ROLLED_BACK"]);
 const TERMINAL_STATES = new Set(["SUCCEEDED", "FAILED", "ROLLED_BACK"]);
 const JOURNAL_STEPS = new Set(["STOPPING", "BACKED_UP", "SWITCHING", "STARTED", "SWITCHED", "RESTORED"]);
@@ -47,16 +53,18 @@ const PRE_SWITCH_STEPS = new Set(["STOPPING", "BACKED_UP"]);
 /**
  * @typedef {"PENDING" | "PULLING" | "BACKING_UP" | "SWITCHING" | "HEALTH_CHECK" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK"} UpdaterState
  * @typedef {{ now: () => number, sleep: (ms: number) => Promise<void>, timeoutSignal: (ms: number) => AbortSignal }} Clock
- * @typedef {{ state: UpdaterState, message: string, manual?: boolean }} Outcome
+ * @typedef {{ state: UpdaterState, message: string, manual?: boolean, pending?: boolean }} Outcome
+ *   `pending`: Docker did not answer, so the update could not be finished or undone yet; the journal stays and it is retried
  * @typedef {{ at: string, state: UpdaterState, message: string }} LogEntry
  * @typedef {{ id: string, state: UpdaterState, fromVersion: string | null, targetVersion: string, message: string,
  *   updatedAt: string, log: LogEntry[] }} Status
  * @typedef {{ Name: string, MaximumRetryCount?: number }} RestartPolicy
+ * @typedef {{ startedAt: string, restartCount: number }} ServingInstance the new container as it passed its health check
  * @typedef {"STOPPING" | "BACKED_UP" | "SWITCHING" | "STARTED" | "SWITCHED" | "RESTORED"} JournalStep
  * @typedef {{
  *   requestId: string, targetVersion: string, fromVersion: string | null, name: string, preName: string,
  *   oldId: string, newId: string | null, newImageId: string, restartPolicy: RestartPolicy | null,
- *   backup: import("./backup.mjs").Backup | null, step: JournalStep,
+ *   backup: import("./backup.mjs").Backup | null, step: JournalStep, served?: ServingInstance,
  * }} JournalData
  * @typedef {{ data: JournalData, save: (changes: Partial<JournalData>) => Promise<void> }} Journal
  */
@@ -70,6 +78,9 @@ export const systemClock = {
 
 /** The update cannot be finished or undone automatically; an operator has to act. */
 class ManualActionRequired extends Error {}
+
+/** A rollback or recovery stopped only because Docker did not answer; it is resumed from the journal. */
+class WaitingForDocker extends Error {}
 
 /** @param {unknown} error */
 const messageOf = (error) => (error instanceof Error ? error.message : String(error));
@@ -112,6 +123,11 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    * @returns {Promise<"idle" | "ignored" | "processed">}
    */
   async function processPendingRequest() {
+    if (await regularFileExists(journalFile)) {
+      // A rollback that Docker interrupted (or an outcome whose journal could not be set aside).
+      await recoverInterrupted();
+      return "processed";
+    }
     let request;
     try {
       request = await readRequest();
@@ -178,10 +194,11 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    */
   async function finish(outcome, reporter, journal) {
     let { message } = outcome;
-    if (outcome.manual) {
-      const aside = await setJournalAside();
-      if (aside) message += ` The update journal is kept at ${aside}.`;
+    if (outcome.pending) {
+      await reporter.note(message);
+      return;
     }
+    if (outcome.manual) message += await setJournalAsideNote();
     message += await pruneOldBackups(journal?.data.backup?.path ?? null);
     await reporter.report(outcome.state, message);
     if (journal && outcome.state !== "SUCCEEDED") await startCooldown(journal.data.targetVersion);
@@ -213,6 +230,19 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     }
   }
 
+  /** @returns {Promise<string>} where the journal is now, for the report; the report is written even if this fails */
+  async function setJournalAsideNote() {
+    try {
+      const aside = await setJournalAside();
+      return aside ? ` The update journal is kept at ${aside}.` : "";
+    } catch (error) {
+      return (
+        ` The update journal could not be set aside (${messageOf(error)}) and is still at ${journalFile}: ` +
+        "the updater replays it on every poll until it is moved away."
+      );
+    }
+  }
+
   /** @returns {Promise<string | null>} where the journal now is, or null when there was none */
   async function setJournalAside() {
     const stamp = new Date(clock.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -235,7 +265,12 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     try {
       return await work;
     } catch (error) {
-      return { state: "FAILED", message: messageOf(error), manual: error instanceof ManualActionRequired };
+      return {
+        state: "FAILED",
+        message: messageOf(error),
+        manual: error instanceof ManualActionRequired,
+        pending: error instanceof WaitingForDocker,
+      };
     }
   }
 
@@ -634,9 +669,9 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       await journal.save({ step: "STARTED" });
 
       await reporter.report("HEALTH_CHECK", `Waiting for ${name} (${imageRef}) to become healthy`);
-      await waitUntilHealthy(created.Id, name);
-      await assertNewContainerServing(journal.data);
-      await journal.save({ step: "SWITCHED" });
+      const served = await waitUntilHealthy(created.Id, name);
+      await soakNewContainer(journal.data, served);
+      await journal.save({ step: "SWITCHED", served });
     } catch (error) {
       return rollBack(journal, messageOf(error), reporter);
     }
@@ -644,16 +679,20 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   }
 
   /**
-   * Last check before the switch counts as done: a new container that died right
-   * after its health check is a failed update (rolled back with the database), not
-   * a changed world.
+   * The new container must keep serving for a few more health polls, as the same
+   * instance: one that crashed right after its health check (and was restarted by
+   * its restart policy) is a failed update, rolled back with the database.
    *
    * @param {JournalData} data
+   * @param {ServingInstance} served
    */
-  async function assertNewContainerServing(data) {
-    const occupant = await inspectOrNull(data.name);
-    if (occupant?.Id !== data.newId || !occupant.State?.Running) {
-      throw new Error(`${data.name} stopped or was replaced right after becoming healthy`);
+  async function soakNewContainer(data, served) {
+    for (let poll = 0; poll < SOAK_POLLS; poll += 1) {
+      await clock.sleep(config.healthIntervalMs);
+      const occupant = await inspectOrNull(data.name);
+      if (occupant?.Id !== data.newId) throw new Error(`${data.name} was replaced right after becoming healthy`);
+      const problem = servingProblem(occupant, served);
+      if (problem) throw new Error(`${data.name} ${problem} right after becoming healthy`);
     }
   }
 
@@ -712,6 +751,12 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       await waitUntilHealthy(oldId, name);
     } catch (rollbackError) {
       if (rollbackError instanceof ManualActionRequired) throw rollbackError;
+      if (isTransientDockerError(rollbackError)) {
+        throw new WaitingForDocker(
+          `Docker did not answer while rolling back (${messageOf(rollbackError)}). Original failure: ${reason}. ` +
+            "The rollback is retried from the journal until Docker answers; updates stay blocked until then.",
+        );
+      }
       throw new ManualActionRequired(
         `ROLLBACK FAILED — manual action required: ${messageOf(rollbackError)}. Original failure: ${reason}. ` +
           `Previous container: ${preName} (or ${name}). Database backup: ${backup?.path ?? "none"}.${restartPolicyHint(journal.data)}`,
@@ -762,8 +807,9 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   }
 
   /**
-   * The old container is about to be removed: only if the new one still serves.
-   * An unanswered check counts as a changed world, so the journal is kept.
+   * The old container is about to be removed: only if the new one still serves,
+   * as the instance that passed the health check. Without an answer from Docker
+   * nothing is removed and the journal stays.
    *
    * @param {JournalData} data
    */
@@ -774,11 +820,16 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       occupant = await inspectOrNull(data.name);
       old = await inspectOrNull(data.oldId);
     } catch (error) {
-      throw worldChanged(data, `the containers could not be inspected (${messageOf(error)})`);
+      if (!isTransientDockerError(error)) throw worldChanged(data, `the containers could not be inspected (${messageOf(error)})`);
+      throw new WaitingForDocker(
+        `Docker did not answer while finishing the switch (${messageOf(error)}). It is retried from the journal until Docker answers.`,
+      );
     }
-    if (occupant?.Id !== data.newId || !occupant.State?.Running) {
-      throw worldChanged(data, `${data.name} is no longer the running container ${shortId(data.newId ?? "")} this update created`);
+    if (occupant?.Id !== data.newId) {
+      throw worldChanged(data, `${data.name} is no longer the container ${shortId(data.newId ?? "")} this update created`);
     }
+    const problem = servingProblem(occupant, data.served ?? null);
+    if (problem) throw worldChanged(data, `the new container ${data.name} ${problem} after the switch`);
     if (old?.State?.Running) throw worldChanged(data, `the previous container ${containerNameOf(old)} is running again`);
   }
 
@@ -789,7 +840,8 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   function worldChanged(data, detail) {
     return new ManualActionRequired(
       `MANUAL ACTION REQUIRED — the containers no longer match the update journal: ${detail}. ` +
-        `The updater left them alone. Fix them by hand, then delete the set-aside journal to allow updates again.${restartPolicyHint(data)}`,
+        "The updater left them alone. Fix them by hand, then delete the set-aside journal to allow updates again. " +
+        `Database backup: ${data.backup?.path ?? "none"}.${restartPolicyHint(data)}`,
     );
   }
 
@@ -813,7 +865,12 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   /** @param {JournalData} data */
   async function recoverFromJournal(data) {
     const status = await readStatusOrNull();
-    const reporter = createReporter(newStatus(data.requestId, data.targetVersion, data.fromVersion, status?.id === data.requestId ? status.log : []));
+    const ours = status?.id === data.requestId ? status : null;
+    const reporter = createReporter({
+      ...newStatus(data.requestId, data.targetVersion, data.fromVersion, ours?.log ?? []),
+      // A resumed rollback keeps showing the step it was in until it ends.
+      ...(ours && !TERMINAL_STATES.has(ours.state) ? { state: ours.state } : {}),
+    });
     const reason = `updater restarted during step ${data.step}`;
     const journal = journalFor(data);
     const outcome = await settle(data.step === "SWITCHED" ? completeSwitch(data) : rollBack(journal, reason, reporter));
@@ -828,22 +885,25 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    *
    * @param {string} id
    * @param {string} label
+   * @returns {Promise<ServingInstance>} the instance that passed
    */
   async function waitUntilHealthy(id, label) {
     const deadline = clock.now() + config.healthTimeoutMs;
     /** @type {number | null} */
     let runningSince = null;
     for (;;) {
-      const { State: state } = await docker.inspectContainer(id);
+      const container = await docker.inspectContainer(id);
+      const { State: state } = container;
       if (!state.Running || state.Restarting) {
         throw new Error(`${label} stopped or restarted (exit code ${state.ExitCode}) before becoming healthy`);
       }
+      const served = { startedAt: state.StartedAt, restartCount: container.RestartCount };
       if (state.Health) {
-        if (state.Health.Status === "healthy") return;
+        if (state.Health.Status === "healthy") return served;
         if (state.Health.Status === "unhealthy") throw new Error(`${label} reported unhealthy`);
       } else {
         runningSince ??= clock.now();
-        if (clock.now() - runningSince >= config.noHealthcheckSettleMs) return;
+        if (clock.now() - runningSince >= config.noHealthcheckSettleMs) return served;
       }
       if (clock.now() >= deadline) {
         throw new Error(`${label} was not healthy within ${config.healthTimeoutMs / 1000}s (health: ${state.Health?.Status ?? "no healthcheck"})`);
@@ -894,6 +954,20 @@ function parseStatus(raw) {
   return { ...newStatus(raw.id, text(raw.targetVersion) ?? "unknown", text(raw.fromVersion), log), state: raw.state };
 }
 
+/**
+ * @param {any} container inspected
+ * @param {ServingInstance | null} served the instance that passed the health check, if known
+ * @returns {string | null} why the container is not (or no longer) that healthy instance
+ */
+function servingProblem(container, served) {
+  const state = container.State ?? {};
+  if (state.Restarting) return "is restarting";
+  if (!state.Running) return `stopped (exit code ${state.ExitCode})`;
+  if (served && (container.RestartCount !== served.restartCount || state.StartedAt !== served.startedAt)) return "was restarted";
+  if (state.Health && state.Health.Status !== "healthy") return `is ${state.Health.Status}`;
+  return null;
+}
+
 /** @param {any} value @returns {value is JournalData} */
 function isJournal(value) {
   const strings = ["requestId", "targetVersion", "oldId", "name", "preName", "newImageId"];
@@ -905,6 +979,7 @@ function isJournal(value) {
     optionalString(value.newId) &&
     optionalString(value.fromVersion) &&
     (value.restartPolicy === null || typeof value.restartPolicy?.Name === "string") &&
+    (value.served === undefined || (typeof value.served?.startedAt === "string" && Number.isInteger(value.served.restartCount))) &&
     (backup === null || (typeof backup?.path === "string" && Array.isArray(backup.sidecars) && backup.sidecars.every((/** @type {unknown} */ s) => typeof s === "string")))
   );
 }

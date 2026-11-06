@@ -4,12 +4,13 @@
 # configured in docker-compose.release.yml, with a local registry and a
 # stand-in app (tests/updater-e2e/app):
 #   1. 1.0.0 -> 1.1.0 must end SUCCEEDED, 1.1.0 serving, the old container gone.
-#   2. 1.1.0 -> 1.2.0 (health check always fails) must end ROLLED_BACK with the
-#      same 1.1.0 container running and the database restored byte for byte.
-#   3. 1.1.0 -> 1.3.0 (broken too) with the updater killed during HEALTH_CHECK
-#      must end ROLLED_BACK through start-up recovery.
-# The proxy must refuse calls outside its allowlist and host bind mounts, and
-# keep working after a restart.
+#   2. 1.1.0 -> 1.2.0 (health check always fails), with the socket proxy killed
+#      and started again while the updater waits for the health check, must end
+#      ROLLED_BACK with the same 1.1.0 container running and the database
+#      restored byte for byte.
+#   3. 1.1.0 -> 1.3.0 (broken, slow to fail) with the updater killed during
+#      HEALTH_CHECK must end ROLLED_BACK through start-up recovery.
+# The proxy must refuse calls outside its allowlist and host bind mounts.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -51,10 +52,14 @@ wait_for() {
   done
 }
 
-build_release() { # <version> <healthy>
-  docker build --quiet --tag "$REPO:$1" --build-arg VERSION="$1" --build-arg HEALTHY="$2" tests/updater-e2e/app
+build_release() { # <version> <healthy> [build target]
+  docker build --quiet --target "${3:-release}" --tag "$REPO:$1" --build-arg VERSION="$1" --build-arg HEALTHY="$2" tests/updater-e2e/app
   docker push --quiet "$REPO:$1"
 }
+
+# Not `grep -q`: with pipefail, a grep that stops reading early fails the pipeline.
+updater_logged() { docker logs "$(updater_id)" 2>&1 | grep -F "$1" >/dev/null; }
+updater_log_count() { docker logs "$(updater_id)" 2>&1 | grep -cF "$1" || true; }
 
 # Writes request.json the way the app does: as uid 1000, atomically, from inside the app container.
 request_update() { # <id> <version>
@@ -94,7 +99,7 @@ wait_for 30 "the registry" curl -fsS http://localhost:5000/v2/
 build_release 1.0.0 true
 build_release 1.1.0 true
 build_release 1.2.0 false
-build_release 1.3.0 false
+build_release 1.3.0 false slow-to-fail
 # The updater must really pull the new releases.
 docker image rm "$REPO:1.1.0" "$REPO:1.2.0" "$REPO:1.3.0" >/dev/null
 docker build --quiet --tag servio-updater:e2e updater
@@ -126,11 +131,6 @@ socket_mode=$("${COMPOSE[@]}" exec -T updater node -e '
 ')
 [[ $socket_mode == "750 64999:64999 660 64999:64999" ]] || fail "filtered socket directory/socket are $socket_mode"
 
-echo "== socket proxy restart (stale socket file)"
-docker restart "$("${COMPOSE[@]}" ps --quiet docker-proxy)" >/dev/null
-proxy_answers() { [[ $(proxy_call GET /_ping) == 200 ]]; }
-wait_for 30 "the restarted proxy to answer" proxy_answers
-
 echo "== update 1.0.0 -> 1.1.0"
 request_update e2e-1 1.1.0
 expect_status e2e-1 SUCCEEDED
@@ -142,9 +142,21 @@ in_data grep -qx migrated-to-1.1.0 /data/servio.db || fail "1.1.0 did not migrat
 serving_id=$(inspect_web '{{.Id}}')
 database_sha=$(in_data sha256sum /data/servio.db)
 
-echo "== update 1.1.0 -> 1.2.0 (broken release)"
+echo "== update 1.1.0 -> 1.2.0 (broken release), socket proxy killed during HEALTH_CHECK"
+proxy=$("${COMPOSE[@]}" ps --quiet docker-proxy)
+outages_before=$(updater_log_count "Docker is not answering")
 request_update e2e-2 1.2.0
+wait_for 120 "the updater to wait for 1.2.0's health check" updater_logged "HEALTH_CHECK: Waiting for servio-web ($REPO:1.2.0)"
+# No restart policy while it is down, so the outage lasts until the updater notices.
+docker update --restart no "$proxy" >/dev/null
+docker kill "$proxy" >/dev/null
+noticed_outage() { (($(updater_log_count "Docker is not answering") > outages_before)); }
+wait_for 30 "the updater to notice the proxy is gone" noticed_outage
+# The killed proxy left its socket file behind; the restarted one must replace it.
+docker start "$proxy" >/dev/null
+docker update --restart unless-stopped "$proxy" >/dev/null
 expect_status e2e-2 ROLLED_BACK
+[[ $(proxy_call GET /_ping) == 200 ]] || fail "the restarted proxy does not answer"
 [[ $(inspect_web '{{.Id}}') == "$serving_id" ]] || fail "a different container serves after the rollback"
 [[ $(inspect_web '{{index .Config.Labels "org.opencontainers.image.version"}} {{.State.Running}}') == "1.1.0 true" ]] || fail "1.1.0 is not running after the rollback"
 [[ $(inspect_web '{{.HostConfig.RestartPolicy.Name}}') == unless-stopped ]] || fail "the rollback did not restore the restart policy"
@@ -157,9 +169,7 @@ in_backups ls -a /backups | grep -q '^servio-1.1.0-.*\.db$' || fail "no backup o
 
 echo "== update 1.1.0 -> 1.3.0 (broken), updater killed during HEALTH_CHECK"
 request_update e2e-3 1.3.0
-# Not `grep -q`: with pipefail, a grep that stops reading early fails the pipeline.
-waiting_for_1_3_0() { docker logs "$(updater_id)" 2>&1 | grep -F "HEALTH_CHECK: Waiting for servio-web ($REPO:1.3.0)" >/dev/null; }
-wait_for 120 "the updater to wait for 1.3.0's health check" waiting_for_1_3_0
+wait_for 120 "the updater to wait for 1.3.0's health check" updater_logged "HEALTH_CHECK: Waiting for servio-web ($REPO:1.3.0)"
 docker kill "$(updater_id)" >/dev/null
 "${COMPOSE[@]}" up --detach updater
 expect_status e2e-3 ROLLED_BACK
@@ -169,6 +179,8 @@ in_data cat /data/state/updater/status.json | jq -e '.message | contains("Recove
 [[ $(inspect_web '{{index .Config.Labels "org.opencontainers.image.version"}} {{.State.Running}}') == "1.1.0 true" ]] || fail "1.1.0 is not running after the recovery"
 [[ $(in_data sha256sum /data/servio.db) == "$database_sha" ]] || fail "the recovery did not restore the database byte for byte"
 [[ -z $(docker ps -aq --filter label=org.opencontainers.image.version=1.3.0) ]] || fail "the 1.3.0 container was left behind"
+in_data test -f /data/ran-1.3.0 || fail "1.3.0 never ran, so the recovery proved nothing"
+! in_data test -e /data/servio.db-journal || fail "the hot journal 1.3.0 left was not removed"
 
 echo "== updater container health (liveness stamp on /backups)"
 wait_for 90 "the updater to be healthy" updater_is_healthy

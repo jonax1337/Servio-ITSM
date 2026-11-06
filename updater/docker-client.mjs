@@ -34,6 +34,23 @@ export class DockerApiError extends Error {
 }
 
 /**
+ * Docker (or the socket proxy in front of it) could not be reached or dropped
+ * the connection: refused, missing socket, reset, idle. The request may or may
+ * not have reached the daemon.
+ */
+export class DockerUnreachableError extends Error {
+  /**
+   * @param {string} message
+   * @param {string | undefined} code the socket error code, e.g. ECONNREFUSED
+   */
+  constructor(message, code) {
+    super(message);
+    this.name = "DockerUnreachableError";
+    this.code = code;
+  }
+}
+
+/**
  * HTTP to the Docker daemon: over its unix socket (or a Windows named pipe), or over TCP.
  *
  * @param {DockerEndpoint & { idleTimeoutMs?: number }} options
@@ -55,7 +72,11 @@ export function createTransport({ idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, ...en
       request.setTimeout(idleTimeoutMs, () => {
         request.destroy(new Error(`Docker socket idle for ${idleTimeoutMs} ms (${method} ${path})`));
       });
-      request.on("error", reject);
+      request.on("error", (/** @type {NodeJS.ErrnoException} */ error) => {
+        // An aborted pull is the caller's decision, not an unreachable daemon.
+        if (error.name === "AbortError") reject(error);
+        else reject(new DockerUnreachableError(`${method} ${path}: ${error.message}`, error.code));
+      });
       request.end(body);
     });
 }

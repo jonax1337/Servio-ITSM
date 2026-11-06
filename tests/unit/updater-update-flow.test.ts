@@ -11,6 +11,7 @@ import {
   OLD_DB,
   OLD_VERSION,
   createHarness,
+  unreachable,
   type Harness,
 } from "./updater-test-kit";
 
@@ -414,12 +415,54 @@ describe("update flow: Docker not answering during a rollback (review item 2)", 
   it("waits for Docker and finishes the rollback instead of asking for manual action", async () => {
     harness.docker.newContainerPlan = "never-healthy";
     let refusals = 0;
-    harness.docker.failOn("start", new Error("connect ECONNREFUSED /run/docker-api/docker.sock"), (args) => !args[0].startsWith("new-") && ++refusals <= 3);
+    harness.docker.failOn("start", unreachable(), (args) => !args[0].startsWith("new-") && ++refusals <= 3);
     await runRequest();
 
     const status = await harness.readStatus();
     expect(status.state).toBe("ROLLED_BACK");
     expect(harness.logLines.some((line) => line.includes("Docker is not answering"))).toBe(true);
+  });
+
+  it("retries a 503 from the proxy as well", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    let refusals = 0;
+    harness.docker.failOn("start", new DockerApiError("Service Unavailable", 503), (args) => !args[0].startsWith("new-") && ++refusals <= 2);
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+  });
+
+  it("does not wait for a 500, which is usually final (review S1)", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    harness.docker.failOn("start", new DockerApiError("OCI runtime create failed", 500), (args) => !args[0].startsWith("new-"));
+    await runRequest();
+
+    expect((await harness.readStatus()).message).toContain("ROLLBACK FAILED");
+    // The new container's start, then a single attempt for the old one.
+    expect(harness.docker.callsTo("start").filter((call) => call === `start ${CONTAINER_NAME}`)).toHaveLength(2);
+  });
+
+  it("keeps the journal and finishes the rollback on a later poll when Docker stays away past the retry window (review S2)", async () => {
+    harness.docker.newContainerPlan = "never-healthy";
+    let dockerAway = false;
+    harness.docker.onStart = async (container) => {
+      if (!container.Id.startsWith("new-")) return;
+      await writeFile(harness.dbFile, "migrated-by-the-new-version");
+      dockerAway = true;
+    };
+    harness.docker.failOn("ping", unreachable(), () => dockerAway);
+    await runRequest();
+
+    const waiting = await harness.readStatus();
+    expect(["SUCCEEDED", "FAILED", "ROLLED_BACK"]).not.toContain(waiting.state);
+    expect(waiting.message).toContain("retried from the journal");
+    expect((await readdir(harness.backupDir)).filter((name) => name.startsWith(".journal"))).toEqual([".journal.json"]);
+
+    dockerAway = false;
+    await harness.flow.processPendingRequest();
+    expect((await harness.readStatus()).state).toBe("ROLLED_BACK");
+    expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
+    expect((await readdir(harness.backupDir)).filter((name) => name.startsWith(".journal"))).toEqual([]);
   });
 
   it("does not retry a real answer from Docker", async () => {
@@ -537,16 +580,29 @@ describe("update flow: rollback", () => {
     await expect(stat(`${harness.dbFile}-journal`)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rolls back with the database when the new container dies right after becoming healthy (review item 5)", async () => {
+  it.each([
+    ["crashes and its restart policy restarts it", "crashes-after-healthy", "unless-stopped", "is restarting right after becoming healthy"],
+    ["crashes and has no restart policy", "crashes-after-healthy", "no", "stopped (exit code 137) right after becoming healthy"],
+    ["was restarted between two polls and is healthy again", "restarted-after-healthy", "unless-stopped", "was restarted right after becoming healthy"],
+  ] as const)("rolls back with the database when the new container %s (review M1)", async (_label, plan, policy, reason) => {
+    harness.docker.byName(CONTAINER_NAME)!.HostConfig.RestartPolicy = { Name: policy };
     corruptDatabaseOnStart(harness);
-    harness.docker.newContainerPlan = "dies-after-healthy";
+    harness.docker.newContainerPlan = plan;
     await runRequest();
 
     const status = await harness.readStatus();
     expect(status.state).toBe("ROLLED_BACK");
-    expect(status.message).toContain("stopped or was replaced right after becoming healthy");
+    expect(status.message).toContain(reason);
     expect(await readFile(harness.dbFile)).toEqual(OLD_DB);
     expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`${IMAGE_REPO}:${OLD_VERSION}`);
+  });
+
+  it("counts the switch as done only after two more healthy polls", async () => {
+    await runRequest();
+
+    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+    // One poll until healthy, then two soak polls, each one health interval apart.
+    expect(harness.elapsedMs()).toBe(3 * harness.config.healthIntervalMs);
   });
 
   it("rolls back when the new container exits while health is being checked", async () => {

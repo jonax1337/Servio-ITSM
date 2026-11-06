@@ -159,9 +159,11 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
 5. **SWITCHING**: rename the old container to `<name>-pre-<fromVersion>`, create the new one under the original
    name from the old container's configuration (with its original restart policy and the label
    `servio.updater.request=<request id>`), connect additional networks, start it.
-6. **HEALTH_CHECK**: poll until Docker reports `healthy`, then check once more that the new container still
-   holds the name and runs. An exit, a restart or `unhealthy` fails the check; a container without HEALTHCHECK
-   counts as healthy after 15 s running.
+6. **HEALTH_CHECK**: poll until Docker reports `healthy`, then poll twice more (one health interval apart): the
+   new container must still hold the name, run, not be restarting, still be `healthy`, and be the same instance
+   (unchanged `StartedAt` and `RestartCount`). The new container inherits the restart policy, so a crash right
+   after the first `healthy` shows up as a restart, not as a stopped container; either fails the check. So do an
+   exit and `unhealthy`; a container without HEALTHCHECK counts as healthy after 15 s running.
 7. **SUCCEEDED**: remove the old container.
 8. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
    that did not exist at backup time, e.g. the hot `-journal` of a migration that was killed), rename the old
@@ -172,9 +174,12 @@ The final status is written before the journal is removed, so a crash in between
 a manual-action outcome sets the journal aside first, then reports.
 
 Docker calls that are safe to repeat (inspect, start, stop, update, remove, ping, and the rollback's rename back)
-are retried for up to 3 minutes when Docker or the proxy does not answer or answers 5xx, so a restarting proxy
-does not turn a rollback or recovery into `ROLLBACK FAILED`. A 4xx answer is final. Pull, create, connect and the
-forward rename are not repeated.
+are retried for up to 3 minutes when the connection to Docker or the proxy fails (refused, missing socket, reset,
+idle) or the answer is 502/503/504. Any other answer, including a 500 (port already allocated, OCI runtime
+error), is final. Pull, create, connect and the forward rename are not repeated. If Docker is still away after
+those 3 minutes, a rollback (or the end of a recovered switch) is not reported as failed: the status keeps its
+step with a note, the journal stays where it is (so updates stay blocked), and every poll retries it from the
+journal until Docker answers.
 
 ### Crash recovery
 
@@ -191,15 +196,17 @@ reverts the work:
   carries this request's label and the new image), restore the database, rename the old container back, start
   it → `ROLLED_BACK`.
 - step `RESTORED`: as above without restoring again (the old container may already have written new data).
-- step `SWITCHED` (new container was healthy): remove the old container → `SUCCEEDED`.
+- step `SWITCHED` (new container was healthy): remove the old container → `SUCCEEDED`, provided the new
+  container is still the instance that passed the health check (same `StartedAt`/`RestartCount`, running, healthy).
 
 Recovery acts only while Docker still matches the journal: the old container exists (and is stopped while a
 restore is due), the managed name is held by nobody, the old container or this update's replacement, and after a
 healthy switch the new container is running and the old one is not. Otherwise it changes nothing and reports
 `MANUAL ACTION REQUIRED — the containers no longer match the update journal`. That and a failed rollback
 (`ROLLBACK FAILED — manual action required`) set the journal aside as `BACKUP_DIR/.journal.manual-<time>.json`
-(the message names the file and, since the old container may still have restart policy `no`, the
-`docker update --restart …` command that puts its policy back);
+(the message names the file, the database backup and, since the old container may still have restart policy
+`no`, the `docker update --restart …` command that puts its policy back; if the journal cannot be moved, the
+message says so and the updater keeps replaying it on every poll);
 it is never replayed, and **further updates are refused until you delete it**. Once the containers are the way
 you want them:
 

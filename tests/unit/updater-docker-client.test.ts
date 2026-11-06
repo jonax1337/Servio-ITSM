@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_API_VERSION,
   DockerApiError,
+  DockerUnreachableError,
   createDockerClient,
   jsonFrames,
   type DockerTransport,
@@ -83,7 +84,7 @@ describe("docker client over a local socket", () => {
     await new Promise((resolve) => server.close(resolve));
     server = createServer();
 
-    await expect(client().ping()).rejects.toThrow();
+    await expect(client().ping()).rejects.toBeInstanceOf(DockerUnreachableError);
   });
 
   it("prefixes every API call with the configured version", async () => {
@@ -229,7 +230,8 @@ describe("docker client: pull deadline and TCP endpoint", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     controller.abort(new Error("deadline"));
 
-    await expect(pull).rejects.toThrow();
+    // The caller's own abort, not an unreachable daemon: it must not be retried.
+    await expect(pull).rejects.toMatchObject({ name: "AbortError" });
     expect(requests).toHaveLength(1);
   });
 

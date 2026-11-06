@@ -4,7 +4,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DockerApiError } from "../../updater/docker-client.mjs";
+import { DockerApiError, DockerUnreachableError } from "../../updater/docker-client.mjs";
 import type { DockerClient } from "../../updater/docker-client.mjs";
 import { loadConfig } from "../../updater/config.mjs";
 import { createUpdateFlow } from "../../updater/update-flow.mjs";
@@ -16,8 +16,15 @@ export const NEW_VERSION = "0.3.0";
 export const OLD_DB = Buffer.from("old-database-bytes");
 export const OLD_WAL = Buffer.from("old-wal-bytes");
 
-/** What a container does after `start`: becomes healthy, never does, exits, or exits right after becoming healthy. */
-type Plan = "healthy" | "never-healthy" | "unhealthy" | "exits" | "dies-after-healthy";
+/**
+ * What a container does after `start`: becomes healthy, never does, turns unhealthy, exits, crashes right after
+ * becoming healthy (Docker then restarts it if its restart policy says so), or was restarted between two polls
+ * and is already healthy again.
+ */
+type Plan = "healthy" | "never-healthy" | "unhealthy" | "exits" | "crashes-after-healthy" | "restarted-after-healthy";
+
+/** Restart policies under which Docker restarts a container that exited on its own. */
+const RESTARTING_POLICIES = new Set(["always", "unless-stopped", "on-failure"]);
 
 export interface FakeContainer {
   Id: string;
@@ -27,10 +34,14 @@ export interface FakeContainer {
   HostConfig: Record<string, any>;
   NetworkSettings: { Networks: Record<string, any> };
   Mounts: any[];
-  State: { Running: boolean; Restarting: boolean; ExitCode: number; Health?: { Status: string } };
+  State: { Running: boolean; Restarting: boolean; ExitCode: number; StartedAt?: string; Health?: { Status: string } };
+  RestartCount?: number;
 }
 
 const notFound = (what: string) => new DockerApiError(`No such container: ${what}`, 404);
+
+/** What the Docker client throws when the socket proxy is down. */
+export const unreachable = () => new DockerUnreachableError("connect ECONNREFUSED /run/docker-api/docker.sock", "ECONNREFUSED");
 
 export class FakeDocker {
   containers = new Map<string, FakeContainer>();
@@ -50,6 +61,7 @@ export class FakeDocker {
   private failures: Array<{ call: string; when: (args: any[]) => boolean; error: Error }> = [];
   private plans = new Map<string, { plan: Plan; inspections: number }>();
   private created = 0;
+  private starts = 0;
 
   add(container: FakeContainer): FakeContainer {
     this.containers.set(container.Id, container);
@@ -93,11 +105,10 @@ export class FakeDocker {
     const behaviour = this.plans.get(container.Id);
     if (behaviour && container.State.Running) {
       behaviour.inspections += 1;
-      if (["healthy", "dies-after-healthy"].includes(behaviour.plan) && behaviour.inspections >= 2) container.State.Health = { Status: "healthy" };
-      if (behaviour.plan === "dies-after-healthy" && behaviour.inspections >= 3) {
-        container.State.Running = false;
-        container.State.ExitCode = 137;
-      }
+      const becomesHealthy = ["healthy", "crashes-after-healthy", "restarted-after-healthy"].includes(behaviour.plan);
+      if (becomesHealthy && behaviour.inspections === 2) container.State.Health = { Status: "healthy" };
+      if (behaviour.plan === "crashes-after-healthy" && behaviour.inspections >= 3) this.crash(container, behaviour.inspections);
+      if (behaviour.plan === "restarted-after-healthy" && behaviour.inspections === 3) this.restartInPlace(container, "healthy");
       if (behaviour.plan === "unhealthy" && behaviour.inspections >= 2) container.State.Health = { Status: "unhealthy" };
       if (behaviour.plan === "exits" && behaviour.inspections >= 2) {
         container.State.Running = false;
@@ -105,6 +116,22 @@ export class FakeDocker {
       }
     }
     return structuredClone(container);
+  }
+
+  /** The main process died: seen first as restarting, then as a fresh instance whose health check starts over. */
+  private crash(container: FakeContainer, inspection: number) {
+    if (!RESTARTING_POLICIES.has(container.HostConfig.RestartPolicy?.Name)) {
+      container.State = { ...container.State, Running: false, ExitCode: 137 };
+    } else if (inspection === 3) {
+      container.State = { ...container.State, Restarting: true, ExitCode: 137 };
+    } else if (inspection === 4) {
+      this.restartInPlace(container, "starting");
+    }
+  }
+
+  private restartInPlace(container: FakeContainer, health: string) {
+    container.RestartCount = (container.RestartCount ?? 0) + 1;
+    container.State = { Running: true, Restarting: false, ExitCode: 0, StartedAt: `restart-${container.RestartCount}`, Health: { Status: health } };
   }
 
   async inspectImage(ref: string) {
@@ -140,7 +167,9 @@ export class FakeDocker {
   async startContainer(nameOrId: string) {
     const container = this.require(nameOrId);
     this.record("start", container.Name.slice(1));
-    container.State = { Running: true, Restarting: false, ExitCode: 0, Health: { Status: "starting" } };
+    this.starts += 1;
+    container.State = { Running: true, Restarting: false, ExitCode: 0, StartedAt: `start-${this.starts}`, Health: { Status: "starting" } };
+    container.RestartCount = 0;
     const isNew = container.Id.startsWith("new-");
     this.plans.set(container.Id, { plan: isNew ? this.newContainerPlan : this.restartPlan, inspections: 0 });
     await this.onStart(container);
@@ -173,6 +202,7 @@ export class FakeDocker {
       NetworkSettings: { Networks: { ...(NetworkingConfig?.EndpointsConfig ?? {}) } },
       Mounts: [],
       State: { Running: false, Restarting: false, ExitCode: 0 },
+      RestartCount: 0,
     });
     return { Id: container.Id };
   }
@@ -231,7 +261,8 @@ export function servioContainer(
       },
     },
     Mounts: [{ Type: "volume", Name: "servio_servio-data", Destination: "/data", RW: true }],
-    State: { Running: true, Restarting: false, ExitCode: 0, Health: { Status: "healthy" } },
+    State: { Running: true, Restarting: false, ExitCode: 0, StartedAt: "2026-11-01T08:00:00Z", Health: { Status: "healthy" } },
+    RestartCount: 0,
     ...rest,
   };
 }

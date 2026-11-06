@@ -1,7 +1,7 @@
 // Retries Docker calls while Docker, or the socket proxy in front of it, is
 // briefly unreachable (a restart of the proxy, a daemon under load). A rollback
 // that gave up on the first refused connection would leave the app down.
-import { DockerApiError } from "./docker-client.mjs";
+import { DockerApiError, DockerUnreachableError } from "./docker-client.mjs";
 
 /** Calls that are safe to repeat: repeating one that already took effect changes nothing. */
 const REPEATABLE_METHODS = new Set(["ping", "inspectContainer", "inspectImage", "stopContainer", "startContainer", "updateContainer", "removeContainer"]);
@@ -11,13 +11,19 @@ const REPEATABLE_METHODS = new Set(["ping", "inspectContainer", "inspectImage", 
  *   log: (line: string) => void }} RetryOptions
  */
 
+/** A proxy without a reachable daemon, or a daemon that is overloaded or restarting. */
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+
 /**
- * Connection failures and 5xx answers are transient; any other answer is the daemon's real reply.
+ * Only a connection that failed, or a gateway answer, is worth waiting for. A 500
+ * is usually final (port already allocated, OCI runtime error) and so is anything
+ * that is not a Docker call at all (a file error during a restore).
  *
  * @param {unknown} error
  */
 export function isTransientDockerError(error) {
-  return error instanceof DockerApiError ? error.status >= 500 : true;
+  if (error instanceof DockerUnreachableError) return true;
+  return error instanceof DockerApiError && TRANSIENT_STATUSES.has(error.status);
 }
 
 /**

@@ -6,19 +6,13 @@ services:
     image: localhost:5000/servio-e2e:1.0.0
     env_file: !reset []
     depends_on: !reset {}
-    # Same shape as production: a compose-level health check that the updater
-    # carries over to the new container; HEALTHY comes from the image. A broken
-    # release turns unhealthy after about 10 s, long enough to kill the updater
-    # while it waits.
-    healthcheck:
-      test: ["CMD-SHELL", "[ \"$$HEALTHY\" = true ] && wget -q -O /dev/null http://127.0.0.1:3000/"]
-      interval: 2s
-      timeout: 2s
-      retries: 5
-      start_period: 0s
+    # Each stand-in release brings its own HEALTHCHECK (some fail sooner than
+    # others), so the compose-level one is dropped and the updater carries no
+    # container-level health check over.
+    healthcheck: !reset {}
 
   updater:
     image: servio-updater:e2e
     environment:
       SERVIO_IMAGE: localhost:5000/servio-e2e
-      HEALTH_TIMEOUT_SECONDS: "60"
+      HEALTH_TIMEOUT_SECONDS: "90"
