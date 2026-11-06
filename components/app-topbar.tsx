@@ -18,11 +18,18 @@ import { CreateMenu } from "@/components/create-menu";
 import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
 import { AI_ASSISTANT_NAME, changeRef, problemRef, releaseRef } from "@/lib/constants";
+import { requiredRoleFor, roleAtLeast } from "@/lib/route-guard";
 
 const SEGMENT_LABELS: Record<string, string> = {
   assistant: AI_ASSISTANT_NAME,
   oncall: "On-call",
   freeze: "Freeze windows",
+};
+
+/** Ancestor paths without a page of their own: the crumb opens the tab the detail page's back button opens. */
+const CRUMB_HREF: Record<string, string> = {
+  "/contracts/licenses": "/contracts?tab=licenses",
+  "/contracts/vendors": "/contracts?tab=vendors",
 };
 
 /** Detail segments whose numeric id has a ref style; other numeric ids read "#id". */
@@ -63,18 +70,22 @@ export function AppTopbar({
             <BreadcrumbLink render={<Link href="/" />}>Servio</BreadcrumbLink>
           </BreadcrumbItem>
           {segments.map((seg, i) => {
-            const href = "/" + segments.slice(0, i + 1).join("/");
+            const path = "/" + segments.slice(0, i + 1).join("/");
+            const href = CRUMB_HREF[path] ?? path;
             const last = i === segments.length - 1;
+            const canOpen = roleAtLeast(user.role, requiredRoleFor(path));
             return (
-              <Fragment key={href}>
+              <Fragment key={path}>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
                   {last ? (
                     <BreadcrumbPage>{label(seg, segments[i - 1])}</BreadcrumbPage>
-                  ) : (
+                  ) : canOpen ? (
                     <BreadcrumbLink render={<Link href={href} />}>
                       {label(seg, segments[i - 1])}
                     </BreadcrumbLink>
+                  ) : (
+                    <span>{label(seg, segments[i - 1])}</span>
                   )}
                 </BreadcrumbItem>
               </Fragment>
