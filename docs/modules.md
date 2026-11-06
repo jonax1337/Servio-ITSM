@@ -100,7 +100,7 @@ Actions include `createTicket`, `updateTicketField` (incl. switching `type` — 
 
 **Refusals & list order:** ticket actions (`updateTicketField`, `setTicketResolution`, `setTicketPending`) return `{ ok, error }` and report why a change was refused (e.g. not a member of the ticket's group, awaiting approval, workflow disallows it) instead of silently doing nothing. On the ticket list, priority sorts by severity and status by lifecycle order, not alphabetically (`lib/ticket-list.ts` `sortByRank`).
 
-**Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar to set assignee/team/priority/status on many tickets at once (`bulkUpdateTickets` re-runs `updateTicketField` per ticket, so transitions/SLA/automations stay correct). All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
+**Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar whose **Edit fields…** dialog (`components/tickets/bulk-edit-dialog.tsx`) sets status, priority, group, assignee and category together and applies them once, ending in a "5 tickets updated" toast. `bulkUpdateTickets` takes the ids plus a JSON `patch` (validated and ordered by `lib/bulk-edit.ts` — group before assignee, no statuses that need a reason) and re-runs `updateTicketField` per ticket and field, so authorization, transitions, SLA, audit and automations stay correct; a ticket that refuses any field counts as "not changed" in the summary. All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
 
 ### Problems
 

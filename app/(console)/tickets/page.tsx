@@ -153,8 +153,11 @@ export default async function TicketsPage({
             sort={sort}
             dir={dir}
             canBulk={!!me && isAgent(me.role as Role)}
-            agents={opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }))}
-            groups={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+            bulkOptions={{
+              agents: opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
+              groups: opts.groups.map((g) => ({ value: g.id, label: g.name })),
+              categories: opts.categories.map((c) => ({ value: c.id, label: c.name })),
+            }}
           />
         )}
 
