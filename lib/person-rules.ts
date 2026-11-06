@@ -26,3 +26,8 @@ export function passwordError(password: string): string | null {
   }
   return null;
 }
+
+/** The distinct, non-empty group ids a person form posted, in the order chosen. */
+export function distinctIds(values: FormDataEntryValue[]): string[] {
+  return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))];
+}

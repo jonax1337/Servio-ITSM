@@ -323,13 +323,13 @@ Groups are the unit of assignment/auto-routing (they replaced Queues). Includes 
 | Components | `components/groups/` — `group-form`, `create-group-dialog`, `auto-assign-control` |
 
 ### People
-User directory. Users are typically provisioned via syncs; ADMINs can also add and edit people manually through a dialog (no `new/` route). Fields owned by a sync source may be overwritten on the next sync, and the detail page says so. Users have no location field (the `User` model has no location column).
+User directory. Users are typically provisioned via syncs; ADMINs can also add and edit people manually through a dialog (no `new/` route); the *New person* dialog sets the role and a **Groups** multi-select (`components/multi-combobox.tsx`), and `createPerson` creates the person and their group memberships in one write. Fields owned by a sync source may be overwritten on the next sync, and the detail page says so. Users have no location field (the `User` model has no location column).
 
 | | |
 | --- | --- |
 | Routes | `app/(console)/people/page.tsx`, `[id]/page.tsx` |
 | Actions | `lib/actions/people.ts` — `createPerson`, `updatePerson` (ADMIN, audited), `updateUserField` |
-| Rules | `lib/person-rules.ts` — pure email normalisation/shape and initial-password checks (min 12 chars, max 72 bytes) |
+| Rules | `lib/person-rules.ts` — pure email normalisation/shape, initial-password checks (min 12 chars, max 72 bytes) and `distinctIds` for the posted group ids |
 | Components | `components/people/` — `person-dialog`, `user-properties` |
 
 ### Dashboards
