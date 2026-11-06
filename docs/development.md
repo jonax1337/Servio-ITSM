@@ -21,7 +21,7 @@ See also: [architecture.md](./architecture.md) · [configuration.md](./configura
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| **Node.js** | **20.x LTS or newer** | `@types/node` is pinned to `^20`; Next.js 16 requires Node 18.18+, but Node 20+ is what Servio is developed and tested against. |
+| **Node.js** | **24.x LTS (≥ 24.22.1)** | What CI and both images run. `package.json#engines` enforces it, because `officeparser` and `unpdf` need it; `@types/node` is pinned to `^24`. |
 | **pnpm** | **11.x** | The repo declares `"packageManager": "pnpm@11.0.8"`. Use pnpm — not npm/yarn — so the lockfile and workspace settings stay consistent. |
 | Git | any recent | — |
 | SQLite | bundled | Dev uses a local SQLite file (`DATABASE_URL="file:./dev.db"`); no separate DB server needed. Postgres is the production target — see [configuration.md](./configuration.md). |

@@ -18,7 +18,7 @@ Runs on every pull request, on every push to `main`, and on demand
 | **Docker image builds** | The [`Dockerfile`](../Dockerfile) and [`updater/Dockerfile`](../updater/Dockerfile) build; the app container refuses a database with migrations it does not ship, then boots (migrations + seed via [`docker/entrypoint.sh`](../docker/entrypoint.sh)) and serves `/login`. |
 | **Updater end-to-end** | [`tests/updater-e2e/run.sh`](../tests/updater-e2e/run.sh) runs the real updater and socket proxy against a local registry: an update to a good release succeeds, and a broken release is rolled back with the database restored byte-for-byte. See [updates.md](./updates.md). |
 
-CI uses Node 22 (the base of the production image) and the pnpm version pinned
+CI uses Node 24 LTS (the base of the production image) and the pnpm version pinned
 in `package.json#packageManager`. To reproduce a failing job locally:
 
 ```bash
@@ -137,6 +137,5 @@ pushes the images and creates the release.
 (grouped), npm packages (minor and patch grouped; at most 5 open PRs) and the
 Docker base image, with `ci:` and `chore:` commit prefixes. Majors of Prisma and
 imapflow and Node image majors are ignored on purpose: they need their own
-migration branch, and the image follows the Node LTS line by hand. Majors of
-`@types/node` and `unpdf` (2.x requires Node 24) are ignored for the same reason;
-they move together with the next Node LTS bump.
+migration branch, and the image follows the Node LTS line by hand. `@types/node`
+majors are ignored for the same reason; they move with the next Node LTS bump.

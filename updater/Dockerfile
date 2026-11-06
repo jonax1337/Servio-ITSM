@@ -5,7 +5,7 @@
 # never sees the Docker socket: it talks to the socket proxy's filtered unix
 # socket (DOCKER_SOCKET=/run/docker-api/docker.sock, see docker-compose.release.yml).
 # Needs no network and exposes no ports. See updater/README.md.
-FROM node:22-alpine
+FROM node:24-alpine
 
 # Named volumes take their initial ownership from the image path they are
 # mounted over. /backups is private to the updater. /data is shared with the

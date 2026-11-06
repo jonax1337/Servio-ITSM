@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  NODE_VERSION: "22" # matches the node:22-slim base of the production image
+  NODE_VERSION: "24" # matches the node:24-slim base of the production image
   NEXT_TELEMETRY_DISABLED: "1"
   # Throwaway values: the build and the tests need them set, never real.
   DATABASE_URL: file:./ci.db
