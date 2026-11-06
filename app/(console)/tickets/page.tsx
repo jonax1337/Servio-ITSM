@@ -4,10 +4,11 @@ import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getVisibleSavedViews } from "@/lib/board-service";
-import { SavedViewsBar } from "@/components/saved-views-bar";
+import { SavedViewsBar, type BuiltInView } from "@/components/saved-views-bar";
+import { SLA_VIEW_META } from "@/lib/sla-views";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
-import { findTicketWindow, ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
+import { findTicketWindow, loadTicketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -25,6 +26,11 @@ import {
 export const metadata: Metadata = { title: "Tickets" };
 export const dynamic = "force-dynamic";
 
+const BUILT_IN_VIEWS: BuiltInView[] = [
+  { id: "sla-breached", name: SLA_VIEW_META.breached.label, icon: "AlarmClockOff", filters: { sla: "breached" } },
+  { id: "sla-at-risk", name: SLA_VIEW_META.at_risk.label, icon: "AlarmClock", filters: { sla: "at_risk" } },
+];
+
 export default async function TicketsPage({
   searchParams,
 }: {
@@ -40,7 +46,7 @@ export default async function TicketsPage({
 
   // Filters, search and sort live in lib/ticket-list.ts — shared with the CSV export
   // and matching the dashboard widgets' drill-down params.
-  const query = ticketListQuery(sp);
+  const query = await loadTicketListQuery(sp);
   const { where } = query;
   const sort = getParam(sp, "sort") ?? "updatedAt";
   const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
@@ -118,7 +124,8 @@ export default async function TicketsPage({
         <SavedViewsBar
           entity="ticket"
           basePath="/tickets"
-          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service"]}
+          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service", "sla"]}
+          builtInViews={BUILT_IN_VIEWS}
           views={savedViews}
           currentUserId={me?.id ?? ""}
           canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
