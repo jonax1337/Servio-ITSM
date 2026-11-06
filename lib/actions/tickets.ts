@@ -123,6 +123,7 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refused(INVALID_CHANGE);
   const { id, field, value, expected } = parsed.data;
+  const isUndo = expected !== undefined;
 
   const isRelation = field.endsWith("Id");
   const asStored = (raw: string) => (isRelation && (raw === "none" || raw === "") ? null : raw);
@@ -213,10 +214,10 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
 
   // One conditional statement, so the check and the write cannot be split by another edit.
   const written = await db.ticket.updateMany({
-    where: { id, ...(expected !== undefined && { [field]: asStored(expected) }) },
+    where: { id, ...(isUndo && { [field]: asStored(expected) }) },
     data: patch,
   });
-  if (written.count === 0) return refused(expected !== undefined ? CHANGED_SINCE : TICKET_NOT_FOUND);
+  if (written.count === 0) return refused(isUndo ? CHANGED_SINCE : TICKET_NOT_FOUND);
   const ticket = await db.ticket.findUniqueOrThrow({ where: { id }, include: { requester: true, assignee: true } });
   await withdrawPendingApprovals(id, patch);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
@@ -227,10 +228,14 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
     await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand())) });
   }
 
-  await runAutomations("TICKET_UPDATED", id);
-  // After automations may have (re)routed the ticket to a team, auto-assign it
-  // (no-op if it already has an assignee or the team has no strategy).
-  if (field === "groupId" && v) await autoAssignTicket(id);
+  // An Undo puts back a state the user already saw: re-running routing would overwrite it,
+  // e.g. auto-assign a member before the previous assignee is restored.
+  if (!isUndo) {
+    await runAutomations("TICKET_UPDATED", id);
+    // After automations may have (re)routed the ticket to a team, auto-assign it
+    // (no-op if it already has an assignee or the team has no strategy).
+    if (field === "groupId" && v) await autoAssignTicket(id);
+  }
 
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
