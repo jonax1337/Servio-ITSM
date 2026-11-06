@@ -34,6 +34,7 @@ against the code and kept in sync with the repository. New here? Start with
 | Doc | What it covers |
 | --- | --- |
 | [deployment.md](./deployment.md) | Moving to PostgreSQL, production environment, build/run, persistent storage, and scheduled syncs. |
+| [updates.md](./updates.md) | Self-update with maintenance windows: how releases are found and installed by the updater sidecar, the maintenance page, setup, security and rollback. |
 | [releasing.md](./releasing.md) | The CI checks on every PR, release-please versioning, the GitHub Release and the multi-arch GHCR image, and Dependabot. |
 
 ## Contributing

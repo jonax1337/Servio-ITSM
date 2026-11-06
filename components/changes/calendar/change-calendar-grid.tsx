@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { format, isSameDay, isSameMonth } from "date-fns";
-import { Snowflake, TriangleAlert } from "lucide-react";
+import { Snowflake, TriangleAlert, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CHANGE_STATUS_META, RISK_META, TONE_CLASSES, changeRef, metaFor } from "@/lib/constants";
 import {
@@ -12,7 +12,7 @@ import {
   type ScheduledChange,
   type TimeWindow,
 } from "@/lib/change-schedule-rules";
-import type { FreezeWindowRow } from "@/lib/change-schedule";
+import type { FreezeWindowRow, MaintenanceWindowRow } from "@/lib/change-schedule";
 
 export type CalendarColorBy = "status" | "risk";
 
@@ -60,15 +60,39 @@ function FreezeLabel({ freeze }: { freeze: FreezeWindowRow }) {
   );
 }
 
-/** Month or week grid of planned change windows, with freeze windows shading the days they cover. */
+/** A maintenance window on a day it covers; links to the admin page that manages it. */
+function MaintenanceLabel({ window, href }: { window: MaintenanceWindowRow; href: string | null }) {
+  const label = (
+    <>
+      <Wrench className="size-3 shrink-0" aria-hidden />
+      <span className="truncate">{window.title}</span>
+    </>
+  );
+  const className = "flex min-w-0 items-center gap-1 text-[11px] font-medium text-sky-600 dark:text-sky-400";
+  const title = `Maintenance: ${window.title} · ${format(window.startsAt, "PP p")} – ${format(window.endsAt, "PP p")}`;
+  return href ? (
+    <Link href={href} title={title} className={cn(className, "hover:underline")}>
+      {label}
+    </Link>
+  ) : (
+    <span title={title} className={className}>
+      {label}
+    </span>
+  );
+}
+
+/** Month or week grid of planned change windows, with freeze and maintenance windows marking the days they cover. */
 export function ChangeCalendarGrid({
-  view, anchor, range, changes, freezes, conflictedIds, colorBy, weekHref,
+  view, anchor, range, changes, freezes, maintenance, maintenanceHref, conflictedIds, colorBy, weekHref,
 }: {
   view: CalendarView;
   anchor: Date;
   range: TimeWindow;
   changes: ScheduledChange[];
   freezes: FreezeWindowRow[];
+  maintenance: MaintenanceWindowRow[];
+  /** Where a maintenance window links to, or null when the viewer may not open it. */
+  maintenanceHref: string | null;
   conflictedIds: ReadonlySet<number>;
   colorBy: CalendarColorBy;
   /** Link to the week view containing a day (the "+N more" target in month view). */
@@ -91,6 +115,7 @@ export function ChangeCalendarGrid({
             const slot = dayWindow(day);
             const dayChanges = changes.filter((c) => windowsOverlap(scheduledWindow(c), slot));
             const dayFreezes = freezes.filter((f) => windowsOverlap({ start: f.startsAt, end: f.endsAt }, slot));
+            const dayMaintenance = maintenance.filter((m) => windowsOverlap({ start: m.startsAt, end: m.endsAt }, slot));
             const shown = isWeek ? dayChanges : dayChanges.slice(0, MONTH_CELL_CHANGE_LIMIT);
             const hidden = dayChanges.length - shown.length;
             const outsideMonth = !isWeek && !isSameMonth(day, anchor);
@@ -100,6 +125,7 @@ export function ChangeCalendarGrid({
                 className={cn(
                   "grid content-start gap-1 border-b border-r p-1.5 [&:nth-child(7n)]:border-r-0",
                   isWeek ? "min-h-64" : "min-h-28",
+                  dayMaintenance.length > 0 && "bg-sky-500/[0.07]",
                   dayFreezes.length > 0 && "bg-red-500/[0.07]",
                   outsideMonth && "bg-muted/30 text-muted-foreground",
                 )}
@@ -113,6 +139,7 @@ export function ChangeCalendarGrid({
                   {format(day, "d")}
                 </span>
                 {dayFreezes.map((freeze) => <FreezeLabel key={freeze.id} freeze={freeze} />)}
+                {dayMaintenance.map((window) => <MaintenanceLabel key={window.id} window={window} href={maintenanceHref} />)}
                 {shown.map((change) => (
                   <ChangeChip
                     key={change.id}

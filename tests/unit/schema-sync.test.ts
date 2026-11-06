@@ -20,6 +20,8 @@ import {
   LICENSE_TYPES,
   AI_INSIGHT_KINDS,
   AI_INSIGHT_STATUSES,
+  MAINTENANCE_KINDS,
+  MAINTENANCE_STATUSES,
 } from "@/lib/constants";
 
 /**
@@ -98,6 +100,8 @@ describe("ITSM ops / Sable enum comments stay in sync with lib/constants", () =>
     ["SoftwareLicense", "licenseType", LICENSE_TYPES],
     ["AiInsight", "kind", AI_INSIGHT_KINDS],
     ["AiInsight", "status", AI_INSIGHT_STATUSES],
+    ["MaintenanceWindow", "kind", MAINTENANCE_KINDS],
+    ["MaintenanceWindow", "status", MAINTENANCE_STATUSES],
   ];
 
   it.each(cases)("%s.%s documents every allowed value", (model, field, values) => {

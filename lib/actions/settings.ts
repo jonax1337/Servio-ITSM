@@ -7,6 +7,7 @@ import { encryptionAvailable } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
 import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
 import { listModels, type AiModelList } from "@/lib/ai-models";
+import { checkForUpdates, updateChecksEnabled } from "@/lib/updates";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -233,6 +234,27 @@ export async function saveUploadSettings(
     "Updated upload settings",
     "/settings/uploads",
   );
+}
+
+export async function saveUpdateSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const saved = await persist(
+    me.id,
+    [
+      { key: "UPDATE_CHECK_ENABLED", value: bool(fd, "UPDATE_CHECK_ENABLED") },
+      { key: "UPDATE_REPOSITORY", value: str(fd, "UPDATE_REPOSITORY") },
+      { key: "UPDATE_INCLUDE_PRERELEASES", value: bool(fd, "UPDATE_INCLUDE_PRERELEASES") },
+    ],
+    "Updated update-check settings",
+    "/settings/updates",
+  );
+  // The cached releases belong to the old repository / pre-release choice: look again right away.
+  if (!saved?.error && (await updateChecksEnabled())) await checkForUpdates();
+  return saved;
 }
 
 /** Models offered by a provider, loaded with the SAVED credentials (admin-only). */
