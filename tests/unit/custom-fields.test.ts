@@ -6,6 +6,7 @@ import {
   parseOptions,
   parseValues,
   validateValue,
+  valuesOfDefs,
   type CustomFieldDef,
 } from "@/lib/custom-fields";
 
@@ -133,5 +134,17 @@ describe("parseValues / entityFieldValues / parseOptions", () => {
     expect(parseOptions('["a","b"]')).toEqual(["a", "b"]);
     expect(parseOptions("[]")).toEqual([]);
     expect(parseOptions(null)).toEqual([]);
+  });
+});
+
+describe("valuesOfDefs", () => {
+  const defs = [def({ key: "env" }), def({ id: "cf2", key: "owner" })];
+
+  it("keeps the values of known fields and drops empty ones", () => {
+    expect(valuesOfDefs(defs, { env: "prod", owner: "" })).toEqual({ env: "prod" });
+  });
+
+  it("drops keys that no field defines", () => {
+    expect(valuesOfDefs(defs, { env: "prod", __proto__x: "1", other: "2" })).toEqual({ env: "prod" });
   });
 });

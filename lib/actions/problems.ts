@@ -10,10 +10,10 @@ import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { fieldLockError, resolvedAtPatch, statusRequirementError, textEditError } from "@/lib/problem-rules";
-import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
+import { assertRequiredCustomFields, entityFieldValues, isFieldVisible, valuesOfDefs, type CustomFieldDef } from "@/lib/custom-fields";
 import { canActOnTicket } from "@/lib/authz";
 import { problemTraits } from "@/lib/ai-insights-rules";
-import { missingRequiredProblemFields } from "@/lib/ai-insights-handling";
+import { problemFieldsCheck } from "@/lib/ai-insights-handling";
 import { findSimilarTickets } from "@/lib/ai-similarity-search";
 import {
   PROBLEM_STATUSES,
@@ -38,6 +38,15 @@ const createSchema = z.object({
   categoryId: optionalId,
 });
 
+/** Custom-field inputs post as `cf_<key>`; this collects them as key to value. */
+function customFieldEntries(formData: FormData): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("cf_") && typeof v === "string") values[k.slice(3)] = v;
+  }
+  return values;
+}
+
 export type ActionState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
 
 export async function createProblem(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -46,10 +55,7 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
 
   const raw = Object.fromEntries(formData) as Record<string, unknown>;
   // Custom-field inputs post as `cf_<key>` — collect them into the create data.
-  const customFields: Record<string, string> = {};
-  for (const [k, v] of formData.entries()) {
-    if (k.startsWith("cf_") && typeof v === "string") customFields[k.slice(3)] = v;
-  }
+  const customFields = customFieldEntries(formData);
   if (Object.keys(customFields).length) raw.customFields = customFields;
 
   const parsed = createSchema.safeParse(raw);
@@ -106,11 +112,38 @@ const RAISE_SELECT = {
   assigneeId: true, problemId: true, mergedIntoId: true,
 } as const;
 
+const NONE_LINKABLE = "None of these tickets can be linked: they already belong to a problem, or are outside your groups.";
+
+/** Thrown inside the transaction to roll the new problem back when another agent took every ticket first. */
+class NothingToLink extends Error {}
+
+/** The tickets among `ticketIds` that can still be linked to a new problem by `me`. */
+async function linkableTickets(me: { id: string; role: string }, ticketIds: readonly number[]) {
+  const tickets = await db.ticket.findMany({ where: { id: { in: [...ticketIds] } }, select: RAISE_SELECT });
+  const linkable = [];
+  for (const ticket of tickets) {
+    if (ticket.mergedIntoId === null && ticket.problemId === null && (await canActOnTicket(me, ticket))) linkable.push(ticket);
+  }
+  return linkable;
+}
+
+/** The custom fields a problem raised for these tickets needs filled in: required and visible for the traits it inherits. */
+export async function listRaiseProblemFields(ticketIds: number[]): Promise<CustomFieldDef[]> {
+  const me = await requireAgentUser();
+  if (!me || !ticketIds.every(Number.isInteger)) return [];
+  const linkable = await linkableTickets(me, ticketIds.slice(0, MAX_RAISED_TICKETS));
+  if (linkable.length === 0) return [];
+  const { priority, categoryId } = problemTraits(linkable);
+  const { defs } = await problemFieldsCheck(categoryId, priority);
+  const entityValues = entityFieldValues({ status: "NEW", priority, categoryId });
+  return defs.filter((def) => def.required && isFieldVisible(def, entityValues));
+}
+
 /**
  * Opens a problem for tickets (an incident, or a bulk selection) and links them in
  * one step. Tickets that already belong to a problem, are merged away or are outside
  * the agent's groups are skipped; the problem inherits priority, impact, category and
- * group from the tickets it links.
+ * group from the tickets it links. Required problem custom fields arrive as `cf_<key>`.
  */
 export async function createProblemFromTickets(formData: FormData): Promise<RaiseProblemResult> {
   const me = await requireAgentUser();
@@ -119,25 +152,37 @@ export async function createProblemFromTickets(formData: FormData): Promise<Rais
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
   const { title, description, ticketIds } = parsed.data;
 
-  const tickets = await db.ticket.findMany({ where: { id: { in: ticketIds } }, select: RAISE_SELECT });
-  const open = tickets.filter((t) => t.mergedIntoId === null && t.problemId === null);
-  const linkable = [];
-  for (const ticket of open) if (await canActOnTicket(me, ticket)) linkable.push(ticket);
-  if (linkable.length === 0) {
-    return { ok: false, error: "None of these tickets can be linked: they already belong to a problem, or are outside your groups." };
-  }
+  const linkable = await linkableTickets(me, ticketIds);
+  if (linkable.length === 0) return { ok: false, error: NONE_LINKABLE };
 
   const traits = problemTraits(linkable);
-  const missingFields = await missingRequiredProblemFields(traits.categoryId, traits.priority);
+  const submitted = customFieldEntries(formData);
+  const { defs, error: missingFields } = await problemFieldsCheck(traits.categoryId, traits.priority, submitted);
   if (missingFields) return { ok: false, error: missingFields };
+  const customFields = valuesOfDefs(defs, submitted);
 
-  const linkedIds = linkable.map((t) => t.id);
-  const problemId = await db.$transaction(async (tx) => {
-    const problem = await tx.problem.create({ data: { title, description, status: "NEW", ...traits }, select: { id: true } });
-    await tx.ticket.updateMany({ where: { id: { in: linkedIds }, problemId: null }, data: { problemId: problem.id } });
-    return problem.id;
-  });
+  const candidateIds = linkable.map((t) => t.id);
+  let created: { problemId: number; linkedIds: number[] };
+  try {
+    created = await db.$transaction(async (tx) => {
+      const problem = await tx.problem.create({
+        data: {
+          title, description, status: "NEW", ...traits,
+          ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
+        },
+        select: { id: true },
+      });
+      const claimed = await tx.ticket.updateMany({ where: { id: { in: candidateIds }, problemId: null }, data: { problemId: problem.id } });
+      if (claimed.count === 0) throw new NothingToLink();
+      const linked = await tx.ticket.findMany({ where: { problemId: problem.id }, select: { id: true } });
+      return { problemId: problem.id, linkedIds: linked.map((t) => t.id) };
+    });
+  } catch (error) {
+    if (error instanceof NothingToLink) return { ok: false, error: NONE_LINKABLE };
+    throw error;
+  }
 
+  const { problemId, linkedIds } = created;
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Problem", entityId: problemId, summary: `Created problem "${title}" from ${linkedIds.length} ticket(s)` });
   for (const id of linkedIds) {
     await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Linked to ${problemRef(problemId)}` });
@@ -145,7 +190,7 @@ export async function createProblemFromTickets(formData: FormData): Promise<Rais
   }
   revalidatePath("/problems");
   revalidatePath("/tickets");
-  return { ok: true, problemId, linked: linkable.length, skipped: ticketIds.length - linkable.length };
+  return { ok: true, problemId, linked: linkedIds.length, skipped: ticketIds.length - linkedIds.length };
 }
 
 export type SimilarIncident = { id: number; ref: string; title: string; score: number };

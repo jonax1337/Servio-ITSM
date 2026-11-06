@@ -41,11 +41,21 @@ const CLUSTER_TICKET_SELECT = {
   assigneeId: true, problemId: true, mergedIntoId: true,
 } as const;
 
+/** The active problem custom fields, with the error for the required, visible ones that `values` leave empty. */
+export async function problemFieldsCheck(
+  categoryId: string | null,
+  priority: string,
+  values: Record<string, string> = {},
+): Promise<{ defs: CustomFieldDef[]; error: string | null }> {
+  const defs = (await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } })) as CustomFieldDef[];
+  const check = assertRequiredCustomFields(defs, values, entityFieldValues({ status: "NEW", priority, categoryId }));
+  return { defs, error: check.ok ? null : check.error };
+}
+
+/** For problems opened without a form (incident clusters): required fields cannot be filled in, so the agent is sent to the manual form. */
 export async function missingRequiredProblemFields(categoryId: string | null, priority: string): Promise<string | null> {
-  const defs = await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } });
-  if (defs.length === 0) return null;
-  const check = assertRequiredCustomFields(defs as CustomFieldDef[], {}, entityFieldValues({ status: "NEW", priority, categoryId }));
-  return check.ok ? null : `${check.error} Create the problem manually instead.`;
+  const { error } = await problemFieldsCheck(categoryId, priority);
+  return error ? `${error} Create the problem manually instead.` : null;
 }
 
 /** Opens a problem for an incident cluster and links the tickets the actor may act on. */

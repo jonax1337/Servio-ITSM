@@ -180,6 +180,12 @@ export function assertRequiredCustomFields(
   return { ok: false, error: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required`, missing };
 }
 
+/** The submitted values that belong to one of `defs`, so a forged key never reaches the stored JSON. */
+export function valuesOfDefs(defs: readonly CustomFieldDef[], values: Record<string, string>): Record<string, string> {
+  const known = new Set(defs.map((def) => def.key));
+  return Object.fromEntries(Object.entries(values).filter(([key, value]) => known.has(key) && value !== ""));
+}
+
 /** Coerce a stored customFields JSON blob into a flat string->string record. */
 export function parseValues(s: string | null | undefined): Record<string, string> {
   const obj = parseJson<Record<string, unknown>>(s ?? "{}", {});

@@ -4,7 +4,11 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
-import { createProblemFromTickets, listSimilarIncidents, type SimilarIncident } from "@/lib/actions/problems";
+import {
+  createProblemFromTickets, listRaiseProblemFields, listSimilarIncidents, type SimilarIncident,
+} from "@/lib/actions/problems";
+import { FormCustomFields } from "@/components/custom-fields/form-custom-fields";
+import type { CustomFieldDef } from "@/lib/custom-fields";
 import { problemRef } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -54,6 +58,7 @@ function ProblemForm({
   const [description, setDescription] = useState(draft.description);
   const [similar, setSimilar] = useState<SimilarIncident[] | null>(offerSimilar ? null : []);
   const [chosen, setChosen] = useState<ReadonlySet<number>>(new Set());
+  const [fields, setFields] = useState<CustomFieldDef[]>([]);
   const [pending, startCreate] = useTransition();
 
   const primaryId = ticketIds[0];
@@ -66,6 +71,16 @@ function ProblemForm({
     return () => { current = false; };
   }, [offerSimilar, primaryId]);
 
+  // The problem inherits its traits from every linked ticket, so the fields it needs follow the chosen incidents.
+  const linkedKey = [...ticketIds, ...chosen].join(",");
+  useEffect(() => {
+    let current = true;
+    listRaiseProblemFields(linkedKey.split(",").map(Number))
+      .then((found) => current && setFields(found))
+      .catch(() => current && setFields([]));
+    return () => { current = false; };
+  }, [linkedKey]);
+
   const toggle = (id: number) =>
     setChosen((set) => {
       const next = new Set(set);
@@ -73,9 +88,9 @@ function ProblemForm({
       return next;
     });
 
-  function create(e: React.FormEvent) {
+  function create(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData();
+    const fd = new FormData(e.currentTarget);
     fd.set("title", title);
     fd.set("description", description);
     fd.set("ticketIds", [...ticketIds, ...chosen].join(","));
@@ -110,6 +125,13 @@ function ProblemForm({
         <Label htmlFor="problem-description">Description</Label>
         <Textarea id="problem-description" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-24" />
       </div>
+
+      {fields.length > 0 ? (
+        <fieldset className="grid min-w-0 gap-1.5">
+          <legend className="mb-1 text-sm font-medium">Required details</legend>
+          <FormCustomFields defs={fields} disabled={pending} />
+        </fieldset>
+      ) : null}
 
       {offerSimilar ? <SimilarIncidents similar={similar} chosen={chosen} onToggle={toggle} /> : null}
 
