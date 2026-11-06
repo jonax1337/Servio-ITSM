@@ -642,7 +642,10 @@ model Ticket {
   responseBreached    Boolean   @default(false)
   resolveBreached     Boolean   @default(false)
   pendingSince        DateTime? // set while PENDING/ON_HOLD so the clock can pause
-  pausedMs            Int       @default(0) // accumulated paused time
+  // Accumulated paused time in ms. Float, not Int: a 32-bit Int overflows after
+  // ~24.8 days of pause, and BigInt would surface as JS `bigint` (breaks number
+  // math and JSON.stringify). A double holds whole ms exactly up to 2^53.
+  pausedMs            Float     @default(0)
   escalatedAt         DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
   slaAtRiskNotifiedAt DateTime? // set when SLA-at-risk notification has fired (idempotency marker)
   slaNudgedAt         DateTime? // set when the assignee SLA nudge has fired (at-most-once marker, lib/ticks/sla-nudges.ts)
@@ -1222,7 +1225,7 @@ model Attachment {
   storageKey   String? // driver-agnostic blob key (YYYY/MM/<id>-<name>)
   checksum     String? // hex sha256 of the blob
   mime         String   @default("application/octet-stream")
-  size         Int      @default(0)
+  size         Float    @default(0) // bytes; Float because Int caps at 2 GiB (MAX_UPLOAD_MB is admin-settable)
   ticketId     Int?
   commentId    String?
   articleId    String?

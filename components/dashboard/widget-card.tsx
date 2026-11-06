@@ -44,7 +44,7 @@ export function WidgetCard({ widget, data }: { widget: Widget; data: Computed })
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{widget.title}</CardTitle>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1 overflow-auto">{renderBody(data)}</CardContent>
+      <CardContent className={cn("min-h-0 flex-1", widgetBodyOverflow(data))}>{renderBody(data)}</CardContent>
     </Card>
   );
 
@@ -53,6 +53,20 @@ export function WidgetCard({ widget, data }: { widget: Widget; data: Computed })
   ) : (
     card
   );
+}
+
+/**
+ * Only row-based bodies may scroll. Stat numbers and charts get `overflow-hidden`:
+ * as scroll containers, a 2px glyph overflow showed a stray scrollbar, and a chart
+ * tooltip poking out toggled a scrollbar that resized the chart under the cursor.
+ */
+export function widgetBodyOverflow(data: Computed): string {
+  const rowBased =
+    data.kind === "list" ||
+    data.kind === "aging" ||
+    data.kind === "briefing" ||
+    (data.kind === "breakdown" && data.chartType !== "donut");
+  return rowBased ? "overflow-auto" : "overflow-hidden";
 }
 
 /** Just the body of a widget (no card chrome) — reused by the editor canvas. */

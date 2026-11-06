@@ -9,7 +9,7 @@ export default function AssistantLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-[calc(100svh-var(--topbar-h,3.5rem))] min-h-0 flex-1 flex-col">
+    <div data-viewport-pane className="flex h-[calc(100svh-var(--topbar-h,3.5rem))] min-h-0 flex-1 flex-col lg:h-full">
       {children}
     </div>
   );

@@ -13,7 +13,8 @@ import { Combobox } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { WidgetBody } from "@/components/dashboard/widget-card";
+import { WidgetBody, widgetBodyOverflow } from "@/components/dashboard/widget-card";
+import { cn } from "@/lib/utils";
 import { WidgetConfigDialog, type EditorOptions } from "@/components/dashboard/widget-config-dialog";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { setDashboardLayout, updateDashboardSettings, deleteDashboard } from "@/lib/actions/dashboards";
@@ -179,7 +180,7 @@ export function DashboardCanvas({
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
-                <div className="h-[calc(100%-2.5rem)] overflow-auto p-3">
+                <div className={cn("h-[calc(100%-2.5rem)] p-3", dataMap[w.id] ? widgetBodyOverflow(dataMap[w.id]) : "overflow-hidden")}>
                   {dataMap[w.id] ? (
                     <WidgetBody data={dataMap[w.id]} />
                   ) : (

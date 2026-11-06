@@ -28,6 +28,19 @@ const DONUT_COLORS = [
   "var(--muted-foreground)",
 ];
 
+// No slide animation: the default 400ms transform transition makes the tooltip
+// trail the cursor and sweep across the chart whenever it flips sides.
+const TOOLTIP_PROPS = {
+  isAnimationActive: false,
+  contentStyle: {
+    background: "var(--popover)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    fontSize: 12,
+    color: "var(--popover-foreground)",
+  },
+} as const;
+
 export function VolumeChart({
   data,
 }: {
@@ -35,7 +48,7 @@ export function VolumeChart({
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%" minHeight={140}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="gCreated" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
@@ -62,15 +75,7 @@ export function VolumeChart({
           stroke="var(--muted-foreground)"
           allowDecimals={false}
         />
-        <Tooltip
-          contentStyle={{
-            background: "var(--popover)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            fontSize: 12,
-            color: "var(--popover-foreground)",
-          }}
-        />
+        <Tooltip {...TOOLTIP_PROPS} />
         <Area
           type="monotone"
           dataKey="created"
@@ -120,15 +125,7 @@ export function DonutChart({ data }: { data: { label: string; value: number; hre
                 <Cell key={i} fill={colorAt(i)} className={d.href ? "cursor-pointer" : undefined} />
               ))}
             </Pie>
-            <Tooltip
-              contentStyle={{
-                background: "var(--popover)",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                fontSize: 12,
-                color: "var(--popover-foreground)",
-              }}
-            />
+            <Tooltip {...TOOLTIP_PROPS} />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 grid place-items-center">

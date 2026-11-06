@@ -334,6 +334,31 @@ async function main() {
       await db.ticketAsset.create({ data: { ticketId: t.id, assetId: pick(assets).id } }).catch(() => {});
   }
 
+  // A ticket that sat in PENDING for a quarter: its banked pause exceeds the
+  // 32-bit range, so the link crawl renders a value an Int column cannot hold.
+  const longPauseCreated = daysAgo(120);
+  const longPauseMs = 90 * 86_400_000;
+  await db.ticket.create({
+    data: {
+      title: "Core switch RMA — waiting on vendor replacement",
+      description: "Core switch in Building A failed its PSU. Ticket stayed pending while the vendor shipped the replacement.",
+      type: "INCIDENT",
+      prefix: "INC",
+      status: "RESOLVED",
+      priority: "HIGH",
+      requesterId: pick(endUsers).id,
+      assigneeId: pick(agents).id,
+      groupId: groups[0].id,
+      serviceId: pick(services).id,
+      slaId: pick(slas).id,
+      createdAt: longPauseCreated,
+      firstResponseAt: new Date(longPauseCreated.getTime() + 3600000),
+      pausedMs: longPauseMs,
+      resolvedAt: new Date(longPauseCreated.getTime() + longPauseMs + 86400000),
+    },
+  });
+  ticketCount++;
+
   // ---- Problems ----
   const problemDefs = [
     ["Recurring VPN disconnects for remote users", "INVESTIGATING", "HIGH"],

@@ -92,7 +92,7 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
   }));
 
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
+    <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
       {/* Main column — scrolls independently from the details rail, like a change */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">

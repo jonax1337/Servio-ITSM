@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // description card, tab bar, composer) beside a 340px properties rail.
 export default function TicketDetailLoading() {
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_340px] lg:overflow-hidden">
+    <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_340px] lg:overflow-hidden">
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         {/* Detail header bar */}
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">

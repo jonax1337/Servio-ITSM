@@ -365,6 +365,12 @@ experience. It gates on `requireRole("AGENT")`, then renders a
   `#123`, cuid-like ids collapse to "Details"), and the right cluster:
   `CommandMenu`, `CreateMenu`, a notifications bell with unread count, `ThemeToggle`,
   and `UserMenu`.
+- **Split-pane detail pages** (ticket, asset, change, … and `/assistant`) mark their
+  root with `data-viewport-pane` and size it `lg:h-full`, with `lg:min-h-0
+  lg:overflow-y-auto` on each pane. The layout then locks `SidebarInset` to the
+  viewport for that page only, so the panes fill whatever the topbar and banners
+  leave. Never size a pane as `calc(100svh - …)`: any banner makes the page taller
+  than the viewport and adds a window scrollbar on top of the pane scrollbars.
 
 ### Self-service portal — centred column
 
