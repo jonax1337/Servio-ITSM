@@ -6,9 +6,13 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { compareVersions } from "../updater/versions.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+// Semantic Versioning 2.0 without build metadata: no leading zeros, no empty prerelease identifiers.
+const NUMBER = String.raw`(0|[1-9]\d*)`;
+const PRERELEASE_ID = String.raw`(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)`;
+const SEMVER = new RegExp(String.raw`^${NUMBER}\.${NUMBER}\.${NUMBER}(?:-(${PRERELEASE_ID}(?:\.${PRERELEASE_ID})*))?$`);
 const APP_VERSION_LINE = /export const APP_VERSION = "([^"]*)";/;
 
 /** Every file that carries the release version, with how to read and write it. */
@@ -36,17 +40,9 @@ export function parseVersion(text) {
   return { major: Number(major), minor: Number(minor), patch: Number(patch), prerelease: prerelease ?? null };
 }
 
-/** True when `next` is a later version than `current` (a prerelease sorts before its release). */
+/** True when `next` is a later version than `current`, ordered exactly as the updater orders releases. */
 export function isLater(next, current) {
-  const a = parseVersion(next);
-  const b = parseVersion(current);
-  for (const part of ["major", "minor", "patch"]) {
-    if (a[part] !== b[part]) return a[part] > b[part];
-  }
-  if (a.prerelease === b.prerelease) return false;
-  if (a.prerelease === null) return true;
-  if (b.prerelease === null) return false;
-  return a.prerelease.localeCompare(b.prerelease, "en", { numeric: true }) > 0;
+  return compareVersions(next, current) > 0;
 }
 
 /** The files whose version differs from `expected`, as "path: found" lines. */
@@ -83,17 +79,24 @@ function cut(version) {
   const current = VERSION_FILES[0].read(sources["package.json"]);
   if (!isLater(version, current)) fail(`${version} is not later than the current version ${current}`);
 
+  const paths = VERSION_FILES.map((f) => f.path);
   for (const file of VERSION_FILES) writeFileSync(ROOT + file.path, file.write(sources[file.path], version));
-  const mismatches = versionMismatches(readSources(), version);
-  if (mismatches.length) fail(`could not write the version into:\n  ${mismatches.join("\n  ")}`);
-
-  git("add", ...VERSION_FILES.map((f) => f.path));
-  git("commit", "-m", `chore(release): ${tag}`);
+  try {
+    const mismatches = versionMismatches(readSources(), version);
+    if (mismatches.length) throw new Error(`could not write the version into:\n  ${mismatches.join("\n  ")}`);
+    // [skip-docs]: the version bump is not a documentation change for the doc-drift hook.
+    git("add", ...paths);
+    git("commit", "-m", `chore(release): ${tag} [skip-docs]`);
+  } catch (error) {
+    git("reset", "-q", "--", ...paths);
+    git("checkout", "--", ...paths);
+    fail(`${error.message}\nThe version files were restored; nothing was committed or tagged.`);
+  }
   git("tag", "-a", tag, "-m", `Servio ${tag}`);
   console.log(`release: committed and tagged ${tag}. Publish it with:\n  git push --follow-tags origin main`);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [arg, value] = process.argv.slice(2);
   if (arg === "--check" && value) check(value);
   else if (arg && !arg.startsWith("-")) cut(arg);

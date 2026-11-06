@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a version tag publishes a release. Cut it with `pnpm release X.Y.Z`
 # (bumps every version file, commits, tags), then `git push --follow-tags origin main`.
-# The workflow checks the tag against the version files, builds the multi-arch images
+# The workflow checks the tag against the version files, runs the full CI on the
+# tagged commit, builds the multi-arch images
 # (the app and the updater sidecar), pushes them to GHCR and only then creates the
 # GitHub Release, so the in-app updater never offers a release without images.
 # See docs/releasing.md. Third-party actions are pinned to commit SHAs; Dependabot
@@ -37,9 +38,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
 
+  ci:
+    name: CI on the tagged commit
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
   image:
     name: Image ${{ matrix.image.name }} (${{ matrix.platform.name }})
-    needs: verify
+    needs: [verify, ci]
     strategy:
       fail-fast: true
       matrix:
@@ -125,11 +131,10 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
-          # The X.Y pattern skips prereleases on its own; latest follows stable releases only.
+          # Prereleases get only X.Y.Z; flavor latest=auto adds latest to stable releases.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - name: Create manifest list
         working-directory: ${{ runner.temp }}/digests
         env:
@@ -154,6 +159,10 @@ jobs:
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
           REGISTRY_OWNER: ghcr.io/${{ github.repository_owner }}
         run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; nothing to do."
+            exit 0
+          fi
           {
             printf '### Container images\n\n'
             printf '```sh\ndocker pull %s/servio:%s\ndocker pull %s/servio-updater:%s\n```\n' \

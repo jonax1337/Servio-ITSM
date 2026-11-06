@@ -85,14 +85,18 @@ git push --follow-tags origin main
 `main`, the tag does not exist yet and the version is later than the current one.
 It then writes the version into every file that carries it (`package.json`,
 `updater/package.json` and `APP_VERSION` in `lib/constants.ts`), commits
-`chore(release): v0.2.0` and creates the annotated tag `v0.2.0`. A unit test
+`chore(release): v0.2.0` and creates the annotated tag `v0.2.0`. Versions follow
+Semantic Versioning 2.0 and are ordered exactly like the updater orders releases
+(`updater/versions.mjs`). A unit test
 (`tests/unit/app-version.test.ts`) fails when these files disagree.
 
 Pushing the tag starts the workflow:
 
 1. **Verify.** `node scripts/release.mjs --check vX.Y.Z` fails the run when the tag
    and the version files disagree, for example after tagging by hand.
-2. **Images.** The app and the updater sidecar are built natively on `linux/amd64`
+2. **CI.** The full [`ci.yml`](#-continuous-integration--ciyml) runs on the tagged
+   commit (as a reusable workflow). Nothing is published unless every job passes.
+3. **Images.** The app and the updater sidecar are built natively on `linux/amd64`
    and `linux/arm64` runners and pushed to GHCR, then published as multi-arch tags:
 
    | Tag | Moves |
@@ -102,15 +106,17 @@ Pushing the tag starts the workflow:
    | `ghcr.io/<owner>/servio:latest` | to the newest stable release |
 
    `servio-updater` gets the same tags.
-3. **GitHub Release.** Only after both images are published, the workflow creates
+4. **GitHub Release.** Only after both images are published, the workflow creates
    the GitHub Release with GitHub's generated notes (merged PRs and contributors
    since the previous tag) and the `docker pull` commands. A version with a `-`
    suffix becomes a prerelease. The in-app updater ([updates.md](./updates.md))
    offers exactly these GitHub Releases, so it never sees a release whose images
    are missing.
 
-If a run fails after the images were pushed, fix the cause and re-run the failed
-jobs; pushing the same tag again is not needed. Third-party actions in both
+If a run fails, fix the cause and re-run the failed jobs; pushing the same tag
+again is not needed, and the release step skips a release that already exists. If
+`pnpm release` itself fails (for example a commit hook), it restores the version
+files and creates neither commit nor tag. Third-party actions in both
 workflows are pinned to commit SHAs with the version as a comment; Dependabot
 updates them.
 

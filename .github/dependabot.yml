@@ -40,3 +40,13 @@ updates:
         update-types: ["version-update:semver-major"]
     commit-message:
       prefix: chore
+
+  - package-ecosystem: docker
+    directory: /updater
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: chore

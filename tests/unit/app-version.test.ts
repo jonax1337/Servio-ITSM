@@ -36,7 +36,9 @@ describe("release script", () => {
   it("accepts release and prerelease versions and rejects the rest", () => {
     expect(parseVersion("1.2.3")).toEqual({ major: 1, minor: 2, patch: 3, prerelease: null });
     expect(parseVersion("1.3.0-rc.1")?.prerelease).toBe("rc.1");
-    for (const bad of ["v1.2.3", "1.2", "1.2.3.4", "latest", ""]) expect(parseVersion(bad)).toBeNull();
+    for (const bad of ["v1.2.3", "1.2", "1.2.3.4", "01.2.3", "1.2.3-rc..1", "1.2.3-", "1.2.3-01", "latest", ""]) {
+      expect(parseVersion(bad)).toBeNull();
+    }
   });
 
   it.each([
@@ -49,6 +51,7 @@ describe("release script", () => {
     ["0.2.0", "0.2.0-rc.1", true],
     ["0.2.0-rc.1", "0.2.0", false],
     ["0.2.0-rc.10", "0.2.0-rc.9", true],
+    ["0.2.0-beta", "0.2.0-alpha.1", true],
   ])("isLater(%s, %s) is %s", (next, current, expected) => {
     expect(isLater(next, current)).toBe(expected);
   });
