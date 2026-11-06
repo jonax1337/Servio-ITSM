@@ -20,6 +20,14 @@ clean REST API — with **Sable**, an AI agent that actually works your queue *w
 </div>
 
 <p align="center">
+  <a href="https://github.com/jonax1337/Servio-ITSM/blob/main/.github/media/servio-launch.mp4">
+    <img src=".github/media/servio-launch-poster.jpg" alt="Watch the Servio launch film (33 seconds)" width="100%">
+  </a>
+  <br>
+  <sub>▶ <a href="https://github.com/jonax1337/Servio-ITSM/blob/main/.github/media/servio-launch.mp4">Watch the 33-second launch film</a></sub>
+</p>
+
+<p align="center">
   <code>Tickets</code> · <code>Problems</code> · <code>Changes</code> · <code>CMDB</code> ·
   <code>Service Catalog</code> · <code>Self-Service Portal</code> · <code>Knowledge Base</code> ·
   <code>Mail Engine</code> · <code>Infra Syncs</code> · <code>SSO</code> · <code>REST API</code> ·
