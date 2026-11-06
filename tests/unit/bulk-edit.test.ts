@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  buildBulkChanges, bulkSkipDetail, bulkSummary, planBulkTicket,
-  type BulkChange, type BulkRules, type BulkTicketState,
+  buildBulkChanges, bulkOutcomeDetail, bulkSkipDetail, bulkSummary, planBulkTicket, withApplyResult,
+  type BulkChange, type BulkOutcome, type BulkRules, type BulkTicketState,
 } from "@/lib/bulk-edit";
+import { mayActOnTicket } from "@/lib/authz";
 import { ASSIGNEE_NOT_IN_GROUP, AWAITING_APPROVAL, NOT_YOUR_TICKET, TRANSITION_NOT_ALLOWED } from "@/lib/ticket-refusals";
+
+// The pure access rule lives in lib/authz, whose imports reach the session and the database.
+vi.mock("@/auth", () => ({ auth: vi.fn() }));
+vi.mock("@/lib/db", () => ({ db: {} }));
 
 describe("buildBulkChanges", () => {
   it("returns nothing when no field is set", () => {
@@ -58,19 +63,66 @@ describe("buildBulkChanges", () => {
 });
 
 describe("bulkSummary", () => {
-  const skip = (ticket: string) => ({ ticket, reason: "x" });
+  const entry = (ticket: string) => ({ ticket, reason: "x" });
+  const outcome = (updated: number, partial: string[], skipped: string[]): BulkOutcome => ({
+    updated, partial: partial.map(entry), skipped: skipped.map(entry),
+  });
 
   it("reports a complete bulk edit", () => {
-    expect(bulkSummary({ updated: 5, skipped: [] })).toBe("5 tickets updated");
+    expect(bulkSummary(outcome(5, [], []))).toBe("5 tickets updated");
   });
 
   it("uses the singular for one ticket", () => {
-    expect(bulkSummary({ updated: 1, skipped: [] })).toBe("1 ticket updated");
+    expect(bulkSummary(outcome(1, [], []))).toBe("1 ticket updated");
   });
 
   it("counts the tickets that were skipped", () => {
-    expect(bulkSummary({ updated: 3, skipped: [skip("T-1"), skip("T-2")] })).toBe("3 tickets updated, 2 skipped");
-    expect(bulkSummary({ updated: 0, skipped: [skip("T-1"), skip("T-2")] })).toBe("2 tickets skipped");
+    expect(bulkSummary(outcome(3, [], ["T-1", "T-2"]))).toBe("3 tickets updated, 2 skipped");
+    expect(bulkSummary(outcome(0, [], ["T-1", "T-2"]))).toBe("2 tickets skipped");
+  });
+
+  it("counts partially updated tickets apart from skipped ones", () => {
+    expect(bulkSummary(outcome(3, ["T-3"], ["T-1", "T-2"]))).toBe("3 tickets updated, 1 partially updated, 2 skipped");
+    expect(bulkSummary(outcome(0, ["T-3"], []))).toBe("1 ticket partially updated");
+    expect(bulkSummary(outcome(0, ["T-3", "T-4"], ["T-1"]))).toBe("2 tickets partially updated, 1 skipped");
+  });
+});
+
+describe("withApplyResult", () => {
+  const empty: BulkOutcome = { updated: 0, partial: [], skipped: [] };
+
+  it("counts a ticket whose changes all applied as updated", () => {
+    expect(withApplyResult(empty, "T-1", { applied: 2, refusal: null })).toEqual({ updated: 1, partial: [], skipped: [] });
+  });
+
+  it("skips a ticket that was refused before anything was written", () => {
+    expect(withApplyResult(empty, "T-1", { applied: 0, refusal: "Not yours" }))
+      .toEqual({ updated: 0, partial: [], skipped: [{ ticket: "T-1", reason: "Not yours" }] });
+  });
+
+  it("reports a ticket refused after an earlier change was written as partially updated, not skipped", () => {
+    expect(withApplyResult(empty, "T-1", { applied: 1, refusal: "Assignee not in group" }))
+      .toEqual({ updated: 0, partial: [{ ticket: "T-1", reason: "Assignee not in group" }], skipped: [] });
+  });
+
+  it("does not change the outcome it was given", () => {
+    withApplyResult(empty, "T-1", { applied: 1, refusal: "x" });
+    expect(empty).toEqual({ updated: 0, partial: [], skipped: [] });
+  });
+});
+
+describe("bulkOutcomeDetail", () => {
+  it("lists the partly updated tickets before the skipped ones", () => {
+    expect(bulkOutcomeDetail({
+      updated: 1,
+      partial: [{ ticket: "T-3", reason: "Assignee not in group" }],
+      skipped: [{ ticket: "T-1", reason: "Not yours" }],
+    })).toBe("Partly updated: Assignee not in group (T-3). Skipped: Not yours (T-1)");
+  });
+
+  it("names only the groups that have tickets", () => {
+    expect(bulkOutcomeDetail({ updated: 0, partial: [], skipped: [{ ticket: "T-1", reason: "Not yours" }] }))
+      .toBe("Skipped: Not yours (T-1)");
   });
 });
 
@@ -99,9 +151,7 @@ describe("planBulkTicket", () => {
   const groups: Record<string, string[]> = { desk: ["ana", "sam"], network: ["lee"] };
   const isMember = (groupId: string, userId: string) => groups[groupId]?.includes(userId) ?? false;
   const rulesFor = (user: { id: string; role: string }, blockedStatus?: string): BulkRules => ({
-    // The access rule in short: managers act anywhere, agents on their own tickets and their groups' tickets.
-    canAct: (state) =>
-      user.role === "MANAGER" || state.assigneeId === user.id || (state.groupId ? isMember(state.groupId, user.id) : true),
+    canAct: (state) => mayActOnTicket(user, state, isMember),
     isMember,
     statusRefusal: (state, to) => {
       if (state.approvalState === "PENDING" && to !== "CANCELLED") return AWAITING_APPROVAL;
@@ -126,9 +176,9 @@ describe("planBulkTicket", () => {
     expect(planBulkTicket({ ...ticket, assigneeId: null }, changes, rulesFor(agent))).toBe(NOT_YOUR_TICKET);
   });
 
-  it("lets a manager move tickets between groups and change the fields after", () => {
+  it.each(["MANAGER", "ADMIN"])("lets a %s move tickets between groups and change the fields after", (role) => {
     const changes = patch({ field: "groupId", value: "network" }, { field: "priority", value: "HIGH" });
-    expect(planBulkTicket(ticket, changes, rulesFor({ id: "mia", role: "MANAGER" }))).toBeNull();
+    expect(planBulkTicket(ticket, changes, rulesFor({ id: "mia", role }))).toBeNull();
   });
 
   it("refuses an assignee who is not in the ticket's group", () => {

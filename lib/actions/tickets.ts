@@ -32,7 +32,7 @@ import {
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
 import {
-  BULK_CLEAR, bulkSkipDetail, buildBulkChanges, planBulkTicket, type BulkChange, type BulkOutcome, type BulkRules, type BulkTicketState,
+  BULK_CLEAR, bulkSkipDetail, buildBulkChanges, planBulkTicket, withApplyResult, type BulkApplyResult, type BulkChange, type BulkOutcome, type BulkRules, type BulkTicketState,
 } from "@/lib/bulk-edit";
 import { ASSIGNEE_NOT_IN_GROUP, AWAITING_APPROVAL, NOT_YOUR_TICKET, TRANSITION_NOT_ALLOWED } from "@/lib/ticket-refusals";
 import { approvalAllowsStatus } from "@/lib/transitions";
@@ -246,19 +246,20 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
  * Apply a multi-field edit (`patch`: JSON of status / priority / group / assignee /
  * category, see lib/bulk-edit.ts) to many tickets at once. Every ticket is checked
  * against the whole patch first and skipped, with its reason, when any field would be
- * refused, so no ticket is left half changed. The writes then go through
- * updateTicketField per ticket and field, so authorization, transitions, the SLA clock,
- * audit, automations and notifications all still run.
+ * refused. The writes then go through updateTicketField per ticket and field, so
+ * authorization, transitions, the SLA clock, audit, automations and notifications all
+ * still run. Automations can re-route a ticket between two writes; when that makes a
+ * later field refuse, the ticket is reported as partially updated rather than skipped.
  */
 export async function bulkUpdateTickets(formData: FormData): Promise<BulkUpdateResult> {
   const me = await requireAgent();
-  if (!me) return { ok: false, updated: 0, skipped: [], error: NOT_AUTHORISED };
+  if (!me) return { ok: false, ...NOTHING_CHANGED, error: NOT_AUTHORISED };
   const ids = [...new Set(String(formData.get("ids") ?? "").split(",").map((s) => Number(s.trim())))]
     .filter((id) => Number.isInteger(id) && id > 0)
     .slice(0, 200);
   const changes = buildBulkChanges(parseJson(formData.get("patch")));
   if (!ids.length || !changes.length || !(await bulkTargetsExist(changes))) {
-    return { ok: false, updated: 0, skipped: [], error: INVALID_CHANGE };
+    return { ok: false, ...NOTHING_CHANGED, error: INVALID_CHANGE };
   }
 
   const tickets = await db.ticket.findMany({
@@ -266,21 +267,23 @@ export async function bulkUpdateTickets(formData: FormData): Promise<BulkUpdateR
     select: { id: true, prefix: true, status: true, groupId: true, assigneeId: true, approvalState: true, mergedIntoId: true },
   });
   const rules = await loadBulkRules(me, tickets, changes);
-  const outcome: BulkOutcome = { updated: 0, skipped: [] };
-  const skip = (ref: string, reason: string) => outcome.skipped.push({ ticket: ref, reason });
+  let outcome: BulkOutcome = NOTHING_CHANGED;
 
   const found = new Set(tickets.map((t) => t.id));
-  for (const id of ids.filter((id) => !found.has(id))) skip(ticketRef(id), TICKET_NOT_FOUND);
+  for (const id of ids.filter((id) => !found.has(id))) {
+    outcome = withApplyResult(outcome, ticketRef(id), { applied: 0, refusal: TICKET_NOT_FOUND });
+  }
   for (const ticket of tickets) {
-    const ref = ticketRef(ticket.id, ticket.prefix);
-    const reason = planBulkTicket(ticket, changes, rules) ?? (await applyChanges(ticket.id, changes));
-    if (reason) skip(ref, reason);
-    else outcome.updated++;
+    const planned = planBulkTicket(ticket, changes, rules);
+    const result = planned ? { applied: 0, refusal: planned } : await applyChanges(ticket.id, changes);
+    outcome = withApplyResult(outcome, ticketRef(ticket.id, ticket.prefix), result);
   }
   revalidatePath("/tickets");
-  const ok = outcome.updated > 0;
+  const ok = outcome.updated > 0 || outcome.partial.length > 0;
   return { ok, ...outcome, ...(!ok && { error: bulkSkipDetail(outcome.skipped) }) };
 }
+
+const NOTHING_CHANGED: BulkOutcome = { updated: 0, partial: [], skipped: [] };
 
 export type BulkUpdateResult = TicketActionResult & BulkOutcome;
 
@@ -340,17 +343,19 @@ function parseJson(raw: FormDataEntryValue | null): unknown {
   }
 }
 
-/** Runs the changes on one ticket in order; returns the first refusal, or null when all applied. */
-async function applyChanges(ticketId: number, changes: BulkChange[]): Promise<string | null> {
+/** Runs the changes on one ticket in order, stopping at the first refusal. */
+async function applyChanges(ticketId: number, changes: BulkChange[]): Promise<BulkApplyResult> {
+  let applied = 0;
   for (const { field, value } of changes) {
     const fd = new FormData();
     fd.set("id", String(ticketId));
     fd.set("field", field);
     fd.set("value", value);
     const result = await updateTicketField(fd);
-    if (!result.ok) return result.error ?? INVALID_CHANGE;
+    if (!result.ok) return { applied, refusal: result.error ?? INVALID_CHANGE };
+    applied++;
   }
-  return null;
+  return { applied, refusal: null };
 }
 
 export async function addTicketComment(formData: FormData) {

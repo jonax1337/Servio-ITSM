@@ -12,7 +12,7 @@ import {
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { bulkUpdateTickets } from "@/lib/actions/tickets";
 import {
-  BULK_CLEAR, BULK_STATUSES, bulkSkipDetail, bulkSummary, buildBulkChanges, type BulkField,
+  BULK_CLEAR, BULK_STATUSES, bulkOutcomeDetail, bulkSummary, buildBulkChanges, type BulkField,
 } from "@/lib/bulk-edit";
 import { PRIORITIES, PRIORITY_META, TICKET_STATUS_META } from "@/lib/constants";
 
@@ -75,8 +75,8 @@ export function BulkEditDialog({
       }
       if (!result.ok) return failWith(result.error ?? REQUEST_FAILED);
       const summary = bulkSummary(result);
-      if (result.skipped.length === 0) toast.success(summary);
-      else toast.warning(summary, { description: bulkSkipDetail(result.skipped) });
+      if (result.skipped.length === 0 && result.partial.length === 0) toast.success(summary);
+      else toast.warning(summary, { description: bulkOutcomeDetail(result) });
       setOpen(false);
       setPatch({});
       onApplied();

@@ -65,8 +65,9 @@ export type BulkTicketState = {
 /**
  * Why a ticket would refuse the whole patch, or null when every change would apply.
  * Walks the changes in application order on a copy of the ticket, with the same checks
- * the single-field edit makes before each write, so a ticket is never changed halfway:
- * moving it to a group the actor cannot act in fails the fields that follow.
+ * the single-field edit makes before each write, so a ticket is rarely changed halfway:
+ * moving it to a group the actor cannot act in fails the fields that follow. Checks cannot
+ * foresee what automations do between the writes, hence {@link BulkOutcome.partial}.
  */
 export function planBulkTicket(ticket: BulkTicketState, changes: readonly BulkChange[], rules: BulkRules): string | null {
   const state = { ...ticket };
@@ -88,22 +89,49 @@ export function planBulkTicket(ticket: BulkTicketState, changes: readonly BulkCh
   return null;
 }
 
+/** A ticket a bulk edit did not fully change, with the reason a change was refused. */
 export type BulkSkip = { ticket: string; reason: string };
-export type BulkOutcome = { updated: number; skipped: BulkSkip[] };
+
+/**
+ * What a bulk edit did, per ticket: `updated` took every change, `skipped` took none, and
+ * `partial` took some before a later change was refused (automations can re-route a ticket
+ * between two writes), so those tickets differ from both before and after.
+ */
+export type BulkOutcome = { updated: number; partial: BulkSkip[]; skipped: BulkSkip[] };
+
+/** What running the changes on one ticket did: how many were written, and the refusal that stopped the rest. */
+export type BulkApplyResult = { applied: number; refusal: string | null };
+
+/** `outcome` with one more ticket counted under what `result` says happened to it. */
+export function withApplyResult(outcome: BulkOutcome, ticket: string, { applied, refusal }: BulkApplyResult): BulkOutcome {
+  if (refusal === null) return { ...outcome, updated: outcome.updated + 1 };
+  const entry = { ticket, reason: refusal };
+  return applied > 0
+    ? { ...outcome, partial: [...outcome.partial, entry] }
+    : { ...outcome, skipped: [...outcome.skipped, entry] };
+}
 
 const ticketCount = (n: number) => `${n} ${n === 1 ? "ticket" : "tickets"}`;
 
-/** The one-line result shown after a bulk edit, e.g. "5 tickets updated" or "3 tickets updated, 2 skipped". */
-export function bulkSummary({ updated, skipped }: BulkOutcome): string {
-  if (skipped.length === 0) return `${ticketCount(updated)} updated`;
-  if (updated === 0) return `${ticketCount(skipped.length)} skipped`;
-  return `${ticketCount(updated)} updated, ${skipped.length} skipped`;
+/**
+ * The one-line result shown after a bulk edit, e.g. "5 tickets updated" or
+ * "3 tickets updated, 1 partially updated, 2 skipped". The first figure names the tickets.
+ */
+export function bulkSummary({ updated, partial, skipped }: BulkOutcome): string {
+  const figures = [
+    [updated, "updated"],
+    [partial.length, "partially updated"],
+    [skipped.length, "skipped"],
+  ] as const;
+  const shown = figures.filter(([count]) => count > 0);
+  if (shown.length === 0) return `${ticketCount(0)} updated`;
+  return shown.map(([count, what], i) => `${i === 0 ? ticketCount(count) : count} ${what}`).join(", ");
 }
 
 const SHOWN_REASONS = 3;
 const SHOWN_TICKETS = 3;
 
-/** Why tickets were skipped, grouped by reason: "Reason (T-1, T-2 and 4 more); Other reason (T-9)". */
+/** Why tickets were refused, grouped by reason: "Reason (T-1, T-2 and 4 more); Other reason (T-9)". */
 export function bulkSkipDetail(skipped: readonly BulkSkip[]): string {
   const byReason = new Map<string, string[]>();
   for (const { ticket, reason } of skipped) byReason.set(reason, [...(byReason.get(reason) ?? []), ticket]);
@@ -114,4 +142,12 @@ export function bulkSkipDetail(skipped: readonly BulkSkip[]): string {
   });
   const hidden = byReason.size - SHOWN_REASONS;
   return hidden > 0 ? `${shown.join("; ")}; and ${hidden} more ${hidden === 1 ? "reason" : "reasons"}` : shown.join("; ");
+}
+
+/** The detail line under the summary: the partly updated tickets first, since they changed and need a look. */
+export function bulkOutcomeDetail({ partial, skipped }: BulkOutcome): string {
+  return [
+    partial.length > 0 && `Partly updated: ${bulkSkipDetail(partial)}`,
+    skipped.length > 0 && `Skipped: ${bulkSkipDetail(skipped)}`,
+  ].filter(Boolean).join(". ");
 }
