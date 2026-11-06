@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OPEN_TICKET_STATUSES } from "@/lib/constants";
-import { SLA_VIEW_META, matchesSlaView, parseSlaView, slaViewCandidateWhere, slaViewHref, ticketIdsFilter } from "@/lib/sla-views";
+import { SLA_VIEW_META, matchesSlaView, parseSlaView, slaViewCandidateWhere, slaViewHref } from "@/lib/sla-views";
 
 const HOUR = 3_600_000;
 const created = new Date("2026-01-05T08:00:00Z");
@@ -108,22 +108,19 @@ describe("SLA view candidate prefilter", () => {
   });
 
   it("keeps only wall-clock tickets whose deadline has passed for the breached view", () => {
-    expect(slaViewCandidateWhere("breached", now, 8 * HOUR)).toEqual(candidates(deadline({ lt: now })));
+    expect(slaViewCandidateWhere("breached", now)).toEqual(candidates(deadline({ lt: now })));
   });
 
-  it("keeps wall-clock tickets due from now until a fifth of the longest window ahead for the at-risk view", () => {
-    const horizon = new Date(now.getTime() + 0.2 * 8 * HOUR);
-    expect(slaViewCandidateWhere("at_risk", now, 8 * HOUR)).toEqual(
-      candidates({ AND: [deadline({ gte: now }), { OR: [{ slaId: null }, deadline({ lte: horizon })] }] }),
-    );
+  it("keeps every wall-clock ticket not yet past its deadline for the at-risk view, however far ahead the deadline is", () => {
+    expect(slaViewCandidateWhere("at_risk", now)).toEqual(candidates(deadline({ gte: now })));
   });
 
   it("keeps wall-clock tickets that are not yet past their deadline for the on-track view", () => {
-    expect(slaViewCandidateWhere("on_track", now, 8 * HOUR)).toEqual(candidates(deadline({ gte: now })));
+    expect(slaViewCandidateWhere("on_track", now)).toEqual(candidates(deadline({ gte: now })));
   });
 
   it("keeps the tickets whose clock is stopped for the paused view", () => {
-    expect(slaViewCandidateWhere("paused", now, 8 * HOUR)).toEqual({
+    expect(slaViewCandidateWhere("paused", now)).toEqual({
       ...open,
       AND: [deadline({ not: null }), { OR: [{ pendingSince: { not: null } }, { status: { in: ["PENDING", "ON_HOLD"] } }] }],
     });
@@ -131,7 +128,7 @@ describe("SLA view candidate prefilter", () => {
 
   it("never filters out tickets on a business calendar: their clock counts working time", () => {
     for (const view of ["breached", "at_risk", "on_track"] as const) {
-      expect(JSON.stringify(slaViewCandidateWhere(view, now, HOUR))).toContain(JSON.stringify(business));
+      expect(JSON.stringify(slaViewCandidateWhere(view, now))).toContain(JSON.stringify(business));
     }
   });
 });
@@ -167,24 +164,6 @@ describe("SLA on track, paused and no SLA views", () => {
     expect(await slaViewWhere("none")).toEqual({
       OR: [{ status: { in: ["RESOLVED", "CLOSED", "CANCELLED"] } }, { resolvedAt: { not: null } }, { resolveDueAt: null, dueAt: null }],
     });
-  });
-});
-
-describe("ticketIdsFilter", () => {
-  const idCount = (where: ReturnType<typeof ticketIdsFilter>) =>
-    ((where.OR ?? []) as { id: { in: number[] } }[]).map((chunk) => chunk.id.in.length);
-
-  it("splits a long id list into chunks of at most 900", () => {
-    const ids = Array.from({ length: 2000 }, (_, i) => i + 1);
-    expect(idCount(ticketIdsFilter(ids))).toEqual([900, 900, 200]);
-  });
-
-  it("keeps a short list in one chunk", () => {
-    expect(idCount(ticketIdsFilter([1, 2, 3]))).toEqual([3]);
-  });
-
-  it("matches nothing for an empty list", () => {
-    expect(ticketIdsFilter([])).toEqual({ id: { in: [] } });
   });
 });
 
