@@ -29,7 +29,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           # A PAT or GitHub App token makes CI run on the release PR; with the
           # default GITHUB_TOKEN GitHub suppresses workflow runs on that PR.
@@ -58,7 +58,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.tag }}
       - name: Platform slug
@@ -66,7 +66,7 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform.name }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag }}
@@ -75,9 +75,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.image.context }}
           file: ${{ matrix.image.dockerfile }}
@@ -92,7 +92,7 @@ jobs:
           touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           # "_" separates image from platform so digests-servio_* never matches digests-servio-updater_*.
           name: digests-${{ matrix.image.name }}_${{ env.PLATFORM_SLUG }}
@@ -113,7 +113,7 @@ jobs:
     permissions:
       packages: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-${{ matrix.image }}_*
@@ -123,9 +123,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
