@@ -263,7 +263,14 @@ pnpm lint
 pnpm build
 ```
 
+[CI](docs/releasing.md) runs them on every PR together with the typecheck, the unit
+tests, the migration-drift check and a Docker build.
+
 PR expectations:
+
+- Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/)
+  (`feat(scope): …`, `fix: …`, `docs: …`). release-please derives the next version
+  and the changelog from them, so `feat` and `fix` subjects are what users read.
 
 - One logical change per PR; keep diffs focused.
 - Commit generated Prisma migrations alongside schema changes.

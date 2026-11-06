@@ -104,6 +104,11 @@ const DOC_MAP = [
     docs: ['docs/deployment.md'],
   },
   {
+    label: 'CI & release workflows',
+    code: ['.github/', 'release-please-config.json', '.release-please-manifest.json'],
+    docs: ['docs/releasing.md'],
+  },
+  {
     label: 'Design system / UI primitives',
     code: ['components/ui/', 'app/globals.css', 'components.json'],
     docs: ['docs/design-system.md'],

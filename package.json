@@ -9,6 +9,7 @@
     "brand:check": "node scripts/sync-brand-assets.mjs --check",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",

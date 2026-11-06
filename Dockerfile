@@ -1,7 +1,7 @@
 # Servio — production image (true multi-stage).
 #
-# NOTE: authored but not test-built here — run `docker compose build` in your
-# own environment before deploying. The runner ships production dependencies
+# CI builds this image and boots it on every PR; tagged releases are pushed to
+# GHCR (see docs/releasing.md). The runner ships production dependencies
 # only, runs as the unprivileged `node` user, self-reports health on /login,
 # and carries NO baked-in DATABASE_URL (provide one at runtime; the compose
 # file defaults to SQLite on the /data volume). Migrations are applied at boot
@@ -17,7 +17,7 @@ RUN corepack enable \
 WORKDIR /app
 
 # Install deps first (cached until the lockfile changes).
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
 RUN pnpm install --frozen-lockfile
 
@@ -41,7 +41,7 @@ RUN corepack enable \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
 RUN pnpm install --frozen-lockfile --prod
 
@@ -61,11 +61,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-# Warm pnpm (pinned via packageManager) into a world-readable COREPACK_HOME so
-# `pnpm start` works offline at container start.
-ENV COREPACK_HOME=/opt/corepack
-RUN corepack enable && corepack prepare pnpm@11.0.8 --activate
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -95,4 +90,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD ["pnpm", "start"]
+# Start Next directly: `pnpm start` would run pnpm's dependency check, which
+# tries to `pnpm install` into the read-only /app as the `node` user.
+CMD ["node", "node_modules/next/dist/bin/next", "start"]
