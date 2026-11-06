@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function NewChangePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const me = await requireUser();
-  const [options, customFieldDefs, templates] = await Promise.all([
+  const [options, customFieldDefs, templates, assets] = await Promise.all([
     getFormOptions(),
     db.customFieldDef.findMany({
       where: { entityType: "CHANGE", active: true },
@@ -26,6 +26,12 @@ export default async function NewChangePage({ searchParams }: { searchParams: Pr
       where: { isActive: true },
       include: { service: { select: { name: true } } },
       orderBy: { name: "asc" },
+    }),
+    db.asset.findMany({
+      where: { status: { notIn: ["RETIRED", "DISPOSED"] } },
+      select: { id: true, name: true, type: true },
+      orderBy: { name: "asc" },
+      take: 500,
     }),
   ]);
 
@@ -57,6 +63,7 @@ export default async function NewChangePage({ searchParams }: { searchParams: Pr
             <ChangeForm
               key={template?.id ?? "blank"}
               options={options}
+              assetOptions={assets.map((a) => ({ value: a.id, label: a.name, hint: a.type }))}
               currentUserId={me.id}
               customFieldDefs={customFieldDefs as CustomFieldDef[]}
               template={template}

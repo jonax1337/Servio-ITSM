@@ -84,17 +84,41 @@ export type SubmitCandidate = {
   plannedEnd: Date | null;
 };
 
+export type SubmitField = "implementationPlan" | "rollbackPlan" | "plannedWindow";
+
+/** What each prerequisite is called and where it lives on the change's Planning tab (the element id). */
+const SUBMIT_FIELD_META: Record<SubmitField, { label: string; anchor: string }> = {
+  implementationPlan: { label: "an implementation plan", anchor: "implementation-plan" },
+  rollbackPlan: { label: "a rollback plan", anchor: "rollback-plan" },
+  plannedWindow: { label: "a planned window (start and end)", anchor: "planned-window" },
+};
+
+export type SubmitBlocker = { field: SubmitField; label: string; href: string };
+
 /**
- * What is still missing before a change may go to approval. A pre-approved standard
- * change is exempt: its procedure lives in the template it was created from.
+ * What is still missing before a change may go to approval, each with a link to the field
+ * on the Planning tab. A pre-approved standard change is exempt: its procedure lives in the
+ * template it was created from.
  */
-export function submitBlockers(change: SubmitCandidate, preApproved: boolean): string[] {
+export function submitBlockerDetails(change: SubmitCandidate & { id: number }, preApproved: boolean): SubmitBlocker[] {
   if (preApproved) return [];
-  const missing: string[] = [];
-  if (!change.implementationPlan?.trim()) missing.push("an implementation plan");
-  if (!change.rollbackPlan?.trim()) missing.push("a rollback plan");
-  if (!change.plannedStart || !change.plannedEnd) missing.push("a planned window (start and end)");
-  return missing;
+  const missing: SubmitField[] = [];
+  if (!change.implementationPlan?.trim()) missing.push("implementationPlan");
+  if (!change.rollbackPlan?.trim()) missing.push("rollbackPlan");
+  if (!change.plannedStart || !change.plannedEnd) missing.push("plannedWindow");
+  return missing.map((field) => ({
+    field,
+    label: SUBMIT_FIELD_META[field].label,
+    href: `/changes/${change.id}?tab=planning#${SUBMIT_FIELD_META[field].anchor}`,
+  }));
+}
+
+/** The element id of a prerequisite's field on the Planning tab (the target of its link). */
+export const submitFieldAnchor = (field: SubmitField) => SUBMIT_FIELD_META[field].anchor;
+
+/** The prerequisites' names only, for badges and the next-step hint. */
+export function submitBlockers(change: SubmitCandidate, preApproved: boolean): string[] {
+  return submitBlockerDetails({ ...change, id: 0 }, preApproved).map((b) => b.label);
 }
 
 export function submitBlockedMessage(missing: string[]): string {

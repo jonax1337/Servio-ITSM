@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  distinctIds,
   isEmailShape,
   MAX_PASSWORD_BYTES,
   MIN_PASSWORD_LENGTH,
@@ -41,15 +40,5 @@ describe("passwordError", () => {
   it("counts bytes, not characters, for the upper bound", () => {
     // 37 two-byte characters = 74 bytes, but only 37 characters.
     expect(passwordError("ü".repeat(37))).toContain("bytes");
-  });
-});
-
-describe("distinctIds", () => {
-  it("keeps the chosen order and drops duplicates and blanks", () => {
-    expect(distinctIds(["g2", " g1 ", "g2", "", "  "])).toEqual(["g2", "g1"]);
-  });
-
-  it("is empty when nothing was chosen", () => {
-    expect(distinctIds([])).toEqual([]);
   });
 });

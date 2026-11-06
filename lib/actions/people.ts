@@ -8,7 +8,8 @@ import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
 import { AUTOMATION_EMAIL } from "@/lib/system-user";
-import { distinctIds, isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules";
+import { isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules";
+import { distinctIds } from "@/lib/utils";
 
 // Fresh DB row (not the possibly-stale JWT): only active ADMINs may manage people.
 async function requireAdmin() {

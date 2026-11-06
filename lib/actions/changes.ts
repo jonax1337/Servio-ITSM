@@ -11,6 +11,7 @@ import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
 import { changeSelfApprovalError } from "@/lib/approval-rules";
+import { distinctIds } from "@/lib/utils";
 import {
   approversToSeat,
   boardSizeLimit,
@@ -118,6 +119,8 @@ async function requireManagerC() {
   return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
+const UNKNOWN_AFFECTED_CI = "One of the selected configuration items no longer exists.";
+
 export async function createChange(
   _prev: ActionState,
   formData: FormData,
@@ -156,11 +159,17 @@ export async function createChange(
     if (!res.ok) return { error: res.error };
   }
 
+  const assetIds = distinctIds(formData.getAll("assetIds"));
+  if (assetIds.length && (await db.asset.count({ where: { id: { in: assetIds } } })) !== assetIds.length) {
+    return { error: UNKNOWN_AFFECTED_CI, fieldErrors: { assetIds: [UNKNOWN_AFFECTED_CI] } };
+  }
+
   const change = await db.change.create({
     data: {
       ...data,
       status: "DRAFT",
       createdById: me.id,
+      assets: { create: assetIds.map((assetId) => ({ assetId })) },
       ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
     },
   });
