@@ -330,7 +330,7 @@ export function customerReplyReopenData(
   return { status: "OPEN", ...statusChangeData(current, "OPEN", now, calendar) };
 }
 
-const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"
+export const AT_RISK_FRACTION = 0.2; // last 20% of the window → "at risk"
 
 /**
  * Live SLA state for display. `resolvedAt`/status decide terminal states.

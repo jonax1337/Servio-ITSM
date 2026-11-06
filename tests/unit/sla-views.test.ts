@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { matchesSlaView, parseSlaView, slaViewHref } from "@/lib/sla-views";
+import { OPEN_TICKET_STATUSES } from "@/lib/constants";
+import { matchesSlaView, parseSlaView, slaViewCandidateWhere, slaViewHref, ticketIdsFilter } from "@/lib/sla-views";
 
 const HOUR = 3_600_000;
 const created = new Date("2026-01-05T08:00:00Z");
@@ -92,5 +93,52 @@ describe("SLA view params", () => {
   it("deep-links the ticket list to a view", () => {
     expect(slaViewHref("breached")).toBe("/tickets?sla=breached");
     expect(slaViewHref("at_risk")).toBe("/tickets?sla=at_risk");
+  });
+});
+
+describe("SLA view candidate prefilter", () => {
+  const now = new Date("2026-01-06T12:00:00Z");
+  const deadline = (filter: object) => ({ OR: [{ resolveDueAt: filter }, { resolveDueAt: null, dueAt: filter }] });
+  const business = { sla: { businessCalendarId: { not: null } } };
+  const wallClock = { OR: [{ slaId: null }, { sla: { businessCalendarId: null } }] };
+  const candidates = (clock: object) => ({
+    status: { in: [...OPEN_TICKET_STATUSES] },
+    resolvedAt: null,
+    AND: [deadline({ not: null }), { OR: [business, { AND: [wallClock, clock] }] }],
+  });
+
+  it("keeps only wall-clock tickets whose deadline has passed for the breached view", () => {
+    expect(slaViewCandidateWhere("breached", now, 8 * HOUR)).toEqual(candidates(deadline({ lt: now })));
+  });
+
+  it("keeps wall-clock tickets due from now until a fifth of the longest window ahead for the at-risk view", () => {
+    const horizon = new Date(now.getTime() + 0.2 * 8 * HOUR);
+    expect(slaViewCandidateWhere("at_risk", now, 8 * HOUR)).toEqual(
+      candidates({ AND: [deadline({ gte: now }), { OR: [{ slaId: null }, deadline({ lte: horizon })] }] }),
+    );
+  });
+
+  it("never filters out tickets on a business calendar: their clock counts working time", () => {
+    for (const view of ["breached", "at_risk"] as const) {
+      expect(JSON.stringify(slaViewCandidateWhere(view, now, HOUR))).toContain(JSON.stringify(business));
+    }
+  });
+});
+
+describe("ticketIdsFilter", () => {
+  const idCount = (where: ReturnType<typeof ticketIdsFilter>) =>
+    ((where.OR ?? []) as { id: { in: number[] } }[]).map((chunk) => chunk.id.in.length);
+
+  it("splits a long id list into chunks of at most 900", () => {
+    const ids = Array.from({ length: 2000 }, (_, i) => i + 1);
+    expect(idCount(ticketIdsFilter(ids))).toEqual([900, 900, 200]);
+  });
+
+  it("keeps a short list in one chunk", () => {
+    expect(idCount(ticketIdsFilter([1, 2, 3]))).toEqual([3]);
+  });
+
+  it("matches nothing for an empty list", () => {
+    expect(ticketIdsFilter([])).toEqual({ id: { in: [] } });
   });
 });

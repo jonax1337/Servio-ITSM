@@ -1,6 +1,8 @@
+import { unstable_cache } from "next/cache";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { OPEN_TICKET_STATUSES } from "@/lib/constants";
-import { loadBusinessCalendar, slaSnapshot } from "@/lib/sla";
+import { AT_RISK_FRACTION, loadBusinessCalendar, slaSnapshot } from "@/lib/sla";
 import type { BusinessCalendarLike } from "@/lib/business-hours";
 
 /**
@@ -44,18 +46,51 @@ export function matchesSlaView(
   return slaSnapshot(ticket, now, calendar).state === SLA_STATE_OF_VIEW[view];
 }
 
+const MINUTE_MS = 60_000;
+/** SQLite and Postgres both cap the variables of one statement; an id list is split well below the lowest cap. */
+const MAX_IDS_PER_IN = 900;
+const SLA_VIEW_CACHE_SECONDS = 60;
+
+const hasDeadline = (filter: Prisma.DateTimeNullableFilter): Prisma.TicketWhereInput => ({
+  OR: [{ resolveDueAt: filter }, { resolveDueAt: null, dueAt: filter }],
+});
+
 /**
- * Ids of the tickets in a view. The at-risk window is relative to each ticket's
- * own budget (and business calendar), which SQL cannot express portably, so the
- * candidates (active tickets with a deadline) are classified in memory.
+ * The candidates worth classifying in memory for a view, as a SQL filter. Tickets on a business
+ * calendar always pass: their clock counts working time, so the wall-clock deadline says nothing
+ * about them. The others are narrowed by the wall-clock deadline: breached means it has passed,
+ * at risk means it is still ahead but within the last fifth of the longest SLA window.
+ * `longestWindowMs` is the longest resolve target of any SLA; a ticket without an SLA has no known window and is only bounded below.
  */
-export async function findSlaViewTicketIds(view: SlaView, now: Date = new Date()): Promise<number[]> {
+export function slaViewCandidateWhere(view: SlaView, now: Date, longestWindowMs: number): Prisma.TicketWhereInput {
+  const onBusinessCalendar: Prisma.TicketWhereInput = { sla: { businessCalendarId: { not: null } } };
+  const onWallClock: Prisma.TicketWhereInput = { OR: [{ slaId: null }, { sla: { businessCalendarId: null } }] };
+  const horizon = new Date(now.getTime() + AT_RISK_FRACTION * longestWindowMs);
+  const wallClockWindow: Prisma.TicketWhereInput =
+    view === "breached"
+      ? hasDeadline({ lt: now })
+      : { AND: [hasDeadline({ gte: now }), { OR: [{ slaId: null }, hasDeadline({ lte: horizon })] }] };
+  return {
+    status: { in: [...OPEN_TICKET_STATUSES] },
+    resolvedAt: null,
+    AND: [hasDeadline({ not: null }), { OR: [onBusinessCalendar, { AND: [onWallClock, wallClockWindow] }] }],
+  };
+}
+
+/** `id IN (...)` for a long id list, split into chunks the database accepts. */
+export function ticketIdsFilter(ids: readonly number[]): Prisma.TicketWhereInput {
+  const chunks: Prisma.TicketWhereInput[] = [];
+  for (let start = 0; start < ids.length; start += MAX_IDS_PER_IN) {
+    chunks.push({ id: { in: ids.slice(start, start + MAX_IDS_PER_IN) } });
+  }
+  return chunks.length > 0 ? { OR: chunks } : { id: { in: [] } };
+}
+
+async function classifySlaViewTickets(view: SlaView, now: Date): Promise<number[]> {
+  const longestResolve = await db.sLA.aggregate({ _max: { resolveMins: true } });
+  const longestWindowMs = (longestResolve._max.resolveMins ?? 0) * MINUTE_MS;
   const candidates = await db.ticket.findMany({
-    where: {
-      status: { in: [...OPEN_TICKET_STATUSES] },
-      resolvedAt: null,
-      OR: [{ resolveDueAt: { not: null } }, { dueAt: { not: null } }],
-    },
+    where: slaViewCandidateWhere(view, now, longestWindowMs),
     select: {
       id: true, status: true, createdAt: true, resolvedAt: true, resolveBreached: true,
       responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
@@ -71,4 +106,16 @@ export async function findSlaViewTicketIds(view: SlaView, now: Date = new Date()
     if (matchesSlaView(view, ticket, now, calendar)) matching.push(ticket.id);
   }
   return matching;
+}
+
+/**
+ * Ids of the tickets in a view. The at-risk window is relative to each ticket's
+ * own budget (and business calendar), which SQL cannot express portably, so a SQL
+ * prefilter (`slaViewCandidateWhere`) cuts the candidates and those are classified in
+ * memory. The result is cached for a minute per view, like the dashboard tiles.
+ */
+export function findSlaViewTicketIds(view: SlaView): Promise<number[]> {
+  return unstable_cache(() => classifySlaViewTickets(view, new Date()), ["sla-view-ticket-ids", view], {
+    revalidate: SLA_VIEW_CACHE_SECONDS,
+  })();
 }

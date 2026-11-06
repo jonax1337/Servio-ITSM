@@ -11,7 +11,7 @@ import {
   SURVEY_RATING_MAX,
 } from "@/lib/constants";
 import type { Widget, Computed, TicketFilters, BreakdownField, Threshold, Tone } from "@/lib/dashboard/types";
-import { findSlaViewTicketIds, parseSlaView } from "@/lib/sla-views";
+import { findSlaViewTicketIds, parseSlaView, ticketIdsFilter } from "@/lib/sla-views";
 
 /** First matching threshold wins; falls back to undefined (caller uses the accent). */
 function resolveThresholdTone(value: number, thresholds?: Threshold[]): Tone | undefined {
@@ -73,7 +73,7 @@ export async function resolveTicketWhere(f: TicketFilters): Promise<Prisma.Ticke
   const where = buildTicketWhere(f);
   const view = parseSlaView(f.sla);
   if (!view) return where;
-  return { AND: [where, { id: { in: await findSlaViewTicketIds(view) } }] };
+  return { AND: [where, ticketIdsFilter(await findSlaViewTicketIds(view))] };
 }
 
 function startOfDay(d: Date) {

@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
-import { findSlaViewTicketIds, parseSlaView } from "@/lib/sla-views";
+import { findSlaViewTicketIds, parseSlaView, ticketIdsFilter } from "@/lib/sla-views";
 import type { TicketFilters } from "@/lib/dashboard/types";
 import { db } from "@/lib/db";
 import { PRIORITIES, TICKET_STATUSES } from "@/lib/constants";
@@ -97,7 +97,7 @@ export function ticketListQuery(sp: SearchParams, slaViewIds?: number[]): {
     breached: getParam(sp, "breached"),
   };
   const filtered = buildTicketWhere(filters);
-  const where: Prisma.TicketWhereInput = slaViewIds ? { AND: [filtered, { id: { in: slaViewIds } }] } : filtered;
+  const where: Prisma.TicketWhereInput = slaViewIds ? { AND: [filtered, ticketIdsFilter(slaViewIds)] } : filtered;
   // Cross-field text search AND'd onto the filters so search narrows the list (lib/search.ts).
   applyTicketSearch(where, getParam(sp, "q"));
 
