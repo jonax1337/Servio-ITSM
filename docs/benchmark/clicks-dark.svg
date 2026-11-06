@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="632" viewBox="0 0 1600 632" role="img" aria-labelledby="t d">
+<title id="t">Clicks for 17 everyday service-desk tasks</title>
+<desc id="d">Servio: 73 clicks, 17 of 17 tasks complete, 14.9 s; GLPI: 120 clicks, 15 of 17 tasks complete, 34.5 s; Znuny: 132 clicks, 15 of 17 tasks complete, 38.6 s; iTop: 146 clicks, 12 of 17 tasks complete, 62.6 s. Measured November 2026.</desc>
+<rect width="1600" height="632" fill="#12243A"/>
+<g font-family="Manrope, Inter, 'Segoe UI', Helvetica, Arial, sans-serif" style="font-variant-numeric: tabular-nums">
+  <text x="72" y="96" font-size="44" font-weight="800" fill="#FFFFFF">Clicks for 17 everyday service-desk tasks</text>
+  <text x="72" y="140" font-size="22" fill="#9DACBF">Fewer is better. Same tasks and seed data in every system, scripted with Playwright · November 2026</text>
+  <text x="72" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SYSTEM</text><text x="320" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">TOTAL CLICKS</text><text x="1180" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">FULLY DONE</text><text x="1430" y="210" font-size="15" font-weight="700" letter-spacing="1.6" fill="#9DACBF">SCRIPT TIME</text>
+  <line x1="72" x2="1528" y1="222" y2="222" stroke="#26405F" stroke-width="2"/>
+  
+  <text x="72" y="267" font-size="30" font-weight="800" fill="#FFFFFF">Servio</text>
+  <rect x="320" y="240" width="700" height="34" rx="6" fill="#1C3350"/>
+  <rect x="320" y="240" width="350.0" height="34" rx="6" fill="#8FAAFF"/>
+  <text x="686.0" y="267" font-size="30" font-weight="800" fill="#FFFFFF">73</text>
+  <text x="1180" y="267" font-size="30" font-weight="800" fill="#FFFFFF">17 / 17</text>
+  
+  <text x="1430" y="267" font-size="30" font-weight="800" fill="#FFFFFF">14.9 s</text>
+  <text x="72" y="343" font-size="30" font-weight="600" fill="#FFFFFF">GLPI</text>
+  <rect x="320" y="316" width="700" height="34" rx="6" fill="#1C3350"/>
+  <rect x="320" y="316" width="575.3" height="34" rx="6" fill="#5A6D85"/>
+  <text x="911.3" y="343" font-size="30" font-weight="600" fill="#FFFFFF">120</text>
+  <text x="1180" y="335" font-size="30" font-weight="600" fill="#FFFFFF">15 / 17</text>
+  <text x="1180" y="361" font-size="18" fill="#9DACBF">2 partial</text>
+  <text x="1430" y="343" font-size="30" font-weight="600" fill="#FFFFFF">34.5 s</text>
+  <text x="72" y="419" font-size="30" font-weight="600" fill="#FFFFFF">Znuny</text>
+  <rect x="320" y="392" width="700" height="34" rx="6" fill="#1C3350"/>
+  <rect x="320" y="392" width="632.9" height="34" rx="6" fill="#5A6D85"/>
+  <text x="968.9" y="419" font-size="30" font-weight="600" fill="#FFFFFF">132</text>
+  <text x="1180" y="411" font-size="30" font-weight="600" fill="#FFFFFF">15 / 17</text>
+  <text x="1180" y="437" font-size="18" fill="#9DACBF">1 partial, 1 missing</text>
+  <text x="1430" y="419" font-size="30" font-weight="600" fill="#FFFFFF">38.6 s</text>
+  <text x="72" y="495" font-size="30" font-weight="600" fill="#FFFFFF">iTop</text>
+  <rect x="320" y="468" width="700" height="34" rx="6" fill="#1C3350"/>
+  <rect x="320" y="468" width="700.0" height="34" rx="6" fill="#5A6D85"/>
+  <text x="1036.0" y="495" font-size="30" font-weight="600" fill="#FFFFFF">146</text>
+  <text x="1180" y="487" font-size="30" font-weight="600" fill="#FFFFFF">12 / 17</text>
+  <text x="1180" y="513" font-size="18" fill="#9DACBF">5 partial</text>
+  <text x="1430" y="495" font-size="30" font-weight="600" fill="#FFFFFF">62.6 s</text>
+  <text x="72" y="594" font-size="19" fill="#9DACBF">Partially supported tasks take fewer clicks, so the totals favour systems with gaps. Method and per-task numbers: docs/benchmark.md</text>
+</g>
+</svg>

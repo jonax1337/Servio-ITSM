@@ -28,6 +28,7 @@ against the code and kept in sync with the repository. New here? Start with
 | [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
 | [branding.md](./branding.md) | Relay/Nova Flow, canonical assets, fonts, generated application files and sync commands. |
 | [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
+| [benchmark.md](./benchmark.md) | The ITSM usability benchmark against GLPI, iTop and Znuny: per-task clicks and fields, method, limits, and how to regenerate the README chart. |
 
 ## Operations
 

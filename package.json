@@ -7,6 +7,7 @@
     "build": "node scripts/sync-brand-assets.mjs --check && next build",
     "brand:sync": "node scripts/sync-brand-assets.mjs",
     "brand:check": "node scripts/sync-brand-assets.mjs --check",
+    "benchmark:chart": "node scripts/benchmark-chart.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",

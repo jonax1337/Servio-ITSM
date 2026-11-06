@@ -78,6 +78,22 @@ Brand assets → [Servio + Sable brand kit](branding/README.md) · [Brand guidel
 
 ---
 
+## How Servio compares
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark/clicks-dark.svg">
+  <img src="docs/benchmark/clicks-light.svg" alt="Total clicks for 17 service-desk tasks: Servio 73, GLPI 120, Znuny 132, iTop 146" width="100%">
+</picture>
+
+We scripted 17 everyday tasks, from an end user reporting an incident to an admin adding a
+category, and ran them in Servio, GLPI, iTop and Znuny with the same seed data. Servio needs
+**73 clicks** for all of them (GLPI 120, Znuny 132, iTop 146) and is the only one of the four
+that completes every task without a workaround.
+
+Per-task numbers, versions, method and the limits of the comparison → [docs/benchmark.md](docs/benchmark.md)
+
+---
+
 ## Features
 
 - **Service desk** — incidents & requests with priority, impact/urgency, **business-hours SLA targets

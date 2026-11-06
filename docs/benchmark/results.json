@@ -1,0 +1,980 @@
+{
+  "measured": "2026-11-06",
+  "method": "Scripted with Playwright (Chromium, 1440x900, warm cache). Clicks/fields/page loads are counted by the script on the shortest path an experienced user would take; time is the median of 3 runs.",
+  "systems": [
+    {
+      "key": "servio",
+      "name": "Servio",
+      "version": "main after the UX benchmark fixes (local production build)"
+    },
+    {
+      "key": "glpi",
+      "name": "GLPI",
+      "version": "glpi/glpi:latest Docker image (form catalog)"
+    },
+    {
+      "key": "itop",
+      "name": "iTop",
+      "version": "3.3.0 (vbkunin/itop community image, ITIL setup)"
+    },
+    {
+      "key": "znuny",
+      "name": "Znuny",
+      "version": "7.3.8 + ITSM bundle 7.3.2 (official Docker images)"
+    },
+    {
+      "key": "servio-before",
+      "name": "Servio (before fixes)",
+      "version": "main before the UX benchmark fixes"
+    }
+  ],
+  "results": {
+    "servio": {
+      "T1": {
+        "status": "done",
+        "clicks": 5,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 587
+      },
+      "T2": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 147
+      },
+      "T3": {
+        "status": "done",
+        "clicks": 1,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 93
+      },
+      "T4": {
+        "status": "done",
+        "clicks": 4,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 510
+      },
+      "T5": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 0,
+        "pageLoads": 2,
+        "medianMs": 1654
+      },
+      "T6": {
+        "status": "done",
+        "clicks": 4,
+        "fields": 2,
+        "pageLoads": 0,
+        "medianMs": 414
+      },
+      "T7": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 1710
+      },
+      "T8": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 0,
+        "medianMs": 714
+      },
+      "T9": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 0,
+        "pageLoads": 3,
+        "medianMs": 2406
+      },
+      "T10": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 546
+      },
+      "T11": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 1608
+      },
+      "T12": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 5,
+        "pageLoads": 3,
+        "medianMs": 1128
+      },
+      "T13": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 177
+      },
+      "T14": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 0,
+        "pageLoads": 2,
+        "medianMs": 468
+      },
+      "T15": {
+        "status": "done",
+        "clicks": 1,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 555
+      },
+      "T16": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 2,
+        "pageLoads": 1,
+        "medianMs": 1731
+      },
+      "T17": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 448
+      }
+    },
+    "glpi": {
+      "T1": {
+        "status": "done",
+        "clicks": 5,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 1353
+      },
+      "T2": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 1014
+      },
+      "T3": {
+        "status": "done",
+        "clicks": 1,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 1026
+      },
+      "T4": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 1628
+      },
+      "T5": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 0,
+        "pageLoads": 4,
+        "medianMs": 2672
+      },
+      "T6": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 2,
+        "pageLoads": 3,
+        "medianMs": 2315
+      },
+      "T7": {
+        "status": "done",
+        "clicks": 12,
+        "fields": 0,
+        "pageLoads": 2,
+        "medianMs": 1989
+      },
+      "T8": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 2222
+      },
+      "T9": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 0,
+        "pageLoads": 3,
+        "medianMs": 2073
+      },
+      "T10": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 591
+      },
+      "T11": {
+        "status": "done",
+        "clicks": 15,
+        "fields": 0,
+        "pageLoads": 4,
+        "medianMs": 2313
+      },
+      "T12": {
+        "status": "partial",
+        "clicks": 18,
+        "fields": 4,
+        "pageLoads": 4,
+        "medianMs": 4955
+      },
+      "T13": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 0,
+        "pageLoads": 2,
+        "medianMs": 2116
+      },
+      "T14": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 2360
+      },
+      "T15": {
+        "status": "partial",
+        "clicks": 4,
+        "fields": 0,
+        "pageLoads": 3,
+        "medianMs": 937
+      },
+      "T16": {
+        "status": "done",
+        "clicks": 11,
+        "fields": 4,
+        "pageLoads": 6,
+        "medianMs": 3119
+      },
+      "T17": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 1,
+        "pageLoads": 4,
+        "medianMs": 1768
+      }
+    },
+    "itop": {
+      "T1": {
+        "status": "done",
+        "clicks": 5,
+        "fields": 3,
+        "pageLoads": 2,
+        "medianMs": 2728
+      },
+      "T2": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 1653
+      },
+      "T3": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 594
+      },
+      "T4": {
+        "status": "partial",
+        "clicks": 3,
+        "fields": 3,
+        "pageLoads": 2,
+        "medianMs": 2297
+      },
+      "T5": {
+        "status": "done",
+        "clicks": 12,
+        "fields": 0,
+        "pageLoads": 5,
+        "medianMs": 3761
+      },
+      "T6": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 2,
+        "pageLoads": 3,
+        "medianMs": 1988
+      },
+      "T7": {
+        "status": "done",
+        "clicks": 10,
+        "fields": 2,
+        "pageLoads": 6,
+        "medianMs": 4503
+      },
+      "T8": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 1,
+        "pageLoads": 6,
+        "medianMs": 4382
+      },
+      "T9": {
+        "status": "done",
+        "clicks": 14,
+        "fields": 5,
+        "pageLoads": 9,
+        "medianMs": 6288
+      },
+      "T10": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 1856
+      },
+      "T11": {
+        "status": "partial",
+        "clicks": 11,
+        "fields": 1,
+        "pageLoads": 7,
+        "medianMs": 4059
+      },
+      "T12": {
+        "status": "partial",
+        "clicks": 29,
+        "fields": 16,
+        "pageLoads": 11,
+        "medianMs": 9503
+      },
+      "T13": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 3,
+        "pageLoads": 4,
+        "medianMs": 4132
+      },
+      "T14": {
+        "status": "partial",
+        "clicks": 5,
+        "fields": 4,
+        "pageLoads": 3,
+        "medianMs": 2301
+      },
+      "T15": {
+        "status": "partial",
+        "clicks": 2,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 1062
+      },
+      "T16": {
+        "status": "done",
+        "clicks": 16,
+        "fields": 8,
+        "pageLoads": 8,
+        "medianMs": 7067
+      },
+      "T17": {
+        "status": "done",
+        "clicks": 8,
+        "fields": 2,
+        "pageLoads": 3,
+        "medianMs": 4435
+      }
+    },
+    "znuny": {
+      "T1": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 1607
+      },
+      "T2": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 1037
+      },
+      "T3": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 986
+      },
+      "T4": {
+        "status": "not-supported",
+        "clicks": 0,
+        "fields": 0,
+        "pageLoads": 0,
+        "medianMs": null
+      },
+      "T5": {
+        "status": "done",
+        "clicks": 10,
+        "fields": 5,
+        "pageLoads": 5,
+        "medianMs": 2747
+      },
+      "T6": {
+        "status": "done",
+        "clicks": 5,
+        "fields": 3,
+        "pageLoads": 4,
+        "medianMs": 2441
+      },
+      "T7": {
+        "status": "done",
+        "clicks": 11,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 3301
+      },
+      "T8": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 1081
+      },
+      "T9": {
+        "status": "done",
+        "clicks": 12,
+        "fields": 4,
+        "pageLoads": 5,
+        "medianMs": 4298
+      },
+      "T10": {
+        "status": "done",
+        "clicks": 8,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 1600
+      },
+      "T11": {
+        "status": "done",
+        "clicks": 8,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 2019
+      },
+      "T12": {
+        "status": "done",
+        "clicks": 29,
+        "fields": 8,
+        "pageLoads": 11,
+        "medianMs": 8665
+      },
+      "T13": {
+        "status": "done",
+        "clicks": 8,
+        "fields": 0,
+        "pageLoads": 4,
+        "medianMs": 1905
+      },
+      "T14": {
+        "status": "partial",
+        "clicks": 5,
+        "fields": 4,
+        "pageLoads": 2,
+        "medianMs": 1381
+      },
+      "T15": {
+        "status": "done",
+        "clicks": 0,
+        "fields": 0,
+        "pageLoads": 0,
+        "medianMs": 13
+      },
+      "T16": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 4,
+        "pageLoads": 8,
+        "medianMs": 2557
+      },
+      "T17": {
+        "status": "done",
+        "clicks": 13,
+        "fields": 1,
+        "pageLoads": 8,
+        "medianMs": 2928
+      }
+    },
+    "servio-before": {
+      "T1": {
+        "status": "done",
+        "clicks": 5,
+        "fields": 2,
+        "pageLoads": 2,
+        "medianMs": 607
+      },
+      "T2": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 181
+      },
+      "T3": {
+        "status": "done",
+        "clicks": 1,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 103
+      },
+      "T4": {
+        "status": "done",
+        "clicks": 4,
+        "fields": 1,
+        "pageLoads": 2,
+        "medianMs": 524
+      },
+      "T5": {
+        "status": "done",
+        "clicks": 7,
+        "fields": 0,
+        "pageLoads": 2,
+        "medianMs": 1723
+      },
+      "T6": {
+        "status": "done",
+        "clicks": 4,
+        "fields": 2,
+        "pageLoads": 0,
+        "medianMs": 415
+      },
+      "T7": {
+        "status": "done",
+        "clicks": 6,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 1740
+      },
+      "T8": {
+        "status": "done",
+        "clicks": 4,
+        "fields": 1,
+        "pageLoads": 0,
+        "medianMs": 892
+      },
+      "T9": {
+        "status": "done",
+        "clicks": 12,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 2576
+      },
+      "T10": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 521
+      },
+      "T11": {
+        "status": "done",
+        "clicks": 11,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 1167
+      },
+      "T12": {
+        "status": "done",
+        "clicks": 12,
+        "fields": 5,
+        "pageLoads": 4,
+        "medianMs": 1862
+      },
+      "T13": {
+        "status": "done",
+        "clicks": 2,
+        "fields": 0,
+        "pageLoads": 1,
+        "medianMs": 202
+      },
+      "T14": {
+        "status": "partial",
+        "clicks": 3,
+        "fields": 2,
+        "pageLoads": 3,
+        "medianMs": 283
+      },
+      "T15": {
+        "status": "partial",
+        "clicks": 7,
+        "fields": 1,
+        "pageLoads": 3,
+        "medianMs": 1218
+      },
+      "T16": {
+        "status": "done",
+        "clicks": 9,
+        "fields": 2,
+        "pageLoads": 3,
+        "medianMs": 2279
+      },
+      "T17": {
+        "status": "done",
+        "clicks": 3,
+        "fields": 1,
+        "pageLoads": 1,
+        "medianMs": 433
+      }
+    }
+  },
+  "features": {
+    "servio": [
+      {
+        "feature": "Incident",
+        "support": "yes"
+      },
+      {
+        "feature": "Service request + catalog",
+        "support": "yes"
+      },
+      {
+        "feature": "Problem",
+        "support": "yes"
+      },
+      {
+        "feature": "Change (+ CAB/approvals, calendar, freeze)",
+        "support": "yes"
+      },
+      {
+        "feature": "Release",
+        "support": "yes"
+      },
+      {
+        "feature": "CMDB/asset + relationships",
+        "support": "yes"
+      },
+      {
+        "feature": "Knowledge base",
+        "support": "yes"
+      },
+      {
+        "feature": "Self-service portal",
+        "support": "yes"
+      },
+      {
+        "feature": "SLA (business hours, escalation)",
+        "support": "yes"
+      },
+      {
+        "feature": "Email in/out + threading",
+        "support": "yes"
+      },
+      {
+        "feature": "Automations/workflows",
+        "support": "yes"
+      },
+      {
+        "feature": "Reporting/dashboards",
+        "support": "partial"
+      },
+      {
+        "feature": "REST API",
+        "support": "yes"
+      },
+      {
+        "feature": "SSO/LDAP sync",
+        "support": "yes"
+      },
+      {
+        "feature": "Custom fields",
+        "support": "yes"
+      },
+      {
+        "feature": "Status page",
+        "support": "yes"
+      },
+      {
+        "feature": "On-call",
+        "support": "yes"
+      },
+      {
+        "feature": "Contracts/licenses",
+        "support": "yes"
+      },
+      {
+        "feature": "AI assistance",
+        "support": "partial"
+      },
+      {
+        "feature": "Mobile/responsive UI",
+        "support": "partial"
+      },
+      {
+        "feature": "Accessibility basics (keyboard, labels, contrast)",
+        "support": "partial"
+      },
+      {
+        "feature": "i18n",
+        "support": "no"
+      },
+      {
+        "feature": "Install effort (time + steps to first ticket)",
+        "support": "yes"
+      }
+    ],
+    "glpi": [
+      {
+        "feature": "Incident",
+        "support": "yes"
+      },
+      {
+        "feature": "Service request + catalog",
+        "support": "yes"
+      },
+      {
+        "feature": "Problem",
+        "support": "yes"
+      },
+      {
+        "feature": "Change (+ CAB/approvals, calendar, freeze)",
+        "support": "partial"
+      },
+      {
+        "feature": "Release",
+        "support": "no"
+      },
+      {
+        "feature": "CMDB/asset + relationships",
+        "support": "yes"
+      },
+      {
+        "feature": "Knowledge base",
+        "support": "yes"
+      },
+      {
+        "feature": "Self-service portal",
+        "support": "yes"
+      },
+      {
+        "feature": "SLA (business hours, escalation)",
+        "support": "yes"
+      },
+      {
+        "feature": "Email in/out + threading",
+        "support": "yes"
+      },
+      {
+        "feature": "Automations/workflows",
+        "support": "yes"
+      },
+      {
+        "feature": "Reporting/dashboards",
+        "support": "partial"
+      },
+      {
+        "feature": "REST API",
+        "support": "yes"
+      },
+      {
+        "feature": "SSO/LDAP sync",
+        "support": "yes"
+      },
+      {
+        "feature": "Custom fields",
+        "support": "partial"
+      },
+      {
+        "feature": "Status page",
+        "support": "no"
+      },
+      {
+        "feature": "On-call",
+        "support": "no"
+      },
+      {
+        "feature": "Contracts/licenses",
+        "support": "yes"
+      },
+      {
+        "feature": "AI assistance",
+        "support": "no"
+      },
+      {
+        "feature": "Mobile/responsive UI",
+        "support": "partial"
+      },
+      {
+        "feature": "Accessibility basics (keyboard, labels, contrast)",
+        "support": "partial"
+      },
+      {
+        "feature": "i18n",
+        "support": "yes"
+      }
+    ],
+    "itop": [
+      {
+        "feature": "Incident",
+        "support": "yes"
+      },
+      {
+        "feature": "Service request + catalog",
+        "support": "yes"
+      },
+      {
+        "feature": "Problem",
+        "support": "partial"
+      },
+      {
+        "feature": "Change (CAB/approvals)",
+        "support": "partial"
+      },
+      {
+        "feature": "Release",
+        "support": "no"
+      },
+      {
+        "feature": "CMDB / asset + relationships",
+        "support": "yes"
+      },
+      {
+        "feature": "Knowledge base",
+        "support": "partial"
+      },
+      {
+        "feature": "Self-service portal",
+        "support": "yes"
+      },
+      {
+        "feature": "SLA",
+        "support": "partial"
+      },
+      {
+        "feature": "Bulk actions",
+        "support": "partial"
+      },
+      {
+        "feature": "User/group administration",
+        "support": "yes"
+      },
+      {
+        "feature": "Contracts/licenses",
+        "support": "partial"
+      },
+      {
+        "feature": "REST API",
+        "support": "yes"
+      },
+      {
+        "feature": "Reporting/dashboards",
+        "support": "partial"
+      },
+      {
+        "feature": "i18n",
+        "support": "yes"
+      },
+      {
+        "feature": "Email in/out, automations, SSO/LDAP, custom fields, status page, on-call, AI assistance, mobile/responsive UI, accessibility basics",
+        "support": "unknown"
+      }
+    ],
+    "znuny": [
+      {
+        "feature": "Incident",
+        "support": "yes"
+      },
+      {
+        "feature": "Service request + catalog",
+        "support": "partial"
+      },
+      {
+        "feature": "Problem",
+        "support": "yes"
+      },
+      {
+        "feature": "Change (+ CAB/approvals, calendar, freeze)",
+        "support": "yes"
+      },
+      {
+        "feature": "Release",
+        "support": "no"
+      },
+      {
+        "feature": "CMDB/asset + relationships",
+        "support": "yes"
+      },
+      {
+        "feature": "Knowledge base",
+        "support": "partial"
+      },
+      {
+        "feature": "Self-service portal",
+        "support": "yes"
+      },
+      {
+        "feature": "SLA (business hours, escalation)",
+        "support": "yes"
+      },
+      {
+        "feature": "Email in/out + threading",
+        "support": "yes"
+      },
+      {
+        "feature": "Automations/workflows",
+        "support": "yes"
+      },
+      {
+        "feature": "Reporting/dashboards",
+        "support": "partial"
+      },
+      {
+        "feature": "REST API",
+        "support": "yes"
+      },
+      {
+        "feature": "SSO/LDAP sync",
+        "support": "yes"
+      },
+      {
+        "feature": "Custom fields",
+        "support": "yes"
+      },
+      {
+        "feature": "Status page",
+        "support": "no"
+      },
+      {
+        "feature": "On-call",
+        "support": "no"
+      },
+      {
+        "feature": "Contracts/licenses",
+        "support": "partial"
+      },
+      {
+        "feature": "AI assistance",
+        "support": "no"
+      },
+      {
+        "feature": "Mobile/responsive UI",
+        "support": "partial"
+      },
+      {
+        "feature": "Accessibility basics",
+        "support": "partial"
+      },
+      {
+        "feature": "i18n",
+        "support": "yes"
+      }
+    ]
+  }
+}
