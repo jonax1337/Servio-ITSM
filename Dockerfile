@@ -1,7 +1,7 @@
 # Servio — production image (true multi-stage).
 #
-# NOTE: authored but not test-built here — run `docker compose build` in your
-# own environment before deploying. The runner ships production dependencies
+# CI builds this image and boots it on every PR; tagged releases are pushed to
+# GHCR (see docs/releasing.md). The runner ships production dependencies
 # only, runs as the unprivileged `node` user, self-reports health on /login,
 # and carries NO baked-in DATABASE_URL (provide one at runtime; the compose
 # file defaults to SQLite on the /data volume). Migrations are applied at boot
@@ -17,7 +17,7 @@ RUN corepack enable \
 WORKDIR /app
 
 # Install deps first (cached until the lockfile changes).
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
 RUN pnpm install --frozen-lockfile
 
@@ -41,7 +41,7 @@ RUN corepack enable \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
 RUN pnpm install --frozen-lockfile --prod
 

@@ -221,9 +221,21 @@ docker compose up --build               # app on :3000, Gotenberg internal
 - **Secrets.** The web service reads your `.env` (`env_file`) for `AUTH_SECRET`, AI keys,
   SMTP, etc. — override `DATABASE_URL`/`GOTENBERG_URL`/`UPLOAD_DIR` are set in the compose.
 
-> The `Dockerfile`/compose were authored for this project but should be **test-built in
-> your environment** (`docker compose build`) before a real deploy. Gotenberg office
-> conversion itself is verified working end-to-end.
+CI builds this image and boots it on every pull request (see [releasing.md](./releasing.md)).
+
+### Prebuilt images
+
+Every release publishes a multi-arch (`linux/amd64`, `linux/arm64`) image to GHCR. To run
+it instead of building locally, replace the `build:` block of the `web` service with a
+pinned tag:
+
+```yaml
+  web:
+    image: ghcr.io/jonax1337/servio:X.Y.Z   # a released version, see GitHub Releases
+```
+
+The published image is built from the committed schema, so it targets **SQLite**. A
+PostgreSQL deployment changes `datasource.provider` and therefore needs its own build.
 
 ---
 
