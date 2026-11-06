@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import { canActOnTicket } from "@/lib/authz";
+import { ensureDraftStatusIncident, notifyOnCallOfMajorIncident } from "@/lib/status-incidents";
 import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import {
   firstResponseData, pauseData, resumeData, statusChangeData, ticketCalendar,
@@ -176,6 +177,8 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
     const current = await db.ticket.findUnique({ where: { id }, select: { assigneeId: true } });
     if (current?.assigneeId && !(await isGroupMember(v, current.assigneeId))) patch.assigneeId = null;
   }
+  // A new owner gets their own SLA nudge.
+  if ("assigneeId" in patch) patch.slaNudgedAt = null;
 
   // SLA recompute: changing priority/service/SLA on an OPEN ticket must re-stamp
   // the response/resolve deadlines, banking already-paused time and preserving a
@@ -422,6 +425,14 @@ export async function toggleMajorIncident(formData: FormData) {
   if (now) {
     if (t.assigneeId) await notify(t.assigneeId, { type: "MAJOR_INCIDENT", title: "Major Incident declared", body: t.title, entity: "Ticket", entityId: String(id) });
     await notifyWatchers(id, me.id, { type: "MAJOR_INCIDENT", title: "Major Incident declared", body: t.title, entity: "Ticket", entityId: String(id) });
+    // The declaration is already persisted; a failing side effect must not fail the toggle.
+    try {
+      await ensureDraftStatusIncident(t, me.id);
+      await notifyOnCallOfMajorIncident(t, me.id);
+    } catch (e) {
+      console.error("[servio:status] major-incident follow-ups failed", e);
+    }
+    revalidatePath("/status");
   }
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");

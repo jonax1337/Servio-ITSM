@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { LinkButton } from "@/components/link-button";
 import { SableWidget } from "@/components/portal/sable-widget";
+import { PortalStatusBanner } from "@/components/portal/portal-status-banner";
 
 export default async function PortalLayout({
   children,
@@ -29,7 +30,7 @@ export default async function PortalLayout({
               <Wordmark />
             </Link>
           </div>
-          <div className="hidden md:flex md:justify-center">
+          <div className="hidden lg:flex lg:justify-center">
             <PortalNav />
           </div>
           <div className="flex items-center justify-end gap-1.5">
@@ -42,10 +43,12 @@ export default async function PortalLayout({
             <UserMenu name={user.name} email={user.email} role={user.role} image={user.image} />
           </div>
         </div>
-        <div className="border-t px-2 py-2 md:hidden">
+        <div className="border-t px-2 py-2 lg:hidden">
           <PortalNav />
         </div>
       </header>
+
+      <PortalStatusBanner />
 
       <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:py-10">{children}</main>
 

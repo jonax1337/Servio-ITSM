@@ -5,7 +5,10 @@
  * react-grid-layout editor added in phase 2.
  */
 
-export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list" | "csat";
+export type WidgetType = "stat" | "breakdown" | "volume" | "sla" | "aging" | "list" | "csat" | "briefing";
+
+/** Every widget type, for validating layouts that come from the client. */
+export const WIDGET_TYPES: readonly WidgetType[] = ["stat", "breakdown", "volume", "sla", "csat", "aging", "list", "briefing"];
 
 /** A widget's own filters. Superset of the tickets-list vocabulary + a few flags. */
 export type TicketFilters = Partial<
@@ -46,6 +49,14 @@ export type Widget = {
   };
 };
 
+/** One line of the daily briefing: a record the viewer should look at. `detail` says why. */
+export type BriefingItem = { label: string; detail: string; href: string; tone?: Tone };
+
+export type BriefingSectionKey = "sla" | "customer" | "approvals" | "changes";
+
+/** `total` counts every match; `items` holds only the first few. */
+export type BriefingSection = { key: BriefingSectionKey; title: string; total: number; items: BriefingItem[] };
+
 /** The computed payload the renderer switches on (data resolved server-side). */
 export type Computed =
   | { kind: "stat"; value: number; href?: string; tone?: Tone }
@@ -55,6 +66,7 @@ export type Computed =
   | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number; href?: string }
   | { kind: "csat"; avg: number | null; count: number; max: number }
   | { kind: "list"; tickets: { id: number; prefix: string; title: string; status: string; priority: string }[] }
+  | { kind: "briefing"; sections: BriefingSection[]; aiAvailable: boolean }
   | { kind: "empty" };
 
 export const WIDGET_LABELS: Record<WidgetType, string> = {
@@ -65,6 +77,7 @@ export const WIDGET_LABELS: Record<WidgetType, string> = {
   aging: "Ticket aging",
   list: "Ticket list",
   csat: "CSAT",
+  briefing: "Daily briefing",
 };
 
 /** Built-in default dashboard, shown when a user has none of their own yet. */

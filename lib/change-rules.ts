@@ -78,7 +78,6 @@ export function windowLockedMessage(status: string): string {
 // ── Submit prerequisites ─────────────────────────────────────────────────────
 
 export type SubmitCandidate = {
-  type: string;
   implementationPlan: string | null;
   rollbackPlan: string | null;
   plannedStart: Date | null;
@@ -86,11 +85,11 @@ export type SubmitCandidate = {
 };
 
 /**
- * What is still missing before a change may go to approval. STANDARD changes are
- * pre-authorized (no CAB), so they are exempt — their procedure lives in the template.
+ * What is still missing before a change may go to approval. A pre-approved standard
+ * change is exempt: its procedure lives in the template it was created from.
  */
-export function submitBlockers(change: SubmitCandidate): string[] {
-  if (change.type === "STANDARD") return [];
+export function submitBlockers(change: SubmitCandidate, preApproved: boolean): string[] {
+  if (preApproved) return [];
   const missing: string[] = [];
   if (!change.implementationPlan?.trim()) missing.push("an implementation plan");
   if (!change.rollbackPlan?.trim()) missing.push("a rollback plan");
@@ -101,6 +100,58 @@ export function submitBlockers(change: SubmitCandidate): string[] {
 export function submitBlockedMessage(missing: string[]): string {
   const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}` : missing[0];
   return `Cannot submit for approval: add ${list} first.`;
+}
+
+// ── Standard changes ─────────────────────────────────────────────────────────
+// A standard change is pre-authorized by the approved template it was created from;
+// nothing else makes a change STANDARD, and editing its procedure takes the pre-approval away.
+
+export const STANDARD_NEEDS_TEMPLATE_MESSAGE = "Standard changes are created from an approved template.";
+
+export const EDITED_AWAY_FROM_TEMPLATE_COMMENT = "Edited away from the standard template — needs CAB approval.";
+
+/** Types a change can be given by hand; STANDARD is reserved for templates. */
+export const MANUAL_CHANGE_TYPES = CHANGE_TYPES.filter((type) => type !== "STANDARD");
+
+/** Why a change may not be given this type, or null. A change that already is STANDARD keeps it. */
+export function standardTypeError(nextType: string, currentType: string | null): string | null {
+  return nextType === "STANDARD" && currentType !== "STANDARD" ? STANDARD_NEEDS_TEMPLATE_MESSAGE : null;
+}
+
+type TemplatedChange = { type: string; templateId: string | null };
+
+/** A STANDARD change that traces back to a template (older STANDARD changes without one carry no pre-approval). */
+export function isTemplatedStandard(change: TemplatedChange): boolean {
+  return change.type === "STANDARD" && change.templateId !== null;
+}
+
+/** Submitting auto-approves only when the change's template is still active and itself STANDARD. */
+export function preApprovalApplies(change: TemplatedChange, template: { type: string; isActive: boolean } | null): boolean {
+  return isTemplatedStandard(change) && template !== null && template.isActive && template.type === "STANDARD";
+}
+
+/** The fields a template fixes for its changes. */
+const STANDARD_PROCEDURE_FIELDS: readonly string[] = ["implementationPlan", "rollbackPlan", "risk", "impact"];
+
+/** Whether saving `next` into `field` (currently `current`) moves a change away from its template's approved procedure. */
+export function leavesStandardProcedure(field: string, next: string | null, current: string | null): boolean {
+  if (field === "type") return next !== "STANDARD";
+  return STANDARD_PROCEDURE_FIELDS.includes(field) && (next ?? "") !== (current ?? "");
+}
+
+/** Statuses a pre-approved change reaches before its work starts. */
+const PRE_APPROVED_STATUSES: readonly string[] = ["APPROVED", "SCHEDULED"];
+
+export type StandardDemotion = { backToDraft: boolean };
+
+/**
+ * What an edit that leaves the template's procedure does to the change: null when it is not a
+ * templated standard change, otherwise it becomes NORMAL, and goes back to DRAFT when its
+ * pre-approval was granted but the work has not started.
+ */
+export function standardDemotion(change: TemplatedChange & { status: string }): StandardDemotion | null {
+  if (!isTemplatedStandard(change)) return null;
+  return { backToDraft: PRE_APPROVED_STATUSES.includes(change.status) };
 }
 
 // ── CAB board ────────────────────────────────────────────────────────────────

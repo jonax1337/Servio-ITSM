@@ -163,7 +163,7 @@ The business-time math lives in [`lib/business-hours.ts`](../lib/business-hours.
 | `BusinessCalendar` | A named working-hours calendar the SLA clock honours | `name`, `timezone` (default `UTC`), `weeklyHours` (JSON as TEXT: per-weekday open/close windows); has `holidays`, `slas` |
 | `Holiday` | A non-working day on a calendar (the clock pauses on it) | `(calendarId, date, name)`; `onDelete: Cascade` with its calendar |
 | `EscalationPolicy` | A named, ordered set of escalation steps | `name`; has `steps`, `slas` |
-| `EscalationStep` | One step: at `thresholdPercent` of SLA elapsed, run `action` | `order`, `thresholdPercent` (e.g. 50/75/100), `action` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`), `targetGroupId`/`targetUserId` (reassign/notify target), `bumpToPriority` (for `BUMP_PRIORITY`); `onDelete: Cascade` with its policy |
+| `EscalationStep` | One step: at `thresholdPercent` of SLA elapsed, run `action` | `order`, `thresholdPercent` (e.g. 50/75/100), `action` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`/`NOTIFY_ONCALL`/`REASSIGN_ONCALL`; the on-call actions resolve the current on-call of the ticket's team), `targetGroupId`/`targetUserId` (reassign/notify target), `bumpToPriority` (for `BUMP_PRIORITY`); `onDelete: Cascade` with its policy |
 
 ### Sync / integrations
 
@@ -210,6 +210,39 @@ Sable's *actions* are not stored as models — its write operations are RBAC-gat
 in code (`lib/ai-operations/*`) and applied through the normal server actions, which write their
 own `AuditLog` rows. See [ai.md](./ai.md).
 
+### Operations & planning (freeze, on-call, status, releases, contracts, insights)
+
+Added by migration `20261107000000_itsm_ops_sable`. Ids are `cuid` strings unless noted. Enum-like columns are
+`String`s validated against the tuples in [`lib/constants.ts`](../lib/constants.ts) (see the enum table below).
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `ChangeFreezeWindow` | A period in which changes may not be submitted or rescheduled | `name`, `reason`, `startsAt`/`endsAt`, optional `serviceId` and `groupId` (both `Cascade`). Global when both scopes are null; otherwise applies only when **every set scope** matches the change. Indexed `(startsAt, endsAt)`; creator/editor is recorded through the audit log, not a column |
+| `OnCallSchedule` | A rotation for one team | `name`, `groupId` (`Cascade`), `timezone` (IANA), `rotationType` (`ONCALL_ROTATION_TYPES`), `customIntervalHours` (only for `CUSTOM`), `handoffTime` (`HH:mm` local), `rotationStart` (first handoff, UTC), `isActive`; has `members`, `overrides` |
+| `OnCallMember` | A user in a rotation | `scheduleId`, `userId` (`Cascade`), `position` (0 = first); unique `(scheduleId, userId)` |
+| `OnCallOverride` | A swap or cover that always beats the rotation | `scheduleId`, `userId` (who is on call), `replacesUserId` (`SetNull`), `startsAt`/`endsAt`, `reason` |
+| `StatusIncident` | A public-facing status incident | `title`, `summary` (public text), `state` (`STATUS_INCIDENT_STATES`), `impact` (`STATUS_INCIDENT_IMPACTS`), `isPublic` (default `false` = draft), `ticketId` (**unique**, `SetNull`: one incident per ticket, which makes creation from a major incident idempotent), `startedAt`, `publishedAt`, `resolvedAt`; has `services`, `updates` |
+| `StatusIncidentService` | Services affected by an incident | composite id `(incidentId, serviceId)`, both `Cascade` |
+| `StatusIncidentUpdate` | One timeline post | `incidentId` (`Cascade`), `state`, `body`, `authorId` (`SetNull`); public exactly when its incident is |
+| `Release` | A bundle of changes deployed together | `id` (**Int** → `REL-0001`), `name`, `status` (`RELEASE_STATUSES`), `ownerId`, `groupId` (`SetNull`), `deployedAt`; has `changes`. The release window is derived from the changes' planned windows and never stored |
+| `ChangeTemplate` | A reusable change (standard or normal) | `name` (unique), `summary`, `isActive`, `type` (`CHANGE_TEMPLATE_TYPES`), `title`, `description`, `reason`, `implementationPlan`, `rollbackPlan`, `risk`, `priority`, `impact`, `categoryId`/`serviceId`/`groupId` (`SetNull`); `Change.templateId` records which template a change came from |
+| `Vendor` | Supplier of contracts and licenses | `name` (unique), `website`, `email`, `phone`, `notes`, `isActive` |
+| `Contract` | A support, lease, subscription… agreement | `name`, `number`, `type` (`CONTRACT_TYPES`), `status` (`CONTRACT_STATUSES`), `vendorId`, `ownerId` (reminder recipient), `startDate`/`endDate`, `cost`, `renewalNoticeDays` (default 30), `autoRenew`, `renewalNotifiedFor` (the `endDate` the reminder fired for, so moving `endDate` re-arms it) |
+| `ContractAsset` | Assets covered by a contract | composite id `(contractId, assetId)`, both `Cascade` |
+| `SoftwareLicense` | A license pool | `name`, `vendorId`, `contractId`, `ownerId`, `licenseType` (`LICENSE_TYPES`), `seats`, `expiresAt`, `cost`, `overAllocatedNotifiedAt` (at-most-once alert marker, cleared when compliant again) |
+| `LicenseAssignment` | A used seat | `licenseId` (`Cascade`), `userId` and/or `assetId` (`Cascade`), `assignedAt`. At least one target must be set and duplicates are rejected in the action (NULLs defeat a DB unique); used seats = number of rows |
+| `AiInsight` | A pattern Sable detected | `kind` (`AI_INSIGHT_KINDS`), `status` (`AI_INSIGHT_STATUSES`), `dedupeKey` (**unique**, at-most-once creation), `title`, `summary`, `payload` (JSON as TEXT), `problemId`/`articleId` (`SetNull`: what was created from it), `dismissedById`/`dismissedAt` |
+| `AiInsightTicket` | Tickets behind an insight | composite id `(insightId, ticketId)`, both `Cascade` |
+
+New columns on existing models: `Ticket.slaNudgedAt` (at-most-once SLA nudge marker), `Change.releaseId`
+(`SetNull`), `Change.templateId` (`SetNull`) and an index on `Change(plannedStart, plannedEnd)` for calendar and
+conflict queries. `EscalationStep.action` gained `NOTIFY_ONCALL` and `REASSIGN_ONCALL` (no new column: the target is
+the current on-call of the ticket's team). A change has no service column; its services are those of its affected CIs
+(`ChangeAsset` → `ServiceAsset`).
+
+At-most-once markers in this group: `Ticket.slaNudgedAt`, `Contract.renewalNotifiedFor`,
+`SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`.
+
 ### Personalisation (saved views & dashboards)
 
 | Model | Purpose | Key fields / relations |
@@ -248,7 +281,7 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `ARTICLE_LINK_ENTITY_TYPES` | `ArticleLink.entityType` | `TICKET`, `PROBLEM`, `CHANGE` |
 | `RISKS` | `Change.risk` | `LOW`, `MEDIUM`, `HIGH` |
 | `CAB_APPROVAL_RULES` | `Change.approvalRule` | `UNANIMOUS`, `QUORUM`, `PERCENT` |
-| `ESCALATION_ACTIONS` | `EscalationStep.action` | `NOTIFY`, `REASSIGN`, `BUMP_PRIORITY` |
+| `ESCALATION_ACTIONS` | `EscalationStep.action` | `NOTIFY`, `REASSIGN`, `BUMP_PRIORITY`, `NOTIFY_ONCALL`, `REASSIGN_ONCALL` |
 | `APPROVAL_STATUSES` | `TicketApproval.status`, `ChangeApproval.status`, `Approval.status`, `Ticket.approvalState` | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED` |
 | `SERVICE_STATUSES` | `Service.status` | `OPERATIONAL`, `DEGRADED`, `OUTAGE`, `MAINTENANCE`, `RETIRED` |
 | `CRITICALITIES` | `Service.criticality` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
@@ -265,6 +298,17 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `ARTICLE_STATUSES` | `Article.status` | `DRAFT`, `REVIEW`, `PUBLISHED`, `RETIRED` |
 | `ARTICLE_VISIBILITIES` | `Article.visibility` | `INTERNAL`, `PUBLIC` |
 | `LOCATION_TYPES` | `Location.type` | `SITE`, `BUILDING`, `FLOOR`, `ROOM`, `DATACENTER`, `RACK` |
+| `ONCALL_ROTATION_TYPES` | `OnCallSchedule.rotationType` | `DAILY`, `WEEKLY`, `CUSTOM` |
+| `STATUS_INCIDENT_STATES` | `StatusIncident.state`, `StatusIncidentUpdate.state` | `INVESTIGATING`, `IDENTIFIED`, `MONITORING`, `RESOLVED` |
+| `ACTIVE_STATUS_INCIDENT_STATES` | (subset) | `INVESTIGATING`, `IDENTIFIED`, `MONITORING` |
+| `STATUS_INCIDENT_IMPACTS` | `StatusIncident.impact` | `NONE`, `MINOR`, `MAJOR`, `CRITICAL` |
+| `RELEASE_STATUSES` | `Release.status` | `PLANNING`, `READY`, `IN_PROGRESS`, `DEPLOYED`, `CANCELLED` |
+| `CHANGE_TEMPLATE_TYPES` | `ChangeTemplate.type` | `STANDARD`, `NORMAL` |
+| `CONTRACT_TYPES` | `Contract.type` | `SUPPORT`, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`, `WARRANTY`, `SERVICE`, `OTHER` |
+| `CONTRACT_STATUSES` | `Contract.status` | `DRAFT`, `ACTIVE`, `EXPIRED`, `TERMINATED` |
+| `LICENSE_TYPES` | `SoftwareLicense.licenseType` | `PER_USER`, `PER_DEVICE`, `SITE`, `CONCURRENT`, `SUBSCRIPTION` |
+| `AI_INSIGHT_KINDS` | `AiInsight.kind` | `CLUSTER`, `KB_GAP` |
+| `AI_INSIGHT_STATUSES` | `AiInsight.status` | `OPEN`, `ACTIONED`, `DISMISSED` |
 | `TICKET_LINK` types | `TicketLink.type` | `RELATED`, `DUPLICATE`, `BLOCKS`, `CAUSED_BY` *(defined inline on the schema, not exported as a constant)* |
 
 There is no `lib/enums.ts` — all enum tuples and their metadata live in

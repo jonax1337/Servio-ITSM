@@ -18,6 +18,12 @@ import {
   ShoppingBag,
   ScrollText,
   MessageSquareText,
+  CalendarRange,
+  Rocket,
+  PhoneCall,
+  Activity,
+  FileSignature,
+  Lightbulb,
 } from "lucide-react";
 import { SableMark } from "@/components/sable-mark";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
@@ -37,6 +43,7 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Dashboard", href: "/", icon: LayoutDashboard },
       { title: AI_ASSISTANT_NAME, href: "/assistant", icon: SableMark },
+      { title: "Insights", href: "/insights", icon: Lightbulb },
     ],
   },
   {
@@ -45,7 +52,11 @@ export const consoleNav: NavGroup[] = [
       { title: "Tickets", href: "/tickets", icon: Ticket },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
       { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
+      { title: "Change Calendar", href: "/changes/calendar", icon: CalendarRange },
+      { title: "Releases", href: "/releases", icon: Rocket },
       { title: "Approvals", href: "/approvals", icon: CheckSquare },
+      { title: "On-call", href: "/oncall", icon: PhoneCall },
+      { title: "Status", href: "/status", icon: Activity },
       { title: "Knowledge Base", href: "/knowledge", icon: BookOpen },
     ],
   },
@@ -61,6 +72,7 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Assets", href: "/assets", icon: Server },
       { title: "Locations", href: "/locations", icon: MapPin },
+      { title: "Contracts", href: "/contracts", icon: FileSignature },
     ],
   },
   {
@@ -84,6 +96,22 @@ export const consoleNav: NavGroup[] = [
     ],
   },
 ];
+
+/**
+ * The nav href to highlight for `pathname`: the longest href that equals the
+ * path or is a whole-segment prefix of it ("/" only on an exact match). Longest
+ * wins, so nested entries never light up together: /changes/calendar selects
+ * "Change Calendar" while /changes/42 still selects "Changes".
+ */
+export function activeNavHref(hrefs: readonly string[], pathname: string): string | undefined {
+  let best: string | undefined;
+  for (const href of hrefs) {
+    const matches =
+      href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+    if (matches && (best === undefined || href.length > best.length)) best = href;
+  }
+  return best;
+}
 
 const RANK = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
 

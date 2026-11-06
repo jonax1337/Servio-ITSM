@@ -18,9 +18,10 @@ export type ApprovalRow = {
 };
 
 export function ApprovalPanel({
-  changeType, changeStatus, approvals, currentUserId, canManage, changeId, agentOptions,
+  preAuthorized, changeStatus, approvals, currentUserId, canManage, changeId, agentOptions,
 }: {
-  changeType: string;
+  /** Created from an approved standard template: no board decides it. */
+  preAuthorized: boolean;
   changeStatus: string;
   approvals: ApprovalRow[];
   currentUserId: string;
@@ -28,7 +29,7 @@ export function ApprovalPanel({
   changeId: number;
   agentOptions: ComboOption[];
 }) {
-  const canSeat = canManage && changeType !== "STANDARD" && canSeatApprovers(changeStatus);
+  const canSeat = canManage && !preAuthorized && canSeatApprovers(changeStatus);
 
   return (
     <div className="mt-8">
@@ -40,10 +41,10 @@ export function ApprovalPanel({
         {canSeat ? <AddApprover changeId={changeId} agentOptions={agentOptions} /> : null}
       </div>
 
-      {changeType === "STANDARD" ? (
+      {preAuthorized ? (
         <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
           <ShieldCheck className="size-4 text-emerald-500" />
-          Standard change — pre-approved. No CAB decision required; submitting moves it straight to Approved.
+          Standard change from an approved template — pre-approved. No CAB decision required; submitting moves it straight to Approved.
         </div>
       ) : (
         <div className="grid gap-3">

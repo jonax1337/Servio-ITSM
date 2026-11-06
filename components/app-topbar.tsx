@@ -17,11 +17,24 @@ import { CommandMenu } from "@/components/command-menu";
 import { CreateMenu } from "@/components/create-menu";
 import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
-import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { AI_ASSISTANT_NAME, changeRef, problemRef, releaseRef } from "@/lib/constants";
 
-function label(seg: string) {
-  if (seg === "assistant") return AI_ASSISTANT_NAME;
-  if (/^\d+$/.test(seg)) return `#${seg}`;
+const SEGMENT_LABELS: Record<string, string> = {
+  assistant: AI_ASSISTANT_NAME,
+  oncall: "On-call",
+  freeze: "Freeze windows",
+};
+
+/** Detail segments whose numeric id has a ref style; other numeric ids read "#id". */
+const REF_BY_PARENT: Record<string, (id: number) => string> = {
+  problems: problemRef,
+  changes: changeRef,
+  releases: releaseRef,
+};
+
+function label(seg: string, parent?: string) {
+  if (SEGMENT_LABELS[seg]) return SEGMENT_LABELS[seg];
+  if (/^\d+$/.test(seg)) return (parent && REF_BY_PARENT[parent]?.(Number(seg))) || `#${seg}`;
   // cuid-like ids (e.g. cmskaeker0022v6l8mv61vvni) → friendly label
   if (/^[a-z0-9]{18,}$/i.test(seg) && /\d/.test(seg)) return "Details";
   return seg
@@ -45,7 +58,7 @@ export function AppTopbar({
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarTrigger className="-ml-1" />
       <Breadcrumb className="ml-1 hidden md:block">
-        <BreadcrumbList>
+        <BreadcrumbList className="flex-nowrap whitespace-nowrap">
           <BreadcrumbItem>
             <BreadcrumbLink render={<Link href="/" />}>Servio</BreadcrumbLink>
           </BreadcrumbItem>
@@ -57,10 +70,10 @@ export function AppTopbar({
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
                   {last ? (
-                    <BreadcrumbPage>{label(seg)}</BreadcrumbPage>
+                    <BreadcrumbPage>{label(seg, segments[i - 1])}</BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink render={<Link href={href} />}>
-                      {label(seg)}
+                      {label(seg, segments[i - 1])}
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>

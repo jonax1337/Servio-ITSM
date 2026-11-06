@@ -9,7 +9,7 @@ import {
   addChangeComment,
   setChangeProblem,
 } from "@/lib/actions/changes";
-import { plannedWindowError } from "@/lib/change-rules";
+import { plannedWindowError, standardTypeError } from "@/lib/change-rules";
 import { setTicketProblem, setTicketChange } from "@/lib/actions/tickets";
 import {
   resolveGroupId,
@@ -343,7 +343,7 @@ export const OPERATIONS: AiOperation[] = [
     description:
       "Create a complete Change record (planned change / maintenance) in ONE proposal: put each plan into its own field " +
       "(reason, implementationPlan, rollbackPlan, plannedStart/plannedEnd) instead of packing everything into the description. " +
-      "Optionally set type, risk, priority, impact, the problem it fixes, and a team, category and assignee by name. Starts as a DRAFT.",
+      "Optionally set type (NORMAL or EMERGENCY; a STANDARD change needs an approved template, use change.create_from_template), risk, priority, impact, the problem it fixes, and a team, category and assignee by name. Starts as a DRAFT.",
     input: z.object({
       title: z.string().min(3).describe("change title"),
       description: z.string().optional().describe("scope, impact during the window, communication plan and roles (markdown)"),
@@ -352,7 +352,7 @@ export const OPERATIONS: AiOperation[] = [
       rollbackPlan: z.string().optional().describe(`backout trigger, exact steps and time to restore (${PLAIN_TEXT})`),
       plannedStart: z.string().optional().describe(`planned start, local time "${DATE_TIME_FORMAT}"`),
       plannedEnd: z.string().optional().describe(`planned end, local time "${DATE_TIME_FORMAT}"; after plannedStart`),
-      type: z.enum(CHANGE_TYPES).optional().describe("STANDARD, NORMAL or EMERGENCY"),
+      type: z.enum(CHANGE_TYPES).optional().describe("NORMAL (default) or EMERGENCY; STANDARD is refused here: standard changes come only from an approved template (change.create_from_template)"),
       risk: z.enum(RISKS).optional().describe("LOW, MEDIUM or HIGH"),
       priority: z.enum(PRIORITIES).optional(),
       impact: z.enum(IMPACT_URGENCY).optional().describe("LOW, MEDIUM or HIGH"),
@@ -376,6 +376,8 @@ export const OPERATIONS: AiOperation[] = [
         return err(`Problem not found: ${a.problem}`);
 
       const type = (coerceEnum(a.type, CHANGE_TYPES) ?? "NORMAL") as (typeof CHANGE_TYPES)[number];
+      const typeError = standardTypeError(type, null);
+      if (typeError) return err(typeError);
       const risk = (coerceEnum(a.risk, RISKS) ?? "MEDIUM") as (typeof RISKS)[number];
       const priority = (coerceEnum(a.priority, PRIORITIES) ?? "MEDIUM") as (typeof PRIORITIES)[number];
       const impact = (coerceEnum(a.impact, IMPACT_URGENCY) ?? "MEDIUM") as (typeof IMPACT_URGENCY)[number];
@@ -487,6 +489,7 @@ export const OPERATIONS: AiOperation[] = [
     description:
       "Change one field on a Change. Field is one of: status, type, risk, priority, impact, team, category, assignee. " +
       "Use a human value/name (e.g. status 'SCHEDULED', type 'EMERGENCY', team 'Infrastructure', assignee 'Nora K'). " +
+      "A type cannot be set to STANDARD (standard changes come only from an approved template), and editing the risk or impact of a standard change from a template turns it into a normal change that needs CAB approval. " +
       "To close a change use change.close (outcome and closure notes are required); to cancel one use change.cancel (a reason is required).",
     input: z.object({
       ref: z.string().describe("change ref or number, e.g. 'CHG-7' or '7'"),

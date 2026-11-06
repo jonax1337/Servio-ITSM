@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
-import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Wand2, FileText, X, Forward } from "lucide-react";
+import { Lock, Send, Loader2, MessageSquare, Activity as ActivityIcon, Wand2, Forward } from "lucide-react";
 import { SableMark } from "@/components/sable-mark";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/user-avatar";
 import { RichTextEditor, type MentionUser, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
 import { AiButton } from "@/components/ui/ai-button";
-import { draftReply, improveText, summarizeThread } from "@/lib/actions/ai";
+import { draftReply, improveText } from "@/lib/actions/ai";
 import { AI_TEASER_MESSAGE } from "@/lib/constants";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
 import { RecipientField } from "@/components/comments/recipient-field";
@@ -20,6 +20,7 @@ import { ForwardMessageDialog } from "@/components/comments/forward-message-dial
 import { Reply, MoreHorizontal } from "lucide-react";
 import type { ComboOption } from "@/components/combobox";
 import { sanitizeCommentHtml } from "@/lib/markdown";
+import { lowerLead } from "@/lib/utils";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { formatDistanceToNow, format } from "date-fns";
@@ -148,69 +149,6 @@ function AiComposerButtons({
   );
 }
 
-/** Thread-summary state, shared between the tab-row trigger and the result box. */
-function useThreadSummary(ticketId: number | undefined, teaser: boolean) {
-  const [pending, start] = useTransition();
-  const [summary, setSummary] = useState<{ text: string; html: string } | null>(null);
-
-  function run() {
-    if (!ticketId) return;
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
-    start(async () => {
-      const res = await summarizeThread(ticketId);
-      if (!res.ok) return void toast.error(res.error);
-      setSummary({ text: res.text, html: res.html });
-    });
-  }
-
-  return { pending, summary, run, dismiss: () => setSummary(null) };
-}
-
-/** The rendered summary — just the content (no title/icon), added inline above the thread. */
-function AiSummaryBox({
-  pending,
-  summary,
-  onDismiss,
-  onAddAsInternal,
-}: {
-  pending: boolean;
-  summary: { text: string; html: string } | null;
-  onDismiss: () => void;
-  onAddAsInternal: (html: string) => void;
-}) {
-  return (
-    <div className="relative rounded-xl border border-sable/25 bg-sable-muted/40 p-3">
-      {summary && !pending ? (
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Dismiss summary"
-          className="absolute right-2 top-2 grid size-6 place-items-center rounded text-muted-foreground hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
-      ) : null}
-      {pending ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Reading the ticket…
-        </div>
-      ) : summary ? (
-        <>
-          <div
-            className="prose prose-sm max-w-none pr-6 dark:prose-invert prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-a:font-medium prose-a:text-foreground prose-a:underline prose-a:underline-offset-2"
-            dangerouslySetInnerHTML={{ __html: summary.html }}
-          />
-          <div className="mt-2.5 flex justify-end">
-            <Button type="button" variant="outline" size="sm" onClick={() => onAddAsInternal(summary.html)}>
-              <Lock className="size-3.5" /> Add as internal note
-            </Button>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
 export function CommentThread({
   idField,
   entityId,
@@ -231,7 +169,8 @@ export function CommentThread({
   idField: string;
   entityId: number;
   comments: ThreadComment[];
-  activity: ThreadEvent[];
+  /** Audit events for an extra Activity sub-tab; omit where the page has its own History tab. */
+  activity?: ThreadEvent[];
   addAction: (formData: FormData) => void | Promise<void>;
   allowInternal?: boolean;
   placeholder?: string;
@@ -264,10 +203,7 @@ export function CommentThread({
   const [quoteAnchorId, setQuoteAnchorId] = useState<string | null>(null);
   const [showQuote, setShowQuote] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false); // Freshservice-style: collapsed by default
-  // Initial editor content for the NEXT composer mount (the editor only exists while open).
-  const [composerSeedHtml, setComposerSeedHtml] = useState("");
   const composerMounted = !emailReply || composerOpen;
-  const sum = useThreadSummary(aiTicketId, aiTeaser);
 
   // The quoted mail trail (like a mail client's collapsed "•••"): public messages
   // up to and including the reply anchor (defaults to the latest message), newest
@@ -294,51 +230,23 @@ export function CommentThread({
     ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  // Drop an AI summary into the composer and mark it internal, for a review-then-send flow.
-  function addSummaryAsInternal(html: string) {
-    setIsInternal(true);
-    setMode("note");
-    if (composerMounted) {
-      editorRef.current?.setHTML(html);
-      editorRef.current?.focus();
-    } else {
-      setComposerSeedHtml(html);
-      setComposerOpen(true);
-    }
-    toast.success("Added to composer as an internal note. Review and send.");
-  }
-
   return (
     <Tabs defaultValue="comments">
-      {/* Tabs on the left, the AI summarize action on the right — one row. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <TabsList>
-          <TabsTrigger value="comments">
-            <MessageSquare className="size-4" /> Comments
-            <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{comments.length}</span>
-          </TabsTrigger>
-          <TabsTrigger value="activity">
-            <ActivityIcon className="size-4" /> Activity
-            <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{activity.length}</span>
-          </TabsTrigger>
-        </TabsList>
-        {aiTicketId ? (
-          <AiButton type="button" onClick={sum.run} disabled={sum.pending}>
-            <FileText className="size-4" /> Summarize thread
-          </AiButton>
-        ) : null}
-      </div>
+      {activity ? (
+      <TabsList>
+        <TabsTrigger value="comments">
+          <MessageSquare className="size-4" /> Comments
+          <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{comments.length}</span>
+        </TabsTrigger>
+        <TabsTrigger value="activity">
+          <ActivityIcon className="size-4" /> Activity
+          <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{activity.length}</span>
+        </TabsTrigger>
+      </TabsList>
+      ) : null}
 
-      <TabsContent value="comments" className="mt-4">
+      <TabsContent value="comments" className={activity ? "mt-4" : undefined}>
         <div className="grid gap-4">
-          {aiTicketId && (sum.pending || sum.summary) ? (
-            <AiSummaryBox
-              pending={sum.pending}
-              summary={sum.summary}
-              onDismiss={sum.dismiss}
-              onAddAsInternal={addSummaryAsInternal}
-            />
-          ) : null}
           {comments.map((c) => {
             // FORWARD = an outbound "you forwarded this" entry (primary). External =
             // an internal reply that came in by email from a forwarded party (Ice tint).
@@ -435,7 +343,6 @@ export function CommentThread({
               setQuoteAnchorId(null);
               setShowQuote(false);
               setComposerOpen(false);
-              setComposerSeedHtml("");
               setResetKey((k) => k + 1);
             }}
             className={`mt-1 grid gap-2 rounded-xl border p-3 ${emailReply && mode === "note" ? "border-amber-500/30 bg-amber-500/5" : "bg-card"}`}
@@ -480,7 +387,6 @@ export function CommentThread({
 
             <RichTextEditor
               name="bodyHtml"
-              defaultHTML={composerSeedHtml}
               required
               placeholder={emailReply && mode === "note" ? "Internal note (visible to agents only)…" : placeholder}
               ariaLabel="Reply"
@@ -542,7 +448,7 @@ export function CommentThread({
               </div>
               <div className="flex items-center gap-2">
                 {emailReply ? (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setComposerSeedHtml(""); setShowQuote(false); }}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setShowQuote(false); }}>
                     Cancel
                   </Button>
                 ) : null}
@@ -554,6 +460,7 @@ export function CommentThread({
         </div>
       </TabsContent>
 
+      {activity ? (
       <TabsContent value="activity" className="mt-4">
         <div className="grid gap-3">
           {activity.map((a) => (
@@ -562,7 +469,7 @@ export function CommentThread({
                 <ActivityIcon className="size-3" />
               </span>
               <span>
-                <span className="font-medium text-foreground">{a.who}</span> {a.summary.toLowerCase()} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}
+                <span className="font-medium text-foreground">{a.who}</span> {lowerLead(a.summary)} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}
               </span>
             </div>
           ))}
@@ -571,6 +478,7 @@ export function CommentThread({
           ) : null}
         </div>
       </TabsContent>
+      ) : null}
     </Tabs>
   );
 }

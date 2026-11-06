@@ -16,6 +16,7 @@ export function ComboField({
   includeNone = false,
   noneLabel = "— None —",
   size = "default",
+  disabled,
 }: {
   name: string;
   options: ComboOption[];
@@ -24,6 +25,7 @@ export function ComboField({
   includeNone?: boolean;
   noneLabel?: string;
   size?: "default" | "sm";
+  disabled?: boolean;
 }) {
   const initial = defaultValue ?? (includeNone ? "none" : options[0]?.value ?? "");
   const [value, setValue] = useState(initial);
@@ -39,6 +41,7 @@ export function ComboField({
       placeholder={placeholder}
       searchPlaceholder="Search…"
       size={size}
+      disabled={disabled}
     />
   );
 }

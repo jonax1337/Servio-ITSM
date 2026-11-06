@@ -82,7 +82,20 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `LOGIN_BASE_BACKOFF_MS` | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
 | `LOGIN_MAX_BACKOFF_MS` | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |
 | `LOGIN_DECAY_MS` | No | `900000` | Idle window (ms, 15 min) after which a login's failure count decays/resets. |
-| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
+| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs, and the insights, SLA-nudge and contracts ticks), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
+| `INSIGHTS_ENABLED` | No | `true` | Master switch for Sable's insight detection tick ([`../lib/ticks/ai-insights.ts`](../lib/ticks/ai-insights.ts)). Similarity is local lexical TF-IDF and needs no AI provider. |
+| `INSIGHTS_TICK_SECONDS` | No | `900` | Interval of the insights tick (floor 300). |
+| `INSIGHT_CLUSTER_MIN_TICKETS` | No | `3` | Similar tickets needed inside the window to raise an incident-cluster insight. |
+| `INSIGHT_CLUSTER_WINDOW_HOURS` | No | `24` | Look-back window for incident clusters. |
+| `INSIGHT_SIMILARITY_THRESHOLD` | No | `0.35` | Minimum similarity (0 to 1) for two tickets to count as the same cluster. |
+| `INSIGHT_KB_GAP_MIN_TICKETS` | No | `3` | Recurring tickets without a linked article needed to raise a knowledge-gap insight. |
+| `INSIGHT_KB_GAP_WINDOW_DAYS` | No | `30` | Look-back window for knowledge gaps. |
+| `SLA_NUDGE_ENABLED` | No | `true` | Notify the assignee once when a ticket's SLA reaches `SLA_NUDGE_PERCENT` ([`../lib/ticks/sla-nudges.ts`](../lib/ticks/sla-nudges.ts)). Notification type `SLA_NUDGE`. |
+| `SLA_NUDGE_PERCENT` | No | `75` | SLA elapsed percentage that triggers the nudge (clamped to 1..100). |
+| `SLA_NUDGE_TICK_SECONDS` | No | `180` | Interval of the nudge tick (floor 60). |
+| `CONTRACT_REMINDERS_ENABLED` | No | `true` | Send contract renewal reminders and license over-allocation alerts ([`../lib/ticks/contracts.ts`](../lib/ticks/contracts.ts)). |
+| `CONTRACTS_TICK_SECONDS` | No | `3600` | Interval of the contracts tick (floor 600). |
+| `CHANGE_CONFLICT_SAME_SERVICE` | No | `true` | Also flag changes whose windows overlap and that share a service (through their affected CIs), not only a CI. |
 | `NEXT_PUBLIC_DEMO_MODE` | No | `false` | Set `"true"` to keep the pre-filled demo credentials (`admin@servio.dev` / `servio123`) and their hint on the login page ([`../app/login/login-form.tsx`](../app/login/login-form.tsx)) visible in production builds. They always show outside production and are hidden in production unless this is set. |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
 

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { lowerLead } from "@/lib/utils";
 import { History } from "lucide-react";
 import { format } from "date-fns";
 
@@ -33,7 +34,7 @@ export async function EntityHistory({
           <div className="min-w-0 pt-0.5">
             <p className="text-sm">
               <span className="font-medium">{l.user?.name ?? "System"}</span>{" "}
-              <span className="text-muted-foreground">{(l.summary ?? l.action).toLowerCase()}</span>
+              <span className="text-muted-foreground">{lowerLead(l.summary ?? l.action)}</span>
             </p>
             <p className="text-xs text-muted-foreground">{format(l.createdAt, "PP · p")}</p>
           </div>

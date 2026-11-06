@@ -37,10 +37,10 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 
 | Group | Modules |
 | --- | --- |
-| Overview | Dashboard (`/`), Sable (`/assistant`) |
-| Service Desk | Tickets, Problems, Changes, Approvals, Knowledge Base |
+| Overview | Dashboard (`/`), Sable (`/assistant`), Insights (`/insights`) |
+| Service Desk | Tickets, Problems, Changes, Change Calendar, Releases, On-call, Status, Approvals, Knowledge Base |
 | Catalog | Services, Service Catalog (MANAGER+) |
-| CMDB | Assets, Locations |
+| CMDB | Assets, Contracts, Locations |
 | Organisation | Groups, People, Categories |
 | Administration | Automations (MANAGER+), Macros (AGENT+; sharing is MANAGER+), Syncs (MANAGER+), Audit Log (ADMIN), Settings (MANAGER+) |
 
@@ -120,7 +120,7 @@ Includes a built-in approval workflow.
 | Actions | `lib/actions/changes.ts` — `createChange`, `updateChangeField`, `updateChangeDetails`, `addChangeComment`, `updateChangeWindow`, `updateChangeText`, `setChangeProblem`, `submitChangeForApproval`, `addChangeApprover`, `removeChangeApprover`, `decideApproval`, `setCabRule` (CAB quorum/percent rule); `lib/actions/change-assets.ts` — `attachAffectedCi`/`detachAffectedCi` |
 | Components | `components/changes/` — `change-form`, `change-properties`, `approval-panel`, `approval-actions`, `add-approver`, `remove-approver`, `submit-for-approval`, `change-window-editor`, `change-editors`, `change-problem-link`, `closure-dialog`, `cancel-change`; affected-CI panel with automated impact/risk |
 
-**Change rules** (`lib/change-rules.ts`): the planned end must be after the start; submitting for CAB requires an implementation plan, a rollback plan and a planned window (`STANDARD` changes are exempt) and reports what is missing; the window (`updateChangeWindow`, `change-window-editor`) is editable only in `DRAFT`/`REJECTED`, i.e. before approval. A `DRAFT` change has no manual status moves except `CANCELLED`; it leaves draft through the dedicated submit action (`submitChangeForApproval`: `DRAFT` → `APPROVAL`, or straight to `APPROVED` when no board is needed) — there is no `SUBMITTED` status. The change and problem lists search by ref (`lib/ref-search.ts`: `CHG-0025`, `#25`, `25`) as well as title.
+**Change rules** (`lib/change-rules.ts`): the planned end must be after the start; submitting for CAB requires an implementation plan, a rollback plan and a planned window (a pre-approved standard change is exempt) and reports what is missing; `STANDARD` can only be reached through an active `STANDARD` template (free form, `updateChangeField` and Sable refuse it), and editing the plans, risk or impact of a templated standard change turns it into `NORMAL` (back to `DRAFT` with a comment if it was already pre-approved); the window (`updateChangeWindow`, `change-window-editor`) is editable only in `DRAFT`/`REJECTED`, i.e. before approval. A `DRAFT` change has no manual status moves except `CANCELLED`; it leaves draft through the dedicated submit action (`submitChangeForApproval`: `DRAFT` → `APPROVAL`, or straight to `APPROVED` when no board is needed) — there is no `SUBMITTED` status. The change and problem lists search by ref (`lib/ref-search.ts`: `CHG-0025`, `#25`, `25`) as well as title.
 
 **Lifecycle (`lib/change-rules.ts`):** in `APPROVED`/`SCHEDULED` the window can still move, but only with a reason, which is posted as a comment (`rescheduleError`/`rescheduleComment`) — the dates cannot be cleared. `APPROVAL`/`APPROVED` are set by the approval workflow, never by a manual status edit (`manualStatusError`). Moving to `CLOSED` or `FAILED` needs an `outcome` (`CHANGE_OUTCOMES`; `FAILED` accepts only Failed / Rolled back) and `closureNotes` (post-implementation review; the message is stricter for `EMERGENCY`), collected in `closure-dialog` (`closureError`). `CANCELLED` needs a `cancelReason` (`cancel-change`) and settles the approval board: unanswered seats become `CANCELLED` (`settlesApprovalBoard`). `actualEnd` is stamped when work stops (`REVIEW`/`FAILED`/`CLOSED`). `CLOSED` and `CANCELLED` changes are locked (`isChangeLocked`): everything is read-only except comments and links. A change links to at most one problem via `setChangeProblem` (also reachable from the problem's "Fix changes" card).
 
@@ -138,6 +138,110 @@ A cross-cutting inbox for the current user's pending approvals (currently backed
 **Multi-stage / group catalog approvals:** a `CatalogItem` can define ordered `approvalStages` (each an approver *or* a group) via `lib/actions/catalog-admin.ts` → `updateApprovalStages` (editor UI in the catalog admin page). New requests seat stage 0; approving a stage advances to the next (`seatCatalogStage`), and a rejected/cancelled request can be re-raised with the saved answers via `lib/actions/catalog.ts` → `reRequestCatalogItem`. The portal shows a stage-progress timeline, including each approver's decision comment to the requester.
 
 **Awaiting approval = cancel only:** while `approvalState` is `PENDING` (or already `CANCELLED`) the only allowed status change is `CANCELLED` (`approvalAllowsStatus` in `lib/transitions.ts`) — enforced in console actions, macros, automations, the REST API (`409`) and Sable. Cancelling sets `approvalState` to `CANCELLED` and withdraws the pending approvals (`withdrawPendingApprovals` in `lib/approval-seating.ts`).
+
+### Detail-page tabs
+Ticket, change, problem and asset detail pages are split into tabs driven by `?tab=` (pure rules in `lib/entity-tabs.ts` — `resolveTab`, `tabHref`; renderer `components/entity-tabs.tsx`, a server `<nav>` with `aria-current` links that keep the other search params). Only the active tab's data is loaded; counts come from `_count`. Agent-only tabs are `hidden`, which also makes them unreachable via `?tab=`. The sidebar highlights the longest matching nav href (`activeNavHref` in `lib/nav.ts`).
+
+| Page | Tab builder | Tab components |
+| --- | --- | --- |
+| Ticket `/tickets/[id]` | `components/tickets/tabs/ticket-tabs.ts` | `conversation-tab` (Sable summary card + similar-tickets hint on top), `details-tab`, `work-tab`, `approvals-tab`, `links-tab` (full similar tickets), `history-tab`, `tab-skeleton` |
+| Change `/changes/[id]` | `components/changes/tabs/change-tabs.ts` | `overview-tab`, `planning-tab` (window editor, conflicts panel, plan copilot), `impact-tab`, `cab-tab` (approvals + CAB brief), `discussion-tab`, `links-tab`, `history-tab`, `change-tab-panel`, `tab-skeleton` |
+| Problem `/problems/[id]` | `components/problems/tabs/problem-tabs.ts` | `problem-overview-tab`, `problem-analysis-tab`, `problem-incidents-tab`, `problem-changes-tab`, `problem-discussion-tab` |
+| Asset `/assets/[id]` | `components/assets/tabs/asset-tabs.ts` | `asset-overview-tab`, `asset-relationships-tab`, `asset-work-tab`, plus the "Contracts & licenses" tab (`components/assets/asset-contracts.tsx`) |
+
+### Change calendar & freeze windows
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/changes/calendar/page.tsx` (AGENT; grid of planned windows, filters, freeze overlays), `app/(console)/changes/freeze/page.tsx` (MANAGER, enforced in `lib/route-guard.ts`) |
+| Actions | `lib/actions/change-freeze.ts` — `createFreezeWindow`, `updateFreezeWindow`, `deleteFreezeWindow` (MANAGER+, audited as `ChangeFreezeWindow`); freeze enforcement lives in `submitChangeForApproval` and `updateChangeWindow` (`lib/actions/changes.ts`) |
+| Rules / data | `lib/change-schedule-rules.ts` (pure: window overlap, conflict, freeze scope, `freezeVerdict`), `lib/change-schedule.ts` (DB loaders such as `loadChangeScheduleCheck`; the calendar query is capped at 500 changes per range) |
+| Components | `components/changes/calendar/` (`change-calendar-grid`, `calendar-filters`, `freeze-window-dialog`, `delete-freeze-button`), `components/changes/change-conflicts.tsx` (`banner` above the tabs, `panel` in Planning; renders nothing for non-agents or when there is nothing to warn about) |
+| Sable | ops `change.schedule` (read, AGENT) and `freeze.create` (write, MANAGER) in `lib/ai-operations/modules/change-schedule.ts` |
+
+A `ChangeFreezeWindow` is global when it has no service and no team; otherwise it applies only when **every set scope** matches (service = one of the change's affected CIs supports it; team = `Change.groupId`). A change inside a freeze cannot be submitted or rescheduled; an `EMERGENCY` change may override a freeze with a written justification (collected in `submit-for-approval` / `change-window-editor`). Changes also conflict when their windows overlap on a shared affected CI, or, when `CHANGE_CONFLICT_SAME_SERVICE` is on (default), on a shared service. The changes list header links to the calendar and, for MANAGER+, to the templates.
+
+### Change templates
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/changes/templates/page.tsx`, `new/page.tsx`, `[id]/page.tsx` (MANAGER, enforced in `lib/route-guard.ts`); `/changes/new?template=<id>` (AGENT) |
+| Actions | `lib/actions/change-templates.ts` — `createChangeTemplate`, `updateChangeTemplate`, `deleteChangeTemplate` (MANAGER+), `createChangeFromTemplateAction` (AGENT+; creates the change with `templateId`, merges the user's edits over the template, and for a `STANDARD` template calls `submitChangeForApproval`, so a refused freeze leaves a draft and reports `approvalError`) |
+| Rules / data | `lib/change-template-rules.ts` (pure merge/validation), `lib/change-templates.ts` (loaders) |
+| Components | `components/changes/templates/` (`template-form`, `template-picker`); `change-form` posts to the template action once one is picked |
+| Sable | ops `change_template.list` (read) and `change.create_from_template` (write, AGENT) in `lib/ai-operations/modules/releases.ts` |
+
+### Releases
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/releases/page.tsx`, `new/page.tsx`, `[id]/page.tsx` (AGENT) |
+| Actions | `lib/actions/releases.ts` — `createReleaseAction`, `updateReleaseAction`, `setReleaseStatusAction`, `addChangeToReleaseAction`, `removeChangeFromReleaseAction` |
+| Rules / data | `lib/release-rules.ts` (pure: status rules, derived window = min start / max end of member changes, readiness), `lib/releases.ts` (loaders) |
+| Components | `components/releases/` (`release-form`, `release-edit-dialog`, `release-changes-table`, `release-readiness-card`, `release-status-actions`), `components/changes/release-chip.tsx` (chip in the change header; agents only) |
+| Sable | ops `release.create`, `release.add_change` (write, AGENT) in `lib/ai-operations/modules/releases.ts` |
+
+A release is shown as `REL-0001` (`releaseRef`); its window is derived from its changes' planned windows and never stored.
+
+### On-call
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/oncall/page.tsx` ("on call now" cards + 14-day timeline), `new/page.tsx`, `[id]/page.tsx` (AGENT to read) |
+| Actions | `lib/actions/oncall.ts` — `createSchedule`, `updateSchedule`, `deleteSchedule` (MANAGER+), `createOverride`, `deleteOverride` (MANAGER+, or a rotation member swapping their own shift) |
+| Rules / data | `lib/oncall-rules.ts` (pure rotation resolver), `lib/oncall.ts` (`currentOnCall(groupId, at?)`: active schedules, overrides win, de-duplicated by user, `[]` when nobody is on call), `lib/oncall-overrides.ts` (override add/remove + in-app notifications) |
+| Components | `components/oncall/` (`schedule-form`, `schedule-dialog`, `override-dialog`, `oncall-timeline`, `format`) |
+| Escalation | `NOTIFY_ONCALL` / `REASSIGN_ONCALL` steps in `lib/sla-escalation.ts` target the current on-call of the ticket's team; configured in `components/settings/escalation-manager.tsx` |
+| Sable | ops `oncall.who` (read, AGENT) and `oncall.override` (write, MANAGER) in `lib/ai-operations/modules/oncall.ts` |
+
+Notifications use type `ONCALL` and entity `OnCallSchedule` (linked to `/oncall`). `toggleMajorIncident` also notifies the team's on-call (`notifyOnCallOfMajorIncident` in `lib/status-incidents.ts`).
+
+### Status page
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/status/page.tsx`, `new/page.tsx` (`?ticket=<id>` pre-links a ticket), `[id]/page.tsx` (AGENT; publish, retract and delete are MANAGER+); portal `app/portal/status/page.tsx` (any signed-in user, public incidents only) |
+| Actions | `lib/actions/status-incidents.ts` — `createStatusIncident`, `updateStatusIncident`, `postStatusIncidentUpdate`, `setStatusIncidentVisibility`, `deleteStatusIncident`; `lib/actions/portal-status.ts` — `joinStatusIncident` ("this affects me too", rate-limited via `checkReplyRate`) |
+| Rules / data | `lib/status-rules.ts` (pure: publish rights, `publicCopyRefusal` (only MANAGER+ reword a public incident), active states, `resolvedAt`/`publishedAt` stamping, `worstImpact`, `joinRefusal`), `lib/status-incidents.ts` (portal reads, `ensureDraftStatusIncident`, `notifyOnCallOfMajorIncident`) |
+| Components | `components/status/` (`incident-form`, `edit-incident-dialog`, `post-update-form`, `incident-timeline`, `public-incident-card`, `affects-me-button`), `components/portal/portal-status-banner.tsx` (one indexed query, rendered by `app/portal/layout.tsx`) and a "Status" link in `components/portal/portal-nav.tsx` |
+| Sable | ops `status_incident.list` (read), `status_incident.create`, `status_incident.update`, `status_incident.post_update` (write, AGENT; publishing needs MANAGER, checked in `run`) in `lib/ai-operations/modules/status.ts`; the portal assistant gets the read tool `list_status_incidents` (public incidents only) in `lib/portal-assistant.ts` |
+
+Incidents are drafts (`isPublic = false`) until a manager publishes them. Declaring a major incident (`toggleMajorIncident`) drafts one linked, non-public `StatusIncident` per ticket (idempotent through the unique `ticketId`). An update is public exactly when its incident is public. Portal users are not notified when an incident changes; they see it in the banner and on `/portal/status`.
+
+### Contracts, licenses & vendors
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/contracts/page.tsx` (`?tab=contracts\|licenses\|vendors`), `[id]/page.tsx`, `licenses/[id]/page.tsx`, `vendors/[id]/page.tsx` (AGENT to read, MANAGER+ to write) |
+| Actions | `lib/actions/contracts.ts` — vendors (`createVendor`, `updateVendor`, `deleteVendor`), contracts (`createContract`, `updateContract`, `deleteContract`, `linkContractAsset`, `unlinkContractAsset`), licenses (`createLicense`, `updateLicense`, `deleteLicense`, `assignLicense`, `unassignLicense`) |
+| Rules / data | `lib/contract-rules.ts` (renewal reminder window, license compliance), `lib/contract-schemas.ts` (Zod) |
+| Components | `components/contracts/`, and `components/assets/asset-contracts.tsx` (the asset page's "Contracts & licenses" tab; MANAGER+ can edit) |
+| Tick | `lib/ticks/contracts.ts` — `runContractsTick` sends a renewal reminder to the contract owner once per `endDate` (`renewalNotifiedFor`) and an over-allocation alert once per episode (`overAllocatedNotifiedAt`, cleared when compliant again); gated by `CONTRACT_REMINDERS_ENABLED` |
+| Sable | ops `contract.expiring`, `license.compliance` (read, AGENT), `contract.create` (write, MANAGER) in `lib/ai-operations/modules/contracts.ts` |
+
+Used license seats are the number of `LicenseAssignment` rows; duplicates are rejected in the action. Notifications use the entities `Contract` and `SoftwareLicense`.
+
+### Insights (Sable pattern detection)
+
+| | |
+| --- | --- |
+| Route | `app/(console)/insights/page.tsx` (AGENT) |
+| Actions | `lib/actions/ai-insights.ts` — `createProblemFromInsight`, `draftArticleFromInsight`, `dismissAiInsight` (AGENT+) |
+| Detection | `lib/ai-insights.ts` (DB queries), `lib/ai-insights-rules.ts` (pure thresholds), `lib/ai-insights-handling.ts` (create-problem / draft-article), `lib/ticks/ai-insights.ts` (`runInsightsTick`) |
+| Similarity | `lib/ai-similarity.ts` (local lexical TF-IDF, no AI provider needed), `lib/ai-similarity-search.ts` (candidate loading) |
+| Components | `components/ai/insights/` (`insight-card`, `insight-actions`, `link-related-button`), `components/ai/similar-tickets.tsx` (`hint` in the ticket Conversation tab, `full` in Links; agents only) |
+| Sable | ops `ticket.find_similar`, `insight.list` (read, AGENT), `insight.problem_from_cluster` (write, AGENT) in `lib/ai-operations/modules/insights.ts` |
+
+Two insight kinds (`AI_INSIGHT_KINDS`): `CLUSTER` (a burst of similar tickets in a time window) and `KB_GAP` (recurring tickets with no linked article). `AiInsight.dedupeKey` makes raising an insight at-most-once; a cluster's tickets are fixed when it is raised.
+
+### Sable copilots, briefing & SLA nudges
+
+| | |
+| --- | --- |
+| Ticket summary | `components/ai/ticket-summary-card.tsx` → `ticket-summary-panel.tsx` (AI summary of the thread; teaser when AI is off) |
+| Change copilot | `components/changes/change-copilot.tsx` → `change-copilot-panel.tsx` (drafts plans; writes only through `updateChangeText`), `lib/actions/change-copilot.ts` (`draftChangePlan`, `summarizeChangeForCab`), `lib/change-brief.ts` + `lib/change-brief-rules.ts` (CAB brief facts, including schedule conflicts via `loadChangeScheduleCheck`), `components/changes/change-cab-brief.tsx`, `cab-brief-prose.tsx` |
+| Briefing widget | dashboard widget type `briefing` (`lib/dashboard/briefing.ts`, `briefing-rules.ts`, `briefing-actions.ts` → `summarizeBriefing`; UI `components/dashboard/briefing-widget.tsx`). It is the viewer's own queue, so `computeWidget` bypasses the shared widget cache for it. |
+| SLA nudge | `lib/ticks/sla-nudges.ts` (`runSlaNudgeTick`) + `lib/sla-nudge-rules.ts`: notifies the assignee (type `SLA_NUDGE`) once when a ticket's SLA reaches `SLA_NUDGE_PERCENT`; the at-most-once marker is `Ticket.slaNudgedAt`, separate from the escalation sweep |
 
 ---
 
@@ -239,7 +343,7 @@ Customizable widget dashboards on the home page (`/`). Every user gets a persona
 | Engine / types | `lib/dashboard/compute.ts` (server metric engine), `lib/dashboard/types.ts` (`Widget`, `DEFAULT_LAYOUT`) |
 | Components | `dashboard-picker`, `dashboard-grid-view`, `dashboard-canvas` (editor), `widget-card`, `widget-config-dialog`; charts in `components/charts` |
 
-Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, **CSAT** (average survey rating + response count), and **ticket list**. Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
+Widget types: **stat**, **breakdown** (bar or donut; group by priority/status/type/assignee/team/category/service/source/impact/urgency), **volume** trend, **SLA & MTTR** gauge, **aging**, **CSAT** (average survey rating + response count), **ticket list**, and **briefing** (the viewer's own queue with an optional AI summary). Each widget carries its own filters and an optional accent colour; stat widgets support value **thresholds** (e.g. `< 15 → red`) that tint the whole card. Stat/SLA cards and every breakdown segment drill into the matching `/tickets` filter URL.
 
 ---
 
@@ -358,6 +462,7 @@ The requester surface under `app/portal/*`, laid out by `app/portal/layout.tsx` 
 | New ticket | `app/portal/new/page.tsx` | Raise a plain support ticket | `lib/actions/portal.ts` → `createPortalTicket` → `lib/portal-tickets.ts` |
 | My tickets | `app/portal/tickets/page.tsx`, `[id]/page.tsx` | Track own tickets, reply, attach files | `lib/actions/portal.ts` → `addPortalComment`; `components/portal/portal-comment`, `components/attachments/*` |
 | Knowledge | `app/portal/knowledge/page.tsx`, `[slug]/page.tsx` | Read published, public-facing KB articles (search + category pills) | `components/portal/knowledge-browser`; only published/public articles surface |
+| Status | `app/portal/status/page.tsx` | Active and recent public status incidents; "this affects me too" | `lib/status-incidents.ts`, `lib/actions/portal-status.ts`, `components/status/public-incident-card`, `components/portal/portal-status-banner` |
 | Ask Sable | widget in `app/portal/layout.tsx` | End-user AI assistant (see [ai.md](ai.md#sable-in-the-self-service-portal-end-users)) — uses the same assistant-ui `Thread` UI as the console, USER-scoped and still confirm-to-create | `components/portal/sable-widget`; `lib/portal-assistant.ts`; streaming route `app/api/portal/assistant/route.ts` + confirm-create `app/api/portal/assistant/create/route.ts` |
 
 Portal write paths are deliberately narrow and share one routed core (`lib/portal-tickets.ts`): requesters (and Sable, acting as them, confirm-first) can only create tickets/catalog requests, reply on their **own** tickets, and stage attachments (images/PDF/`.eml`, re-parented onto the new ticket). Catalog requests pre-route to the item's service/category team; free-form tickets default to the Service Desk triage team. Customer replies (portal, Sable, inbound mail) reopen `RESOLVED`/`CLOSED` tickets through the configured workflow (`reopenOnCustomerReply` in `lib/ticket-core.ts`); portal replies and attachments are refused on `CLOSED`/`CANCELLED` tickets. Replies are rate-limited per user (`REPLY_RATE_LIMIT`, 10/min) and uploads by `USER`-role accounts too (`UPLOAD_RATE_LIMIT`, 30/min) — see [configuration.md](configuration.md). All privileged mutations stay in the console action files.

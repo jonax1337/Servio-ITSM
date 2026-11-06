@@ -81,6 +81,15 @@ model User {
   articleRevisions   ArticleRevision[]
   articleLinks       ArticleLink[]           @relation("ArticleLinkCreator")
   attachments        Attachment[]            @relation("AttachmentUploader")
+  onCallMemberships  OnCallMember[]
+  onCallOverrides    OnCallOverride[]        @relation("OnCallOverrideUser")
+  onCallReplacedBy   OnCallOverride[]        @relation("OnCallOverrideReplaces")
+  statusUpdates      StatusIncidentUpdate[]
+  ownedReleases      Release[]               @relation("ReleaseOwner")
+  ownedContracts     Contract[]              @relation("ContractOwner")
+  ownedLicenses      SoftwareLicense[]       @relation("LicenseOwner")
+  licenseAssignments LicenseAssignment[]
+  dismissedInsights  AiInsight[]             @relation("AiInsightDismissedBy")
   syncSource         SyncSource?             @relation(fields: [syncSourceId], references: [id])
 
   @@unique([syncSourceId, externalId])
@@ -359,7 +368,7 @@ model Group {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  manager         User?         @relation("GroupManager", fields: [managerId], references: [id])
+  manager         User?                @relation("GroupManager", fields: [managerId], references: [id])
   members         GroupMember[]
   tickets         Ticket[]
   problems        Problem[]
@@ -367,9 +376,13 @@ model Group {
   assets          Asset[]
   savedViews      SavedView[]
   dashboards      Dashboard[]
-  ownedCategories Category[]    @relation("CategoryTeam")
-  ownedServices   Service[]     @relation("ServiceTeam")
-  aiProjects      AiProject[]   @relation("AiProjectGroup")
+  ownedCategories Category[]           @relation("CategoryTeam")
+  ownedServices   Service[]            @relation("ServiceTeam")
+  aiProjects      AiProject[]          @relation("AiProjectGroup")
+  freezeWindows   ChangeFreezeWindow[]
+  onCallSchedules OnCallSchedule[]
+  releases        Release[]
+  changeTemplates ChangeTemplate[]
 }
 
 /// A named, saved set of list filters (per-user, optionally shared with a team).
@@ -436,15 +449,16 @@ model Category {
   groupId     String? // team that handles this category (informational; NOT auto-routing)
   archived    Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
 
-  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id])
-  children     Category[]    @relation("CategoryTree")
-  group        Group?        @relation("CategoryTeam", fields: [groupId], references: [id])
-  tickets      Ticket[]
-  problems     Problem[]
-  changes      Change[]
-  services     Service[]
-  articles     Article[]
-  catalogItems CatalogItem[]
+  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id])
+  children        Category[]       @relation("CategoryTree")
+  group           Group?           @relation("CategoryTeam", fields: [groupId], references: [id])
+  tickets         Ticket[]
+  problems        Problem[]
+  changes         Change[]
+  services        Service[]
+  articles        Article[]
+  catalogItems    CatalogItem[]
+  changeTemplates ChangeTemplate[]
 
   @@unique([name, parentId])
   @@index([parentId])
@@ -518,7 +532,7 @@ model EscalationStep {
   policyId         String
   order            Int     @default(0)
   thresholdPercent Int     @default(100) // % of SLA elapsed that triggers it (e.g. 50/75/100)
-  action           String // NOTIFY | REASSIGN | BUMP_PRIORITY
+  action           String // NOTIFY | REASSIGN | BUMP_PRIORITY | NOTIFY_ONCALL | REASSIGN_ONCALL (*_ONCALL target whoever is on call for the ticket's group)
   targetGroupId    String? // group to reassign/notify
   targetUserId     String? // user to reassign/notify
   bumpToPriority   String? // priority to bump to (for BUMP_PRIORITY)
@@ -542,13 +556,16 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category     Category?      @relation(fields: [categoryId], references: [id])
-  owner        User?          @relation("ServiceOwner", fields: [ownerId], references: [id])
-  sla          SLA?           @relation(fields: [slaId], references: [id])
-  group        Group?         @relation("ServiceTeam", fields: [groupId], references: [id])
-  tickets      Ticket[]
-  catalogItems CatalogItem[]
-  assets       ServiceAsset[]
+  category        Category?               @relation(fields: [categoryId], references: [id])
+  owner           User?                   @relation("ServiceOwner", fields: [ownerId], references: [id])
+  sla             SLA?                    @relation(fields: [slaId], references: [id])
+  group           Group?                  @relation("ServiceTeam", fields: [groupId], references: [id])
+  tickets         Ticket[]
+  catalogItems    CatalogItem[]
+  assets          ServiceAsset[]
+  freezeWindows   ChangeFreezeWindow[]
+  statusIncidents StatusIncidentService[]
+  changeTemplates ChangeTemplate[]
 }
 
 model CatalogItem {
@@ -627,6 +644,7 @@ model Ticket {
   pausedMs            Int       @default(0) // accumulated paused time
   escalatedAt         DateTime? // set when SLA-breach escalation has fired (marker so it fires once)
   slaAtRiskNotifiedAt DateTime? // set when SLA-at-risk notification has fired (idempotency marker)
+  slaNudgedAt         DateTime? // set when the assignee SLA nudge has fired (at-most-once marker, lib/ticks/sla-nudges.ts)
   firstResponseAt     DateTime?
   resolvedAt          DateTime?
   closedAt            DateTime?
@@ -664,6 +682,8 @@ model Ticket {
   linksFrom        TicketLink[]            @relation("LinkSource")
   linksTo          TicketLink[]            @relation("LinkTarget")
   aiProjects       AiProject[]
+  statusIncident   StatusIncident?
+  aiInsights       AiInsightTicket[]
 
   @@index([status])
   @@index([priority])
@@ -898,6 +918,7 @@ model Problem {
   changes    Change[]
   comments   ProblemComment[]
   aiProjects AiProject[]
+  aiInsights AiInsight[]
 
   @@index([status])
 }
@@ -945,6 +966,8 @@ model Change {
   groupId            String?
   categoryId         String?
   problemId          Int?
+  releaseId          Int? // the Release this change ships in (SetNull when the release is deleted)
+  templateId         String? // the ChangeTemplate it was created from (traceability; SetNull on template delete)
   plannedStart       DateTime?
   plannedEnd         DateTime?
   actualStart        DateTime?
@@ -957,6 +980,8 @@ model Change {
   group      Group?           @relation(fields: [groupId], references: [id])
   category   Category?        @relation(fields: [categoryId], references: [id])
   problem    Problem?         @relation(fields: [problemId], references: [id])
+  release    Release?         @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  template   ChangeTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
   approvals  ChangeApproval[]
   assets     ChangeAsset[]
   tickets    Ticket[]
@@ -964,6 +989,8 @@ model Change {
   aiProjects AiProject[]
 
   @@index([status])
+  @@index([releaseId])
+  @@index([plannedStart, plannedEnd])
 }
 
 model ChangeComment {
@@ -1103,15 +1130,17 @@ model Asset {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  owner         User?           @relation("AssetOwner", fields: [ownerId], references: [id])
-  group         Group?          @relation(fields: [groupId], references: [id])
-  locationRef   Location?       @relation(fields: [locationId], references: [id])
-  syncSource    SyncSource?     @relation(fields: [syncSourceId], references: [id])
-  relationsFrom AssetRelation[] @relation("RelationSource")
-  relationsTo   AssetRelation[] @relation("RelationTarget")
-  tickets       TicketAsset[]
-  changes       ChangeAsset[]
-  services      ServiceAsset[]
+  owner              User?               @relation("AssetOwner", fields: [ownerId], references: [id])
+  group              Group?              @relation(fields: [groupId], references: [id])
+  locationRef        Location?           @relation(fields: [locationId], references: [id])
+  syncSource         SyncSource?         @relation(fields: [syncSourceId], references: [id])
+  relationsFrom      AssetRelation[]     @relation("RelationSource")
+  relationsTo        AssetRelation[]     @relation("RelationTarget")
+  tickets            TicketAsset[]
+  changes            ChangeAsset[]
+  services           ServiceAsset[]
+  contracts          ContractAsset[]
+  licenseAssignments LicenseAssignment[]
 
   @@unique([syncSourceId, externalId])
   @@index([type])
@@ -1401,6 +1430,7 @@ model Article {
   revisions   ArticleRevision[]
   attachments Attachment[]
   links       ArticleLink[]
+  aiInsights  AiInsight[]
 
   @@index([status, visibility])
 }
@@ -1441,4 +1471,368 @@ model ArticleRevision {
 
   @@unique([articleId, version])
   @@index([articleId])
+}
+
+// ---------------------------------------------------------------------------
+// Change schedule: freeze windows (change calendar)
+// ---------------------------------------------------------------------------
+
+/// A blackout period in which changes must not be planned. Global when neither
+/// scope is set; otherwise it applies only when EVERY set scope matches the
+/// change (serviceId: one of the change's affected CIs maps to that service via
+/// ServiceAsset; groupId: Change.groupId). EMERGENCY changes may still be planned
+/// inside it with a recorded justification (lib/change-schedule-rules.ts).
+model ChangeFreezeWindow {
+  id        String   @id @default(cuid())
+  name      String
+  reason    String?
+  startsAt  DateTime
+  endsAt    DateTime
+  serviceId String? // optional scope: only changes whose CIs belong to this service
+  groupId   String? // optional scope: only changes owned by this team
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  group   Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([startsAt, endsAt])
+  @@index([serviceId])
+  @@index([groupId])
+}
+
+// ---------------------------------------------------------------------------
+// On-call schedules (per team rotation + overrides)
+// ---------------------------------------------------------------------------
+
+/// A team's on-call rotation. Members take turns in `position` order; each shift
+/// lasts one rotation interval (ONCALL_ROTATION_META[rotationType].hours, or
+/// customIntervalHours for CUSTOM). `rotationStart` is the first handoff instant
+/// (UTC; the UI derives it from a local date + `handoffTime` in `timezone`).
+/// Resolved by lib/oncall-rules.ts; overrides always win.
+model OnCallSchedule {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?
+  groupId             String
+  timezone            String   @default("UTC") // IANA zone the handoff time is expressed in
+  rotationType        String   @default("WEEKLY") // DAILY | WEEKLY | CUSTOM
+  customIntervalHours Int? // shift length in hours when rotationType = CUSTOM
+  handoffTime         String   @default("09:00") // HH:mm local handoff time (display + DST-correct re-anchoring)
+  rotationStart       DateTime // first handoff instant (UTC); member at position 0 starts here
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  group     Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  members   OnCallMember[]
+  overrides OnCallOverride[]
+
+  @@index([groupId, isActive])
+}
+
+/// One person in a rotation, in `position` order (0 = first shift).
+model OnCallMember {
+  id         String @id @default(cuid())
+  scheduleId String
+  userId     String
+  position   Int    @default(0)
+
+  schedule OnCallSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, userId])
+  @@index([scheduleId, position])
+  @@index([userId])
+}
+
+/// A time-boxed replacement: `userId` is on call for the schedule between
+/// startsAt and endsAt, regardless of the rotation. `replacesUserId` records the
+/// rotation member it stands in for (swaps), when known.
+model OnCallOverride {
+  id             String   @id @default(cuid())
+  scheduleId     String
+  userId         String
+  replacesUserId String?
+  startsAt       DateTime
+  endsAt         DateTime
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  schedule OnCallSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user     User           @relation("OnCallOverrideUser", fields: [userId], references: [id], onDelete: Cascade)
+  replaces User?          @relation("OnCallOverrideReplaces", fields: [replacesUserId], references: [id], onDelete: SetNull)
+
+  @@index([scheduleId, startsAt, endsAt])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Status page & major-incident communication
+// ---------------------------------------------------------------------------
+
+/// A service-status incident shown on the status page. Drafts are internal
+/// (isPublic=false); only public incidents ever reach the portal or the portal
+/// assistant. `ticketId` links the major-incident ticket (unique: one status
+/// incident per ticket, so creating it from toggleMajorIncident is idempotent).
+model StatusIncident {
+  id          String    @id @default(cuid())
+  title       String
+  summary     String? // short public-facing description
+  state       String    @default("INVESTIGATING") // INVESTIGATING | IDENTIFIED | MONITORING | RESOLVED
+  impact      String    @default("MINOR") // NONE | MINOR | MAJOR | CRITICAL
+  isPublic    Boolean   @default(false)
+  ticketId    Int?      @unique
+  startedAt   DateTime  @default(now())
+  publishedAt DateTime? // first time it was made public
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  ticket   Ticket?                 @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  services StatusIncidentService[]
+  updates  StatusIncidentUpdate[]
+
+  @@index([isPublic, state])
+  @@index([startedAt])
+}
+
+/// A service affected by a StatusIncident.
+model StatusIncidentService {
+  incidentId String
+  serviceId  String
+
+  incident StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  service  Service        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([incidentId, serviceId])
+  @@index([serviceId])
+}
+
+/// One timeline entry on a StatusIncident. Visible publicly exactly when its
+/// incident is public. `state` is the incident state announced with this update.
+model StatusIncidentUpdate {
+  id         String   @id @default(cuid())
+  incidentId String
+  state      String // INVESTIGATING | IDENTIFIED | MONITORING | RESOLVED
+  body       String
+  authorId   String?
+  createdAt  DateTime @default(now())
+
+  incident StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  author   User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Releases & standard change templates
+// ---------------------------------------------------------------------------
+
+/// A bundle of changes deployed together. Int id, shown as REL-0001 via
+/// releaseRef. The release window is derived from its changes' planned windows
+/// (lib/release-rules.ts), never stored.
+model Release {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  status      String    @default("PLANNING") // PLANNING | READY | IN_PROGRESS | DEPLOYED | CANCELLED
+  ownerId     String?
+  groupId     String?
+  deployedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  owner   User?    @relation("ReleaseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  group   Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  changes Change[]
+
+  @@index([status])
+}
+
+/// A reusable, pre-filled change (standard change model). Creating a change from
+/// a STANDARD template yields a STANDARD change, pre-approved through the
+/// existing STANDARD path of submitChangeForApproval. `serviceId` scopes the
+/// template in the picker (Change itself has no service column).
+model ChangeTemplate {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  summary            String? // when to use this template (shown in the picker)
+  isActive           Boolean  @default(true)
+  type               String   @default("STANDARD") // STANDARD | NORMAL
+  title              String // prefilled change title
+  description        String   @default("") // prefilled change description (plaintext)
+  reason             String?
+  implementationPlan String?
+  rollbackPlan       String?
+  risk               String   @default("LOW") // LOW | MEDIUM | HIGH
+  priority           String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  impact             String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  categoryId         String?
+  serviceId          String?
+  groupId            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  service  Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  group    Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  changes  Change[]
+
+  @@index([isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Vendors, contracts & software licenses
+// ---------------------------------------------------------------------------
+
+model Vendor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  website   String?
+  email     String?
+  phone     String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts Contract[]
+  licenses  SoftwareLicense[]
+}
+
+/// A vendor contract. The owner receives renewal reminders `renewalNoticeDays`
+/// before `endDate`; `renewalNotifiedFor` stores the endDate the reminder already
+/// fired for, so it fires at most once per contract period (a renewal that moves
+/// endDate re-arms it).
+model Contract {
+  id                 String    @id @default(cuid())
+  name               String
+  number             String? // vendor's contract / agreement number
+  type               String    @default("SUPPORT") // SUPPORT | MAINTENANCE | LEASE | SUBSCRIPTION | WARRANTY | SERVICE | OTHER
+  status             String    @default("ACTIVE") // DRAFT | ACTIVE | EXPIRED | TERMINATED
+  vendorId           String?
+  ownerId            String?
+  startDate          DateTime
+  endDate            DateTime?
+  cost               Float?
+  renewalNoticeDays  Int       @default(30)
+  autoRenew          Boolean   @default(false)
+  notes              String?
+  renewalNotifiedFor DateTime? // endDate the renewal reminder fired for (at-most-once marker)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  vendor   Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  owner    User?             @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assets   ContractAsset[]
+  licenses SoftwareLicense[]
+
+  @@index([endDate])
+  @@index([vendorId])
+  @@index([status])
+}
+
+/// An asset covered by a contract.
+model ContractAsset {
+  contractId String
+  assetId    String
+  createdAt  DateTime @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  asset    Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([contractId, assetId])
+  @@index([assetId])
+}
+
+/// A software license pool. Compliance = assignments used vs `seats`.
+/// `overAllocatedNotifiedAt` is the at-most-once marker for the over-allocation
+/// alert to the owner; clear it once the license is compliant again.
+model SoftwareLicense {
+  id                      String    @id @default(cuid())
+  name                    String
+  vendorId                String?
+  contractId              String?
+  ownerId                 String?
+  licenseType             String    @default("PER_USER") // PER_USER | PER_DEVICE | SITE | CONCURRENT | SUBSCRIPTION
+  seats                   Int       @default(1)
+  expiresAt               DateTime?
+  cost                    Float?
+  notes                   String?
+  overAllocatedNotifiedAt DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  vendor      Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  contract    Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  owner       User?               @relation("LicenseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  assignments LicenseAssignment[]
+
+  @@index([vendorId])
+  @@index([contractId])
+  @@index([expiresAt])
+}
+
+/// One seat of a SoftwareLicense, assigned to a user and/or an asset (at least
+/// one must be set, enforced by lib/actions/contracts.ts; NULLs make a DB unique
+/// constraint useless here, so duplicates are prevented in the action).
+model LicenseAssignment {
+  id         String   @id @default(cuid())
+  licenseId  String
+  userId     String?
+  assetId    String?
+  assignedAt DateTime @default(now())
+
+  license SoftwareLicense @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  user    User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset   Asset?          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId])
+  @@index([userId])
+  @@index([assetId])
+}
+
+// ---------------------------------------------------------------------------
+// Sable insights (incident clusters, KB gaps)
+// ---------------------------------------------------------------------------
+
+/// A finding produced by the insights tick (lib/ticks/ai-insights.ts).
+/// `dedupeKey` is unique so each finding is raised at most once; `payload` is a
+/// JSON object with kind-specific detail (scores, terms, suggested title, ...).
+/// problemId / articleId record the follow-up created from the insight.
+model AiInsight {
+  id            String    @id @default(cuid())
+  kind          String // CLUSTER | KB_GAP
+  status        String    @default("OPEN") // OPEN | ACTIONED | DISMISSED
+  dedupeKey     String    @unique
+  title         String
+  summary       String?
+  payload       String    @default("{}") // JSON object, kind-specific
+  problemId     Int?
+  articleId     String?
+  dismissedById String?
+  dismissedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  problem     Problem?          @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  article     Article?          @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  dismissedBy User?             @relation("AiInsightDismissedBy", fields: [dismissedById], references: [id], onDelete: SetNull)
+  tickets     AiInsightTicket[]
+
+  @@index([kind, status])
+  @@index([createdAt])
+}
+
+/// A ticket an AiInsight refers to (cluster members / KB-gap evidence).
+model AiInsightTicket {
+  insightId String
+  ticketId  Int
+
+  insight AiInsight @relation(fields: [insightId], references: [id], onDelete: Cascade)
+  ticket  Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@id([insightId, ticketId])
+  @@index([ticketId])
 }

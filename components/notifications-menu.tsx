@@ -25,6 +25,9 @@ const ENTITY_HREF: Record<string, string> = {
   Ticket: "/tickets",
   Problem: "/problems",
   Change: "/changes",
+  Contract: "/contracts",
+  SoftwareLicense: "/contracts/licenses",
+  OnCallSchedule: "/oncall",
 };
 
 function hrefFor(entity?: string | null, entityId?: string | null) {

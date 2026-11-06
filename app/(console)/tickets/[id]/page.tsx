@@ -1,50 +1,47 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import {
-  ArrowLeft, Server, AlertTriangle, GitPullRequestArrow,
-  Flame, Link2, GitMerge, CheckCircle2, Users, Network,
-} from "lucide-react";
+import { Activity, ArrowLeft, Flame, GitMerge, CheckCircle2, Network } from "lucide-react";
 import { db } from "@/lib/db";
-import { RelatedArticlesCard } from "@/components/related-articles-card";
-import { getFormOptions } from "@/lib/data/options";
-import { getEntityApprovals } from "@/lib/data/approvals";
+import { getFormOptions, type FormOptions } from "@/lib/data/options";
 import { loadBusinessCalendar, slaSnapshot } from "@/lib/sla";
 import { allowedTransitions } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
+import type { SearchParams } from "@/lib/query";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
-import { TicketTasks } from "@/components/tickets/ticket-tasks";
-import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
-import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { CommentThread } from "@/components/comments/comment-thread";
-import { EntityApprovals } from "@/components/approvals/entity-approvals";
+import { FormAnswers } from "@/components/tickets/form-answers";
+import { EntityTabs, resolveTab } from "@/components/entity-tabs";
+import { ConversationTab } from "@/components/tickets/tabs/conversation-tab";
+import { DetailsTab } from "@/components/tickets/tabs/details-tab";
+import { LinksTab } from "@/components/tickets/tabs/links-tab";
+import { WorkTab } from "@/components/tickets/tabs/work-tab";
+import { ApprovalsTab } from "@/components/tickets/tabs/approvals-tab";
+import { HistoryTab } from "@/components/tickets/tabs/history-tab";
+import { TabSkeleton } from "@/components/tickets/tabs/tab-skeleton";
+import {
+  DEFAULT_TICKET_TAB, ticketLinkCount, ticketTabs,
+  type TicketTabKey, type TicketViewer,
+} from "@/components/tickets/tabs/ticket-tabs";
 import { aiConfigured, aiTeaserEnabled } from "@/lib/ai";
-import { getBoolSetting, getMaxUploadMb } from "@/lib/settings";
+import { getBoolSetting } from "@/lib/settings";
 import { EditEntityDialog } from "@/components/edit-entity-dialog";
-import { addTicketComment, updateTicketDetails, unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset, unmergeTicket } from "@/lib/actions/tickets";
+import { updateTicketDetails, unmergeTicket } from "@/lib/actions/tickets";
 import { ConfirmButton } from "@/components/confirm-dialog";
-import { TicketHierarchy } from "@/components/tickets/ticket-hierarchy";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { MacroPicker } from "@/components/tickets/macro-picker";
-import { LinkPicker } from "@/components/link-picker";
-import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
-import { ticketLinkEntries } from "@/lib/ticket-link-labels";
-import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
-import { HIERARCHY_PICKER_LIMIT, ancestorChain, descendantIds, openChildren } from "@/lib/ticket-hierarchy-rules";
+import { openChildren } from "@/lib/ticket-hierarchy-rules";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
-import { FormAnswers } from "@/components/tickets/form-answers";
-import { WorkLog } from "@/components/tickets/work-log";
-import { AttachmentsCard } from "@/components/attachments/attachments-card";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, SOURCE_META,
   PENDING_REASON_META, RESOLUTION_CODE_META, metaFor,
-  ticketRef, problemRef, changeRef,
+  ticketRef,
   TONE_BANNER_CLASSES, TONE_TEXT_CLASSES,
 } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
@@ -65,83 +62,84 @@ export async function generateMetadata({
 
 export default async function TicketDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const ticketId = Number(id);
   if (!Number.isFinite(ticketId)) notFound();
 
-  const me = await getSessionUser();
-  const maxUploadMb = await getMaxUploadMb();
-  const [ticket, options, audits, candidates, problemChoices, changeChoices, assetChoices, adHocApprovals, customFieldDefs, hierarchyCandidates, hierarchyEdges] = await Promise.all([
+  const me = await requireUser();
+  const isAgentUser = !!me && isAgent(me.role as Role);
+  const viewer: TicketViewer = {
+    id: me?.id,
+    isAgent: isAgentUser,
+    isAdmin: me?.role === "ADMIN",
+    canManage: !!me && hasRole(me.role as Role, "MANAGER"),
+  };
+
+  // Only what the header, the rail and the tab bar need; each tab loads its own data.
+  const [ticket, options, candidates, macros, openTaskCount, pendingApprovalCount, statusIncident] = await Promise.all([
     db.ticket.findUnique({
       where: { id: ticketId },
       include: {
         requester: true,
         requestedBy: true,
-        assignee: true,
-        service: true,
         sla: true,
-        catalogItem: true,
-        problem: true,
-        change: true,
         mergedInto: true,
         parent: { select: RELATED_TICKET_SELECT },
         children: { select: RELATED_TICKET_SELECT, orderBy: { id: "asc" } },
-        comments: { include: { author: true, attachments: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "asc" } },
-        assets: { include: { asset: true } },
+        catalogItem: { select: { formSchema: true } },
         watchers: { include: { user: true } },
-        participants: { include: { user: true }, orderBy: { createdAt: "asc" } },
-        worklogs: { include: { user: true }, orderBy: { loggedAt: "desc" } },
-        attachments: { orderBy: { createdAt: "desc" } },
-        linksFrom: { include: { linked: true } },
-        linksTo: { include: { ticket: true } },
-        tasks: { orderBy: { createdAt: "asc" } },
+        _count: { select: { comments: true, attachments: true, participants: true, assets: true, linksFrom: true, linksTo: true } },
       },
     }),
     getFormOptions(),
-    db.auditLog.findMany({
-      where: { entity: "Ticket", entityId: String(ticketId) },
-      include: { user: true },
-      orderBy: { createdAt: "asc" },
-    }),
     db.ticket.findMany({
       where: { id: { not: ticketId }, status: { notIn: ["CLOSED", "CANCELLED"] } },
       select: { id: true, title: true, prefix: true },
       orderBy: { updatedAt: "desc" },
       take: 60,
     }),
-    db.problem.findMany({
-      where: { status: { notIn: ["RESOLVED", "CLOSED"] } },
-      select: { id: true, title: true },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-    }),
-    db.change.findMany({
-      where: { status: { notIn: [...SETTLED_CHANGE_STATUSES] } },
-      select: { id: true, title: true },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-    }),
-    db.asset.findMany({
-      select: { id: true, name: true, assetTag: true },
-      orderBy: { updatedAt: "desc" },
-      take: 200,
-    }),
-    getEntityApprovals("TICKET", ticketId),
-    db.customFieldDef.findMany({ where: { entityType: "TICKET", active: true }, orderBy: { order: "asc" } }),
-    // Parent / child pickers: only tickets that can take part in a hierarchy, and more
-    // of them than the general link picker offers (the parent is often an older major incident).
-    db.ticket.findMany({
-      where: { id: { not: ticketId }, status: { notIn: ["CLOSED", "CANCELLED"] }, mergedIntoId: null },
-      select: { id: true, title: true, prefix: true },
-      orderBy: { updatedAt: "desc" },
-      take: HIERARCHY_PICKER_LIMIT,
-    }),
-    db.ticket.findMany({ where: { parentId: { not: null } }, select: { id: true, parentId: true } }),
+    // Macros the current agent may apply here: any shared macro + their own personal ones.
+    isAgentUser
+      ? db.macro.findMany({
+          where: { OR: [{ isShared: true }, { ownerId: me.id }] },
+          select: { id: true, name: true, description: true, isShared: true, actions: true },
+          orderBy: [{ isShared: "desc" }, { name: "asc" }],
+        })
+      : [],
+    isAgentUser ? db.task.count({ where: { ticketId, done: false } }) : 0,
+    isAgentUser
+      ? db.approval.count({ where: { entityType: "TICKET", entityId: String(ticketId), status: "PENDING" } })
+      : 0,
+    isAgentUser
+      ? db.statusIncident.findUnique({ where: { ticketId }, select: { id: true, isPublic: true } })
+      : null,
   ]);
   if (!ticket) notFound();
+
+  const tabs = ticketTabs(
+    {
+      comments: ticket._count.comments,
+      links: ticketLinkCount({
+        hasProblem: ticket.problemId !== null,
+        hasChange: ticket.changeId !== null,
+        hasParent: ticket.parent !== null,
+        childTickets: ticket.children.length,
+        linkedTickets: ticket._count.linksFrom + ticket._count.linksTo,
+        assets: ticket._count.assets,
+      }),
+      openTasks: openTaskCount,
+      pendingApprovals: pendingApprovalCount,
+      details: ticket._count.attachments + ticket._count.participants,
+    },
+    isAgentUser,
+  );
+  const activeTab = resolveTab(sp, tabs, DEFAULT_TICKET_TAB);
 
   // SLA badge in BUSINESS time: when the ticket's SLA carries a business
   // calendar, compute the live state against working hours so the badge agrees
@@ -151,30 +149,12 @@ export default async function TicketDetailPage({
   const slaCalendar = await loadBusinessCalendar(ticket.sla?.businessCalendarId);
   const slaState = slaSnapshot(ticket, undefined, slaCalendar).state;
 
-  // Macros the current agent may apply here: any shared macro + their own personal
-  // ones. Non-agents get none (the picker is agent-only anyway).
-  const macros = me && isAgent(me.role as Role)
-    ? await db.macro.findMany({
-        where: { OR: [{ isShared: true }, { ownerId: me.id }] },
-        select: { id: true, name: true, description: true, isShared: true, actions: true },
-        orderBy: [{ isShared: "desc" }, { name: "asc" }],
-      })
-    : [];
-
-  // Custom fields: keep only defs whose visibility matches this ticket's built-in fields.
-  const cfValues = parseValues(ticket.customFields);
-  const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
-    isFieldVisible(def, entityFieldValues(ticket)),
-  );
-
   const aiEnabled = await aiConfigured();
   const aiTeaser = !aiEnabled && (await aiTeaserEnabled()); // show buttons as a preview when disabled
   const aiVisible = aiEnabled || aiTeaser;
   // Admins can turn off the inline triage suggestions independently of the rest.
   const triageEnabled = aiEnabled && (await getBoolSetting("AI_TICKET_TRIAGE", true));
   const isWatching = !!me && ticket.watchers.some((w) => w.userId === me.id);
-  const isAgentUser = !!me && isAgent(me.role as Role);
-  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const allowedStatuses = me
     ? [...await allowedTransitions("TICKET", ticket.status, me.role as Role)].filter((s) => approvalAllowsStatus(ticket.approvalState, s))
     : undefined;
@@ -182,12 +162,6 @@ export default async function TicketDetailPage({
     value: String(c.id),
     label: `${ticketRef(c.id, c.prefix)} — ${c.title}`,
   }));
-  // What parentLinkRefusal would reject is left out: a parent may not be a descendant, a child may not be an ancestor.
-  const hierarchyOpts = hierarchyCandidates.map((c) => ({ id: c.id, value: String(c.id), label: `${ticketRef(c.id, c.prefix)} — ${c.title}` }));
-  const descendants = descendantIds(ticket.id, hierarchyEdges);
-  const ancestors = new Set(ancestorChain(ticket.id, hierarchyEdges));
-  const parentOpts = hierarchyOpts.filter((o) => !descendants.has(o.id));
-  const childOpts = hierarchyOpts.filter((o) => !ancestors.has(o.id) && !descendants.has(o.id));
   const pickerMacros = macros.map((m) => {
     let actionCount = 0;
     try {
@@ -196,44 +170,6 @@ export default async function TicketDetailPage({
     } catch { /* malformed macro → 0 actions */ }
     return { id: m.id, name: m.name, description: m.description, isShared: m.isShared, actionCount };
   });
-  const linkedTickets = ticketLinkEntries(ticket.linksFrom, ticket.linksTo);
-  const linkedAssetIds = new Set(ticket.assets.map((a) => a.assetId));
-  const problemOpts = problemChoices.map((p) => ({ value: String(p.id), label: `${problemRef(p.id)} · ${p.title}` }));
-  const changeOpts = changeChoices.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
-  const assetOpts = assetChoices
-    .filter((a) => !linkedAssetIds.has(a.id))
-    .map((a) => ({ value: a.id, label: a.assetTag ? `${a.name} · ${a.assetTag}` : a.name }));
-
-  // Recipients per sent message: join outbound emails by commentId so each reply
-  // can show "An: … · Cc: …" (Freshservice-style auditability).
-  const emailByComment = new Map(
-    (
-      await db.emailMessage.findMany({
-        where: { ticketId, commentId: { not: null }, direction: "OUTBOUND" },
-        select: { commentId: true, toEmail: true, cc: true },
-      })
-    ).map((m) => [m.commentId!, { to: m.toEmail, cc: m.cc ? (JSON.parse(m.cc) as string[]) : [] }]),
-  );
-
-  const comments = ticket.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, fromEmail: c.fromEmail, channel: c.channel, createdAt: c.createdAt, attachments: c.attachments,
-    recipients: emailByComment.get(c.id) ?? null,
-  }));
-  const activity = audits
-    .filter((a) => a.summary && a.summary !== "Added a comment")
-    .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
-
-  // Candidates for the reply To/Cc/Bcc typeahead (value = email): requester +
-  // participants + agents, de-duplicated by email.
-  const replyCandidates = Array.from(
-    new Map(
-      [
-        { value: ticket.requester.email, label: ticket.requester.name ?? ticket.requester.email },
-        ...ticket.participants.map((p) => ({ value: p.user.email, label: p.user.name ?? p.user.email })),
-        ...options.agents.map((a) => ({ value: a.email, label: a.name ?? a.email })),
-      ].map((o) => [o.value.toLowerCase(), o]),
-    ).values(),
-  );
 
   return (
     <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_340px] lg:overflow-hidden">
@@ -276,6 +212,24 @@ export default async function TicketDetailPage({
         {ticket.isMajorIncident ? (
           <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive sm:px-6">
             <Flame className="size-4" /> Major Incident — all hands. Stakeholders are being notified.
+            {statusIncident ? (
+              <span className="ml-auto font-normal">
+                Status page: {statusIncident.isPublic ? "Public" : "Draft"} ·{" "}
+                <Link href={`/status/${statusIncident.id}`} className="font-medium underline">Open</Link>
+              </span>
+            ) : isAgentUser ? (
+              <Link href={`/status/new?ticket=${ticketId}`} className="ml-auto font-medium underline">
+                Create status incident
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+
+        {statusIncident && !ticket.isMajorIncident ? (
+          <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm sm:px-6">
+            <Activity className="size-4 text-muted-foreground" />
+            Status page: {statusIncident.isPublic ? "Public" : "Draft"} ·{" "}
+            <Link href={`/status/${statusIncident.id}`} className="font-medium text-primary hover:underline">Open</Link>
           </div>
         ) : null}
 
@@ -361,140 +315,32 @@ export default async function TicketDetailPage({
             )}
           </div>
 
+          {/* A catalog request's answers are the brief for whoever works it, so they stay above the tabs. */}
           {ticket.formData ? (
             <FormAnswers className="mt-4" formSchema={ticket.formSchema ?? ticket.catalogItem?.formSchema} formData={ticket.formData} />
           ) : null}
 
-          {ticket.attachments.length > 0 ? (
-            <AttachmentsCard
-              className="mt-4"
-              attachments={ticket.attachments}
-              target={{ ticketId: ticket.id }}
-              canUpload={false}
-              canDeleteAll={!!me && isAgent(me.role as Role)}
-              currentUserId={me?.id}
-              maxMb={maxUploadMb}
-            />
-          ) : null}
-
-          {/* Linked records — problems, changes, tickets and assets, with add + unlink */}
-          <div className="mt-6">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
-                <Link2 className="size-4 text-muted-foreground" /> Linked records
-              </h2>
-              {isAgentUser ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <LinkPicker
-                    action={setTicketProblem}
-                    triggerLabel="Problem"
-                    title="Link to problem"
-                    description="Connect this incident to a known problem."
-                    hidden={{ ticketId: ticket.id }}
-                    valueName="problemId"
-                    options={problemOpts}
-                    placeholder="Choose a problem"
-                    searchPlaceholder="Search problems…"
-                    emptyText="No open problems to link."
-                    successMessage="Problem linked"
-                  />
-                  <LinkPicker
-                    action={setTicketChange}
-                    triggerLabel="Change"
-                    title="Link to change"
-                    description="Connect this ticket to a change request."
-                    hidden={{ ticketId: ticket.id }}
-                    valueName="changeId"
-                    options={changeOpts}
-                    placeholder="Choose a change"
-                    searchPlaceholder="Search changes…"
-                    emptyText="No open changes to link."
-                    successMessage="Change linked"
-                  />
-                  <LinkPicker
-                    action={linkAsset}
-                    triggerLabel="Asset"
-                    title="Link an asset"
-                    description="Attach an affected configuration item."
-                    hidden={{ ticketId: ticket.id }}
-                    valueName="assetId"
-                    options={assetOpts}
-                    placeholder="Choose an asset"
-                    searchPlaceholder="Search assets…"
-                    emptyText="No more assets to link."
-                    successMessage="Asset linked"
-                  />
-                </div>
-              ) : null}
-            </div>
-          {(ticket.problem || ticket.change || ticket.assets.length > 0 || linkedTickets.length > 0) ? (
-            <div className="flex flex-wrap gap-2">
-              {ticket.problem ? (
-                <Chip href={`/problems/${ticket.problem.id}`} icon={<AlertTriangle className={`size-3.5 ${TONE_TEXT_CLASSES.warning}`} />} label={`${problemRef(ticket.problem.id)} · ${ticket.problem.title}`}
-                  unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "problem" }} />} />
-              ) : null}
-              {ticket.change ? (
-                <Chip href={`/changes/${ticket.change.id}`} icon={<GitPullRequestArrow className="size-3.5 text-primary" />} label={changeRef(ticket.change.id)}
-                  unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId: ticket.id, kind: "change" }} />} />
-              ) : null}
-              {linkedTickets.map((l) => (
-                <Chip key={l.linkId} href={`/tickets/${l.ticket.id}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${l.label} ${ticketRef(l.ticket.id, l.ticket.prefix)} · ${l.ticket.title}`}
-                  unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.linkId }} />} />
-              ))}
-              {ticket.assets.map((a) => (
-                <Chip key={a.assetId} href={`/assets/${a.assetId}`} icon={<Server className={`size-3.5 ${TONE_TEXT_CLASSES.indigo}`} />} label={a.asset.name}
-                  unlink={<UnlinkBtn action={unlinkAsset} fields={{ ticketId: ticket.id, assetId: a.assetId }} />} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No linked records yet.</p>
-          )}
-          </div>
-
-          <TicketHierarchy
-            ticketId={ticket.id}
-            parent={ticket.parent}
-            childTickets={ticket.children}
-            parentOptions={parentOpts}
-            childOptions={childOpts}
-            canEdit={isAgentUser}
+          <EntityTabs
+            className="mt-6"
+            tabs={tabs}
+            active={activeTab}
+            defaultTab={DEFAULT_TICKET_TAB}
+            basePath={`/tickets/${ticket.id}`}
+            searchParams={sp}
+            label="Ticket sections"
           />
 
-          {/* Approvals (ad-hoc sign-off) */}
-          {isAgentUser ? (
-            <EntityApprovals
-              entityType="TICKET"
-              entityId={String(ticket.id)}
-              entityTitle={ticket.title}
-              approvals={adHocApprovals}
-              currentUserId={me?.id ?? ""}
-              isAdmin={me?.role === "ADMIN"}
-              canManage={canManage}
-              canRequest={isAgentUser}
-              agents={options.agents}
-            />
-          ) : null}
-
-          {/* Comments & Activity */}
-          <div className="mt-8">
-            <CommentThread
-              idField="ticketId"
-              entityId={ticket.id}
-              comments={comments}
-              activity={activity}
-              addAction={addTicketComment}
-              mentionUsers={options.agents}
-              attachTarget={{ ticketId: ticket.id }}
-              aiTicketId={aiVisible ? ticket.id : undefined}
-              aiTeaser={aiTeaser}
-              emailReply={{
-                requesterEmail: ticket.requester.email,
-                participantEmails: ticket.participants.map((p) => p.user.email),
-                candidateUsers: replyCandidates,
-              }}
-              enableForward
-              maxMb={maxUploadMb}
-            />
+          <div className="mt-5">
+            <Suspense key={activeTab} fallback={<TabSkeleton />}>
+              <ActiveTab
+                active={activeTab}
+                ticket={ticket}
+                viewer={viewer}
+                agents={options.agents}
+                aiVisible={aiVisible}
+                aiTeaser={aiTeaser}
+              />
+            </Suspense>
           </div>
         </div>
       </div>
@@ -525,25 +371,6 @@ export default async function TicketDetailPage({
             <TicketProperties ticket={ticket} options={options} openChildCount={openChildren(ticket.children).length} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
-
-        <EntityCustomFields
-          className="mt-4"
-          entityType="TICKET"
-          entityId={ticket.id}
-          defs={visibleCustomFields}
-          values={cfValues}
-          editable={isAgentUser}
-        />
-
-        {/* Checklist — agents work through subtasks before resolving. */}
-        {isAgentUser ? (
-          <Card className="mt-4">
-            <CardHeader><CardTitle className="text-sm">Tasks</CardTitle></CardHeader>
-            <CardContent>
-              <TicketTasks ticketId={ticket.id} tasks={ticket.tasks} />
-            </CardContent>
-          </Card>
-        ) : null}
 
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}
@@ -581,45 +408,54 @@ export default async function TicketDetailPage({
             ) : null}
           </CardContent>
         </Card>
-
-        {/* Participants: portal-visible collaborators (e.g. a CC'd manager). */}
-        {ticket.participants.length > 0 ? (
-          <Card className="mt-4">
-            <CardHeader><CardTitle className="flex items-center gap-1.5 text-sm"><Users className="size-4 text-muted-foreground" /> Participants</CardTitle></CardHeader>
-            <CardContent className="grid gap-1.5">
-              <div className="text-xs text-muted-foreground">Can see &amp; reply in the portal</div>
-              {ticket.participants.map((p) => (
-                <Link
-                  key={p.userId}
-                  href={`/people/${p.userId}`}
-                  className="group flex items-center gap-2.5 rounded-lg border p-2 transition-colors hover:border-primary/40"
-                >
-                  <UserAvatar name={p.user.name} email={p.user.email} image={p.user.image} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium group-hover:text-primary">{p.user.name ?? p.user.email}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{p.user.email}</span>
-                  </span>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <WorkLog
-          ticketId={ticket.id}
-          logs={ticket.worklogs}
-          meId={me?.id ?? ""}
-          isAdmin={me?.role === "ADMIN"}
-        />
-
-
-        <RelatedArticlesCard className="mt-4" entityType="TICKET" entityId={ticket.id} />
       </aside>
 
       {/* Sable lives in the global window (FAB / SableProvider) — it detects this
           ticket from the URL and opens the same assistant with ticket context. */}
     </div>
   );
+}
+
+/** The panel of the active tab; `resolveTab` already ruled out agent-only tabs for other viewers. */
+function ActiveTab({
+  active, ticket, viewer, agents, aiVisible, aiTeaser,
+}: {
+  active: TicketTabKey;
+  ticket: {
+    id: number;
+    title: string;
+    status: string;
+    requester: { email: string; name: string | null };
+    parent: { id: number; title: string; prefix: string; status: string } | null;
+    children: { id: number; title: string; prefix: string; status: string }[];
+  };
+  viewer: TicketViewer;
+  agents: FormOptions["agents"];
+  aiVisible: boolean;
+  aiTeaser: boolean;
+}) {
+  switch (active) {
+    case "conversation":
+      return (
+        <ConversationTab
+          ticket={{ id: ticket.id, status: ticket.status, requesterEmail: ticket.requester.email, requesterName: ticket.requester.name }}
+          viewer={viewer}
+          agents={agents}
+          aiVisible={aiVisible}
+          aiTeaser={aiTeaser}
+        />
+      );
+    case "details":
+      return <DetailsTab ticketId={ticket.id} viewer={viewer} />;
+    case "links":
+      return <LinksTab ticketId={ticket.id} parent={ticket.parent} childTickets={ticket.children} viewer={viewer} />;
+    case "work":
+      return <WorkTab ticketId={ticket.id} viewer={viewer} />;
+    case "approvals":
+      return <ApprovalsTab ticket={ticket} viewer={viewer} agents={agents} />;
+    case "history":
+      return <HistoryTab ticketId={ticket.id} />;
+  }
 }
 
 function Meta({ label, value }: { label: string; value: string }) {
@@ -630,4 +466,3 @@ function Meta({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

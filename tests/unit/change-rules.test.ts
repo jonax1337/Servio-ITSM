@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { isWindowEditable, plannedWindowError, submitBlockedMessage, submitBlockers, WINDOW_ORDER_ERROR } from "@/lib/change-rules";
+import {
+  isTemplatedStandard,
+  isWindowEditable,
+  leavesStandardProcedure,
+  MANUAL_CHANGE_TYPES,
+  plannedWindowError,
+  preApprovalApplies,
+  STANDARD_NEEDS_TEMPLATE_MESSAGE,
+  standardDemotion,
+  standardTypeError,
+  submitBlockedMessage,
+  submitBlockers,
+  WINDOW_ORDER_ERROR,
+} from "@/lib/change-rules";
 import { refSearchWhere } from "@/lib/ref-search";
 import { sortByRank, ticketListQuery } from "@/lib/ticket-list";
 
@@ -24,7 +37,6 @@ describe("plannedWindowError", () => {
 
 describe("submitBlockers", () => {
   const complete = {
-    type: "NORMAL",
     implementationPlan: "Deploy v2",
     rollbackPlan: "Redeploy v1",
     plannedStart: at("2026-01-01T10:00"),
@@ -32,21 +44,116 @@ describe("submitBlockers", () => {
   };
 
   it("lets a fully planned change through", () => {
-    expect(submitBlockers(complete)).toEqual([]);
+    expect(submitBlockers(complete, false)).toEqual([]);
   });
 
   it("names every missing prerequisite", () => {
-    const missing = submitBlockers({ ...complete, implementationPlan: null, rollbackPlan: "  ", plannedEnd: null });
+    const missing = submitBlockers({ ...complete, implementationPlan: null, rollbackPlan: "  ", plannedEnd: null }, false);
     expect(missing).toEqual(["an implementation plan", "a rollback plan", "a planned window (start and end)"]);
     expect(submitBlockedMessage(missing)).toContain("an implementation plan, a rollback plan");
   });
 
-  it("applies to emergency changes too", () => {
-    expect(submitBlockers({ ...complete, type: "EMERGENCY", rollbackPlan: null })).toEqual(["a rollback plan"]);
+  it("exempts a pre-approved standard change", () => {
+    expect(submitBlockers({ implementationPlan: null, rollbackPlan: null, plannedStart: null, plannedEnd: null }, true)).toEqual([]);
   });
 
-  it("exempts pre-authorized STANDARD changes", () => {
-    expect(submitBlockers({ type: "STANDARD", implementationPlan: null, rollbackPlan: null, plannedStart: null, plannedEnd: null })).toEqual([]);
+  it("still demands the plans of a change that is not pre-approved", () => {
+    expect(submitBlockers({ implementationPlan: null, rollbackPlan: null, plannedStart: null, plannedEnd: null }, false)).toHaveLength(3);
+  });
+});
+
+describe("standard changes come only from templates", () => {
+  it("refuses giving a change the STANDARD type by hand", () => {
+    expect(standardTypeError("STANDARD", null)).toBe(STANDARD_NEEDS_TEMPLATE_MESSAGE);
+    expect(standardTypeError("STANDARD", "NORMAL")).toBe(STANDARD_NEEDS_TEMPLATE_MESSAGE);
+  });
+
+  it("lets other types through and keeps an existing STANDARD type", () => {
+    expect(standardTypeError("NORMAL", null)).toBeNull();
+    expect(standardTypeError("EMERGENCY", "STANDARD")).toBeNull();
+    expect(standardTypeError("STANDARD", "STANDARD")).toBeNull();
+  });
+
+  it("offers STANDARD to no manual form", () => {
+    expect(MANUAL_CHANGE_TYPES).toEqual(["NORMAL", "EMERGENCY"]);
+  });
+});
+
+describe("preApprovalApplies", () => {
+  const templated = { type: "STANDARD", templateId: "tpl-1" };
+  const standardTemplate = { type: "STANDARD", isActive: true };
+
+  it("approves a standard change whose active standard template exists", () => {
+    expect(preApprovalApplies(templated, standardTemplate)).toBe(true);
+  });
+
+  it("does not approve a standard change without a template", () => {
+    expect(preApprovalApplies({ type: "STANDARD", templateId: null }, null)).toBe(false);
+  });
+
+  it("does not approve when the template is switched off or no longer standard", () => {
+    expect(preApprovalApplies(templated, { ...standardTemplate, isActive: false })).toBe(false);
+    expect(preApprovalApplies(templated, { type: "NORMAL", isActive: true })).toBe(false);
+    expect(preApprovalApplies(templated, null)).toBe(false);
+  });
+
+  it("never approves a normal change, even one made from a template", () => {
+    expect(preApprovalApplies({ type: "NORMAL", templateId: "tpl-1" }, standardTemplate)).toBe(false);
+  });
+});
+
+describe("isTemplatedStandard", () => {
+  it("needs both the STANDARD type and a template", () => {
+    expect(isTemplatedStandard({ type: "STANDARD", templateId: "tpl-1" })).toBe(true);
+    expect(isTemplatedStandard({ type: "STANDARD", templateId: null })).toBe(false);
+    expect(isTemplatedStandard({ type: "NORMAL", templateId: "tpl-1" })).toBe(false);
+  });
+});
+
+describe("leavesStandardProcedure", () => {
+  it("flags a changed plan, rollback plan, risk or impact", () => {
+    expect(leavesStandardProcedure("implementationPlan", "new steps", "old steps")).toBe(true);
+    expect(leavesStandardProcedure("rollbackPlan", null, "revert")).toBe(true);
+    expect(leavesStandardProcedure("risk", "HIGH", "LOW")).toBe(true);
+    expect(leavesStandardProcedure("impact", "HIGH", "LOW")).toBe(true);
+  });
+
+  it("ignores a save that changes nothing", () => {
+    expect(leavesStandardProcedure("risk", "LOW", "LOW")).toBe(false);
+    expect(leavesStandardProcedure("rollbackPlan", null, null)).toBe(false);
+    expect(leavesStandardProcedure("implementationPlan", "", null)).toBe(false);
+  });
+
+  it("ignores fields the template does not fix", () => {
+    expect(leavesStandardProcedure("reason", "other", "some")).toBe(false);
+    expect(leavesStandardProcedure("priority", "HIGH", "LOW")).toBe(false);
+  });
+
+  it("flags moving the type away from STANDARD", () => {
+    expect(leavesStandardProcedure("type", "NORMAL", "STANDARD")).toBe(true);
+    expect(leavesStandardProcedure("type", "STANDARD", "STANDARD")).toBe(false);
+  });
+});
+
+describe("standardDemotion", () => {
+  const templated = { type: "STANDARD", templateId: "tpl-1" };
+
+  it("sends a pre-approved templated change back to draft", () => {
+    expect(standardDemotion({ ...templated, status: "APPROVED" })).toEqual({ backToDraft: true });
+    expect(standardDemotion({ ...templated, status: "SCHEDULED" })).toEqual({ backToDraft: true });
+  });
+
+  it("only converts a templated draft", () => {
+    expect(standardDemotion({ ...templated, status: "DRAFT" })).toEqual({ backToDraft: false });
+  });
+
+  it("leaves work that already started where it is", () => {
+    expect(standardDemotion({ ...templated, status: "IN_PROGRESS" })).toEqual({ backToDraft: false });
+  });
+
+  it("does not touch changes that are not templated standard changes", () => {
+    expect(standardDemotion({ type: "NORMAL", templateId: "tpl-1", status: "APPROVED" })).toBeNull();
+    expect(standardDemotion({ type: "STANDARD", templateId: null, status: "APPROVED" })).toBeNull();
   });
 });
 

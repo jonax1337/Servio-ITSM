@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ShoppingBag, AlertCircle, Ticket, BookOpen } from "lucide-react";
+import { Home, ShoppingBag, AlertCircle, Ticket, BookOpen, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -11,6 +11,7 @@ const items = [
   { href: "/portal/new", label: "Report an issue", icon: AlertCircle },
   { href: "/portal/tickets", label: "My tickets", icon: Ticket },
   { href: "/portal/knowledge", label: "Knowledge", icon: BookOpen },
+  { href: "/portal/status", label: "Status", icon: Activity },
 ];
 
 export function PortalNav() {

@@ -8,6 +8,8 @@ import {
 import { runAutomations } from "@/lib/automations";
 import { notify, writeAudit } from "@/lib/audit";
 import { getAutomationUserId } from "@/lib/system-user";
+import { currentOnCall, type OnCallUser } from "@/lib/oncall";
+import { pickOnCallAssignee } from "@/lib/oncall-rules";
 import { PRIORITIES, OPEN_TICKET_STATUSES } from "@/lib/constants";
 import type { BusinessCalendarLike } from "@/lib/business-hours";
 
@@ -25,7 +27,9 @@ import type { BusinessCalendarLike } from "@/lib/business-hours";
 //  (b) NEW — multi-stage EscalationPolicy steps: when the ticket's SLA has an
 //   escalationPolicy, each step fires once when SLA-elapsed% crosses its
 //   thresholdPercent. Actions: NOTIFY (group/user), REASSIGN (set group/user),
-//   BUMP_PRIORITY (raise to bumpToPriority). Business-hours calendars, when
+//   BUMP_PRIORITY (raise to bumpToPriority), NOTIFY_ONCALL / REASSIGN_ONCALL
+//   (whoever is on call for the ticket's group; the group is notified instead
+//   when nobody is). Business-hours calendars, when
 //   configured on the SLA, drive both the state and the elapsed% so escalation
 //   respects working time.
 //
@@ -78,15 +82,70 @@ async function markStepFired(ticketId: number, stepId: string, summary: string) 
   });
 }
 
-/** Notify every active agent in a group. */
-async function notifyGroup(groupId: string, ticketId: number, title: string, body: string) {
+/** A notification decided while planning a step; sent only after the step's marker is written. */
+type EscalationNotice = { userId: string; title: string; body: string };
+
+async function sendNotices(ticketId: number, notices: EscalationNotice[]) {
+  for (const { userId, title, body } of notices) {
+    await notify(userId, { type: "SLA_ESCALATION", title, body, entity: "Ticket", entityId: String(ticketId) });
+  }
+}
+
+/** The notices that tell every active agent in a group. */
+async function groupNotices(groupId: string, title: string, body: string): Promise<EscalationNotice[]> {
   const members = await db.groupMember.findMany({
     where: { groupId, user: { isActive: true } },
     select: { userId: true },
   });
-  for (const m of members) {
-    await notify(m.userId, { type: "SLA_ESCALATION", title, body, entity: "Ticket", entityId: String(ticketId) });
+  return members.map((m) => ({ userId: m.userId, title, body }));
+}
+
+const onCallNames = (users: OnCallUser[]) => users.map((u) => u.name ?? u.email).join(", ");
+
+/** NOTIFY_ONCALL: tell whoever is on call for the ticket's group, else the group itself. */
+async function planOnCallNotice(
+  ticketId: number,
+  groupId: string | null,
+  thresholdPercent: number,
+  onCall: OnCallUser[],
+): Promise<{ summary: string; notices: EscalationNotice[] }> {
+  const prefix = `SLA escalation (${thresholdPercent}% elapsed)`;
+  const body = `Ticket #${ticketId} reached ${thresholdPercent}% of its SLA.`;
+  if (onCall.length > 0) {
+    return {
+      summary: `${prefix}: notified on-call (${onCallNames(onCall)}).`,
+      notices: onCall.map((u) => ({ userId: u.userId, title: "SLA escalation (you are on call)", body })),
+    };
   }
+  if (!groupId) {
+    return { summary: `${prefix}: nobody on call and the ticket has no group; nobody notified.`, notices: [] };
+  }
+  return {
+    summary: `${prefix}: nobody on call, notified the group instead.`,
+    notices: await groupNotices(groupId, "SLA escalation", body),
+  };
+}
+
+/**
+ * Everyone on call for the ticket's group, and who the ticket goes to (null = nobody
+ * qualifies). Only on-call people who are members of the group can be assigned: a
+ * rotation or override may name any agent, but the console refuses assignees outside
+ * the ticket's group.
+ */
+async function resolveOnCallAssignee(
+  groupId: string | null,
+  currentAssigneeId: string | null,
+): Promise<{ assigneeId: string | null; onCall: OnCallUser[] }> {
+  const onCall = groupId ? await currentOnCall(groupId) : [];
+  const members = groupId
+    ? await db.groupMember.findMany({
+        where: { groupId, userId: { in: onCall.map((u) => u.userId) } },
+        select: { userId: true },
+      })
+    : [];
+  const memberIds = new Set(members.map((m) => m.userId));
+  const assignable = onCall.filter((u) => memberIds.has(u.userId)).map((u) => u.userId);
+  return { assigneeId: pickOnCallAssignee(assignable, currentAssigneeId), onCall };
 }
 
 /**
@@ -128,28 +187,15 @@ async function runEscalationPolicy(
     if (await stepAlreadyFired(ticket.id, step.id)) continue;
 
     const patch: Record<string, unknown> = {};
+    let notices: EscalationNotice[] = [];
     let summary = "";
 
     switch (step.action) {
       case "NOTIFY": {
         summary = `SLA escalation (${step.thresholdPercent}% elapsed): notified.`;
-        if (step.targetUserId) {
-          await notify(step.targetUserId, {
-            type: "SLA_ESCALATION",
-            title: "SLA escalation",
-            body: `Ticket #${ticket.id} reached ${step.thresholdPercent}% of its SLA.`,
-            entity: "Ticket",
-            entityId: String(ticket.id),
-          });
-        }
-        if (step.targetGroupId) {
-          await notifyGroup(
-            step.targetGroupId,
-            ticket.id,
-            "SLA escalation",
-            `Ticket #${ticket.id} reached ${step.thresholdPercent}% of its SLA.`,
-          );
-        }
+        const body = `Ticket #${ticket.id} reached ${step.thresholdPercent}% of its SLA.`;
+        if (step.targetUserId) notices.push({ userId: step.targetUserId, title: "SLA escalation", body });
+        if (step.targetGroupId) notices.push(...(await groupNotices(step.targetGroupId, "SLA escalation", body)));
         break;
       }
       case "REASSIGN": {
@@ -167,6 +213,25 @@ async function runEscalationPolicy(
           curAssigneeId = step.targetUserId;
         }
         summary = `SLA escalation (${step.thresholdPercent}% elapsed): reassigned.`;
+        break;
+      }
+      case "NOTIFY_ONCALL": {
+        const onCall = curGroupId ? await currentOnCall(curGroupId) : [];
+        ({ summary, notices } = await planOnCallNotice(ticket.id, curGroupId, step.thresholdPercent, onCall));
+        break;
+      }
+      case "REASSIGN_ONCALL": {
+        const { assigneeId, onCall } = await resolveOnCallAssignee(curGroupId, curAssigneeId);
+        if (assigneeId) {
+          if (assigneeId !== curAssigneeId) {
+            patch.assigneeId = assigneeId;
+            curAssigneeId = assigneeId;
+          }
+          const assignee = onCallNames(onCall.filter((u) => u.userId === assigneeId));
+          summary = `SLA escalation (${step.thresholdPercent}% elapsed): assigned to on-call ${assignee}.`;
+        } else {
+          ({ summary, notices } = await planOnCallNotice(ticket.id, curGroupId, step.thresholdPercent, onCall));
+        }
         break;
       }
       case "BUMP_PRIORITY": {
@@ -189,10 +254,13 @@ async function runEscalationPolicy(
         summary = `SLA escalation (${step.thresholdPercent}% elapsed).`;
     }
 
-    // Persist the durable marker FIRST (idempotency), then apply the mutation.
+    // Persist the durable marker FIRST (idempotency), then notify and apply the mutation.
     await markStepFired(ticket.id, step.id, summary);
+    await sendNotices(ticket.id, notices);
     if (Object.keys(patch).length > 0) {
-      await db.ticket.update({ where: { id: ticket.id }, data: patch });
+      // A new owner gets their own SLA nudge.
+      const data = "assigneeId" in patch ? { ...patch, slaNudgedAt: null } : patch;
+      await db.ticket.update({ where: { id: ticket.id }, data });
       // Notify a directly-assigned user of the reassignment.
       if (patch.assigneeId && typeof patch.assigneeId === "string") {
         await notify(patch.assigneeId, {

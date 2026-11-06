@@ -59,6 +59,10 @@ export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRol
   { prefix: "/catalog", minRole: "MANAGER" },
   { prefix: "/automations", minRole: "MANAGER" },
   { prefix: "/syncs", minRole: "MANAGER" },
+  // Change freeze windows and standard-change templates are managed by
+  // MANAGER+; agents see freezes on the calendar and pick templates on /changes/new.
+  { prefix: "/changes/freeze", minRole: "MANAGER" },
+  { prefix: "/changes/templates", minRole: "MANAGER" },
   // Longest prefix wins — agents may open /settings/macros for their personal
   // macros even though the rest of /settings needs MANAGER.
   { prefix: "/settings/macros", minRole: "AGENT" },

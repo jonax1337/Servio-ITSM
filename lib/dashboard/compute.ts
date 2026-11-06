@@ -378,6 +378,9 @@ export const DASHBOARD_CACHE_TAG = "dashboard-widgets";
  * change the result — and untrusted `options` are re-sanitised first.
  */
 export async function computeWidget(widget: Widget): Promise<Computed> {
+  // The briefing is the viewer's own queue: caching it under the shared widget key would leak it to other users.
+  // Loaded lazily: the briefing pulls in the session and AI layers, which the pure filter helpers here (and their tests) must not depend on.
+  if (widget.type === "briefing") return (await import("@/lib/dashboard/briefing")).computeBriefing();
   const safe: Widget = { ...widget, options: sanitizeOptions(widget.options) };
   const key = JSON.stringify({ type: safe.type, filters: safe.filters, options: safe.options });
   const cached = unstable_cache(

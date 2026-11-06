@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
+import { listPublicIncidents } from "@/lib/status-incidents";
 
 /**
  * Sable for the Self-Service Portal — an END-USER assistant.
@@ -255,6 +256,31 @@ function myTicketTool(userId: string) {
   });
 }
 
+function statusIncidentsTool(userId: string) {
+  return tool({
+    description:
+      "List the PUBLIC service status incidents that are active right now (known outages and degradations the Service Desk has announced), with their latest update. Call this BEFORE proposing a request when the user reports something not working, so you can tell them it is already a known issue. Never includes unpublished incidents.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const incidents = await listPublicIncidents(userId, "active", 5);
+      if (incidents.length === 0) return { incidents: [], note: "No known issues right now." };
+      return {
+        incidents: incidents.map((i) => ({
+          title: i.title,
+          state: i.state,
+          impact: i.impact,
+          affects: i.services,
+          summary: i.summary ?? "",
+          latestUpdate: i.updates[0]?.body.slice(0, 600) ?? "",
+          url: "/portal/status",
+          alreadyFollowing: i.joined,
+          canReportAffected: i.canJoin && !i.joined,
+        })),
+      };
+    },
+  });
+}
+
 /** Read tools that depend on neither the caller nor the turn's attachments. */
 const SHARED_READ_TOOLS = {
   search_knowledge: portalKnowledgeTool,
@@ -276,6 +302,7 @@ export function buildPortalTools(userId: string, attachments: ProposalAttachment
     propose_request: proposeRequestToolFor(attachments),
     propose_service_request: proposeServiceRequestToolFor(attachments),
     propose_reply: proposeReplyToolFor(userId, attachments),
+    list_status_incidents: statusIncidentsTool(userId),
     list_my_tickets: myTicketsTool(userId),
     get_my_ticket: myTicketTool(userId),
   };
@@ -287,6 +314,7 @@ Who you are talking to: a non-technical end user. Be warm, calm, and plain-spoke
 
 What you can do, in order of preference:
 0. CHECK THEIR TICKETS: for "what's the status of my request", "any updates on my ticket", etc., call list_my_tickets or get_my_ticket. You only ever see the user's OWN tickets and only their public content (never internal agent notes). Summarise the current status and the latest reply in plain language.
+0b. KNOWN ISSUES: when the user says something is down, slow or not working, call list_status_incidents first. If an active incident matches, tell them it is already a known issue, share the latest update, and link [the status page](/portal/status), where the "This affects me too" button lets them register without filing a duplicate. Only open a new request if nothing matches or they have a different problem.
 1. ANSWER: for a problem or "how do I…" question, call search_knowledge first and answer from it, linking the article by its url, e.g. [Reset your password](/portal/knowledge/reset-password). If the help center has nothing and it's a general how-to, you may use web_search (and fetch_url to read a result) and give a short, safe answer, noting it's from the public web.
 2. GUIDE TO A SERVICE: when the user wants to obtain something, call search_catalog and point them to the matching service.
 3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know, then call propose_service_request with the answers so they can confirm and submit in one click.
@@ -297,7 +325,7 @@ Reading attachments: the user can attach screenshots or files. Read any attached
 
 Hard rules:
 - Only mention articles or services the tools actually returned. Never invent titles, links, ids, or facts.
-- You can only see public help articles and the catalog. You cannot see ticket queues, other people's tickets, accounts, or internal system details.
+- You can only see public help articles, the catalog and announced status incidents. You cannot see ticket queues, other people's tickets, accounts, or internal system details.
 - A propose_* call only DRAFTS — the user still confirms. Don't claim something is done until they've confirmed.
 - Ask for missing required details before proposing; never guess required form answers.
 - Some categories and services include a "handledBy" team. You may reassure the user which team typically handles it, but you do not assign or change teams yourself — routing is handled automatically.

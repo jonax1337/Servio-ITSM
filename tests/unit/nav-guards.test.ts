@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { consoleNav, filterNav } from "@/lib/nav";
+import { activeNavHref, consoleNav, filterNav } from "@/lib/nav";
 import { requiredRoleFor, isPublicPath, isPortalPath } from "@/lib/route-guard";
 
 describe("portal namespaces (reachable for USER)", () => {
@@ -84,6 +84,13 @@ describe("requiredRoleFor (middleware mirror)", () => {
     expect(requiredRoleFor("/settings/api")).toBe("MANAGER");
   });
 
+  it("keeps change freeze windows and templates MANAGER-only, the calendar agent-level", () => {
+    expect(requiredRoleFor("/changes/calendar")).toBe("AGENT");
+    expect(requiredRoleFor("/changes/42")).toBe("AGENT");
+    expect(requiredRoleFor("/changes/freeze")).toBe("MANAGER");
+    expect(requiredRoleFor("/changes/templates/abc")).toBe("MANAGER");
+  });
+
   it("matches the nav gating (consistency contract)", () => {
     // Every nav item's minRole must equal the middleware's required role.
     for (const group of consoleNav) {
@@ -93,5 +100,24 @@ describe("requiredRoleFor (middleware mirror)", () => {
         expect(`${item.href}: nav=${navRole} route=${routeRole}`).toBe(`${item.href}: nav=${navRole} route=${navRole}`);
       }
     }
+  });
+});
+
+describe("activeNavHref (sidebar highlight)", () => {
+  const hrefs = ["/", "/changes", "/changes/calendar", "/settings", "/settings/macros"];
+
+  it("selects the longest matching entry for nested routes", () => {
+    expect(activeNavHref(hrefs, "/changes/calendar")).toBe("/changes/calendar");
+    expect(activeNavHref(hrefs, "/settings/macros")).toBe("/settings/macros");
+  });
+
+  it("keeps the section entry active on its detail pages", () => {
+    expect(activeNavHref(hrefs, "/changes/42")).toBe("/changes");
+    expect(activeNavHref(hrefs, "/settings/general")).toBe("/settings");
+  });
+
+  it("matches whole segments only and the dashboard exactly", () => {
+    expect(activeNavHref(hrefs, "/changesets")).toBeUndefined();
+    expect(activeNavHref(hrefs, "/")).toBe("/");
   });
 });

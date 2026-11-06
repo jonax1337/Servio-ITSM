@@ -325,7 +325,12 @@ never deletes.
 session-less and shared by manual and scheduled runs, guarded by a per-source in-process
 lock. The in-process scheduler ([`lib/scheduler.ts`](../lib/scheduler.ts), started from
 [`instrumentation.ts`](../instrumentation.ts)) fires due sources via a cron `syncTick`
-next to the inbound-mail poll (see [deployment.md](./deployment.md)). Server Actions in
+next to the inbound-mail poll (see [deployment.md](./deployment.md)). Feature sweeps run from
+`FEATURE_TICKS` in the same file: `runInsightsTick`, `runSlaNudgeTick` and `runContractsTick`
+(`lib/ticks/*`), each with its own interval setting and floor, an overlap guard, `unref()`ed timers
+and errors logged but never thrown. Every tick is session-less, checks its own enable setting first and
+uses at-most-once markers in the database (see [configuration.md](./configuration.md) and
+[data-model.md](./data-model.md)). Server Actions in
 [`lib/actions/syncs.ts`](../lib/actions/syncs.ts):
 
 - `runSync(formData)` — dispatches to the connector, writes the `SyncRun` + source status,

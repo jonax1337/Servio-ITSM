@@ -7,6 +7,7 @@ import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { PRIORITIES, ESCALATION_ACTIONS } from "@/lib/constants";
 import { WEEKDAY_KEYS } from "@/lib/business-hours";
+import { isOnCallEscalationAction } from "@/lib/oncall-rules";
 
 // DB-truth (not the stale JWT): a demoted/deactivated manager must lose write access
 // immediately, consistent with the requireRole gate on the pages.
@@ -342,6 +343,9 @@ export async function addStep(_prev: SlaState, formData: FormData): Promise<SlaS
     return { error: "Choose someone to notify.", fieldErrors: { targetGroupId: ["Pick a target"] } };
   }
 
+  // BUMP_PRIORITY and the on-call actions carry no fixed user/group target.
+  const usesTargets = d.action !== "BUMP_PRIORITY" && !isOnCallEscalationAction(d.action);
+
   // Append at the end (next order index).
   const last = await db.escalationStep.findFirst({ where: { policyId }, orderBy: { order: "desc" }, select: { order: true } });
   const order = (last?.order ?? -1) + 1;
@@ -351,8 +355,8 @@ export async function addStep(_prev: SlaState, formData: FormData): Promise<SlaS
       order,
       thresholdPercent: d.thresholdPercent,
       action: d.action,
-      targetGroupId: d.action === "BUMP_PRIORITY" ? null : d.targetGroupId ?? null,
-      targetUserId: d.action === "BUMP_PRIORITY" ? null : d.targetUserId ?? null,
+      targetGroupId: usesTargets ? d.targetGroupId ?? null : null,
+      targetUserId: usesTargets ? d.targetUserId ?? null : null,
       bumpToPriority: d.action === "BUMP_PRIORITY" ? d.bumpToPriority ?? null : null,
     },
   });

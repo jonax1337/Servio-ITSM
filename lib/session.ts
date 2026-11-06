@@ -54,6 +54,13 @@ export async function requireAgentUser() {
   return { ...row, role: row.role as Role, name: row.name ?? row.email };
 }
 
+/** DB-truth manager guard for server actions: like requireAgentUser, but requires MANAGER or above. */
+export async function requireManagerUser() {
+  const row = await getCurrentUser();
+  if (!row || !row.isActive || !hasRole(row.role as Role, "MANAGER")) return null;
+  return { ...row, role: row.role as Role };
+}
+
 export function hasRole(role: Role, min: Role) {
   return RANK[role] >= RANK[min];
 }
