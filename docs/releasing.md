@@ -12,7 +12,7 @@ Runs on every pull request, on every push to `main`, and on demand
 
 | Job | What it proves |
 | --- | --- |
-| **Lint, types, schema & unit tests** | `prisma validate`; committed migrations produce exactly `schema.prisma` (`prisma migrate diff … --exit-code`); `brand:check`; `tsc --noEmit`; `pnpm lint`; `pnpm test` (Vitest). On PRs it also prints the advisory [doc-drift](./maintaining-docs.md) report. |
+| **Lint, types, schema & unit tests** | `prisma validate`; committed migrations produce exactly `schema.prisma` (`prisma migrate diff … --exit-code`); `brand:check`; `pnpm typecheck` (`next typegen && tsc --noEmit`); `pnpm lint`; `pnpm test` (Vitest). On PRs it also prints the advisory [doc-drift](./maintaining-docs.md) report. |
 | **Production build** | `pnpm build` succeeds with throwaway env values and no `.env` file. |
 | **Docker image builds** | The [`Dockerfile`](../Dockerfile) builds, the container boots (migrations + seed via [`docker/entrypoint.sh`](../docker/entrypoint.sh)) and serves `/login`. |
 
@@ -24,7 +24,7 @@ pnpm install --frozen-lockfile
 pnpm exec prisma migrate diff --from-migrations prisma/migrations \
   --to-schema-datamodel prisma/schema.prisma \
   --shadow-database-url file:./ci-shadow.db --exit-code
-pnpm exec tsc --noEmit && pnpm lint && pnpm test && pnpm build
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
 > **Migration drift fails CI.** If you change `prisma/schema.prisma`, commit the

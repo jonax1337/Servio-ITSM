@@ -52,7 +52,7 @@ jobs:
       - name: Brand assets are in sync
         run: pnpm brand:check
       - name: Typecheck
-        run: pnpm exec tsc --noEmit
+        run: pnpm typecheck # next typegen first: route types like LayoutProps are generated
       - name: Lint
         run: pnpm lint
       - name: Unit tests
