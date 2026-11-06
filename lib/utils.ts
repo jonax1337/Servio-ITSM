@@ -24,3 +24,15 @@ export function formatMinutes(mins: number) {
   if (h) return `${h}h`;
   return `${rest}m`;
 }
+
+const LEADING_FULL_NAME = /^[A-Z][a-z]+ [A-Z][a-z]+ [a-z]/;
+
+/**
+ * Lower-case a summary's leading verb for "<who> <summary>" flow ("Created via…" ->
+ * "created via…"). Keeps refs and acronyms ("PRB-0023", "SLA") and a leading full name
+ * ("Liam Chen reported…") intact.
+ */
+export function lowerLead(text: string) {
+  if (LEADING_FULL_NAME.test(text)) return text;
+  return text.replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase());
+}

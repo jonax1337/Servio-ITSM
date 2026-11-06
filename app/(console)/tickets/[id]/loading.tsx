@@ -1,7 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Mirrors the ticket detail page: a scrolling main column (header bar, title,
-// description card, composer) beside a 340px properties rail.
+// description card, tab bar, composer) beside a 340px properties rail.
 export default function TicketDetailLoading() {
   return (
     <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_340px] lg:overflow-hidden">
@@ -25,8 +25,15 @@ export default function TicketDetailLoading() {
             <Skeleton className="mt-2 h-4 w-4/5" />
           </div>
 
+          {/* Tab bar */}
+          <div className="mt-6 flex gap-2 border-b pb-2">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-5 w-20 rounded-md" />
+            ))}
+          </div>
+
           {/* Composer */}
-          <div className="mt-6 grid gap-2 rounded-xl border bg-card p-3">
+          <div className="mt-5 grid gap-2 rounded-xl border bg-card p-3">
             <Skeleton className="h-20 w-full rounded-lg" />
             <div className="flex items-center justify-between border-t pt-2">
               <Skeleton className="h-8 w-28 rounded-md" />

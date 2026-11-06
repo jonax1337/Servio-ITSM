@@ -9,6 +9,17 @@ import {
   TICKET_STATUSES,
   TICKET_TYPES,
   IMPACT_URGENCY,
+  ESCALATION_ACTIONS,
+  ONCALL_ROTATION_TYPES,
+  STATUS_INCIDENT_STATES,
+  STATUS_INCIDENT_IMPACTS,
+  RELEASE_STATUSES,
+  CHANGE_TEMPLATE_TYPES,
+  CONTRACT_TYPES,
+  CONTRACT_STATUSES,
+  LICENSE_TYPES,
+  AI_INSIGHT_KINDS,
+  AI_INSIGHT_STATUSES,
 } from "@/lib/constants";
 
 /**
@@ -70,5 +81,27 @@ describe("schema enum comments stay in sync with lib/constants", () => {
     expect(new Set(TICKET_TYPES).size).toBe(TICKET_TYPES.length);
     expect(new Set(TICKET_STATUSES).size).toBe(TICKET_STATUSES.length);
     expect(new Set(PRIORITIES).size).toBe(PRIORITIES.length);
+  });
+});
+
+describe("ITSM ops / Sable enum comments stay in sync with lib/constants", () => {
+  const cases: Array<[model: string, field: string, values: readonly string[]]> = [
+    ["EscalationStep", "action", ESCALATION_ACTIONS],
+    ["OnCallSchedule", "rotationType", ONCALL_ROTATION_TYPES],
+    ["StatusIncident", "state", STATUS_INCIDENT_STATES],
+    ["StatusIncident", "impact", STATUS_INCIDENT_IMPACTS],
+    ["StatusIncidentUpdate", "state", STATUS_INCIDENT_STATES],
+    ["Release", "status", RELEASE_STATUSES],
+    ["ChangeTemplate", "type", CHANGE_TEMPLATE_TYPES],
+    ["Contract", "type", CONTRACT_TYPES],
+    ["Contract", "status", CONTRACT_STATUSES],
+    ["SoftwareLicense", "licenseType", LICENSE_TYPES],
+    ["AiInsight", "kind", AI_INSIGHT_KINDS],
+    ["AiInsight", "status", AI_INSIGHT_STATUSES],
+  ];
+
+  it.each(cases)("%s.%s documents every allowed value", (model, field, values) => {
+    const comment = enumComment(model, field);
+    for (const v of values) expect(comment, `${model}.${field} comment must list ${v}`).toContain(v);
   });
 });

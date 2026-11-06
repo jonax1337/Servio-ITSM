@@ -176,7 +176,8 @@ export async function slaRepricePatch(
   if (!("slaId" in sla)) {
     return opts.slaCleared ? { responseDueAt: null, resolveDueAt: null, dueAt: null } : {};
   }
-  const patch: Record<string, unknown> = { ...sla };
+  // New deadlines deserve a fresh SLA nudge (Ticket.slaNudgedAt is an at-most-once marker per deadline).
+  const patch: Record<string, unknown> = { ...sla, slaNudgedAt: null };
   if (current.firstResponseAt) delete patch.responseDueAt;
   return patch;
 }

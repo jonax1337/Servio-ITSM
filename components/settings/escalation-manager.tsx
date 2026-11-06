@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Plus, Pencil, Trash2, Loader2, Save, TrendingUp } from "lucide-react";
 import {
@@ -15,10 +16,14 @@ import {
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmButton } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 import {
   ESCALATION_ACTIONS, ESCALATION_ACTION_META, PRIORITIES, PRIORITY_META,
 } from "@/lib/constants";
 import type { NamedRef } from "@/components/settings/sla-manager";
+import { isOnCallEscalationAction } from "@/lib/oncall-rules";
+
+const ONCALL_TARGET_LABEL = "On call for the ticket’s group";
 
 export type StepRow = {
   id: string;
@@ -49,7 +54,9 @@ function PolicyDialog({ policy }: { policy?: PolicyRow }) {
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
 
-  const submit = (formData: FormData) => {
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     startTransition(async () => {
       const res = await (editing ? updatePolicy : createPolicy)(undefined, formData);
       setState(res);
@@ -67,7 +74,7 @@ function PolicyDialog({ policy }: { policy?: PolicyRow }) {
           <DialogTitle className="flex items-center gap-2"><TrendingUp className="size-4 text-primary" /> {editing ? "Rename policy" : "New escalation policy"}</DialogTitle>
           <DialogDescription>A named set of steps fired as an SLA’s clock elapses. Add steps after creating it.</DialogDescription>
         </DialogHeader>
-        <form action={submit} className="grid gap-4">
+        <form onSubmit={submit} className="grid gap-4">
           {editing ? <input type="hidden" name="id" value={policy.id} /> : null}
           {state?.error ? (
             <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
@@ -97,7 +104,9 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
   const [bumpTo, setBumpTo] = useState("HIGH");
   const fe = state?.fieldErrors ?? {};
 
-  const submit = (formData: FormData) => {
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     startTransition(async () => {
       const res = await addStep(undefined, formData);
       setState(res);
@@ -122,7 +131,7 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
           <DialogTitle>Add escalation step</DialogTitle>
           <DialogDescription>Runs once when the ticket’s SLA reaches the threshold percentage of elapsed time.</DialogDescription>
         </DialogHeader>
-        <form action={submit} className="grid gap-4">
+        <form onSubmit={submit} className="grid gap-4">
           <input type="hidden" name="policyId" value={policyId} />
           <input type="hidden" name="action" value={action} />
           <input type="hidden" name="targetGroupId" value={groupId} />
@@ -146,6 +155,13 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
             <Field label="Bump to priority" error={fe.bumpToPriority}>
               <Combobox options={prioOpts} value={bumpTo} onChange={setBumpTo} />
             </Field>
+          ) : isOnCallEscalationAction(action) ? (
+            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              {action === "NOTIFY_ONCALL"
+                ? "Notifies whoever is on call for the ticket’s group. If nobody is, the whole group is notified instead."
+                : "Assigns the ticket to whoever is on call for its group. If nobody is, the ticket stays as it is and the group is notified."}{" "}
+              Rotations are set up under <Link href="/oncall" className="font-medium text-foreground underline-offset-2 hover:underline">On-call</Link>.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-4">
               <Field label="Target group" error={fe.targetGroupId}>
@@ -170,6 +186,7 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
 
 function stepTarget(step: StepRow, groups: NamedRef[], users: NamedRef[]): string {
   if (step.action === "BUMP_PRIORITY") return step.bumpToPriority ?? "—";
+  if (isOnCallEscalationAction(step.action)) return ONCALL_TARGET_LABEL;
   const parts: string[] = [];
   const g = groups.find((x) => x.id === step.targetGroupId);
   const u = users.find((x) => x.id === step.targetUserId);
@@ -197,9 +214,11 @@ export function EscalationManager({
       </div>
 
       {policies.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No escalation policies yet. Create one, add threshold steps, then assign it to an SLA.
-        </div>
+        <EmptyState
+          icon={TrendingUp}
+          title="No escalation policies yet"
+          description="Create a policy, add threshold steps (notify, reassign, bump priority or reach whoever is on call), then assign it to an SLA."
+        />
       ) : (
         <div className="grid gap-3">
           {policies.map((p) => (

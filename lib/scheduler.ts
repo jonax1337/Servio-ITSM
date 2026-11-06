@@ -5,13 +5,16 @@ import { pollImap } from "@/lib/mail-inbound/imap";
 import { processInboundMail } from "@/lib/mail-inbound/process";
 import { executeSyncRun } from "@/lib/sync-runner";
 import { runSlaEscalation } from "@/lib/sla-escalation";
+import { runInsightsTick } from "@/lib/ticks/ai-insights";
+import { runSlaNudgeTick } from "@/lib/ticks/sla-nudges";
+import { runContractsTick } from "@/lib/ticks/contracts";
 import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
  * Tiny in-process scheduler. Started once per server instance from
- * instrumentation.ts. Runs three independent ticks: the inbound-mail poll, the
- * cron-driven sync runner (reading SyncSource.schedule), and the SLA escalation
- * sweep.
+ * instrumentation.ts. Runs independent ticks: the inbound-mail poll, the
+ * cron-driven sync runner (reading SyncSource.schedule), the SLA escalation
+ * sweep, and the feature sweeps in FEATURE_TICKS (lib/ticks/*).
  *
  * SINGLE-INSTANCE ONLY: state (overlap guards, SLA "already fired" markers) is
  * in-memory, so every replica would fire duplicate work. Gate replicas with
@@ -30,6 +33,7 @@ const g = globalThis as unknown as {
     timer?: NodeJS.Timeout;
     syncTimer?: NodeJS.Timeout;
     slaTimer?: NodeJS.Timeout;
+    featureTimers?: NodeJS.Timeout[];
   };
 };
 
@@ -145,6 +149,61 @@ async function slaEscalationTick(): Promise<void> {
   }
 }
 
+/**
+ * A periodic sweep from lib/ticks/*. Its interval is read from `settingKey`
+ * (seconds, DB setting or env), floored at `minSeconds`. Each run is
+ * overlap-guarded and its errors are logged, never thrown, so one failing
+ * sweep can't stop the others.
+ */
+type FeatureTick = {
+  name: string;
+  settingKey: string;
+  defaultSeconds: number;
+  minSeconds: number;
+  run: () => Promise<void>;
+};
+
+const FEATURE_TICKS: FeatureTick[] = [
+  // Incident clusters / KB gaps scan recent tickets — no need to be eager.
+  { name: "insights", settingKey: "INSIGHTS_TICK_SECONDS", defaultSeconds: 900, minSeconds: 300, run: runInsightsTick },
+  // Same cadence as the SLA escalation sweep: nudges must land well before the deadline.
+  { name: "sla-nudge", settingKey: "SLA_NUDGE_TICK_SECONDS", defaultSeconds: 180, minSeconds: 60, run: runSlaNudgeTick },
+  // Renewal notice periods are measured in days; hourly is plenty.
+  { name: "contracts", settingKey: "CONTRACTS_TICK_SECONDS", defaultSeconds: 3600, minSeconds: 600, run: runContractsTick },
+];
+
+function guardedRunner(tick: FeatureTick): () => Promise<void> {
+  let running = false;
+  return async () => {
+    if (running) return; // overlap guard — one run of this sweep at a time
+    running = true;
+    try {
+      await tick.run();
+    } catch (e) {
+      console.error(`[servio:${tick.name}] tick error:`, e instanceof Error ? e.message : e);
+    } finally {
+      running = false;
+    }
+  };
+}
+
+/** Each feature sweep's interval in ms, in FEATURE_TICKS order (setting value floored at its minimum). */
+function readFeatureIntervalsMs(): Promise<number[]> {
+  return Promise.all(
+    FEATURE_TICKS.map(async (tick) => Math.max(tick.minSeconds, await getNumberSetting(tick.settingKey, tick.defaultSeconds)) * 1000),
+  );
+}
+
+function startFeatureTicks(intervalsMs: number[]): NodeJS.Timeout[] {
+  return FEATURE_TICKS.map((tick, i) => {
+    const runner = guardedRunner(tick);
+    const timer = setInterval(() => void runner(), intervalsMs[i]);
+    if (typeof timer.unref === "function") timer.unref();
+    void runner(); // immediate first pass, like the built-in sweeps
+    return timer;
+  });
+}
+
 export async function startScheduler(): Promise<void> {
   if (!schedulerEnabled()) {
     console.log("[servio:scheduler] disabled (SCHEDULER_ENABLED=false)");
@@ -152,27 +211,34 @@ export async function startScheduler(): Promise<void> {
   }
   if (g.__servioScheduler?.started) return; // HMR / double-register guard
 
-  const seconds = await getNumberSetting("IMAP_POLL_SECONDS", 60);
-  const intervalMs = Math.max(15, seconds) * 1000;
-  const timer = setInterval(() => void inboundTick(), intervalMs);
-  if (typeof timer.unref === "function") timer.unref(); // don't keep the process alive
+  // Every setting is read BEFORE any timer exists: a failed read (DB not ready) then
+  // leaves nothing running, and the timers below are created in one synchronous step.
+  const [pollSeconds, syncSeconds, slaSeconds, featureIntervalsMs] = await Promise.all([
+    getNumberSetting("IMAP_POLL_SECONDS", 60),
+    // Sync cron granularity is one minute; tick often enough to honour it.
+    getNumberSetting("SYNC_TICK_SECONDS", 60),
+    // SLA escalation sweep: coarser cadence (minutes) is fine; it just needs to
+    // catch breaches/at-risk within a few minutes of the deadline.
+    getNumberSetting("SLA_ESCALATION_TICK_SECONDS", 180),
+    readFeatureIntervalsMs(),
+  ]);
+  if (g.__servioScheduler?.started) return; // a concurrent start finished while the settings were read
 
-  // Sync cron granularity is one minute; tick often enough to honour it.
-  const syncSeconds = await getNumberSetting("SYNC_TICK_SECONDS", 60);
+  const intervalMs = Math.max(15, pollSeconds) * 1000;
   const syncIntervalMs = Math.max(30, syncSeconds) * 1000;
-  const syncTimer = setInterval(() => void syncTick(), syncIntervalMs);
-  if (typeof syncTimer.unref === "function") syncTimer.unref();
-
-  // SLA escalation sweep — coarser cadence (minutes) is fine; it just needs to
-  // catch breaches/at-risk within a few minutes of the deadline.
-  const slaSeconds = await getNumberSetting("SLA_ESCALATION_TICK_SECONDS", 180);
   const slaIntervalMs = Math.max(60, slaSeconds) * 1000;
-  const slaTimer = setInterval(() => void slaEscalationTick(), slaIntervalMs);
-  if (typeof slaTimer.unref === "function") slaTimer.unref();
 
-  g.__servioScheduler = { started: true, timer, syncTimer, slaTimer };
+  const timer = setInterval(() => void inboundTick(), intervalMs);
+  const syncTimer = setInterval(() => void syncTick(), syncIntervalMs);
+  const slaTimer = setInterval(() => void slaEscalationTick(), slaIntervalMs);
+  for (const t of [timer, syncTimer, slaTimer]) {
+    if (typeof t.unref === "function") t.unref(); // don't keep the process alive
+  }
+  const featureTimers = startFeatureTicks(featureIntervalsMs);
+
+  g.__servioScheduler = { started: true, timer, syncTimer, slaTimer, featureTimers };
   console.log(
-    `[servio:scheduler] started (inbound poll every ${Math.round(intervalMs / 1000)}s, sync tick every ${Math.round(syncIntervalMs / 1000)}s, sla sweep every ${Math.round(slaIntervalMs / 1000)}s)`,
+    `[servio:scheduler] started (inbound poll every ${Math.round(intervalMs / 1000)}s, sync tick every ${Math.round(syncIntervalMs / 1000)}s, sla sweep every ${Math.round(slaIntervalMs / 1000)}s, feature sweeps: ${FEATURE_TICKS.map((t) => t.name).join(", ")})`,
   );
   void inboundTick(); // immediate first pass
   void syncTick();
@@ -186,7 +252,7 @@ export async function startScheduler(): Promise<void> {
 export function stopScheduler(): void {
   const s = g.__servioScheduler;
   if (!s) return;
-  for (const t of [s.timer, s.syncTimer, s.slaTimer]) {
+  for (const t of [s.timer, s.syncTimer, s.slaTimer, ...(s.featureTimers ?? [])]) {
     if (t) clearInterval(t);
   }
   g.__servioScheduler = undefined;

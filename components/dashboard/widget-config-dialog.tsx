@@ -48,6 +48,7 @@ const DEFAULT_SIZE: Record<WidgetType, { w: number; h: number }> = {
   volume: { w: 8, h: 2 },
   aging: { w: 6, h: 2 },
   list: { w: 12, h: 2 },
+  briefing: { w: 6, h: 3 },
 };
 
 const TYPE_OPTS: ComboOption[] = (Object.keys(WIDGET_LABELS) as WidgetType[]).map((t) => ({
@@ -165,7 +166,7 @@ export function WidgetConfigDialog({
       id: initial?.id ?? newId(),
       type,
       title: title.trim() || WIDGET_LABELS[type],
-      filters,
+      filters: type === "briefing" ? {} : filters,
       x: initial?.x ?? 0,
       y: initial?.y ?? Infinity, // Infinity → RGL drops it at the bottom
       w: size.w,
@@ -256,6 +257,11 @@ export function WidgetConfigDialog({
             </div>
           ) : null}
 
+          {type === "briefing" ? (
+            <p className="border-t pt-3 text-xs text-muted-foreground">
+              The briefing always lists your own queue, so it has no filters.
+            </p>
+          ) : (
           <div className="grid grid-cols-2 gap-3 border-t pt-3">
             <Field label="Status"><Combobox options={statusOpts} value={filters.status ?? ""} onChange={(v) => setF("status", v)} /></Field>
             <Field label="Priority"><Combobox options={prioOpts} value={filters.priority ?? ""} onChange={(v) => setF("priority", v)} /></Field>
@@ -271,6 +277,7 @@ export function WidgetConfigDialog({
             <Field label="VIP requester"><Combobox options={yesAny("Any")} value={filters.vip ?? ""} onChange={(v) => setF("vip", v)} /></Field>
             <Field label="SLA breached"><Combobox options={yesAny("Any")} value={filters.breached ?? ""} onChange={(v) => setF("breached", v)} /></Field>
           </div>
+          )}
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

@@ -1,34 +1,30 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import {
-  ArrowLeft, Ticket as TicketIcon, GitPullRequestArrow, Search, ShieldCheck,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { RelatedArticlesCard } from "@/components/related-articles-card";
 import { getFormOptions } from "@/lib/data/options";
-import { getEntityApprovals } from "@/lib/data/approvals";
 import { allowedTransitions } from "@/lib/workflow";
-import { getSessionUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { EntityApprovals } from "@/components/approvals/entity-approvals";
-import { CommentThread } from "@/components/comments/comment-thread";
-import { ProblemDetailsDialog, ProblemTextCard } from "@/components/problems/problem-editors";
-import { ProblemChangePicker, UnlinkChangeButton, UnlinkIncidentButton } from "@/components/problems/problem-fix-changes";
-import { LinkPicker } from "@/components/link-picker";
-import { addProblemComment } from "@/lib/actions/problems";
-import { isProblemLocked } from "@/lib/problem-rules";
-import { setTicketProblem } from "@/lib/actions/tickets";
-import { sanitizeCommentHtml } from "@/lib/markdown";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProblemDetailsDialog } from "@/components/problems/problem-editors";
+import { EntityTabs, resolveTab } from "@/components/entity-tabs";
+import { EntityHistory } from "@/components/history/entity-history";
 import {
-  PROBLEM_STATUS_META, PRIORITY_META, TICKET_STATUS_META, CHANGE_STATUS_META,
-  problemRef, ticketRef, changeRef,
-} from "@/lib/constants";
+  DEFAULT_PROBLEM_TAB, buildProblemTabs,
+} from "@/components/problems/tabs/problem-tabs";
+import { ProblemOverviewTab } from "@/components/problems/tabs/problem-overview-tab";
+import { ProblemIncidentsTab } from "@/components/problems/tabs/problem-incidents-tab";
+import { ProblemChangesTab } from "@/components/problems/tabs/problem-changes-tab";
+import { ProblemDiscussionTab } from "@/components/problems/tabs/problem-discussion-tab";
+import { isProblemLocked } from "@/lib/problem-rules";
+import type { SearchParams } from "@/lib/query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PROBLEM_STATUS_META, PRIORITY_META, problemRef } from "@/lib/constants";
 import { format, formatDistanceToNow } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -45,45 +41,28 @@ export async function generateMetadata({
 
 export default async function ProblemDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const problemId = Number(id);
   if (!Number.isFinite(problemId)) notFound();
 
-  const me = await getSessionUser();
-  const [problem, options, audits, linkableTickets, linkableChanges, approvals, customFieldDefs] = await Promise.all([
+  const me = await requireUser();
+  const [problem, options, customFieldDefs] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
       include: {
         assignee: true,
         group: true,
         category: true,
-        tickets: { include: { assignee: true }, orderBy: { createdAt: "desc" } },
-        changes: { orderBy: { createdAt: "desc" } },
-        comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
+        _count: { select: { tickets: true, changes: true, comments: true } },
       },
     }),
     getFormOptions(),
-    db.auditLog.findMany({
-      where: { entity: "Problem", entityId: String(problemId) },
-      include: { user: true },
-      orderBy: { createdAt: "asc" },
-    }),
-    db.ticket.findMany({
-      where: { problemId: null, status: { notIn: ["CLOSED", "CANCELLED"] } },
-      select: { id: true, title: true, prefix: true },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-    }),
-    db.change.findMany({
-      where: { problemId: null, status: { not: "CANCELLED" } },
-      select: { id: true, title: true },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
-    }),
-    getEntityApprovals("PROBLEM", problemId),
     db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true }, orderBy: { order: "asc" } }),
   ]);
   if (!problem) notFound();
@@ -96,17 +75,15 @@ export default async function ProblemDetailPage({
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const allowedStatuses = me ? [...await allowedTransitions("PROBLEM", problem.status, me.role as Role)] : undefined;
-  const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
-  const changeOpts = linkableChanges.map((c) => ({ value: String(c.id), label: `${changeRef(c.id)} · ${c.title}` }));
   const locked = isProblemLocked(problem.status);
   const canEditText = isAgentUser && !locked;
 
-  const comments = problem.comments.map((c) => ({
-    id: c.id, author: c.author.name ?? c.author.email, body: c.body, bodyHtml: c.bodyHtml, isInternal: c.isInternal, createdAt: c.createdAt, attachments: [],
-  }));
-  const activity = audits
-    .filter((a) => a.summary && a.summary !== "Added a comment")
-    .map((a) => ({ id: a.id, who: a.user?.name ?? "System", summary: a.summary!, createdAt: a.createdAt }));
+  const tabs = buildProblemTabs({
+    incidents: problem._count.tickets,
+    changes: problem._count.changes,
+    comments: problem._count.comments,
+  });
+  const active = resolveTab(sp, tabs, DEFAULT_PROBLEM_TAB);
 
   return (
     <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
@@ -142,136 +119,46 @@ export default async function ProblemDetailPage({
             {problem.category ? <> · {problem.category.name}</> : null}
           </p>
 
-          <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
-            {problem.descriptionHtml ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(problem.descriptionHtml) }} />
-            ) : problem.description ? (
-              <div className="whitespace-pre-wrap">{problem.description}</div>
-            ) : (
-              <span className="text-muted-foreground">No description provided.</span>
-            )}
-          </div>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <ProblemTextCard
-              id={problem.id}
-              field="rootCause"
-              label="Root cause"
-              icon={<Search className="size-4 text-muted-foreground" />}
-              value={problem.rootCause}
-              emptyText="Not yet identified."
-              editable={canEditText}
-            />
-            <ProblemTextCard
-              id={problem.id}
-              field="workaround"
-              label="Workaround"
-              icon={<ShieldCheck className="size-4 text-muted-foreground" />}
-              value={problem.workaround}
-              emptyText="No workaround documented."
-              editable={canEditText}
-            />
-          </div>
-
-          {/* Linked incidents */}
-          <div className="mt-8">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
-                <TicketIcon className="size-4 text-muted-foreground" />
-                Linked incidents · {problem.tickets.length}
-              </h2>
-              {isAgentUser ? (
-                <LinkPicker
-                  action={setTicketProblem}
-                  triggerLabel="Link incident"
-                  title="Link an incident"
-                  description="Attach an existing ticket to this problem."
-                  hidden={{ problemId: problem.id }}
-                  valueName="ticketId"
-                  options={ticketOpts}
-                  placeholder="Choose a ticket"
-                  searchPlaceholder="Search tickets…"
-                  emptyText="No unlinked tickets available."
-                />
-              ) : null}
-            </div>
-            {problem.tickets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No incidents linked to this problem yet.</p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border bg-card">
-                {problem.tickets.map((t) => (
-                  <div
-                    key={t.id}
-                    className="group/chip flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
-                  >
-                    <Link href={`/tickets/${t.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {ticketRef(t.id, t.prefix)}
-                      </span>
-                      <span className="line-clamp-1 flex-1 text-sm font-medium">{t.title}</span>
-                      <StatusBadge map={TICKET_STATUS_META} value={t.status} />
-                    </Link>
-                    {isAgentUser ? (
-                      <UnlinkIncidentButton ticketId={t.id} />
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Fix changes */}
-          <div className="mt-8">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
-                <GitPullRequestArrow className="size-4 text-muted-foreground" />
-                Fix changes · {problem.changes.length}
-              </h2>
-              {isAgentUser ? <ProblemChangePicker problemId={problem.id} options={changeOpts} /> : null}
-            </div>
-            {problem.changes.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No changes fix this problem yet.</p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border bg-card">
-                {problem.changes.map((c) => (
-                  <div
-                    key={c.id}
-                    className="group/chip flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
-                  >
-                    <Link href={`/changes/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="font-mono text-xs text-muted-foreground">{changeRef(c.id)}</span>
-                      <span className="line-clamp-1 flex-1 text-sm font-medium">{c.title}</span>
-                      <StatusBadge map={CHANGE_STATUS_META} value={c.status} />
-                    </Link>
-                    {isAgentUser ? <UnlinkChangeButton changeId={c.id} /> : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Approvals (ad-hoc sign-off) */}
-          <EntityApprovals
-            entityType="PROBLEM"
-            entityId={String(problem.id)}
-            entityTitle={problem.title}
-            approvals={approvals}
-            currentUserId={me?.id ?? ""}
-            isAdmin={me?.role === "ADMIN"}
-            canManage={canManage}
-            canRequest={isAgentUser}
-            agents={options.agents}
+          <EntityTabs
+            className="mt-4"
+            tabs={tabs}
+            active={active}
+            defaultTab={DEFAULT_PROBLEM_TAB}
+            basePath={`/problems/${problem.id}`}
+            searchParams={sp}
+            label="Problem sections"
           />
 
-          {/* Comments & Activity */}
-          <div className="mt-8">
-            <CommentThread
-              idField="problemId"
-              entityId={problem.id}
-              comments={comments}
-              activity={activity}
-              addAction={addProblemComment}
-            />
+          <div className="mt-6">
+            {active === "overview" ? (
+              <ProblemOverviewTab
+                problemId={problem.id}
+                description={problem.description}
+                descriptionHtml={problem.descriptionHtml}
+                rootCause={problem.rootCause}
+                workaround={problem.workaround}
+                editable={canEditText}
+              />
+            ) : null}
+            {active === "incidents" ? (
+              <ProblemIncidentsTab problemId={problem.id} isAgentUser={isAgentUser} />
+            ) : null}
+            {active === "changes" ? (
+              <ProblemChangesTab problemId={problem.id} isAgentUser={isAgentUser} />
+            ) : null}
+            {active === "discussion" ? (
+              <ProblemDiscussionTab
+                problem={{ id: problem.id, title: problem.title }}
+                currentUserId={me?.id ?? ""}
+                isAdmin={me?.role === "ADMIN"}
+                canManage={canManage}
+                isAgentUser={isAgentUser}
+                agents={options.agents}
+              />
+            ) : null}
+            {active === "history" ? (
+              <EntityHistory entity="Problem" entityId={String(problem.id)} />
+            ) : null}
           </div>
         </div>
       </div>

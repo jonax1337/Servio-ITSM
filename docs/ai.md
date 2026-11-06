@@ -209,7 +209,19 @@ Coverage by module:
 | Knowledge base | `modules/knowledge.ts` | article create, set status, delete; `article.link` / `article.unlink` (attach to a ticket, problem or change by ref) |
 | Problems & Changes | `modules/problems-changes.ts` | problem/change create (`change.create` takes the full record: reason, implementation/rollback plan, planned window, problem link), update field, comment; `change.set_plan` / `change.set_window`; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
 | SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
+| Change schedule | `modules/change-schedule.ts` | `change.schedule` (read, AGENT: windows, conflicts and freezes for a period), `freeze.create` (write, MANAGER) |
+| On-call | `modules/oncall.ts` | `oncall.who` (read, AGENT), `oncall.override` (write, MANAGER) |
+| Status page | `modules/status.ts` | `status_incident.list` (read, AGENT), `status_incident.create` / `.update` / `.post_update` (write, AGENT; publishing needs MANAGER, checked inside `run`, and the ops reuse the shared actions so the ticket-link checks apply) |
+| Releases & templates | `modules/releases.ts` | `release.create`, `release.add_change`, `change.create_from_template` (write, AGENT), `change_template.list` (read, AGENT) |
+| Contracts & licenses | `modules/contracts.ts` | `contract.expiring`, `license.compliance` (read, AGENT), `contract.create` (write, MANAGER; owner defaults to the acting user) |
+| Insights | `modules/insights.ts` | `ticket.find_similar`, `insight.list` (read, AGENT), `insight.problem_from_cluster` (write, AGENT) |
 | Integrations | `modules/mcp.ts` | `mcp.call` — run a tool on a remote MCP server; never a model tool: the harness creates the proposal for `APPROVAL`-mode servers, and approving re-checks the server's config and the approver's role (see [Remote MCP servers](#remote-mcp-servers-libsable-mcpts-libsable-mcp-policyts)) |
+
+**Read operations are tools too.** An `AiOperation` with `kind: "read"` is turned into a model tool by `buildOperationTools` (tool name = id with dots replaced by underscores, e.g. `oncall_who`) and runs immediately; a `kind: "write"` operation becomes `propose_<id>` and goes through the approve-first flow. A module therefore adds read tools just by listing them in its `OPERATIONS`, with no change to `tools.ts`.
+
+**Insights, similarity and copilots.** `lib/ai-similarity.ts` ranks tickets with local lexical TF-IDF, so `ticket.find_similar` and the "similar tickets" panel need no AI provider. The `lib/ticks/ai-insights.ts` tick (`runInsightsTick`) raises `AiInsight` rows (`CLUSTER`: a burst of similar tickets, `KB_GAP`: recurring tickets without an article); each is created at most once through the unique `dedupeKey`, and agents act on them from `/insights` (create a problem, draft an article, dismiss). Draft articles use `generateAiObject` when AI is configured and a plain skeleton otherwise. The other AI surfaces are agent-only buttons that call `lib/ai.ts` through server actions and render nothing for non-agents: the ticket summary card (`components/ai/ticket-summary-card.tsx`), the change plan copilot and CAB brief (`lib/actions/change-copilot.ts`, `lib/change-brief.ts`; the copilot writes only through `updateChangeText`) and the dashboard `briefing` widget (`lib/dashboard/briefing*.ts`). When AI is off they show the teaser, like the rest of Sable.
+
+**Proactive SLA nudges.** `lib/ticks/sla-nudges.ts` (`runSlaNudgeTick`, rules in `lib/sla-nudge-rules.ts`) notifies a ticket's assignee (notification type `SLA_NUDGE`) once when the SLA clock passes `SLA_NUDGE_PERCENT`. The marker is `Ticket.slaNudgedAt`; it is independent of the escalation sweep and of `slaAtRiskNotifiedAt`.
 
 **Ticket to problem/change links.** `ticket.set_problem` and `ticket.set_change` (both `minRole` AGENT) take a
 ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. They reuse `setTicketProblem` /
@@ -609,7 +621,9 @@ USER-scoped, confirm-to-create variant of the console thread.
 - **Read tools (public / own only):** `search_knowledge` (published **public** articles),
   `search_catalog`, `list_categories`, `get_service_form`, keyless `web_search` / `fetch_url`, and
   the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
-  notes are excluded by the same `isInternal: false` filter the portal UI uses).
+  notes are excluded by the same `isInternal: false` filter the portal UI uses), and
+  `list_status_incidents` (**public** status incidents only; the system prompt tells the model to check it
+  first when a user reports something down and to point at `/portal/status` instead of opening a duplicate).
 - **Confirm-first writes:** every `propose_*` only drafts; the widget renders a confirm card and the
   create route re-validates server-side before acting as the signed-in user:
   - `propose_request` → `createPortalTicketFor` (routed ticket with type / priority / impact /
@@ -668,6 +682,7 @@ Headings use local Manrope; body text remains Inter. See
 | Skills & MCP | `lib/sable-skills.ts`, `lib/sable-workspace.ts`, `lib/actions/sable-skills.ts`, `lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`, `lib/actions/sable-mcp.ts`, `lib/ai-operations/modules/mcp.ts` |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
 | Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*`) |
+| Insights & copilots | `lib/ai-similarity.ts`, `lib/ai-similarity-search.ts`, `lib/ai-insights.ts`, `lib/ai-insights-rules.ts`, `lib/ai-insights-handling.ts`, `lib/ticks/ai-insights.ts`, `lib/actions/ai-insights.ts`, `app/(console)/insights/`, `components/ai/`, `lib/change-brief.ts`, `lib/actions/change-copilot.ts`, `lib/dashboard/briefing*.ts`, `lib/ticks/sla-nudges.ts`, `lib/sla-nudge-rules.ts` |
 | Portal | `components/portal/sable-widget.tsx`, `lib/portal-assistant.ts`, `lib/portal-tickets.ts`, `app/api/portal/assistant/{route,create/route}.ts` |
 | Settings UI | `app/(console)/settings/ai/page.tsx` + `components/settings/{ai-settings-form,claude-connect-dialog,ai-skills-manager,ai-mcp-manager}.tsx` (provider, model, web-search keys, skills, MCP servers), `app/(console)/settings/uploads/page.tsx` (`GOTENBERG_URL`) |
 | Persistence | `prisma/schema.prisma` (`AiConversation`, `AiMessage`, `AiProposalDecision`, `AiFolder`; `AiSkill`, `AiMcpServer`; `AiProject`/`AiProjectFolder`/`AiProjectFile`/`AiProjectChunk`) |

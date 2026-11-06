@@ -15,25 +15,17 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Logo, BrandName } from "@/components/brand";
-import { consoleNav, filterNav } from "@/lib/nav";
+import { activeNavHref, consoleNav, filterNav } from "@/lib/nav";
 import { APP_VERSION } from "@/lib/constants";
 
 export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
   const groups = filterNav(consoleNav, role);
 
-  // Items that other nav entries nest under (e.g. "/settings" with
-  // "/settings/macros") only light up on an exact match, so two items never
-  // highlight at once. Everything else stays prefix-matched.
-  const hrefs = groups.flatMap((g) => g.items.map((i) => i.href));
-  const sectionRoots = new Set(
-    hrefs.filter((h) => hrefs.some((o) => o.startsWith(`${h}/`))),
+  const activeHref = activeNavHref(
+    groups.flatMap((g) => g.items.map((i) => i.href)),
+    pathname,
   );
-
-  const isActive = (href: string) =>
-    sectionRoots.has(href) || href === "/"
-      ? pathname === href
-      : pathname.startsWith(href);
 
   return (
     <Sidebar collapsible="icon">
@@ -56,7 +48,7 @@ export function AppSidebar({ role }: { role: string }) {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       render={<Link href={item.href} />}
-                      isActive={isActive(item.href)}
+                      isActive={item.href === activeHref}
                       tooltip={item.title}
                       className="h-9"
                     >

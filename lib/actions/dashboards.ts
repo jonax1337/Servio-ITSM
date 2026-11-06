@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { hasRole, type Role, requireAgentUser } from "@/lib/session";
-import { DEFAULT_LAYOUT, type Widget, type WidgetType, type Tone, type Threshold } from "@/lib/dashboard/types";
+import { DEFAULT_LAYOUT, WIDGET_TYPES, type Widget, type WidgetType, type Tone, type Threshold } from "@/lib/dashboard/types";
 
 const TONES = ["primary", "success", "warning", "danger", "info", "neutral"];
 const OPS = ["lt", "lte", "gt", "gte", "eq"];
@@ -36,8 +36,6 @@ async function requireAgent() {
   // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
   return requireAgentUser();
 }
-
-const WIDGET_TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "csat", "aging", "list"];
 
 /** Validate + normalise a widget layout coming from the client (never trusted). */
 function sanitizeLayout(raw: string): string {

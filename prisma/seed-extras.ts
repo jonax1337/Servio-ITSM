@@ -197,6 +197,74 @@ async function main() {
     ],
   });
 
+  // ---- Contracts, licenses, change templates, releases, on-call (ops modules) ----
+  const dayMs = 24 * 60 * 60 * 1000;
+  const inDays = (days: number) => new Date(Date.now() + days * dayMs);
+  await db.vendor.deleteMany();
+  await db.changeTemplate.deleteMany();
+  await db.release.deleteMany();
+  await db.onCallSchedule.deleteMany();
+
+  const vendor = await db.vendor.create({
+    data: { name: "Northwind Systems", website: "https://northwind.example", email: "support@northwind.example" },
+  });
+  const supportContract = await db.contract.create({
+    data: {
+      name: "Server hardware support",
+      number: "NW-2026-014",
+      type: "SUPPORT",
+      status: "ACTIVE",
+      vendorId: vendor.id,
+      ownerId: agent?.id,
+      startDate: inDays(-300),
+      endDate: inDays(25),
+      renewalNoticeDays: 30,
+      cost: 12400,
+    },
+  });
+  await db.softwareLicense.create({
+    data: {
+      name: "Office suite (per user)",
+      vendorId: vendor.id,
+      contractId: supportContract.id,
+      ownerId: agent?.id,
+      licenseType: "PER_USER",
+      seats: 25,
+      expiresAt: inDays(180),
+    },
+  });
+
+  await db.changeTemplate.create({
+    data: {
+      name: "Monthly OS patching",
+      summary: "Pre-approved patch window for non-critical servers.",
+      type: "STANDARD",
+      title: "Monthly OS patching",
+      description: "Apply the monthly operating system security patches.",
+      implementationPlan: "Snapshot, patch, reboot, verify services.",
+      rollbackPlan: "Restore the snapshot.",
+      risk: "LOW",
+      groupId: infra?.id,
+    },
+  });
+  await db.release.create({
+    data: { name: "Winter maintenance release", description: "Bundled infrastructure changes.", status: "PLANNING", ownerId: agent?.id, groupId: infra?.id },
+  });
+
+  const rotation = await db.user.findMany({ where: { role: { in: ["AGENT", "MANAGER"] }, isActive: true }, select: { id: true }, take: 3, orderBy: { email: "asc" } });
+  if (infra && rotation.length > 0) {
+    await db.onCallSchedule.create({
+      data: {
+        name: "Infrastructure on-call",
+        groupId: infra.id,
+        rotationType: "WEEKLY",
+        handoffTime: "09:00",
+        rotationStart: inDays(-7),
+        members: { create: rotation.map((u, position) => ({ userId: u.id, position })) },
+      },
+    });
+  }
+
   // ---- CSAT survey responses on resolved demo tickets ----
   await db.surveyResponse.deleteMany();
   const resolved = await db.ticket.findMany({
@@ -235,7 +303,7 @@ async function main() {
     ),
   );
 
-  console.log("✅ Seed extras: locations, catalog items, automations, calendars, escalations, macros, CSAT.");
+  console.log("✅ Seed extras: locations, catalog items, automations, calendars, escalations, macros, contracts, templates, releases, on-call, CSAT.");
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());

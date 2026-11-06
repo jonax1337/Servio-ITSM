@@ -9,6 +9,7 @@ import {
   TriangleAlert, CircleSlash, Crown, Undo2,
   MapPin, Building2, Layers, DoorClosed, Server, Rows3,
   Lock, Globe,
+  Target, Eye, Rocket, Boxes, BookOpen, CalendarX2, PhoneCall,
 } from "lucide-react";
 
 export type Tone =
@@ -441,11 +442,21 @@ export const SLA_STATE_META: Record<string, Meta> = {
 
 // ---- SLA escalation -------------------------------------------------------
 // Actions an EscalationStep can run as an SLA clock elapses.
-export const ESCALATION_ACTIONS = ["NOTIFY", "REASSIGN", "BUMP_PRIORITY"] as const;
+// The *_ONCALL actions target whoever is on call for the ticket's group
+// (currentOnCall in lib/oncall.ts) instead of a fixed user/group.
+export const ESCALATION_ACTIONS = [
+  "NOTIFY",
+  "REASSIGN",
+  "BUMP_PRIORITY",
+  "NOTIFY_ONCALL",
+  "REASSIGN_ONCALL",
+] as const;
 export const ESCALATION_ACTION_META: Record<string, Meta> = {
   NOTIFY: { label: "Notify", tone: "info", icon: Send },
   REASSIGN: { label: "Reassign", tone: "purple", icon: ArrowUp },
   BUMP_PRIORITY: { label: "Bump priority", tone: "warning", icon: Flame },
+  NOTIFY_ONCALL: { label: "Notify on-call", tone: "info", icon: PhoneCall },
+  REASSIGN_ONCALL: { label: "Reassign to on-call", tone: "purple", icon: PhoneCall },
 };
 
 // ---- CSAT survey ----------------------------------------------------------
@@ -509,6 +520,117 @@ export const LOCATION_TYPE_META: Record<string, Meta> = {
   RACK: { label: "Rack", tone: "warning", icon: Rows3 },
 };
 
+// ---- On-call --------------------------------------------------------------
+// Rotation cadence of an OnCallSchedule. `hours` is the shift length; CUSTOM
+// uses OnCallSchedule.customIntervalHours instead.
+export const ONCALL_ROTATION_TYPES = ["DAILY", "WEEKLY", "CUSTOM"] as const;
+export type OnCallRotationType = (typeof ONCALL_ROTATION_TYPES)[number];
+export const ONCALL_ROTATION_META: Record<OnCallRotationType, Meta & { hours: number | null }> = {
+  DAILY: { label: "Daily", tone: "info", hours: 24 },
+  WEEKLY: { label: "Weekly", tone: "indigo", hours: 168 },
+  CUSTOM: { label: "Custom", tone: "purple", hours: null },
+};
+
+// ---- Status page ----------------------------------------------------------
+export const STATUS_INCIDENT_STATES = [
+  "INVESTIGATING",
+  "IDENTIFIED",
+  "MONITORING",
+  "RESOLVED",
+] as const;
+export const STATUS_INCIDENT_STATE_META: Record<string, Meta> = {
+  INVESTIGATING: { label: "Investigating", tone: "danger", icon: Search },
+  IDENTIFIED: { label: "Identified", tone: "warning", icon: Target },
+  MONITORING: { label: "Monitoring", tone: "info", icon: Eye },
+  RESOLVED: { label: "Resolved", tone: "success", icon: CheckCircle2 },
+};
+/** States in which a status incident is still active (shown in banners). */
+export const ACTIVE_STATUS_INCIDENT_STATES = ["INVESTIGATING", "IDENTIFIED", "MONITORING"] as const;
+
+export const STATUS_INCIDENT_IMPACTS = ["NONE", "MINOR", "MAJOR", "CRITICAL"] as const;
+export const STATUS_INCIDENT_IMPACT_META: Record<string, Meta> = {
+  NONE: { label: "No impact", tone: "neutral" },
+  MINOR: { label: "Minor", tone: "warning", icon: TriangleAlert },
+  MAJOR: { label: "Major", tone: "danger", icon: XCircle },
+  CRITICAL: { label: "Critical", tone: "danger", icon: Flame },
+};
+
+// ---- Releases & change templates -------------------------------------------
+export const RELEASE_STATUSES = [
+  "PLANNING",
+  "READY",
+  "IN_PROGRESS",
+  "DEPLOYED",
+  "CANCELLED",
+] as const;
+export const RELEASE_STATUS_META: Record<string, Meta> = {
+  PLANNING: { label: "Planning", tone: "neutral", icon: FileEdit },
+  READY: { label: "Ready", tone: "success", icon: ThumbsUp },
+  IN_PROGRESS: { label: "In Progress", tone: "purple", icon: PlayCircle },
+  DEPLOYED: { label: "Deployed", tone: "success", icon: Rocket },
+  CANCELLED: { label: "Cancelled", tone: "neutral", icon: CircleSlash },
+};
+
+/** Change types a ChangeTemplate may produce (EMERGENCY is never templated). */
+export const CHANGE_TEMPLATE_TYPES = ["STANDARD", "NORMAL"] as const;
+
+// ---- Contracts & licenses -------------------------------------------------
+export const CONTRACT_TYPES = [
+  "SUPPORT",
+  "MAINTENANCE",
+  "LEASE",
+  "SUBSCRIPTION",
+  "WARRANTY",
+  "SERVICE",
+  "OTHER",
+] as const;
+export const CONTRACT_TYPE_META: Record<string, Meta> = {
+  SUPPORT: { label: "Support", tone: "info" },
+  MAINTENANCE: { label: "Maintenance", tone: "indigo" },
+  LEASE: { label: "Lease", tone: "purple" },
+  SUBSCRIPTION: { label: "Subscription", tone: "info" },
+  WARRANTY: { label: "Warranty", tone: "success" },
+  SERVICE: { label: "Service", tone: "indigo" },
+  OTHER: { label: "Other", tone: "neutral" },
+};
+
+export const CONTRACT_STATUSES = ["DRAFT", "ACTIVE", "EXPIRED", "TERMINATED"] as const;
+export const CONTRACT_STATUS_META: Record<string, Meta> = {
+  DRAFT: { label: "Draft", tone: "neutral", icon: FileEdit },
+  ACTIVE: { label: "Active", tone: "success", icon: CheckCircle2 },
+  EXPIRED: { label: "Expired", tone: "warning", icon: CalendarX2 },
+  TERMINATED: { label: "Terminated", tone: "neutral", icon: Ban },
+};
+
+export const LICENSE_TYPES = [
+  "PER_USER",
+  "PER_DEVICE",
+  "SITE",
+  "CONCURRENT",
+  "SUBSCRIPTION",
+] as const;
+export const LICENSE_TYPE_META: Record<string, Meta> = {
+  PER_USER: { label: "Per user", tone: "info" },
+  PER_DEVICE: { label: "Per device", tone: "indigo" },
+  SITE: { label: "Site", tone: "purple" },
+  CONCURRENT: { label: "Concurrent", tone: "warning" },
+  SUBSCRIPTION: { label: "Subscription", tone: "info" },
+};
+
+// ---- Sable insights -------------------------------------------------------
+export const AI_INSIGHT_KINDS = ["CLUSTER", "KB_GAP"] as const;
+export const AI_INSIGHT_KIND_META: Record<string, Meta> = {
+  CLUSTER: { label: "Incident cluster", tone: "danger", icon: Boxes },
+  KB_GAP: { label: "Knowledge gap", tone: "info", icon: BookOpen },
+};
+
+export const AI_INSIGHT_STATUSES = ["OPEN", "ACTIONED", "DISMISSED"] as const;
+export const AI_INSIGHT_STATUS_META: Record<string, Meta> = {
+  OPEN: { label: "Open", tone: "warning", icon: CircleDot },
+  ACTIONED: { label: "Actioned", tone: "success", icon: CheckCircle2 },
+  DISMISSED: { label: "Dismissed", tone: "neutral", icon: CircleSlash },
+};
+
 // Generic fallback lookup
 export function metaFor(
   map: Record<string, Meta>,
@@ -561,4 +683,7 @@ export function problemRef(id: number) {
 }
 export function changeRef(id: number) {
   return `CHG-${String(id).padStart(4, "0")}`;
+}
+export function releaseRef(id: number) {
+  return `REL-${String(id).padStart(4, "0")}`;
 }

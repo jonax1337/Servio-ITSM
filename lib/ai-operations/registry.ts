@@ -9,6 +9,12 @@ import { OPERATIONS as knowledgeOps } from "./modules/knowledge";
 import { OPERATIONS as pcOps } from "./modules/problems-changes";
 import { OPERATIONS as projectOps } from "./modules/projects";
 import { OPERATIONS as mcpOps } from "./modules/mcp";
+import { OPERATIONS as changeScheduleOps } from "./modules/change-schedule";
+import { OPERATIONS as oncallOps } from "./modules/oncall";
+import { OPERATIONS as statusOps } from "./modules/status";
+import { OPERATIONS as releaseOps } from "./modules/releases";
+import { OPERATIONS as contractOps } from "./modules/contracts";
+import { OPERATIONS as insightOps } from "./modules/insights";
 
 /** Every RBAC-gated operation Sable can perform, composed from the domain modules. */
 export const ALL_OPERATIONS: AiOperation[] = [
@@ -21,6 +27,12 @@ export const ALL_OPERATIONS: AiOperation[] = [
   ...knowledgeOps,
   ...pcOps,
   ...projectOps,
+  ...changeScheduleOps,
+  ...oncallOps,
+  ...statusOps,
+  ...releaseOps,
+  ...contractOps,
+  ...insightOps,
 ];
 
 /**

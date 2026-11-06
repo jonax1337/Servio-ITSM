@@ -17,24 +17,37 @@ import {
   cancelReasonError,
   changeLockedMessage,
   closureError,
+  EDITED_AWAY_FROM_TEMPLATE_COMMENT,
   fieldValueError,
   invalidSeats,
   isChangeLocked,
   isClosureStatus,
+  isTemplatedStandard,
   isWindowEditable,
+  leavesStandardProcedure,
   manualStatusError,
   plannedWindowError,
+  type PlannedWindow,
+  preApprovalApplies,
   requiresRescheduleReason,
   rescheduleComment,
   rescheduleError,
   settlesApprovalBoard,
   shouldStampActualEnd,
+  standardDemotion,
+  standardTypeError,
   statusLabel,
   submitBlockedMessage,
   submitBlockers,
   windowChanged,
   windowLockedMessage,
 } from "@/lib/change-rules";
+import {
+  freezeVerdict,
+  type FreezeVerdict,
+  type FreezeWindow,
+} from "@/lib/change-schedule-rules";
+import { assetIdsOfChange, freezeHitsForWindow, scopeChangeFreezeError } from "@/lib/change-schedule";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import {
@@ -84,8 +97,11 @@ export type ActionState =
   | { error?: string; fieldErrors?: Record<string, string[]> }
   | undefined;
 
-/** What a change mutation reports back, so the page can toast success or the refusal reason. */
-export type ChangeActionResult = { ok: true } | { ok: false; error: string };
+/**
+ * What a change mutation reports back, so the page can toast success or the refusal reason.
+ * `needsJustification` marks a refusal an emergency change can resolve by resubmitting with a justification.
+ */
+export type ChangeActionResult = { ok: true } | { ok: false; error: string; needsJustification?: true };
 
 const OK: ChangeActionResult = { ok: true };
 const refuse = (error: string): ChangeActionResult => ({ ok: false, error });
@@ -123,6 +139,9 @@ export async function createChange(
     };
   }
   const data = parsed.data;
+
+  const typeError = standardTypeError(data.type, null);
+  if (typeError) return { error: typeError, fieldErrors: { type: [typeError] } };
 
   const windowError = plannedWindowError(data.plannedStart, data.plannedEnd);
   if (windowError) {
@@ -206,12 +225,16 @@ export async function updateChangeField(formData: FormData): Promise<ChangeActio
   const current = await db.change.findUnique({
     where: { id },
     select: {
-      status: true, type: true, groupId: true, assigneeId: true,
+      status: true, type: true, risk: true, impact: true, templateId: true, groupId: true, assigneeId: true,
       actualStart: true, actualEnd: true, outcome: true, closureNotes: true,
     },
   });
   if (!current) return refuse("Change not found.");
 
+  if (field === "type") {
+    const typeError = standardTypeError(value, current.type);
+    if (typeError) return refuse(typeError);
+  }
   if (field === "status") return moveChangeStatus(me, id, current, value, details);
   if (isChangeLocked(current.status)) return refuse(changeLockedMessage(current.status));
 
@@ -224,18 +247,48 @@ export async function updateChangeField(formData: FormData): Promise<ChangeActio
   if (field === "groupId" && v && current.assigneeId && !(await isGroupMember(v, current.assigneeId))) {
     patch.assigneeId = null;
   }
+  if (field === "groupId") {
+    const freezeError = await scopeChangeFreezeError(id, { groupId: v });
+    if (freezeError) return refuse(freezeError);
+  }
 
-  await db.change.update({ where: { id }, data: patch });
-  await writeAudit({
-    userId: me.id,
-    action: "UPDATE",
-    entity: "Change",
-    entityId: id,
-    summary: `Updated ${field}`,
-  });
+  const leavesTemplate = leavesStandardProcedure(field, v, (current as Record<string, string | null>)[field]);
+  await saveChangeEdit(me, id, current, patch, leavesTemplate, `Updated ${field}`);
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
   return OK;
+}
+
+/**
+ * Saves an edit to a change. An edit that leaves the approved procedure of a templated standard change
+ * makes it a normal change; if its pre-approval stood and the work has not started, it goes back to DRAFT
+ * with a comment, because only the CAB can approve it now.
+ */
+async function saveChangeEdit(
+  me: Agent,
+  id: number,
+  current: { type: string; templateId: string | null; status: string },
+  data: Record<string, unknown>,
+  leavesTemplate: boolean,
+  summary: string,
+): Promise<void> {
+  const demotion = leavesTemplate ? standardDemotion(current) : null;
+  if (!demotion) {
+    await db.change.update({ where: { id }, data });
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary });
+    return;
+  }
+  await db.$transaction(async (tx) => {
+    await tx.change.update({
+      where: { id },
+      data: { type: "NORMAL", ...data, ...(demotion.backToDraft ? { status: "DRAFT" } : {}) },
+    });
+    if (demotion.backToDraft) {
+      await tx.changeComment.create({ data: { changeId: id, authorId: me.id, isInternal: true, body: EDITED_AWAY_FROM_TEMPLATE_COMMENT } });
+    }
+  });
+  const consequence = demotion.backToDraft ? "now a normal change, back in draft" : "now a normal change";
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `${summary}; edited away from the standard template, ${consequence}` });
 }
 
 /** Moves a change along its governed lifecycle, recording closure/cancellation details. */
@@ -394,7 +447,7 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
 
 // ── CAB governance: submit / add / remove approvers ──────────────────────────
 
-const submitSchema = z.object({ id: z.coerce.number() });
+const submitSchema = z.object({ id: z.coerce.number(), justification: optionalText });
 const addApproverSchema = z.object({ changeId: z.coerce.number(), approverId: z.string().min(1) });
 const removeApproverSchema = z.object({ approvalId: z.string().min(1) });
 
@@ -426,6 +479,29 @@ async function planCabBoard(change: BoardChange) {
   return { dropped, keptIds, addedIds };
 }
 
+const NO_FREEZE_OVERRIDE: FreezeVerdict = { ok: true, overrideComment: null };
+
+/**
+ * Checks a planned window against the change freeze windows that bind this change. An
+ * EMERGENCY change may override a freeze with a justification, recorded as `overrideComment`.
+ */
+async function freezeVerdictFor(
+  change: { id: number; type: string; groupId: string | null },
+  window: PlannedWindow,
+  justification: string | null,
+): Promise<FreezeVerdict> {
+  if (!window.start || !window.end) return NO_FREEZE_OVERRIDE;
+  const hits: FreezeWindow[] = await freezeHitsForWindow(
+    { start: window.start, end: window.end },
+    { groupId: change.groupId, assetIds: await assetIdsOfChange(change.id) },
+  );
+  return freezeVerdict({ type: change.type, hits, justification });
+}
+
+function refuseFreeze(verdict: Extract<FreezeVerdict, { ok: false }>): ChangeActionResult {
+  return verdict.needsJustification ? { ok: false, error: verdict.error, needsJustification: true } : refuse(verdict.error);
+}
+
 const EMERGENCY_SUBMIT_NOTE =
   "Emergency change — expedited ECAB approval. Post-Implementation Review (PIR) required after closure.";
 
@@ -434,13 +510,14 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
   if (!me) return refuse("Not authorised.");
   const parsed = submitSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refuse("Invalid request.");
-  const { id } = parsed.data;
+  const { id, justification } = parsed.data;
 
   const current = await db.change.findUnique({
     where: { id },
     select: {
-      id: true, type: true, risk: true, status: true, assigneeId: true, createdById: true, title: true,
+      id: true, type: true, risk: true, status: true, assigneeId: true, createdById: true, title: true, groupId: true,
       implementationPlan: true, rollbackPlan: true, plannedStart: true, plannedEnd: true,
+      templateId: true, template: { select: { type: true, isActive: true } },
     },
   });
   if (!current) return refuse("Change not found.");
@@ -449,11 +526,15 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
     return refuse("Only a draft change can be submitted for approval.");
   }
 
-  const missing = submitBlockers(current);
+  const preApproved = preApprovalApplies(current, current.template);
+  const missing = submitBlockers(current, preApproved);
   if (missing.length > 0) return refuse(submitBlockedMessage(missing));
 
-  if (current.type === "STANDARD") {
-    // Pre-authorized: straight to APPROVED, no CAB. (Bypasses the transition map
+  const freeze = await freezeVerdictFor(current, { start: current.plannedStart, end: current.plannedEnd }, justification);
+  if (!freeze.ok) return refuseFreeze(freeze);
+
+  if (preApproved) {
+    // Pre-authorized by its active standard template: straight to APPROVED, no CAB. (Bypasses the transition map
     // deliberately — same authorized-flow exception decideApproval uses.)
     const approved = await db.change.updateMany({ where: { id, status: current.status }, data: { status: "APPROVED" } });
     if (approved.count === 0) return refuse(STALE_CHANGE_MESSAGE);
@@ -473,6 +554,9 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
       if (current.type === "EMERGENCY") {
         await tx.changeComment.create({ data: { changeId: id, authorId: me.id, isInternal: true, body: EMERGENCY_SUBMIT_NOTE } });
       }
+      if (freeze.overrideComment) {
+        await tx.changeComment.create({ data: { changeId: id, authorId: me.id, isInternal: true, body: freeze.overrideComment } });
+      }
       return true;
     });
     if (!submitted) return refuse(STALE_CHANGE_MESSAGE);
@@ -480,7 +564,7 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
       await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: current.title, entity: "Change", entityId: String(id) });
     }
     const droppedNote = dropped.length > 0 ? ` (${dropped.length} ineligible approver${dropped.length === 1 ? "" : "s"} removed)` : "";
-    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Submitted for approval${droppedNote}` });
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Submitted for approval${droppedNote}${freeze.overrideComment ? " (change freeze overridden)" : ""}` });
   }
 
   revalidatePath(`/changes/${id}`);
@@ -504,10 +588,10 @@ export async function addChangeApprover(formData: FormData): Promise<ChangeActio
   if (!parsed.success) return refuse("Invalid request.");
   const { changeId, approverId } = parsed.data;
 
-  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, type: true, risk: true, title: true } });
+  const change = await db.change.findUnique({ where: { id: changeId }, select: { assigneeId: true, createdById: true, status: true, type: true, templateId: true, risk: true, title: true } });
   if (!change) return refuse("Change not found.");
   if (ownsChange(me.id, change)) return refuse(OWN_BOARD_REFUSAL);
-  if (change.type === "STANDARD") return refuse("A standard change is pre-authorized and has no approval board.");
+  if (isTemplatedStandard(change)) return refuse("A standard change is pre-authorized by its template and has no approval board.");
   if (!canSeatApprovers(change.status)) return refuse("Approvers can only be added while the change is a draft or in approval.");
   // SoD — never seat the owner (assignee) or the creator.
   if (approverId === change.assigneeId || approverId === change.createdById) {
@@ -671,24 +755,26 @@ const windowSchema = z.object({
   plannedStart: optionalDate,
   plannedEnd: optionalDate,
   reason: optionalText,
+  justification: optionalText,
 });
 
 /**
  * Sets or clears the planned maintenance window; the end must come after the start.
  * Once approved, moving the window is a reschedule: it needs a reason, which is
- * posted to the change as an internal comment.
+ * posted to the change as an internal comment. A new window inside a change freeze is
+ * refused unless the change is an EMERGENCY and a justification is given.
  */
 export async function updateChangeWindow(formData: FormData): Promise<ChangeActionResult> {
   const me = await requireAgentC();
   if (!me) return refuse("Not authorised.");
   const parsed = windowSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refuse("Invalid request.");
-  const { id, plannedStart, plannedEnd, reason } = parsed.data;
+  const { id, plannedStart, plannedEnd, reason, justification } = parsed.data;
 
   const windowError = plannedWindowError(plannedStart, plannedEnd);
   if (windowError) return refuse(windowError);
 
-  const change = await db.change.findUnique({ where: { id }, select: { status: true, plannedStart: true, plannedEnd: true } });
+  const change = await db.change.findUnique({ where: { id }, select: { status: true, type: true, groupId: true, plannedStart: true, plannedEnd: true } });
   if (!change) return refuse("Change not found.");
   if (isChangeLocked(change.status)) return refuse(changeLockedMessage(change.status));
   if (!isWindowEditable(change.status)) return refuse(windowLockedMessage(change.status));
@@ -697,6 +783,10 @@ export async function updateChangeWindow(formData: FormData): Promise<ChangeActi
   const next = { start: plannedStart, end: plannedEnd };
   const rescheduleProblem = rescheduleError(change.status, current, next, reason);
   if (rescheduleProblem) return refuse(rescheduleProblem);
+
+  // Only a moved window can newly fall into a freeze; re-saving the same one never blocks.
+  const freeze = windowChanged(current, next) ? await freezeVerdictFor({ id, ...change }, next, justification) : NO_FREEZE_OVERRIDE;
+  if (!freeze.ok) return refuseFreeze(freeze);
 
   const isReschedule = requiresRescheduleReason(change.status) && windowChanged(current, next);
   // The window and its reschedule comment are one record: never save one without the other.
@@ -707,13 +797,16 @@ export async function updateChangeWindow(formData: FormData): Promise<ChangeActi
         data: { changeId: id, authorId: me.id, isInternal: true, body: rescheduleComment(current, next, reason) },
       });
     }
+    if (freeze.overrideComment) {
+      await tx.changeComment.create({ data: { changeId: id, authorId: me.id, isInternal: true, body: freeze.overrideComment } });
+    }
   });
   await writeAudit({
     userId: me.id,
     action: "UPDATE",
     entity: "Change",
     entityId: id,
-    summary: isReschedule ? "Rescheduled planned window" : "Updated planned window",
+    summary: `${isReschedule ? "Rescheduled planned window" : "Updated planned window"}${freeze.overrideComment ? " (change freeze overridden)" : ""}`,
   });
   revalidatePath(`/changes/${id}`);
   revalidatePath("/changes");
@@ -744,11 +837,12 @@ export async function updateChangeText(formData: FormData): Promise<ChangeAction
   const parsed = changeTextSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refuse("Invalid request.");
   const { id, field } = parsed.data;
-  const uneditable = await refusalIfUneditable(id);
-  if (uneditable) return uneditable;
+  const current = await db.change.findUnique({ where: { id }, select: { status: true, type: true, templateId: true, reason: true, implementationPlan: true, rollbackPlan: true } });
+  if (!current) return refuse("Change not found.");
+  if (isChangeLocked(current.status)) return refuse(changeLockedMessage(current.status));
   const value = parsed.data.value.trim() || null;
-  await db.change.update({ where: { id }, data: { [field]: value } });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Updated ${CHANGE_TEXT_LABELS[field]}` });
+  const leavesTemplate = leavesStandardProcedure(field, value, current[field]);
+  await saveChangeEdit(me, id, current, { [field]: value }, leavesTemplate, `Updated ${CHANGE_TEXT_LABELS[field]}`);
   revalidatePath(`/changes/${id}`);
   return OK;
 }

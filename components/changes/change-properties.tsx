@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateChangeField } from "@/lib/actions/changes";
-import { isClosureStatus, manualStatusError } from "@/lib/change-rules";
+import { isClosureStatus, manualStatusError, standardTypeError } from "@/lib/change-rules";
 import { CancelChangeDialog } from "@/components/changes/cancel-change";
 import { ClosureDialog } from "@/components/changes/closure-dialog";
 import { Combobox, type ComboOption } from "@/components/combobox";
@@ -114,9 +114,13 @@ export function ChangeProperties({
       disabledReason: approvalFlowReason ?? "Not allowed from the current status by the workflow.",
     };
   });
-  const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => ({
-    value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon,
-  }));
+  const typeOpts: ComboOption[] = CHANGE_TYPES.map((t) => {
+    const needsTemplate = standardTypeError(t, change.type);
+    return {
+      value: t, label: CHANGE_TYPE_META[t].label, tone: CHANGE_TYPE_META[t].tone, icon: CHANGE_TYPE_META[t].icon,
+      disabled: !!needsTemplate, disabledReason: needsTemplate ?? undefined,
+    };
+  });
   const riskOpts: ComboOption[] = RISKS.map((r) => ({
     value: r, label: RISK_META[r].label, tone: RISK_META[r].tone, icon: RISK_META[r].icon,
   }));

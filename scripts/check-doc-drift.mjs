@@ -51,6 +51,8 @@ const DOC_MAP = [
       'lib/claude-agent-events.ts', 'lib/llm-proxy/', 'lib/sable-workspace.ts', 'lib/sable-skills.ts', 'lib/sable-mcp.ts',
       'lib/sable-mcp-policy.ts', 'lib/ai-models.ts', 'lib/actions/sable-skills.ts',
       'lib/actions/sable-mcp.ts', 'sable/',
+      'lib/ai-insights', 'lib/ai-similarity', 'lib/actions/ai-insights.ts', 'lib/change-brief',
+      'lib/actions/change-copilot.ts', 'lib/sla-nudge-rules.ts', 'lib/dashboard/briefing',
     ],
     docs: ['docs/ai.md'],
   },
@@ -77,6 +79,23 @@ const DOC_MAP = [
   {
     label: 'Mail engine',
     code: ['lib/mail.ts', 'lib/mail-inbound/', 'lib/mail-template.ts', 'lib/email-templates.ts', 'lib/scheduler.ts'],
+    docs: ['docs/modules.md'],
+  },
+  {
+    label: 'Scheduler feature ticks',
+    code: ['lib/ticks/'],
+    docs: ['docs/architecture.md', 'docs/configuration.md'],
+  },
+  {
+    label: 'Operations modules (calendar, templates, releases, on-call, status, contracts, tabs)',
+    code: [
+      'lib/entity-tabs.ts', 'lib/change-schedule', 'lib/change-template', 'lib/release',
+      'lib/oncall', 'lib/status-', 'lib/contract-', 'lib/ticks/contracts.ts',
+      'components/entity-tabs.tsx', 'components/oncall/', 'components/status/',
+      'components/releases/', 'components/contracts/', 'components/changes/calendar/',
+      'components/changes/templates/', 'components/changes/tabs/', 'components/tickets/tabs/',
+      'components/problems/tabs/', 'components/assets/tabs/',
+    ],
     docs: ['docs/modules.md'],
   },
   {

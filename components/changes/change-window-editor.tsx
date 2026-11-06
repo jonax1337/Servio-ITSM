@@ -16,7 +16,8 @@ function toInputValue(date: Date | null) {
 
 /**
  * Edits the planned maintenance window; the server rejects an end that is not after the start.
- * Once the change is approved, `requiresReason` asks why it is being rescheduled.
+ * Once the change is approved, `requiresReason` asks why it is being rescheduled. An emergency
+ * change moved into a change freeze is refused until the editor also gets a justification.
  */
 export function ChangeWindowEditor({
   changeId, plannedStart, plannedEnd, requiresReason,
@@ -27,13 +28,19 @@ export function ChangeWindowEditor({
   requiresReason: boolean;
 }) {
   const [pending, setPending] = useState(false);
+  const [needsJustification, setNeedsJustification] = useState(false);
 
   const onSubmit = useFormSubmit(async (formData) => {
     setPending(true);
     const res = await updateChangeWindow(formData);
     setPending(false);
-    if (res.ok) toast.success("Planned window updated");
-    else toast.error(res.error);
+    if (res.ok) {
+      setNeedsJustification(false);
+      toast.success("Planned window updated");
+    } else {
+      setNeedsJustification(res.needsJustification === true);
+      toast.error(res.error);
+    }
   });
 
   return (
@@ -51,6 +58,12 @@ export function ChangeWindowEditor({
         <label className="grid gap-1 text-xs text-muted-foreground">
           Reason for rescheduling
           <Input name="reason" placeholder="Only needed when the dates change" />
+        </label>
+      ) : null}
+      {needsJustification ? (
+        <label className="grid gap-1 text-xs text-muted-foreground">
+          Justification for overriding the change freeze
+          <Input name="justification" required placeholder="Why can this emergency change not wait?" />
         </label>
       ) : null}
       <Button type="submit" size="sm" variant="outline" disabled={pending} className="justify-self-start">

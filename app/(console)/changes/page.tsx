@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { GitPullRequestArrow, Plus } from "lucide-react";
+import { CalendarRange, FileStack, GitPullRequestArrow, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { refSearchWhere } from "@/lib/ref-search";
+import { hasRole, requireUser } from "@/lib/session";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
@@ -41,6 +42,7 @@ export default async function ChangesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const me = await requireUser();
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
@@ -101,6 +103,14 @@ export default async function ChangesPage({
         title="Changes"
         description="Standard, normal and emergency changes moving through approval."
       >
+        <LinkButton href="/changes/calendar" variant="outline">
+          <CalendarRange className="size-4" /> Calendar
+        </LinkButton>
+        {hasRole(me.role, "MANAGER") ? (
+          <LinkButton href="/changes/templates" variant="outline">
+            <FileStack className="size-4" /> Templates
+          </LinkButton>
+        ) : null}
         <LinkButton href="/changes/new">
           <Plus className="size-4" /> New change
         </LinkButton>

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAgentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
+import { scopeChangeFreezeError } from "@/lib/change-schedule";
 
 /**
  * Affected-CI (configuration item) linkage for Changes. A ChangeAsset row marks
@@ -46,6 +47,9 @@ export async function attachAffectedCi(formData: FormData) {
     select: { assetId: true },
   });
   if (exists) return;
+
+  // A CI can bring the change under a service-scoped freeze its window had cleared.
+  if (await scopeChangeFreezeError(changeId, { addAssetId: assetId })) return;
 
   await db.changeAsset.create({ data: { changeId, assetId } });
   await writeAudit({

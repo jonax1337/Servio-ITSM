@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, isAgent, type Role } from "@/lib/session";
 import { computeWidget } from "@/lib/dashboard/compute";
-import type { Widget, WidgetType } from "@/lib/dashboard/types";
+import { WIDGET_TYPES, type Widget, type WidgetType } from "@/lib/dashboard/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const TYPES: WidgetType[] = ["stat", "breakdown", "volume", "sla", "aging", "list"];
 
 /**
  * Compute a single widget's data on demand — powers the dashboard editor's live
@@ -27,7 +25,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
   const w = body as Partial<Widget>;
-  if (!w || !TYPES.includes(w.type as WidgetType)) {
+  if (!w || !WIDGET_TYPES.includes(w.type as WidgetType)) {
     return NextResponse.json({ error: "bad widget" }, { status: 400 });
   }
   const widget: Widget = {

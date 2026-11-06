@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VolumeChart, BarRow, DonutChart, GaugeChart } from "@/components/charts";
 import { StatusBadge } from "@/components/status-badge";
+import { BriefingBody } from "@/components/dashboard/briefing-widget";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
 import type { Widget, Computed, Tone } from "@/lib/dashboard/types";
 
@@ -151,6 +152,9 @@ function renderBody(data: Computed) {
           ))}
         </ul>
       );
+
+    case "briefing":
+      return <BriefingBody sections={data.sections} aiAvailable={data.aiAvailable} />;
 
     default:
       return <Empty />;
