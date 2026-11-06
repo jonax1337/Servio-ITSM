@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  UNDO_WINDOW_MS, applyPropertyEdit, changesBetween, withChanges, type PropertyValues,
+  UNDO_WINDOW_MS, applyPropertyEdit, changesBetween, undoBlocker, undoChanges, withChanges, type PropertyValues,
 } from "@/lib/ticket-property-edits";
 
 const ticket: PropertyValues = {
@@ -64,5 +64,48 @@ describe("changesBetween", () => {
   it("round-trips: undoing an edit gives back the original values", () => {
     const after = applyPropertyEdit(ticket, { field: "groupId", value: "network" }, members);
     expect(withChanges(after, changesBetween(after, ticket))).toEqual(ticket);
+  });
+});
+
+describe("undoChanges", () => {
+  it("expects every field to still hold what the edit left there", () => {
+    const after = applyPropertyEdit(ticket, { field: "groupId", value: "network" }, members);
+    expect(undoChanges(ticket, after)).toEqual([
+      { field: "groupId", value: "service-desk", expected: "network" },
+      { field: "assigneeId", value: "sam", expected: "none" },
+    ]);
+  });
+});
+
+describe("undoBlocker", () => {
+  const before = ticket;
+  const after = applyPropertyEdit(ticket, { field: "priority", value: "HIGH" }, members);
+
+  it("offers undo while the edited field still holds the edit's value", () => {
+    expect(undoBlocker(after, before, after)).toBeNull();
+  });
+
+  it("blocks undo once someone else changed the edited field", () => {
+    expect(undoBlocker({ ...after, priority: "CRITICAL" }, before, after)).toBe("changed");
+  });
+
+  it("ignores changes to fields the undo would not touch", () => {
+    expect(undoBlocker({ ...after, categoryId: "hardware" }, before, after)).toBeNull();
+  });
+
+  it("blocks undoing a group move once the assignee was changed meanwhile", () => {
+    const moved = applyPropertyEdit(ticket, { field: "groupId", value: "network" }, members);
+    expect(undoBlocker({ ...moved, assigneeId: "lee" }, ticket, moved)).toBe("changed");
+  });
+
+  it("blocks undoing a status change the workflow would refuse to reverse", () => {
+    const closed = applyPropertyEdit(ticket, { field: "status", value: "CLOSED" }, members);
+    expect(undoBlocker(closed, ticket, closed, ["CLOSED", "OPEN"])).toBe("workflow");
+    expect(undoBlocker(closed, ticket, closed, ["CLOSED", "IN_PROGRESS"])).toBeNull();
+  });
+
+  it("does not consult the workflow for an edit that left the status alone", () => {
+    expect(undoBlocker(after, before, after, ["IN_PROGRESS"])).toBeNull();
+    expect(undoBlocker(after, before, after, [])).toBeNull();
   });
 });

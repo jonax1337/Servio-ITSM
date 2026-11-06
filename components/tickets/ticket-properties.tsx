@@ -13,8 +13,8 @@ import { ResolutionDialog, type ResolutionPayload } from "@/components/tickets/r
 import { DueDatePicker } from "@/components/tickets/due-date-picker";
 import { childResolutionMessage, refusedChildrenDetail, type RefusedChild } from "@/lib/ticket-hierarchy-rules";
 import {
-  PROPERTY_KEYS, UNDO_WINDOW_MS, applyPropertyEdit, changesBetween, withChanges,
-  type FieldChange, type PropertyKey, type PropertyValues,
+  PROPERTY_KEYS, UNDO_WINDOW_MS, applyPropertyEdit, changesBetween, undoBlocker, undoChanges, withChanges,
+  type FieldChange, type PropertyKey, type PropertyValues, type UndoBlocker,
 } from "@/lib/ticket-property-edits";
 import {
   TICKET_STATUSES,
@@ -32,6 +32,14 @@ import type { FormOptions } from "@/lib/data/options";
 const errorOf = (res: { ok: boolean; error?: string }) => (res.ok ? null : res.error ?? "Could not save changes.");
 
 const SAVE_FAILED = "Could not save changes.";
+
+const UNDO_BLOCKED: Record<UndoBlocker, string> = {
+  changed: "This field changed since — not undone.",
+  workflow: "The workflow doesn't allow going back to that status.",
+};
+
+/** An edit whose Undo is on offer in a toast. */
+type UndoOffer = { before: PropertyValues; after: PropertyValues };
 
 function initials(s: string) {
   return s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -180,11 +188,12 @@ export function TicketProperties({
   // ── Saving: each edit is saved on its own, then offered as an undo ──
   /** Saves field changes in order and returns the first refusal. */
   async function persistChanges(changes: readonly FieldChange[]): Promise<string | null> {
-    for (const { field, value } of changes) {
+    for (const { field, value, expected } of changes) {
       const fd = new FormData();
       fd.set("id", String(ticket.id));
       fd.set("field", field);
       fd.set("value", value);
+      if (expected !== undefined) fd.set("expected", expected);
       const refusal = errorOf(await updateTicketField(fd));
       if (refusal) return refusal;
     }
@@ -203,8 +212,28 @@ export function TicketProperties({
     }
   }
 
-  async function undoEdit(before: PropertyValues, after: PropertyValues) {
-    const reverts = changesBetween(after, before);
+  // Undo is offered only while it can still apply: the latest values are read at click time and
+  // every open offer is withdrawn as soon as one of them goes stale.
+  const latest = useRef({ values, allowedStatuses });
+  const offers = useRef(new Map<string | number, UndoOffer>());
+  const offerCount = useRef(0);
+  useEffect(() => {
+    latest.current = { values, allowedStatuses };
+    for (const [toastId, { before, after }] of offers.current) {
+      if (!undoBlocker(values, before, after, allowedStatuses)) continue;
+      toast.dismiss(toastId);
+      offers.current.delete(toastId);
+    }
+  });
+
+  async function undoEdit(toastId: string | number, { before, after }: UndoOffer) {
+    offers.current.delete(toastId);
+    const blocker = undoBlocker(latest.current.values, before, after, latest.current.allowedStatuses);
+    if (blocker) {
+      toast.info(UNDO_BLOCKED[blocker]);
+      return;
+    }
+    const reverts = undoChanges(before, after);
     setValues((v) => withChanges(v, reverts));
     const refusal = await saveChanges(reverts);
     if (refusal) {
@@ -222,9 +251,14 @@ export function TicketProperties({
       toast.error(refusal);
       return;
     }
+    const toastId = `undo-${ticket.id}-${++offerCount.current}`;
+    offers.current.set(toastId, { before, after });
     toast.success(`${FIELD_LABELS[edit.field]} updated`, {
+      id: toastId,
       duration: UNDO_WINDOW_MS,
-      action: { label: "Undo", onClick: () => void undoEdit(before, after) },
+      action: { label: "Undo", onClick: () => void undoEdit(toastId, { before, after }) },
+      onDismiss: () => offers.current.delete(toastId),
+      onAutoClose: () => offers.current.delete(toastId),
     });
   }
 

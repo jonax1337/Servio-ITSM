@@ -110,6 +110,8 @@ const updateSchema = z.object({
     "assigneeId", "groupId", "categoryId", "serviceId", "slaId",
   ]),
   value: z.string(),
+  /** Compare-and-set: write only while the field still holds this value ("none" = empty). Undo sends it. */
+  expected: z.string().optional(),
 });
 
 export async function updateTicketField(formData: FormData): Promise<TicketActionResult> {
@@ -117,10 +119,11 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
   if (!me) return refused(NOT_AUTHORISED);
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refused(INVALID_CHANGE);
-  const { id, field, value } = parsed.data;
+  const { id, field, value, expected } = parsed.data;
 
   const isRelation = field.endsWith("Id");
-  const v = isRelation && (value === "none" || value === "") ? null : value;
+  const asStored = (raw: string) => (isRelation && (raw === "none" || raw === "") ? null : raw);
+  const v = asStored(value);
 
   // Authorization: only ADMIN/MANAGER, or the assignee / a member of the ticket's
   // group, may mutate a ticket.
@@ -205,11 +208,13 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
     ));
   }
 
-  const ticket = await db.ticket.update({
-    where: { id },
+  // One conditional statement, so the check and the write cannot be split by another edit.
+  const written = await db.ticket.updateMany({
+    where: { id, ...(expected !== undefined && { [field]: asStored(expected) }) },
     data: patch,
-    include: { requester: true, assignee: true },
   });
+  if (written.count === 0) return refused(expected !== undefined ? CHANGED_SINCE : TICKET_NOT_FOUND);
+  const ticket = await db.ticket.findUniqueOrThrow({ where: { id }, include: { requester: true, assignee: true } });
   await withdrawPendingApprovals(id, patch);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
 
@@ -365,6 +370,7 @@ const AWAITING_APPROVAL = "This request is awaiting approval; it can only be can
 const TRANSITION_NOT_ALLOWED = "The status workflow doesn't allow this change.";
 const ASSIGNEE_NOT_IN_GROUP = "That agent isn't a member of the ticket's group.";
 const TICKET_NOT_FOUND = "Ticket not found.";
+const CHANGED_SINCE = "This field changed since — not undone.";
 const INVALID_CHANGE = "That change isn't valid for this ticket.";
 const INVALID_LINK = "That link request isn't valid.";
 const ALREADY_LINKED = "These tickets are already linked.";

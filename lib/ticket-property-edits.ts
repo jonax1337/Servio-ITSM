@@ -11,7 +11,8 @@ export const PROPERTY_KEYS = [
 ] as const;
 export type PropertyKey = (typeof PROPERTY_KEYS)[number];
 export type PropertyValues = Record<PropertyKey, string>;
-export type FieldChange = { field: PropertyKey; value: string };
+/** `expected` makes a change a compare-and-set: the server writes it only while the field still holds that value. */
+export type FieldChange = { field: PropertyKey; value: string; expected?: string };
 
 /** The group is saved before the assignee, so the server checks the assignee against the NEW group. */
 const SAVE_RANK: Partial<Record<PropertyKey, number>> = { groupId: 0, assigneeId: 2 };
@@ -43,4 +44,28 @@ export function changesBetween(from: PropertyValues, to: PropertyValues): FieldC
   return PROPERTY_KEYS.filter((field) => from[field] !== to[field])
     .sort((a, b) => rankOf(a) - rankOf(b))
     .map((field) => ({ field, value: to[field] }));
+}
+
+/** The changes that take an edit back; each one only applies while the field still holds what the edit left there. */
+export function undoChanges(before: PropertyValues, after: PropertyValues): FieldChange[] {
+  return changesBetween(after, before).map((change) => ({ ...change, expected: after[change.field] }));
+}
+
+/** Why an edit can no longer be undone: something else changed a field since, or the workflow refuses the way back. */
+export type UndoBlocker = "changed" | "workflow";
+
+/**
+ * What stops an edit from being undone right now, or null when Undo may be offered.
+ * `allowedStatuses` are the statuses reachable from the ticket's current status.
+ */
+export function undoBlocker(
+  current: PropertyValues,
+  before: PropertyValues,
+  after: PropertyValues,
+  allowedStatuses?: readonly string[],
+): UndoBlocker | null {
+  if (undoChanges(before, after).some(({ field, expected }) => current[field] !== expected)) return "changed";
+  const reopensStatus = before.status !== after.status;
+  if (reopensStatus && allowedStatuses && !allowedStatuses.includes(before.status)) return "workflow";
+  return null;
 }
