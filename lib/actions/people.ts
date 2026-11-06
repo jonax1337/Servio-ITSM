@@ -9,6 +9,7 @@ import { writeAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
 import { AUTOMATION_EMAIL } from "@/lib/system-user";
 import { isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules";
+import { distinctIds } from "@/lib/utils";
 
 // Fresh DB row (not the possibly-stale JWT): only active ADMINs may manage people.
 async function requireAdmin() {
@@ -97,6 +98,7 @@ const createSchema = profileSchema.extend({
 
 const EMAIL_TAKEN = "A person with this email already exists.";
 const EMAIL_RESERVED = "This address is reserved for the system.";
+const UNKNOWN_GROUP = "One of the selected groups no longer exists.";
 
 const fieldError = (field: string, message: string): PersonState => ({
   error: "Please fix the errors below.",
@@ -131,11 +133,19 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
   if (badPassword) return fieldError("password", badPassword);
   const emailIssue = await emailProblem(profile.email);
   if (emailIssue) return fieldError("email", emailIssue);
+  const groupIds = distinctIds(formData.getAll("groupIds"));
+  if (groupIds.length && (await db.group.count({ where: { id: { in: groupIds } } })) !== groupIds.length) {
+    return fieldError("groupIds", UNKNOWN_GROUP);
+  }
 
   let created: { id: string };
   try {
     created = await db.user.create({
-      data: { ...profile, passwordHash: password ? await bcrypt.hash(password, 10) : null },
+      data: {
+        ...profile,
+        passwordHash: password ? await bcrypt.hash(password, 10) : null,
+        memberships: { create: groupIds.map((groupId) => ({ groupId })) },
+      },
       select: { id: true },
     });
   } catch (e) {
@@ -148,7 +158,7 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
     action: "CREATE",
     entity: "User",
     entityId: created.id,
-    summary: `Created ${profile.role} ${profile.email} (${password ? "local password" : "no local password"})`,
+    summary: `Created ${profile.role} ${profile.email} (${password ? "local password" : "no local password"}, ${groupIds.length} ${groupIds.length === 1 ? "group" : "groups"})`,
   });
   revalidatePath("/people");
   return { ok: true };

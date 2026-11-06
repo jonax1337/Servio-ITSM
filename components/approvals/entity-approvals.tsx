@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { APPROVAL_META } from "@/lib/constants";
+import { requestSelfApprovalError } from "@/lib/approval-rules";
 import { formatDistanceToNow } from "date-fns";
 
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -149,7 +150,8 @@ export function EntityApprovals({
             <ApprovalCard
               key={a.id}
               row={a}
-              canDecide={a.status === "PENDING" && a.approver.id === currentUserId && a.requestedById !== currentUserId}
+              canDecide={a.status === "PENDING" && a.approver.id === currentUserId}
+              selfApproval={requestSelfApprovalError(a.requestedById, currentUserId)}
               canCancel={a.status === "PENDING" && (isAdmin || canManage || a.requestedById === currentUserId)}
             />
           ))}
@@ -160,13 +162,16 @@ export function EntityApprovals({
 }
 
 function ApprovalCard({
-  row, canDecide, canCancel,
+  row, canDecide, selfApproval, canCancel,
 }: {
   row: EntityApprovalRow;
   canDecide: boolean;
+  /** Why the viewer may not decide their own request; shown in place of the controls. */
+  selfApproval: string | null;
   canCancel: boolean;
 }) {
   const [comment, setComment] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function decide(decision: "APPROVED" | "REJECTED") {
@@ -175,7 +180,13 @@ function ApprovalCard({
     fd.set("decision", decision);
     if (comment.trim()) fd.set("comment", comment.trim());
     start(async () => {
-      await decideEntityApproval(fd);
+      const res = await decideEntityApproval(fd);
+      if (!res.ok) {
+        setError(res.error ?? "The decision could not be recorded.");
+        toast.error(res.error ?? "The decision could not be recorded.");
+        return;
+      }
+      setError(null);
       setComment("");
       toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
     });
@@ -222,7 +233,9 @@ function ApprovalCard({
           {row.comment}
         </p>
       ) : null}
-      {canDecide ? (
+      {canDecide && selfApproval ? (
+        <p className="mt-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">{selfApproval}</p>
+      ) : canDecide ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Input
             value={comment}
@@ -237,6 +250,7 @@ function ApprovalCard({
           <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("REJECTED")}>
             <X className="size-3.5" /> Reject
           </Button>
+          {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
         </div>
       ) : null}
     </div>

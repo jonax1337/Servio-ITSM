@@ -12,7 +12,7 @@ import { ChangeProperties } from "@/components/changes/change-properties";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { isChangeLocked, isTemplatedStandard, submitBlockers } from "@/lib/change-rules";
+import { isChangeLocked, isTemplatedStandard, submitBlockerDetails } from "@/lib/change-rules";
 import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { CancelChangeButton } from "@/components/changes/cancel-change";
 import { ChangeDetailsDialog } from "@/components/changes/change-editors";
@@ -79,7 +79,7 @@ export default async function ChangeDetailPage({
   const locked = isChangeLocked(change.status);
   const canEdit = isAgentUser && !locked;
   const preAuthorized = isTemplatedStandard(change);
-  const missingForSubmit = submitBlockers(change, preAuthorized);
+  const missingForSubmit = submitBlockerDetails(change, preAuthorized);
 
   const approvals = {
     seated: change.approvals.length,
@@ -87,7 +87,7 @@ export default async function ChangeDetailPage({
   };
   const tabs = buildChangeTabs({
     status: change.status,
-    submitBlockers: missingForSubmit,
+    submitBlockers: missingForSubmit.map((m) => m.label),
     counts: {
       pendingApprovals: approvals.pending,
       affectedCis: change._count.assets,

@@ -58,7 +58,7 @@ export default async function PeoplePage({
   };
   const orderBy = ORDER[sort] ?? ORDER.name;
 
-  const [total, users] = await Promise.all([
+  const [total, users, groups] = await Promise.all([
     db.user.count({ where }),
     db.user.findMany({
       where,
@@ -66,6 +66,7 @@ export default async function PeoplePage({
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
+    db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   const filters: FilterDef[] = [
@@ -91,7 +92,7 @@ export default async function PeoplePage({
         title="People"
         description="Agents, managers and end users across your organisation."
       >
-        {hasRole(me.role, "ADMIN") ? <PersonDialog /> : null}
+        {hasRole(me.role, "ADMIN") ? <PersonDialog groups={groups.map((g) => ({ value: g.id, label: g.name }))} /> : null}
       </PageHeader>
 
       <PageBody className="grid gap-4">

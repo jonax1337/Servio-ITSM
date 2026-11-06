@@ -22,3 +22,19 @@ describe("ticketListQuery", () => {
     }
   });
 });
+
+describe("ticketListQuery SLA view", () => {
+  it("narrows the list to the tickets in the SLA view", () => {
+    const { where } = ticketListQuery({ status: "open" }, [4, 9]);
+    expect(JSON.stringify(where)).toContain('"id":{"in":[4,9]}');
+    expect(JSON.stringify(where)).toContain("NEW");
+  });
+
+  it("keeps an empty SLA view empty instead of showing every ticket", () => {
+    expect(JSON.stringify(ticketListQuery({}, []).where)).toContain('"id":{"in":[]}');
+  });
+
+  it("forwards the sla param to the export", () => {
+    expect(TICKET_LIST_PARAMS).toContain("sla");
+  });
+});

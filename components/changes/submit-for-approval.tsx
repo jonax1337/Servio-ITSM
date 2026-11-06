@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import { submitChangeForApproval } from "@/lib/actions/changes";
-import { submitBlockedMessage } from "@/lib/change-rules";
+import Link from "next/link";
+import { submitBlockedMessage, type SubmitBlocker } from "@/lib/change-rules";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -17,8 +18,8 @@ export function SubmitForApproval({
   changeId: number;
   isStandard: boolean;
   approverCount: number;
-  /** What the change still lacks before it can be submitted (see submitBlockers). */
-  missing: string[];
+  /** What the change still lacks before it can be submitted (see submitBlockerDetails). */
+  missing: SubmitBlocker[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -26,13 +27,23 @@ export function SubmitForApproval({
   const [freezeNotice, setFreezeNotice] = useState<string | null>(null);
 
   if (missing.length > 0) {
-    const hint = submitBlockedMessage(missing);
     return (
-      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1" title={hint}>
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1" title={submitBlockedMessage(missing.map((m) => m.label))}>
         <Button type="button" size="sm" disabled>
           <Send className="size-3.5" /> Submit for approval
         </Button>
-        <span className="max-w-64 text-xs text-muted-foreground">{hint}</span>
+        <span className="max-w-72 text-xs text-muted-foreground">
+          Add{" "}
+          {missing.map((m, i) => (
+            <span key={m.field}>
+              {i > 0 ? (i === missing.length - 1 ? " and " : ", ") : null}
+              <Link href={m.href} className="font-medium text-foreground underline underline-offset-2">
+                {m.label}
+              </Link>
+            </span>
+          ))}{" "}
+          first.
+        </span>
       </span>
     );
   }

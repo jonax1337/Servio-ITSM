@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ComboField } from "@/components/combo-field";
+import { MultiCombobox } from "@/components/multi-combobox";
 import type { ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -50,9 +51,11 @@ const roleOptions: ComboOption[] = ROLES.map((r) => ({
 
 /** Create a person (no `person`) or edit one's profile. Admin-only; enforced server-side. */
 export function PersonDialog({
-  person, syncSourceName,
+  person, syncSourceName, groups = [],
 }: {
   person?: Person;
+  /** Groups a new person can join right away (create only). */
+  groups?: ComboOption[];
   /** Set when the person is managed by a sync source, whose next run may overwrite edits. */
   syncSourceName?: string | null;
 }) {
@@ -126,6 +129,11 @@ export function PersonDialog({
             <Field label="Department" errors={fe.department}>
               <Input name="department" defaultValue={person?.department ?? ""} />
             </Field>
+            {editing || groups.length === 0 ? null : (
+              <Field label="Groups" errors={fe.groupIds} className="sm:col-span-2">
+                <MultiCombobox name="groupIds" options={groups} placeholder="Add to groups…" searchPlaceholder="Search groups…" />
+              </Field>
+            )}
             {editing ? null : (
               <Field
                 label="Initial password (optional)"

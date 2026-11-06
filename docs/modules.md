@@ -96,11 +96,11 @@ Actions include `createTicket`, `updateTicketField` (incl. switching `type` — 
 
 **Cross-field search & CSV export:** the tickets list uses `lib/search.ts` (`ticketSearchWhere`/`applyTicketSearch`) for a free-text `q` that spans title, description, comment bodies, requester name/email, and custom-field values (plus a bare-number match on the ticket id) — SQLite-portable, ANDed onto the existing filters. The same helper backs the global `/api/search` route. An **Export CSV** button on the list (and dashboard) hits `GET /api/export?type=tickets` (AGENT+), built on the shared `lib/csv.ts` (`toCsv`/`csvResponse`).
 
-**Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`.
+**Saved views:** `/tickets` carries a searchable list of saved filter sets (`SavedView`) — apply/save/delete named filters, personal or (MANAGER+) shared with a team. Actions in `lib/actions/saved-views.ts`. Two **built-in views** — *SLA breached* and *SLA at risk* (`?sla=breached|at_risk`) — are always listed first (`builtInViews` of `saved-views-bar`). They classify active tickets by the live `slaSnapshot` clock (`lib/sla-views.ts`: paused and finished tickets are in neither view; at risk = last 20% of the resolve window), resolved to ticket ids by `loadTicketListQuery` so the list, its CSV export and the dashboard tiles agree. The default dashboard has clickable *SLA breached* / *SLA at risk* tiles (`sla` widget filter) that deep-link to these views.
 
 **Refusals & list order:** ticket actions (`updateTicketField`, `setTicketResolution`, `setTicketPending`) return `{ ok, error }` and report why a change was refused (e.g. not a member of the ticket's group, awaiting approval, workflow disallows it) instead of silently doing nothing. On the ticket list, priority sorts by severity and status by lifecycle order, not alphabetically (`lib/ticket-list.ts` `sortByRank`).
 
-**Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar to set assignee/team/priority/status on many tickets at once (`bulkUpdateTickets` re-runs `updateTicketField` per ticket, so transitions/SLA/automations stay correct) and a **Create problem** action that raises one problem linked to every selected ticket (`createProblemFromTickets`). All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
+**Bulk actions & sorting:** the tickets table (`components/tickets/tickets-table.tsx`) has row checkboxes + a bulk bar whose **Edit fields…** dialog (`components/tickets/bulk-edit-dialog.tsx`) sets status, priority, group, assignee and category together and applies them once, ending in a "5 tickets updated" toast. `bulkUpdateTickets` takes the ids plus a JSON `patch` (validated and ordered by `lib/bulk-edit.ts` — group before assignee, no statuses that need a reason) and re-runs `updateTicketField` per ticket and field, so authorization, transitions, SLA, audit and automations stay correct; a ticket that refuses any field counts as "not changed" in the summary. The bar also has a **Create problem** action that raises one problem linked to every selected ticket (`createProblemFromTickets`). All list tables (tickets, problems, changes, assets, people, groups) have sortable columns via `components/sort-header.tsx`.
 
 ### Problems
 
@@ -124,6 +124,8 @@ Includes a built-in approval workflow.
 
 **Lifecycle (`lib/change-rules.ts`):** in `APPROVED`/`SCHEDULED` the window can still move, but only with a reason, which is posted as a comment (`rescheduleError`/`rescheduleComment`) — the dates cannot be cleared. `APPROVAL`/`APPROVED` are set by the approval workflow, never by a manual status edit (`manualStatusError`). Moving to `CLOSED` or `FAILED` needs an `outcome` (`CHANGE_OUTCOMES`; `FAILED` accepts only Failed / Rolled back) and `closureNotes` (post-implementation review; the message is stricter for `EMERGENCY`), collected in `closure-dialog` (`closureError`). `CANCELLED` needs a `cancelReason` (`cancel-change`) and settles the approval board: unanswered seats become `CANCELLED` (`settlesApprovalBoard`). `actualEnd` is stamped when work stops (`REVIEW`/`FAILED`/`CLOSED`). `CLOSED` and `CANCELLED` changes are locked (`isChangeLocked`): everything is read-only except comments and links. A change links to at most one problem via `setChangeProblem` (also reachable from the problem's "Fix changes" card).
 
+**Creating a change:** the *New change* form (`components/changes/change-form.tsx`) includes an **Affected CIs** multi-select (`components/multi-combobox.tsx`); `createChange` and `createChangeFromTemplate` attach them as `ChangeAsset` rows in the same write, so the Impact tab already shows them. While a draft cannot be submitted, the Submit control names each missing prerequisite (`submitBlockerDetails` in `lib/change-rules.ts`) and links it to its field on the Planning tab (`?tab=planning#implementation-plan`, `#rollback-plan`, `#planned-window`).
+
 **CAB quorum & affected CIs:** a change carries an `approvalRule` (`UNANIMOUS` / `QUORUM` / `PERCENT`) + `approvalThreshold`; `lib/cab.ts` (`evaluateCab`) tallies seated approvals against the rule and reports whether the board is satisfied, and `setCabRule` (MANAGER+) can lower the bar mid-flight. The affected-CI panel attaches `ChangeAsset` rows and surfaces blast-radius impact from `lib/cmdb-graph.ts` (`computeImpact`).
 
 ### Approvals
@@ -134,6 +136,10 @@ A cross-cutting inbox for the current user's pending approvals (currently backed
 | Route | `app/(console)/approvals/page.tsx` (list only — no detail/new) |
 | Actions | `lib/actions/approvals.ts` — `decideApproval` (advances multi-stage catalog approvals), `seatCatalogStage`/`seatCatalogApprovalStages` (seat the ordered stages), plus the generic ad-hoc `requestApproval`/`decideEntityApproval`/`cancelApproval` |
 | Components | `components/approvals/approval-decision` |
+
+**Inbox tabs & four-eyes:** the inbox is split into *All / Changes (CAB) / Service requests / Other* tabs with counts (`?tab=`, built on `EntityTabs`; `approvalTabs`/`tabShowsSection` in `lib/approval-rules.ts`), each card keeping inline Approve/Reject. The requester and the owner of a change can never approve it, not even as ADMIN (`changeSelfApprovalError` in `lib/approval-rules.ts`): the inbox and the change's CAB tab replace the decision controls with the rule's explanation, and `decideApproval` in `lib/actions/changes.ts` returns the same message, which `ApprovalActions` shows inline and as a toast.
+
+**Catalog requests and sign-offs:** `decideApproval` (catalog stages) and `decideEntityApproval` (ad-hoc sign-offs) return an `ActionResult` instead of silently returning. `decisionRefusal` in `lib/approval-rules.ts` decides who may act: only a pending approval, only its assigned approver (or an admin), and never the person who raised the request. The inbox and the entity approval cards replace the controls with that explanation for the requester, and `ApprovalDecision`, `EntityApprovalDecision` and the entity cards show a refusal inline and as a toast and never a success toast.
 
 **Multi-stage / group catalog approvals:** a `CatalogItem` can define ordered `approvalStages` (each an approver *or* a group) via `lib/actions/catalog-admin.ts` → `updateApprovalStages` (editor UI in the catalog admin page). New requests seat stage 0; approving a stage advances to the next (`seatCatalogStage`), and a rejected/cancelled request can be re-raised with the saved answers via `lib/actions/catalog.ts` → `reRequestCatalogItem`. The portal shows a stage-progress timeline, including each approver's decision comment to the requester.
 
@@ -323,13 +329,13 @@ Groups are the unit of assignment/auto-routing (they replaced Queues). Includes 
 | Components | `components/groups/` — `group-form`, `create-group-dialog`, `auto-assign-control` |
 
 ### People
-User directory. Users are typically provisioned via syncs; ADMINs can also add and edit people manually through a dialog (no `new/` route). Fields owned by a sync source may be overwritten on the next sync, and the detail page says so. Users have no location field (the `User` model has no location column).
+User directory. Users are typically provisioned via syncs; ADMINs can also add and edit people manually through a dialog (no `new/` route); the *New person* dialog sets the role and a **Groups** multi-select (`components/multi-combobox.tsx`), and `createPerson` creates the person and their group memberships in one write. Fields owned by a sync source may be overwritten on the next sync, and the detail page says so. Users have no location field (the `User` model has no location column).
 
 | | |
 | --- | --- |
 | Routes | `app/(console)/people/page.tsx`, `[id]/page.tsx` |
 | Actions | `lib/actions/people.ts` — `createPerson`, `updatePerson` (ADMIN, audited), `updateUserField` |
-| Rules | `lib/person-rules.ts` — pure email normalisation/shape and initial-password checks (min 12 chars, max 72 bytes) |
+| Rules | `lib/person-rules.ts` — pure email normalisation/shape, initial-password checks (min 12 chars, max 72 bytes) and `distinctIds` for the posted group ids |
 | Components | `components/people/` — `person-dialog`, `user-properties` |
 
 ### Dashboards

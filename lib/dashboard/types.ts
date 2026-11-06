@@ -14,7 +14,7 @@ export const WIDGET_TYPES: readonly WidgetType[] = ["stat", "breakdown", "volume
 export type TicketFilters = Partial<
   Record<
     | "status" | "priority" | "type" | "group" | "assignee" | "category" | "service"
-    | "impact" | "urgency" | "source" | "major" | "vip" | "breached" | "days",
+    | "impact" | "urgency" | "source" | "major" | "vip" | "breached" | "sla" | "days",
     string
   >
 >;
@@ -85,11 +85,14 @@ export const DEFAULT_LAYOUT: Widget[] = [
   { id: "d-open", type: "stat", title: "Open tickets", filters: { status: "open" }, x: 0, y: 0, w: 3, h: 1 },
   { id: "d-unassigned", type: "stat", title: "Unassigned", filters: { status: "open", assignee: "unassigned" }, x: 3, y: 0, w: 3, h: 1 },
   { id: "d-critical", type: "stat", title: "Critical open", filters: { status: "open", priority: "CRITICAL" }, x: 6, y: 0, w: 3, h: 1 },
-  { id: "d-sla", type: "sla", title: "SLA & MTTR · 14d", filters: { days: "14" }, x: 9, y: 0, w: 3, h: 1 },
-  { id: "d-volume", type: "volume", title: "Ticket volume", filters: { days: "14" }, x: 0, y: 1, w: 8, h: 2 },
-  { id: "d-priority", type: "breakdown", title: "Open by priority", filters: { status: "open" }, options: { groupBy: "priority", chartType: "donut" }, x: 8, y: 1, w: 4, h: 2 },
-  { id: "d-workload", type: "breakdown", title: "Open per agent", filters: { status: "open" }, options: { groupBy: "assignee" }, x: 0, y: 3, w: 6, h: 2 },
-  { id: "d-aging", type: "aging", title: "Open ticket aging", filters: { status: "open" }, x: 6, y: 3, w: 6, h: 2 },
-  { id: "d-csat", type: "csat", title: "CSAT · 30d", filters: { days: "30" }, x: 0, y: 5, w: 3, h: 1 },
+  // Two rows tall: the gauge plus MTTR/Resolved need more than one 120px row.
+  { id: "d-sla", type: "sla", title: "SLA & MTTR · 14d", filters: { days: "14" }, x: 9, y: 0, w: 3, h: 2 },
+  { id: "d-sla-breached", type: "stat", title: "SLA breached", filters: { sla: "breached" }, options: { accent: "danger" }, x: 0, y: 1, w: 3, h: 1 },
+  { id: "d-sla-at-risk", type: "stat", title: "SLA at risk", filters: { sla: "at_risk" }, options: { accent: "warning" }, x: 3, y: 1, w: 3, h: 1 },
+  { id: "d-csat", type: "csat", title: "CSAT · 30d", filters: { days: "30" }, x: 6, y: 1, w: 3, h: 1 },
+  { id: "d-volume", type: "volume", title: "Ticket volume", filters: { days: "14" }, x: 0, y: 2, w: 8, h: 2 },
+  { id: "d-priority", type: "breakdown", title: "Open by priority", filters: { status: "open" }, options: { groupBy: "priority", chartType: "donut" }, x: 8, y: 2, w: 4, h: 2 },
+  { id: "d-workload", type: "breakdown", title: "Open per agent", filters: { status: "open" }, options: { groupBy: "assignee" }, x: 0, y: 4, w: 6, h: 2 },
+  { id: "d-aging", type: "aging", title: "Open ticket aging", filters: { status: "open" }, x: 6, y: 4, w: 6, h: 2 },
   { id: "d-recent", type: "list", title: "Recent tickets", filters: {}, x: 0, y: 6, w: 12, h: 2 },
 ];

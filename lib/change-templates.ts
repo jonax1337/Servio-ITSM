@@ -28,6 +28,7 @@ export async function createChangeFromTemplate(
   templateId: string,
   overrides: ChangeTemplateOverrides,
   customFields: Record<string, string> = {},
+  affectedAssetIds: string[] = [],
 ): Promise<CreateFromTemplateResult> {
   const template = await db.changeTemplate.findUnique({ where: { id: templateId } });
   if (!template) return { ok: false, error: "Template not found." };
@@ -47,12 +48,17 @@ export async function createChangeFromTemplate(
     if (!check.ok) return { ok: false, error: check.error };
   }
 
+  if (affectedAssetIds.length && (await db.asset.count({ where: { id: { in: affectedAssetIds } } })) !== affectedAssetIds.length) {
+    return { ok: false, error: "One of the selected configuration items no longer exists." };
+  }
+
   const change = await db.change.create({
     data: {
       ...data,
       status: "DRAFT",
       createdById: actorId,
       templateId: template.id,
+      assets: { create: affectedAssetIds.map((assetId) => ({ assetId })) },
       ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
     },
     select: { id: true, title: true },

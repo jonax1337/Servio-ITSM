@@ -6,6 +6,8 @@ import { AddApprover } from "@/components/changes/add-approver";
 import { RemoveApprover } from "@/components/changes/remove-approver";
 import { APPROVAL_META } from "@/lib/constants";
 import { canSeatApprovers } from "@/lib/change-rules";
+import { changeSelfApprovalError } from "@/lib/approval-rules";
+import { Info } from "lucide-react";
 import type { ComboOption } from "@/components/combobox";
 import { formatDistanceToNow } from "date-fns";
 
@@ -18,8 +20,10 @@ export type ApprovalRow = {
 };
 
 export function ApprovalPanel({
-  preAuthorized, changeStatus, approvals, currentUserId, canManage, changeId, agentOptions,
+  preAuthorized, changeStatus, approvals, currentUserId, canManage, changeId, agentOptions, change,
 }: {
+  /** Who raised and owns the change: they may not decide its approvals. */
+  change: { createdById: string | null; assigneeId: string | null };
   /** Created from an approved standard template: no board decides it. */
   preAuthorized: boolean;
   changeStatus: string;
@@ -30,6 +34,7 @@ export function ApprovalPanel({
   agentOptions: ComboOption[];
 }) {
   const canSeat = canManage && !preAuthorized && canSeatApprovers(changeStatus);
+  const selfApproval = changeSelfApprovalError(change, currentUserId);
 
   return (
     <div className="mt-8">
@@ -72,7 +77,14 @@ export function ApprovalPanel({
               ) : null}
               {/* Only the current user's own pending row gets the decision controls (matches server SoD). */}
               {a.status === "PENDING" && a.approver.id === currentUserId ? (
-                <ApprovalActions approvalId={a.id} />
+                selfApproval ? (
+                  <p className="mt-2 flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                    <Info className="mt-0.5 size-3.5 shrink-0" />
+                    {selfApproval}
+                  </p>
+                ) : (
+                  <ApprovalActions approvalId={a.id} />
+                )
               ) : null}
             </div>
           ))}

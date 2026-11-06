@@ -31,6 +31,7 @@ import {
   firstResponseData, pauseData, resumeData, statusChangeData, ticketCalendar,
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
+import { buildBulkChanges, type BulkChange, type BulkOutcome } from "@/lib/bulk-edit";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import {
   TICKET_TYPES,
@@ -229,30 +230,58 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
 }
 
 /**
- * Apply one field change to many tickets at once (bulk action). Reuses
- * updateTicketField per ticket so transitions, the SLA clock, automations and
- * notifications all still run correctly; invalid status transitions are skipped.
+ * Apply a multi-field edit (`patch`: JSON of status / priority / group / assignee /
+ * category, see lib/bulk-edit.ts) to many tickets at once. Reuses updateTicketField
+ * per ticket and field so authorization, transitions, the SLA clock, audit,
+ * automations and notifications all still run; a ticket that refuses any field
+ * (not yours, invalid transition, assignee outside the group) counts as not changed.
  */
-export async function bulkUpdateTickets(formData: FormData) {
+export async function bulkUpdateTickets(formData: FormData): Promise<BulkUpdateResult> {
   const me = await requireAgent();
-  if (!me) return;
+  if (!me) return { ok: false, updated: 0, failed: 0, error: NOT_AUTHORISED };
   const ids = String(formData.get("ids") ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 200);
-  const field = String(formData.get("field") ?? "");
-  const value = String(formData.get("value") ?? "");
-  if (!ids.length || !["status", "priority", "assigneeId", "groupId"].includes(field)) return;
+  const changes = buildBulkChanges(parseJson(formData.get("patch")));
+  if (!ids.length || !changes.length) return { ok: false, updated: 0, failed: 0, error: INVALID_CHANGE };
 
+  const outcome: BulkOutcome = { updated: 0, failed: 0 };
   for (const id of ids) {
-    const fd = new FormData();
-    fd.set("id", id);
-    fd.set("field", field);
-    fd.set("value", value);
-    await updateTicketField(fd);
+    const refusal = await applyChanges(id, changes);
+    if (refusal) {
+      outcome.failed++;
+      outcome.error ??= refusal;
+    } else {
+      outcome.updated++;
+    }
   }
   revalidatePath("/tickets");
+  return { ok: outcome.failed === 0, ...outcome };
+}
+
+export type BulkUpdateResult = TicketActionResult & BulkOutcome;
+
+function parseJson(raw: FormDataEntryValue | null): unknown {
+  try {
+    return JSON.parse(String(raw ?? ""));
+  } catch {
+    return null;
+  }
+}
+
+/** Runs the changes on one ticket in order; returns the first refusal, or null when all applied. */
+async function applyChanges(ticketId: string, changes: BulkChange[]): Promise<string | null> {
+  for (const { field, value } of changes) {
+    const fd = new FormData();
+    fd.set("id", ticketId);
+    fd.set("field", field);
+    fd.set("value", value);
+    const result = await updateTicketField(fd);
+    if (!result.ok) return result.error ?? INVALID_CHANGE;
+  }
+  return null;
 }
 
 export async function addTicketComment(formData: FormData) {
