@@ -86,17 +86,17 @@ export default async function ProblemDetailPage({
   const active = resolveTab(sp, tabs, DEFAULT_PROBLEM_TAB);
 
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
+    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
           <LinkButton href="/problems" variant="ghost" size="icon-sm" aria-label="Back to problems">
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
             {problemRef(problem.id)}
           </span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             <StatusBadge map={PRIORITY_META} value={problem.priority} dot />
             <StatusBadge map={PROBLEM_STATUS_META} value={problem.status} />
             {canEditText ? (
@@ -111,7 +111,7 @@ export default async function ProblemDetailPage({
         </div>
 
         <div className="p-4 sm:p-6">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-2xl font-semibold tracking-tight wrap-anywhere">
             {problem.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
