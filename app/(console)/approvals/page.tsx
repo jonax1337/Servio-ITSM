@@ -11,14 +11,18 @@ import { ApprovalDecision } from "@/components/approvals/approval-decision";
 import { ApprovalActions } from "@/components/changes/approval-actions";
 import { EntityApprovalDecision } from "@/components/approvals/entity-approval-decision";
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
+import { EntityTabs, resolveTab } from "@/components/entity-tabs";
+import { approvalTabs, changeSelfApprovalError, DEFAULT_APPROVAL_TAB, tabShowsSection } from "@/lib/approval-rules";
+import type { SearchParams } from "@/lib/query";
 import { ticketRef, changeRef, CHANGE_TYPE_META, RISK_META, APPROVAL_ENTITY_META, type ApprovalEntityType } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
 
 export const metadata: Metadata = { title: "Approvals" };
 export const dynamic = "force-dynamic";
 
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const me = await requireUser();
+  const sp = await searchParams;
   const scope = me.role === "ADMIN" ? {} : { approverId: me.id };
   const [pending, pendingChanges, pendingAdHoc] = await Promise.all([
     db.ticketApproval.findMany({
@@ -41,6 +45,9 @@ export default async function ApprovalsPage() {
   ]);
 
   const total = pending.length + pendingChanges.length + pendingAdHoc.length;
+  const tabs = approvalTabs({ changes: pendingChanges.length, requests: pending.length, other: pendingAdHoc.length });
+  const activeTab = resolveTab(sp, tabs, DEFAULT_APPROVAL_TAB);
+  const nothingInTab = tabs.find((t) => t.key === activeTab)?.count === 0;
 
   return (
     <>
@@ -65,7 +72,21 @@ export default async function ApprovalsPage() {
           />
         ) : (
           <>
-            {pending.length > 0 ? (
+            <EntityTabs
+              tabs={tabs}
+              active={activeTab}
+              defaultTab={DEFAULT_APPROVAL_TAB}
+              basePath="/approvals"
+              searchParams={sp}
+              label="Approval types"
+              className="-mb-4"
+            />
+            {nothingInTab ? (
+              <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                Nothing of this kind is waiting for your decision.
+              </p>
+            ) : null}
+            {pending.length > 0 && tabShowsSection(activeTab, "requests") ? (
               <Section icon={CheckSquare} label="Service requests" count={pending.length}>
                 {pending.map((a) => {
                   const t = a.ticket;
@@ -101,10 +122,10 @@ export default async function ApprovalsPage() {
               </Section>
             ) : null}
 
-            {pendingChanges.length > 0 ? (
+            {pendingChanges.length > 0 && tabShowsSection(activeTab, "changes") ? (
               <Section icon={GitPullRequestArrow} label="Change approvals" count={pendingChanges.length}>
                 {pendingChanges.map((a) => {
-                  const mine = a.change.assigneeId === me.id;
+                  const selfApproval = changeSelfApprovalError(a.change, me.id);
                   return (
                     <ApprovalShell
                       key={a.id}
@@ -121,11 +142,7 @@ export default async function ApprovalsPage() {
                         </>
                       }
                       decision={
-                        mine ? (
-                          <SelfNote label="You own this change" />
-                        ) : (
-                          <ApprovalActions approvalId={a.id} />
-                        )
+                        selfApproval ? <SelfNote message={selfApproval} /> : <ApprovalActions approvalId={a.id} />
                       }
                     />
                   );
@@ -133,7 +150,7 @@ export default async function ApprovalsPage() {
               </Section>
             ) : null}
 
-            {pendingAdHoc.length > 0 ? (
+            {pendingAdHoc.length > 0 && tabShowsSection(activeTab, "other") ? (
               <Section icon={ShieldCheck} label="Sign-off requests" count={pendingAdHoc.length}>
                 {pendingAdHoc.map((a) => {
                   const meta = APPROVAL_ENTITY_META[a.entityType as ApprovalEntityType];
@@ -235,14 +252,25 @@ function ApprovalShell({
 
 /** Shown in place of decision controls when the viewer can't act (separation of
  *  duties) — you can't approve your own request / your own change. */
-function SelfNote({ approverName, label = "You raised this request" }: { approverName?: string | null; label?: string }) {
+function SelfNote({
+  approverName, label = "You raised this request", message,
+}: {
+  approverName?: string | null;
+  label?: string;
+  /** Replaces the default wording with the rule's own explanation. */
+  message?: string;
+}) {
   return (
     <div className="flex max-w-xs items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
       <Info className="mt-0.5 size-3.5 shrink-0" />
-      <span>
-        {label} — it needs another approver
-        {approverName ? <>. Waiting on <span className="font-medium text-foreground">{approverName}</span>.</> : "."}
-      </span>
+      {message ? (
+        <span>{message}</span>
+      ) : (
+        <span>
+          {label} — it needs another approver
+          {approverName ? <>. Waiting on <span className="font-medium text-foreground">{approverName}</span>.</> : "."}
+        </span>
+      )}
     </div>
   );
 }

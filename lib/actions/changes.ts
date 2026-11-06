@@ -10,6 +10,7 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
+import { changeSelfApprovalError } from "@/lib/approval-rules";
 import {
   approversToSeat,
   boardSizeLimit,
@@ -410,15 +411,14 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
   if (!existing) return refuse("Approval request not found.");
   if (existing.status !== "PENDING") return refuse("This approval request has already been decided or withdrawn.");
   if (existing.approverId !== me.id && me.role !== "ADMIN") return refuse("Only the assigned approver can decide this request.");
-  // SoD: never decide on a change you own OR created, even as ADMIN.
+  // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN.
   const { changeId } = existing;
   const ownerChange = await db.change.findUnique({
     where: { id: changeId },
     select: { status: true, assigneeId: true, createdById: true },
   });
-  if (ownerChange?.assigneeId === me.id || ownerChange?.createdById === me.id) {
-    return refuse("You cannot decide on a change you own or created.");
-  }
+  const selfApproval = ownerChange && changeSelfApprovalError(ownerChange, me.id);
+  if (selfApproval) return refuse(selfApproval);
   // Approvers may be seated while the change is still a draft; they only decide once it is submitted.
   if (ownerChange?.status !== "APPROVAL") return refuse("This change is not awaiting approval yet.");
 
