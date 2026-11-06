@@ -12,7 +12,6 @@ import { collectLinkTargets, normalizeTarget, type LinkTarget } from "../support
 import {
   buildRouteManifest,
   DYNAMIC,
-  findRoute,
   matchesAnyRoute,
   matchesRoute,
   parseRoute,
@@ -68,13 +67,6 @@ describe("route matcher", () => {
     const routes = [parseRoute("/tickets"), parseRoute("/tickets/[id]")];
     expect(matchesAnyRoute("/ticket/12", routes)).toBe(false);
     expect(matchesAnyRoute("/tickets/12", routes)).toBe(true);
-  });
-
-  it("picks the most specific route for a concrete path", () => {
-    const routes = [parseRoute("/changes/[id]"), parseRoute("/changes/calendar")];
-    expect(findRoute("/changes/calendar", routes)?.pattern).toBe("/changes/calendar");
-    expect(findRoute("/changes/7", routes)?.pattern).toBe("/changes/[id]");
-    expect(findRoute("/nope", routes)).toBeUndefined();
   });
 });
 

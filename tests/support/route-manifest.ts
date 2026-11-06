@@ -95,21 +95,3 @@ export function matchesRoute(target: string, route: Route): boolean {
 export function matchesAnyRoute(target: string, routes: readonly Route[]): boolean {
   return routes.some((route) => matchesRoute(target, route));
 }
-
-const SEGMENT_RANK = { static: 0, dynamic: 1, catchAll: 2, optionalCatchAll: 3 } as const;
-
-/** Orders routes so the most specific one (static before dynamic before catch-all, segment by segment) comes first. */
-function compareSpecificity(a: Route, b: Route): number {
-  const length = Math.max(a.segments.length, b.segments.length);
-  for (let i = 0; i < length; i++) {
-    const rankA = a.segments[i] ? SEGMENT_RANK[a.segments[i].kind] : -1;
-    const rankB = b.segments[i] ? SEGMENT_RANK[b.segments[i].kind] : -1;
-    if (rankA !== rankB) return rankA - rankB;
-  }
-  return 0;
-}
-
-/** The route Next.js serves `pathname` from: the most specific match, or undefined when nothing matches. */
-export function findRoute(pathname: string, routes: readonly Route[]): Route | undefined {
-  return routes.filter((route) => matchesRoute(pathname, route)).sort(compareSpecificity)[0];
-}
