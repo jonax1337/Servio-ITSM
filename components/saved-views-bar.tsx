@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlarmClock, AlarmClockOff, Bookmark, BookmarkPlus, Users, X } from "lucide-react";
+import { Bookmark, BookmarkPlus, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-dialog";
@@ -26,17 +26,6 @@ export type SavedViewRow = {
   owner: { name: string | null; email: string };
 };
 
-/** Icons a built-in view can use, by name: the server page cannot pass a component to this client bar. */
-const BUILT_IN_ICONS = { AlarmClock, AlarmClockOff };
-
-/** A view that ships with the app: always listed, not editable or deletable. */
-export type BuiltInView = {
-  id: string;
-  name: string;
-  icon: keyof typeof BUILT_IN_ICONS;
-  filters: Record<string, string>;
-};
-
 /**
  * A row of saved filter "views" for a list page. Applying a view navigates with
  * its stored filter params; "Save view" captures the CURRENT filters. Managers can
@@ -46,7 +35,6 @@ export function SavedViewsBar({
   entity,
   basePath,
   filterKeys,
-  builtInViews = [],
   views,
   currentUserId,
   canManageShared,
@@ -55,7 +43,6 @@ export function SavedViewsBar({
   entity: string;
   basePath: string;
   filterKeys: readonly string[];
-  builtInViews?: BuiltInView[];
   views: SavedViewRow[];
   currentUserId: string;
   canManageShared: boolean;
@@ -93,7 +80,6 @@ export function SavedViewsBar({
     return { ...v, f };
   });
   const activeId =
-    builtInViews.find((v) => same(v.filters, current))?.id ??
     parsed.find((v) => same(v.f, current))?.id ??
     (hasFilters ? null : "__all__");
 
@@ -110,15 +96,6 @@ export function SavedViewsBar({
       <Link href={basePath} className={chip(activeId === "__all__")}>
         <Bookmark className="size-3.5" /> All
       </Link>
-
-      {builtInViews.map(({ id, name, icon, filters }) => {
-        const Icon = BUILT_IN_ICONS[icon];
-        return (
-          <Link key={id} href={hrefFor(filters)} className={chip(activeId === id)}>
-            <Icon className="size-3.5" /> {name}
-          </Link>
-        );
-      })}
 
       {parsed.map((v) => (
         <span key={v.id} className="group/view inline-flex items-center">

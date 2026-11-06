@@ -82,9 +82,8 @@ describe("SLA at risk view", () => {
 });
 
 describe("SLA view params", () => {
-  it("accepts only the two built-in views", () => {
-    expect(parseSlaView("breached")).toBe("breached");
-    expect(parseSlaView("at_risk")).toBe("at_risk");
+  it("accepts only the known SLA filters", () => {
+    for (const view of ["breached", "at_risk", "on_track", "paused", "none"]) expect(parseSlaView(view)).toBe(view);
     expect(parseSlaView("met")).toBeUndefined();
     expect(parseSlaView(undefined)).toBeUndefined();
     expect(parseSlaView(null)).toBeUndefined();
@@ -101,10 +100,11 @@ describe("SLA view candidate prefilter", () => {
   const deadline = (filter: object) => ({ OR: [{ resolveDueAt: filter }, { resolveDueAt: null, dueAt: filter }] });
   const business = { sla: { businessCalendarId: { not: null } } };
   const wallClock = { OR: [{ slaId: null }, { sla: { businessCalendarId: null } }] };
-  const candidates = (clock: object) => ({
-    status: { in: [...OPEN_TICKET_STATUSES] },
-    resolvedAt: null,
-    AND: [deadline({ not: null }), { OR: [business, { AND: [wallClock, clock] }] }],
+  const running = { pendingSince: null, status: { notIn: ["PENDING", "ON_HOLD"] } };
+  const open = { status: { in: [...OPEN_TICKET_STATUSES] }, resolvedAt: null };
+  const candidates = (window: object) => ({
+    ...open,
+    AND: [deadline({ not: null }), running, { OR: [business, { AND: [wallClock, window] }] }],
   });
 
   it("keeps only wall-clock tickets whose deadline has passed for the breached view", () => {
@@ -118,10 +118,55 @@ describe("SLA view candidate prefilter", () => {
     );
   });
 
+  it("keeps wall-clock tickets that are not yet past their deadline for the on-track view", () => {
+    expect(slaViewCandidateWhere("on_track", now, 8 * HOUR)).toEqual(candidates(deadline({ gte: now })));
+  });
+
+  it("keeps the tickets whose clock is stopped for the paused view", () => {
+    expect(slaViewCandidateWhere("paused", now, 8 * HOUR)).toEqual({
+      ...open,
+      AND: [deadline({ not: null }), { OR: [{ pendingSince: { not: null } }, { status: { in: ["PENDING", "ON_HOLD"] } }] }],
+    });
+  });
+
   it("never filters out tickets on a business calendar: their clock counts working time", () => {
-    for (const view of ["breached", "at_risk"] as const) {
+    for (const view of ["breached", "at_risk", "on_track"] as const) {
       expect(JSON.stringify(slaViewCandidateWhere(view, now, HOUR))).toContain(JSON.stringify(business));
     }
+  });
+});
+
+describe("SLA on track, paused and no SLA views", () => {
+  it("puts a running ticket with time left on track", () => {
+    expect(matchesSlaView("on_track", ticket(), at(2))).toBe(true);
+    expect(matchesSlaView("on_track", ticket(), at(8))).toBe(false);
+    expect(matchesSlaView("on_track", ticket(), new Date(due.getTime() + 1))).toBe(false);
+  });
+
+  it("puts waiting tickets under paused, and nowhere else", () => {
+    const waiting = ticket({ status: "PENDING", pendingSince: at(3) });
+    expect(matchesSlaView("paused", waiting, at(50))).toBe(true);
+    expect(matchesSlaView("on_track", waiting, at(50))).toBe(false);
+    expect(matchesSlaView("paused", ticket(), at(2))).toBe(false);
+  });
+
+  it("gives tickets without a deadline and finished tickets no SLA", () => {
+    expect(matchesSlaView("none", ticket({ resolveDueAt: null, dueAt: null }), at(2))).toBe(true);
+    expect(matchesSlaView("none", ticket({ status: "RESOLVED", resolvedAt: at(3) }), at(5))).toBe(true);
+    expect(matchesSlaView("none", ticket(), at(2))).toBe(false);
+  });
+
+  it("keeps a finished ticket out of every other view", () => {
+    for (const view of ["breached", "at_risk", "on_track", "paused"] as const) {
+      expect(matchesSlaView(view, ticket({ status: "CLOSED", resolvedAt: at(3), resolveBreached: true }), at(50))).toBe(false);
+    }
+  });
+
+  it("names the same tickets as the SQL filter for no SLA", async () => {
+    const { slaViewWhere } = await import("@/lib/sla-views");
+    expect(await slaViewWhere("none")).toEqual({
+      OR: [{ status: { in: ["RESOLVED", "CLOSED", "CANCELLED"] } }, { resolvedAt: { not: null } }, { resolveDueAt: null, dueAt: null }],
+    });
   });
 });
 

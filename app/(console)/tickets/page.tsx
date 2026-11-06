@@ -4,8 +4,9 @@ import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getVisibleSavedViews } from "@/lib/board-service";
-import { SavedViewsBar, type BuiltInView } from "@/components/saved-views-bar";
-import { SLA_VIEW_META } from "@/lib/sla-views";
+import { SavedViewsBar } from "@/components/saved-views-bar";
+import { SLA_VIEWS, SLA_VIEW_META, activeSlaClocks } from "@/lib/sla-views";
+import { slaCell } from "@/lib/sla-column";
 import { SAVED_VIEW_KEYS } from "@/lib/saved-view-filters";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
@@ -26,11 +27,6 @@ import {
 
 export const metadata: Metadata = { title: "Tickets" };
 export const dynamic = "force-dynamic";
-
-const BUILT_IN_VIEWS: BuiltInView[] = [
-  { id: "sla-breached", name: SLA_VIEW_META.breached.label, icon: "AlarmClockOff", filters: { sla: "breached" } },
-  { id: "sla-at-risk", name: SLA_VIEW_META.at_risk.label, icon: "AlarmClock", filters: { sla: "at_risk" } },
-];
 
 export default async function TicketsPage({
   searchParams,
@@ -66,12 +62,13 @@ export default async function TicketsPage({
     findTicketWindow(query, { skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }, (args) =>
       db.ticket.findMany({
         ...args,
-        include: { assignee: true, requester: true, group: true, category: true },
+        include: { assignee: true, requester: true, group: true, category: true, sla: { select: { businessCalendarId: true } } },
       }),
     ),
   ]);
 
-  const rows = tickets.map((t) => ({
+  const clocks = await activeSlaClocks(tickets);
+  const rows = tickets.map((t, i) => ({
     id: t.id,
     prefix: t.prefix,
     title: t.title,
@@ -80,6 +77,7 @@ export default async function TicketsPage({
     requesterVip: t.requester.isVip,
     priority: t.priority,
     status: t.status,
+    sla: slaCell(clocks[i]),
     assignee: t.assignee ? { name: t.assignee.name, email: t.assignee.email } : null,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -105,6 +103,7 @@ export default async function TicketsPage({
         ...opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
       ],
     },
+    { key: "sla", label: "SLA", options: SLA_VIEWS.map((v) => ({ value: v, label: SLA_VIEW_META[v].label })) },
     { key: "category", label: "Category", options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
     { key: "service", label: "Service", options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
   ];
@@ -126,7 +125,6 @@ export default async function TicketsPage({
           entity="ticket"
           basePath="/tickets"
           filterKeys={SAVED_VIEW_KEYS.ticket}
-          builtInViews={BUILT_IN_VIEWS}
           views={savedViews}
           currentUserId={me?.id ?? ""}
           canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}

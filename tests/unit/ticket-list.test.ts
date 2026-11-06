@@ -25,16 +25,28 @@ describe("ticketListQuery", () => {
 
 describe("ticketListQuery SLA view", () => {
   it("narrows the list to the tickets in the SLA view", () => {
-    const { where } = ticketListQuery({ status: "open" }, [4, 9]);
+    const { where } = ticketListQuery({ status: "open" }, { id: { in: [4, 9] } });
     expect(JSON.stringify(where)).toContain('"id":{"in":[4,9]}');
     expect(JSON.stringify(where)).toContain("NEW");
   });
 
   it("keeps an empty SLA view empty instead of showing every ticket", () => {
-    expect(JSON.stringify(ticketListQuery({}, []).where)).toContain('"id":{"in":[]}');
+    expect(JSON.stringify(ticketListQuery({}, { id: { in: [] } }).where)).toContain('"id":{"in":[]}');
   });
 
   it("forwards the sla param to the export", () => {
     expect(TICKET_LIST_PARAMS).toContain("sla");
+  });
+});
+
+describe("ticketListQuery SLA sort", () => {
+  it("sorts by SLA urgency, most urgent first by default for the column", () => {
+    expect(ticketListQuery({ sort: "sla", dir: "asc" }).slaSort).toEqual({ dir: "asc" });
+    expect(ticketListQuery({ sort: "sla", dir: "desc" }).slaSort).toEqual({ dir: "desc" });
+  });
+
+  it("does not sort by SLA for any other sort", () => {
+    expect(ticketListQuery({ sort: "priority" }).slaSort).toBeUndefined();
+    expect(ticketListQuery({}).slaSort).toBeUndefined();
   });
 });

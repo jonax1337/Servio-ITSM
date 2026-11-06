@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
-import { findSlaViewTicketIds, parseSlaView, ticketIdsFilter } from "@/lib/sla-views";
+import { parseSlaView, slaViewWhere, sortBySlaUrgency } from "@/lib/sla-views";
 import type { TicketFilters } from "@/lib/dashboard/types";
 import { db } from "@/lib/db";
 import { PRIORITIES, TICKET_STATUSES } from "@/lib/constants";
@@ -37,6 +37,9 @@ export function sortByRank<T extends { id: number; priority: string; status: str
   );
 }
 
+/** The SLA column sorts by urgency, which needs the live clock: breached first, then the nearest deadline. */
+export type SlaSort = { dir: "asc" | "desc" };
+
 type TicketPageArgs = Pick<Prisma.TicketFindManyArgs, "where" | "orderBy" | "skip" | "take">;
 
 /**
@@ -49,7 +52,21 @@ export async function findTicketWindow<R extends { id: number }>(
   window: { skip: number; take: number },
   fetch: (args: TicketPageArgs) => Promise<R[]>,
 ): Promise<R[]> {
-  const { where, orderBy, rankSort } = query;
+  const { where, orderBy, rankSort, slaSort } = query;
+  if (slaSort) {
+    const slim = await db.ticket.findMany({
+      where,
+      select: {
+        id: true, status: true, createdAt: true, updatedAt: true, resolvedAt: true, resolveBreached: true,
+        responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
+        sla: { select: { businessCalendarId: true } },
+      },
+    });
+    const pageIds = (await sortBySlaUrgency(slim, slaSort.dir)).slice(window.skip, window.skip + window.take).map((t) => t.id);
+    const rows = await fetch({ where: { id: { in: pageIds } } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return pageIds.flatMap((id) => byId.get(id) ?? []);
+  }
   if (!rankSort) return fetch({ where, orderBy, ...window });
 
   const slim = await db.ticket.findMany({ where, select: { id: true, priority: true, status: true, updatedAt: true } });
@@ -67,18 +84,19 @@ export async function findTicketWindow<R extends { id: number }>(
  */
 export async function loadTicketListQuery(sp: SearchParams) {
   const view = parseSlaView(getParam(sp, "sla"));
-  return ticketListQuery(sp, view ? await findSlaViewTicketIds(view) : undefined);
+  return ticketListQuery(sp, view ? await slaViewWhere(view) : undefined);
 }
 
 /**
  * The Prisma filter and sort for the ticket list, built from its URL params.
  * Shared by /tickets and /api/export so an export contains exactly the rows on screen.
- * `slaViewIds`: the tickets in the requested `sla` view, from `loadTicketListQuery`.
+ * `slaFilter`: the filter of the requested `sla` view, from `loadTicketListQuery`.
  */
-export function ticketListQuery(sp: SearchParams, slaViewIds?: number[]): {
+export function ticketListQuery(sp: SearchParams, slaFilter?: Prisma.TicketWhereInput): {
   where: Prisma.TicketWhereInput;
   orderBy: Prisma.TicketOrderByWithRelationInput;
   rankSort?: RankSort;
+  slaSort?: SlaSort;
 } {
   // Same builder as the dashboard widgets, so widget drill-down links match exactly.
   const filters: TicketFilters = {
@@ -97,7 +115,7 @@ export function ticketListQuery(sp: SearchParams, slaViewIds?: number[]): {
     breached: getParam(sp, "breached"),
   };
   const filtered = buildTicketWhere(filters);
-  const where: Prisma.TicketWhereInput = slaViewIds ? { AND: [filtered, ticketIdsFilter(slaViewIds)] } : filtered;
+  const where: Prisma.TicketWhereInput = slaFilter ? { AND: [filtered, slaFilter] } : filtered;
   // Cross-field text search AND'd onto the filters so search narrows the list (lib/search.ts).
   applyTicketSearch(where, getParam(sp, "q"));
 
@@ -113,5 +131,6 @@ export function ticketListQuery(sp: SearchParams, slaViewIds?: number[]): {
   const orderBy = ORDER[getParam(sp, "sort") ?? "updatedAt"] ?? { updatedAt: dir };
   const sort = getParam(sp, "sort");
   const rankSort: RankSort | undefined = sort === "priority" || sort === "status" ? { key: sort, dir } : undefined;
-  return { where, orderBy, rankSort };
+  const slaSort: SlaSort | undefined = sort === "sla" ? { dir } : undefined;
+  return { where, orderBy, rankSort, slaSort };
 }

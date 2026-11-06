@@ -11,11 +11,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { BulkEditDialog, type BulkEditOptions } from "@/components/tickets/bulk-edit-dialog";
-import { StatusBadge, VipBadge } from "@/components/status-badge";
+import { StatusBadge, ToneBadge, VipBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
 import { problemDraftFromTickets } from "@/lib/ticket-drafts";
-import { PRIORITY_META, TICKET_STATUS_META, ticketRef } from "@/lib/constants";
+import { PRIORITY_META, SLA_STATE_META, TICKET_STATUS_META, metaFor, ticketRef } from "@/lib/constants";
+import type { SlaCell } from "@/lib/sla-column";
 import { format, formatDistanceToNow } from "date-fns";
 
 type Row = {
@@ -27,10 +28,20 @@ type Row = {
   requesterVip: boolean;
   priority: string;
   status: string;
+  sla: SlaCell | null;
   assignee: { name: string | null; email: string } | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 };
+
+function SlaIndicator({ cell }: { cell: SlaCell }) {
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <ToneBadge meta={metaFor(SLA_STATE_META, cell.state)} />
+      {cell.detail ? <span className="text-xs text-muted-foreground">{cell.detail}</span> : null}
+    </span>
+  );
+}
 
 function SortHead({
   k,
@@ -156,6 +167,7 @@ export function TicketsTable({
               <SortHead {...sortHead} k="requester" label="Requester" className="hidden lg:table-cell" />
               <TableHead>Priority</TableHead>
               <SortHead {...sortHead} k="status" label="Status" />
+              <SortHead {...sortHead} k="sla" label="SLA" className="hidden md:table-cell" />
               <SortHead {...sortHead} k="assignee" label="Assignee" className="hidden md:table-cell" />
               <SortHead {...sortHead} k="createdAt" label="Created" className="hidden 2xl:table-cell text-right" />
               <SortHead {...sortHead} k="updatedAt" label="Updated" className="hidden xl:table-cell text-right" />
@@ -188,6 +200,7 @@ export function TicketsTable({
                 <TableCell>
                   <StatusBadge map={TICKET_STATUS_META} value={t.status} />
                 </TableCell>
+                <TableCell className="hidden md:table-cell">{t.sla ? <SlaIndicator cell={t.sla} /> : null}</TableCell>
                 <TableCell className="hidden md:table-cell">
                   {t.assignee ? (
                     <div className="flex items-center gap-2">
