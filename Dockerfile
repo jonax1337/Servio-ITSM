@@ -9,7 +9,7 @@
 
 # ── deps ─────────────────────────────────────────────────────────────────────
 # Full dependency tree (dev deps included) — required to build the app.
-FROM node:22-slim AS deps
+FROM node:25-slim AS deps
 RUN corepack enable \
  && apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -35,7 +35,7 @@ RUN pnpm prisma generate && pnpm build
 # devDependencies upstream but are needed at boot (`prisma migrate deploy` /
 # `prisma db seed`, see docker/entrypoint.sh) — they are vendored standalone in
 # /opt/boot-tools instead of shipping the whole devDependency tree.
-FROM node:22-slim AS prod-deps
+FROM node:25-slim AS prod-deps
 RUN corepack enable \
  && apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -56,7 +56,7 @@ RUN mkdir -p /opt/boot-tools \
 RUN PATH="/opt/boot-tools/node_modules/.bin:$PATH" prisma generate
 
 # ── runner ───────────────────────────────────────────────────────────────────
-FROM node:22-slim AS runner
+FROM node:25-slim AS runner
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
