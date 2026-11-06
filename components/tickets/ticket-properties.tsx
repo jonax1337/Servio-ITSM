@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { SableMark } from "@/components/sable-mark";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,7 @@ export function TicketProperties({
   /** Child tickets still open — resolving this ticket can take them along. */
   openChildCount?: number;
 }) {
+  const router = useRouter();
   // ── Options ──
   const allowedSet = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
@@ -239,6 +241,7 @@ export function TicketProperties({
     if (refusal) {
       setValues((v) => withChanges(v, changesBetween(before, after)));
       toast.error(`Could not undo: ${refusal}`);
+      router.refresh();
       return;
     }
     toast.success("Change undone");
