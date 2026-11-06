@@ -17,6 +17,9 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // The Claude Agent SDK locates and spawns the Claude Code CLI at runtime; bundling it
+  // makes Turbopack trace OS paths from its source (e.g. C:/Windows/System32/where.exe).
+  serverExternalPackages: ["@anthropic-ai/claude-agent-sdk"],
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
