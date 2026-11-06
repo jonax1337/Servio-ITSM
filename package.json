@@ -101,7 +101,7 @@
     "@tailwindcss/postcss": "^4.3.4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mailparser": "^3.9.0",
-    "@types/node": "^20.19.43",
+    "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
