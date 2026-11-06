@@ -7,6 +7,10 @@
       "release-type": "node",
       "package-name": "servio",
       "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "lib/constants.ts",
+        { "type": "json", "path": "updater/package.json", "jsonpath": "$.version" }
+      ],
       "bump-minor-pre-major": true,
       "changelog-sections": [
         { "type": "feat", "section": "Features" },

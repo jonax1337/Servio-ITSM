@@ -9,6 +9,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { SableProvider } from "@/components/assistant/sable-provider";
 import { SableMount } from "@/components/assistant/sable-mount";
+import { MaintenanceBanner } from "@/components/maintenance/maintenance-banner";
 
 export default async function ConsoleLayout({
   children,
@@ -37,6 +38,7 @@ export default async function ConsoleLayout({
             notifications={notifications}
             sableEnabled={configured || teaser}
           />
+          <MaintenanceBanner role={user.role} />
           {/* Not a <main>: SidebarInset already renders the page's single main landmark. */}
           <div className="min-w-0 flex-1">{children}</div>
           <SableMount

@@ -2,14 +2,29 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 import { requiredRoleFor, roleAtLeast, isPublicPath, isPortalPath } from "@/lib/route-guard";
+import { readMaintenanceFlag } from "@/lib/maintenance-flag";
+import { maintenanceGate, retryAfterSeconds, type MaintenanceFlag } from "@/lib/maintenance-rules";
 
 const { auth } = NextAuth(authConfig);
+
+/** 503 with Retry-After: the maintenance page for browsers, a JSON body for API clients. */
+function maintenanceResponse(decision: "maintenance-page" | "maintenance-api", flag: MaintenanceFlag, requestUrl: string) {
+  const init = { status: 503, headers: { "Retry-After": String(retryAfterSeconds(flag, new Date())) } };
+  if (decision === "maintenance-api") return NextResponse.json({ error: "maintenance", endsAt: flag.endsAt }, init);
+  return NextResponse.rewrite(new URL("/maintenance", requestUrl), init);
+}
 
 export default auth((req) => {
   const { nextUrl } = req;
   const path = nextUrl.pathname;
   const isLoggedIn = !!req.auth;
   const role = req.auth?.user?.role ?? "USER";
+
+  // Maintenance mode: non-admins get the maintenance page (or a 503 JSON for APIs). Read from
+  // the flag FILE on every request, a proxy must not rely on module state shared with the app.
+  const maintenance = readMaintenanceFlag();
+  const gate = maintenanceGate({ path, role, state: maintenance });
+  if (maintenance && gate !== "allow") return maintenanceResponse(gate, maintenance, req.url);
 
   // Public routes — always allowed
   if (isPublicPath(path)) {

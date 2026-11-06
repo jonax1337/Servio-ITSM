@@ -243,6 +243,16 @@ the current on-call of the ticket's team). A change has no service column; its s
 At-most-once markers in this group: `Ticket.slaNudgedAt`, `Contract.renewalNotifiedFor`,
 `SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`.
 
+### Maintenance windows
+
+Added by migration `20261108000000_maintenance_windows`. Enum-like columns are `String`s validated against `lib/constants.ts`.
+
+| Model | Purpose | Key fields / relations |
+| --- | --- | --- |
+| `MaintenanceWindow` | A planned period for an update or general maintenance | `title`, `message` (shown to users), `kind` (`MAINTENANCE_KINDS`), `status` (`MAINTENANCE_STATUSES`), `startsAt`/`endsAt` (planned; a general window ends at `endsAt`), `announceHours` (banners from `startsAt − announceHours`, default 24), `blockAccess` (maintenance mode for non-admins while `IN_PROGRESS`, default `true`), `targetVersion`/`fromVersion` (update windows), `startedAt`/`finishedAt`, `result` (last updater message or failure reason), `log` (JSON array copied from the updater's `status.json`), `createdById` (`SetNull`). Indexed `(status, startsAt)` |
+
+Transitions are claimed with a conditional `updateMany` (`status` must still be the expected one), so overlapping ticks, or a tick in the old and the new container during an update, never both act. The update-check result lives in `AppSetting` rows `UPDATE_CACHE` and `UPDATE_NOTIFIED_VERSION` (at-most-once marker per announced version), not in a table of its own.
+
 ### Personalisation (saved views & dashboards)
 
 | Model | Purpose | Key fields / relations |
@@ -309,6 +319,8 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `LICENSE_TYPES` | `SoftwareLicense.licenseType` | `PER_USER`, `PER_DEVICE`, `SITE`, `CONCURRENT`, `SUBSCRIPTION` |
 | `AI_INSIGHT_KINDS` | `AiInsight.kind` | `CLUSTER`, `KB_GAP` |
 | `AI_INSIGHT_STATUSES` | `AiInsight.status` | `OPEN`, `ACTIONED`, `DISMISSED` |
+| `MAINTENANCE_KINDS` | `MaintenanceWindow.kind` | `GENERAL`, `UPDATE` |
+| `MAINTENANCE_STATUSES` | `MaintenanceWindow.status` | `SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `ROLLED_BACK`, `CANCELLED` |
 | `TICKET_LINK` types | `TicketLink.type` | `RELATED`, `DUPLICATE`, `BLOCKS`, `CAUSED_BY` *(defined inline on the schema, not exported as a constant)* |
 
 There is no `lib/enums.ts` — all enum tuples and their metadata live in

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import { CalendarRange, ChevronLeft, ChevronRight, Plus, Snowflake, TriangleAlert } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, Plus, Snowflake, TriangleAlert, Wrench } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { hasRole, requireUser } from "@/lib/session";
@@ -94,7 +94,7 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
       <PageHeader
         icon={CalendarRange}
         title="Change Calendar"
-        description="Planned maintenance windows of all changes, with change freezes and schedule conflicts."
+        description="Planned windows of all changes, with change freezes, Servio maintenance and schedule conflicts."
       >
         {hasRole(me.role, "MANAGER") ? (
           <LinkButton href="/changes/freeze" variant="outline">
@@ -148,7 +148,7 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
 
         <CalendarFilters teams={teams} />
 
-        {changes.length === 0 && schedule.freezes.length === 0 ? (
+        {changes.length === 0 && schedule.freezes.length === 0 && schedule.maintenance.length === 0 ? (
           <EmptyState
             icon={CalendarRange}
             title="Nothing planned in this period"
@@ -162,6 +162,8 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
           range={range}
           changes={changes}
           freezes={schedule.freezes}
+          maintenance={schedule.maintenance}
+          maintenanceHref={hasRole(me.role, "ADMIN") ? "/settings/updates" : null}
           conflictedIds={conflictedIds}
           colorBy={colorBy}
           weekHref={(day) => href({ view: "week", date: formatAnchor(day) })}
@@ -173,6 +175,9 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
           ))}
           <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
             <Snowflake className="size-3.5" aria-hidden /> Change freeze (shaded days)
+          </span>
+          <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400">
+            <Wrench className="size-3.5" aria-hidden /> Maintenance window (Servio unavailable or updating)
           </span>
           <span className="inline-flex items-center gap-1">
             <TriangleAlert className="size-3.5" aria-hidden /> Schedule conflict

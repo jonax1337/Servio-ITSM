@@ -8,6 +8,8 @@ import { runSlaEscalation } from "@/lib/sla-escalation";
 import { runInsightsTick } from "@/lib/ticks/ai-insights";
 import { runSlaNudgeTick } from "@/lib/ticks/sla-nudges";
 import { runContractsTick } from "@/lib/ticks/contracts";
+import { runMaintenanceTick } from "@/lib/ticks/maintenance";
+import { runUpdateCheckTick } from "@/lib/ticks/update-check";
 import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
@@ -170,6 +172,10 @@ const FEATURE_TICKS: FeatureTick[] = [
   { name: "sla-nudge", settingKey: "SLA_NUDGE_TICK_SECONDS", defaultSeconds: 180, minSeconds: 60, run: runSlaNudgeTick },
   // Renewal notice periods are measured in days; hourly is plenty.
   { name: "contracts", settingKey: "CONTRACTS_TICK_SECONDS", defaultSeconds: 3600, minSeconds: 600, run: runContractsTick },
+  // Windows start and end on the minute; the updater reports progress every few seconds.
+  { name: "maintenance", settingKey: "MAINTENANCE_TICK_SECONDS", defaultSeconds: 15, minSeconds: 5, run: runMaintenanceTick },
+  // GitHub rate-limits anonymous calls to 60 per hour; four checks a day is plenty.
+  { name: "update-check", settingKey: "UPDATE_CHECK_TICK_SECONDS", defaultSeconds: 21600, minSeconds: 3600, run: runUpdateCheckTick },
 ];
 
 function guardedRunner(tick: FeatureTick): () => Promise<void> {

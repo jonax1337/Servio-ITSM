@@ -46,6 +46,9 @@ dev.db-journal
 *.db
 .env
 
+# shared state directory of the updater / maintenance mode (local dev)
+.servio-state/
+
 # uploaded attachment blobs (kept outside public/)
 .uploads/
 

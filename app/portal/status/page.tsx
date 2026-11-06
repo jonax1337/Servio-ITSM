@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/session";
 import { listPublicIncidents } from "@/lib/status-incidents";
 import { worstImpact } from "@/lib/status-rules";
 import { PublicIncidentCard } from "@/components/status/public-incident-card";
+import { ScheduledMaintenance } from "@/components/maintenance/scheduled-maintenance";
 import {
   STATUS_INCIDENT_IMPACT_META,
   TONE_BANNER_CLASSES,
@@ -57,6 +58,8 @@ export default async function PortalStatusPage() {
           ))}
         </section>
       )}
+
+      <ScheduledMaintenance />
 
       {history.length > 0 ? (
         <section aria-labelledby="past-incidents" className="grid gap-4">

@@ -24,6 +24,12 @@ describe("public route namespaces", () => {
     expect(isPublicPath("/survey/token")).toBe(true);
   });
 
+  it("serves the maintenance page and its status API to signed-out visitors", () => {
+    expect(isPublicPath("/maintenance")).toBe(true);
+    expect(isPublicPath("/api/maintenance")).toBe(true);
+    expect(isPublicPath("/maintenance-log")).toBe(false);
+  });
+
   it("keeps protected routes and similarly named prefixes private", () => {
     for (const path of ["/settings", "/assistant", "/tickets", "/brand-settings", "/surveypayload", "/api/v10/tickets", "/reports/export/123.png"]) {
       expect(isPublicPath(path), path).toBe(false);
@@ -82,6 +88,10 @@ describe("requiredRoleFor (middleware mirror)", () => {
     expect(requiredRoleFor("/settings/macros")).toBe("AGENT");
     expect(requiredRoleFor("/settings")).toBe("MANAGER");
     expect(requiredRoleFor("/settings/api")).toBe("MANAGER");
+  });
+
+  it("keeps updates and maintenance windows admin-only", () => {
+    expect(requiredRoleFor("/settings/updates")).toBe("ADMIN");
   });
 
   it("keeps change freeze windows and templates MANAGER-only, the calendar agent-level", () => {

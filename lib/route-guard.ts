@@ -18,7 +18,7 @@ const RANK = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
 
 export type RankRole = keyof typeof RANK;
 
-const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey", "/brand"];
+const PUBLIC_PREFIXES = ["/login", "/api/auth", "/api/v1", "/survey", "/brand", "/maintenance", "/api/maintenance"];
 
 /**
  * Everything a plain USER may reach: the portal pages plus the APIs those pages
@@ -66,6 +66,8 @@ export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRol
   // Longest prefix wins — agents may open /settings/macros for their personal
   // macros even though the rest of /settings needs MANAGER.
   { prefix: "/settings/macros", minRole: "AGENT" },
+  // Self-update and maintenance windows are admin-only.
+  { prefix: "/settings/updates", minRole: "ADMIN" },
   { prefix: "/settings", minRole: "MANAGER" },
   { prefix: "/sla", minRole: "MANAGER" },
   { prefix: "/audit", minRole: "ADMIN" },

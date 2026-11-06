@@ -42,10 +42,15 @@ export async function writeAudit(input: {
   }
 }
 
-export async function notify(
-  userId: string,
-  n: { type?: string; title: string; body?: string; entity?: string; entityId?: string },
-) {
+type NotificationContent = { type?: string; title: string; body?: string; entity?: string; entityId?: string };
+
+/** Notify every active admin. */
+export async function notifyAdmins(n: NotificationContent) {
+  const admins = await db.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } });
+  await Promise.all(admins.map((admin) => notify(admin.id, n)));
+}
+
+export async function notify(userId: string, n: NotificationContent) {
   try {
     await db.notification.create({
       data: {

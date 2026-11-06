@@ -265,7 +265,8 @@ Enforcement happens in three complementary places:
 (except Next internals and shallow static assets, per its `matcher` — deep routes that merely
 *end* in an image/media extension still run middleware). It:
 
-- allows `/login`, `/api/auth`, `/api/v1`, `/survey` and the static `/brand` namespace via an **anchored** match
+- while a blocking maintenance window runs (`SERVIO_STATE_DIR/maintenance.json`, read from the file on every request), sends everyone but admins to the maintenance page (a 503 rewrite with `Retry-After`; JSON 503 for `/api/*`) before any other check. `/login`, `/api/auth`, `/maintenance`, `/api/maintenance` and assets stay reachable. The decision is the pure `maintenanceGate` in `lib/maintenance-rules.ts` (see [updates.md](./updates.md));
+- allows `/login`, `/api/auth`, `/api/v1`, `/survey`, `/maintenance`, `/api/maintenance` and the static `/brand` namespace via an **anchored** match
   (`path === p || path.startsWith(p + "/")`, so `/surveypayload` is not covered by `/survey`);
 - redirects already-logged-in users away from `/login` to `/`;
 - redirects unauthenticated users to `/login?callbackUrl=…`;
@@ -326,7 +327,7 @@ session-less and shared by manual and scheduled runs, guarded by a per-source in
 lock. The in-process scheduler ([`lib/scheduler.ts`](../lib/scheduler.ts), started from
 [`instrumentation.ts`](../instrumentation.ts)) fires due sources via a cron `syncTick`
 next to the inbound-mail poll (see [deployment.md](./deployment.md)). Feature sweeps run from
-`FEATURE_TICKS` in the same file: `runInsightsTick`, `runSlaNudgeTick` and `runContractsTick`
+`FEATURE_TICKS` in the same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick` and `runUpdateCheckTick`
 (`lib/ticks/*`), each with its own interval setting and floor, an overlap guard, `unref()`ed timers
 and errors logged but never thrown. Every tick is session-less, checks its own enable setting first and
 uses at-most-once markers in the database (see [configuration.md](./configuration.md) and
