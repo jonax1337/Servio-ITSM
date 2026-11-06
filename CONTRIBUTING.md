@@ -270,8 +270,8 @@ tests, the migration-drift check, the `pnpm test:e2e` link crawl and a Docker bu
 PR expectations:
 
 - Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/)
-  (`feat(scope): …`, `fix: …`, `docs: …`). release-please derives the next version
-  and the changelog from them, so `feat` and `fix` subjects are what users read.
+  (`feat(scope): …`, `fix: …`, `docs: …`). PR titles end up in the generated
+  release notes, so write them for users.
 
 - One logical change per PR; keep diffs focused.
 - Commit generated Prisma migrations alongside schema changes.

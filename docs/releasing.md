@@ -73,44 +73,55 @@ Delete `prisma/e2e.db` afterwards. `playwright-report/` and `test-results/` are 
 
 ## 🚀 Releases — `release.yml`
 
-Releases are cut by [release-please](https://github.com/googleapis/release-please)
-from [Conventional Commits](https://www.conventionalcommits.org/) on `main`:
+A release is a version tag. You decide when to cut one:
 
-1. Every push to `main` updates an open **release PR** (`chore(main): release x.y.z`)
-   that bumps `package.json` and `CHANGELOG.md`. `feat:` bumps the minor version,
-   `fix:`/`perf:` the patch version; while the version is `0.x`, a breaking change
-   (`feat!:` or a `BREAKING CHANGE:` footer) also bumps the minor version.
-2. **Merging the release PR** creates the `vX.Y.Z` tag and the GitHub Release
-   with the generated changelog.
-3. The same workflow then builds the image natively on `linux/amd64` and
-   `linux/arm64` runners, pushes it to GHCR and publishes the multi-arch tags:
+```bash
+git switch main && git pull
+pnpm release 0.2.0                 # or 0.2.0-rc.1 for a prerelease
+git push --follow-tags origin main
+```
+
+[`scripts/release.mjs`](../scripts/release.mjs) refuses unless you are on a clean
+`main`, the tag does not exist yet and the version is later than the current one.
+It then writes the version into every file that carries it (`package.json`,
+`updater/package.json` and `APP_VERSION` in `lib/constants.ts`), commits
+`chore(release): v0.2.0` and creates the annotated tag `v0.2.0`. A unit test
+(`tests/unit/app-version.test.ts`) fails when these files disagree.
+
+Pushing the tag starts the workflow:
+
+1. **Verify.** `node scripts/release.mjs --check vX.Y.Z` fails the run when the tag
+   and the version files disagree, for example after tagging by hand.
+2. **Images.** The app and the updater sidecar are built natively on `linux/amd64`
+   and `linux/arm64` runners and pushed to GHCR, then published as multi-arch tags:
 
    | Tag | Moves |
    | --- | --- |
    | `ghcr.io/<owner>/servio:X.Y.Z` | never — pin this in production |
-   | `ghcr.io/<owner>/servio:X.Y` | to the latest patch of that minor |
-   | `ghcr.io/<owner>/servio:latest` | to the newest release |
+   | `ghcr.io/<owner>/servio:X.Y` | to the latest patch of that minor (not for prereleases) |
+   | `ghcr.io/<owner>/servio:latest` | to the newest stable release |
 
-   The `docker pull` command is appended to the GitHub Release notes.
+   `servio-updater` gets the same tags.
+3. **GitHub Release.** Only after both images are published, the workflow creates
+   the GitHub Release with GitHub's generated notes (merged PRs and contributors
+   since the previous tag) and the `docker pull` commands. A version with a `-`
+   suffix becomes a prerelease. The in-app updater ([updates.md](./updates.md))
+   offers exactly these GitHub Releases, so it never sees a release whose images
+   are missing.
 
-Only `feat`, `fix`, `perf` and `security` commits appear in the changelog;
-`docs`, `chore`, `refactor`, `test` and `ci` are hidden. Configuration:
-[`release-please-config.json`](../release-please-config.json) and the current
-version in [`.release-please-manifest.json`](../.release-please-manifest.json).
-
-The in-app version (`APP_VERSION` in `lib/constants.ts`) is bumped by the same release PR: `release-please-config.json` lists `lib/constants.ts` under `extra-files` and the line carries the `x-release-please-version` annotation. A unit test (`tests/unit/app-version.test.ts`) fails when it drifts from `package.json`. The in-app updater ([updates.md](./updates.md)) offers exactly these GitHub Releases.
+If a run fails after the images were pushed, fix the cause and re-run the failed
+jobs; pushing the same tag again is not needed. Third-party actions in both
+workflows are pinned to commit SHAs with the version as a comment; Dependabot
+updates them.
 
 ### One-time repository setup
 
-- **Settings › Actions › General › Workflow permissions:** enable *Allow GitHub
-  Actions to create and approve pull requests* (release-please opens the release PR).
-- **Optional `RELEASE_PLEASE_TOKEN` secret** (fine-grained PAT or GitHub App token
-  with *contents* and *pull requests* write). PRs opened with the default
-  `GITHUB_TOKEN` do not trigger other workflows, so without this secret CI does
-  not run on the release PR itself.
-- **GHCR visibility:** the first release creates the `servio` package as
-  private. Make it public under *Packages › servio › Package settings* so servers
-  can pull without credentials, or log the servers in with a read-only token.
+- **GHCR visibility:** the first release creates the `servio` and `servio-updater`
+  packages as private. Make them public under *Packages › Package settings* so
+  servers can pull without credentials, or log the servers in with a read-only token.
+
+No extra token or workflow permission is needed: the default `GITHUB_TOKEN`
+pushes the images and creates the release.
 
 ---
 
@@ -118,5 +129,6 @@ The in-app version (`APP_VERSION` in `lib/constants.ts`) is bumped by the same r
 
 [Dependabot](../.github/dependabot.yml) opens weekly PRs for GitHub Actions
 (grouped), npm packages (minor and patch grouped; at most 5 open PRs) and the
-Docker base image. Their commit prefixes (`ci:`, `chore:`) keep them out of the
-changelog.
+Docker base image, with `ci:` and `chore:` commit prefixes. Majors of Prisma and
+imapflow and Node image majors are ignored on purpose: they need their own
+migration branch, and the image follows the Node LTS line by hand.

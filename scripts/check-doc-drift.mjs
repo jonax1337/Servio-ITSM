@@ -114,7 +114,7 @@ const DOC_MAP = [
   },
   {
     label: 'CI & release workflows',
-    code: ['.github/', 'release-please-config.json', '.release-please-manifest.json'],
+    code: ['.github/', 'scripts/release.mjs'],
     docs: ['docs/releasing.md'],
   },
   {

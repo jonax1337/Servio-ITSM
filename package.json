@@ -8,6 +8,7 @@
     "brand:sync": "node scripts/sync-brand-assets.mjs",
     "brand:check": "node scripts/sync-brand-assets.mjs --check",
     "benchmark:chart": "node scripts/benchmark-chart.mjs",
+    "release": "node scripts/release.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
