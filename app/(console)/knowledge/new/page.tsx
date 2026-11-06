@@ -7,6 +7,7 @@ import { ticketRef } from "@/lib/constants";
 import { getParam, type SearchParams } from "@/lib/query";
 import { articleDraftFromTicket } from "@/lib/article-drafts";
 import { PageHeader, PageBody } from "@/components/page-header";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArticleEditor } from "@/components/knowledge/article-editor";
 import { createArticle } from "@/lib/actions/knowledge";
@@ -14,10 +15,17 @@ import { createArticle } from "@/lib/actions/knowledge";
 export const metadata: Metadata = { title: "New article" };
 export const dynamic = "force-dynamic";
 
-/** The ticket named by `?fromTicket=`: what the editor is prefilled from, and what saving links the article to. */
+const SOURCE_UNAVAILABLE = "The ticket this link points to isn't available to you, so the editor starts empty.";
+
+/**
+ * The ticket named by `?fromTicket=`: what the editor is prefilled from, and what saving links the article to.
+ * A ticket the agent can't act on is never read into the draft; `unavailable` says the link named one.
+ */
 async function loadSourceTicket(sp: SearchParams, me: { id: string; role: string }) {
-  const id = Number(getParam(sp, "fromTicket"));
-  if (!Number.isInteger(id) || id <= 0) return null;
+  const requested = getParam(sp, "fromTicket");
+  const id = Number(requested);
+  if (!requested) return null;
+  if (!Number.isInteger(id) || id <= 0) return { unavailable: true as const };
   const ticket = await db.ticket.findUnique({
     where: { id },
     select: {
@@ -25,10 +33,11 @@ async function loadSourceTicket(sp: SearchParams, me: { id: string; role: string
       assigneeId: true, groupId: true,
     },
   });
-  if (!ticket) return null;
+  if (!ticket || !(await canActOnTicket(me, ticket))) return { unavailable: true as const };
   return {
+    unavailable: false as const,
     draft: articleDraftFromTicket(ticket),
-    link: (await canActOnTicket(me, ticket)) ? { id: ticket.id, ref: ticketRef(ticket.id, ticket.prefix) } : undefined,
+    link: { id: ticket.id, ref: ticketRef(ticket.id, ticket.prefix) },
   };
 }
 
@@ -47,14 +56,19 @@ export default async function NewArticlePage({ searchParams }: { searchParams: P
         description="Draft a knowledge base article. It starts as a draft until you publish it."
       />
       <PageBody>
+        {source?.unavailable ? (
+          <Alert className="mx-auto mb-4 max-w-5xl">
+            <AlertDescription>{SOURCE_UNAVAILABLE}</AlertDescription>
+          </Alert>
+        ) : null}
         <Card className="mx-auto max-w-5xl">
           <CardContent>
             <ArticleEditor
               action={createArticle}
               categories={categories}
               submitLabel="Create article"
-              defaults={source ? { title: source.draft.title, body: source.draft.bodyHtml, bodyFormat: "html" } : undefined}
-              sourceTicket={source?.link}
+              defaults={source && !source.unavailable ? { title: source.draft.title, body: source.draft.bodyHtml, bodyFormat: "html" } : undefined}
+              sourceTicket={source && !source.unavailable ? source.link : undefined}
             />
           </CardContent>
         </Card>
