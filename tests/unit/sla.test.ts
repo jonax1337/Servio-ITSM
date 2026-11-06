@@ -95,6 +95,15 @@ describe("pauseData / resumeData", () => {
     expect((out.resolveDueAt as Date).toISOString()).toBe(new Date(Date.UTC(2024, 0, 9, 16)).toISOString());
   });
 
+  it("banks a quarter-long pause beyond the 32-bit range without loss", () => {
+    // Regression: a bulk-resolve of tickets pending for ~89 days banked
+    // 7_701_822_163 ms into an Int column and broke every ticket list read.
+    const quarter = 90 * 24 * HOUR;
+    const out = resumeData(clock({ pendingSince: T0 }), at(quarter));
+    expect(out.pausedMs).toBe(quarter);
+    expect(out.pausedMs).toBeGreaterThan(2 ** 31 - 1);
+  });
+
   it("no-op when the ticket wasn't paused", () => {
     expect(resumeData(clock())).toEqual({});
   });

@@ -93,7 +93,8 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 **SLA clock fields on `Ticket`:** `dueDate` (manual agent due date), `dueAt`/`responseDueAt`/`resolveDueAt`
 (computed from the SLA at create), `responseBreached`/`resolveBreached`, `pendingSince` + `pausedMs` (clock
-pauses while `PENDING`/`ON_HOLD`), `escalatedAt` / `slaAtRiskNotifiedAt` (at-most-once markers so breach
+pauses while `PENDING`/`ON_HOLD`; `pausedMs` is a `Float` of whole milliseconds because a 32-bit `Int`
+overflows after ~24.8 days of pause), `escalatedAt` / `slaAtRiskNotifiedAt` (at-most-once markers so breach
 escalation and at-risk notification each fire once), `firstResponseAt`, `resolvedAt`, `closedAt`. When the
 SLA carries a `businessCalendar`, deadlines are computed in business time; otherwise the clock is wall-clock.
 The derived clock state

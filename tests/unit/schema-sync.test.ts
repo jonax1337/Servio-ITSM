@@ -109,3 +109,26 @@ describe("ITSM ops / Sable enum comments stay in sync with lib/constants", () =>
     for (const v of values) expect(comment, `${model}.${field} comment must list ${v}`).toContain(v);
   });
 });
+
+describe("schema column types hold the values the app writes", () => {
+  // Prisma `Int` is 32-bit: millisecond durations overflow it after ~24.8 days.
+  // SQLite still stores the oversized value, and every later read of that row
+  // throws "Value … does not fit in an INT column" — one ticket breaks a list.
+  it("no millisecond column is a 32-bit Int", () => {
+    const msIntColumns = [...schema.matchAll(/^\s*(\w+Ms)\s+Int\b/gm)].map((m) => m[1]);
+    expect(msIntColumns, "use Float for ms columns (exact up to 2^53, stays a JS number)").toEqual([]);
+  });
+
+  it("no byte-size column is a 32-bit Int", () => {
+    // Int caps at 2 GiB − 1 byte; the upload cap (MAX_UPLOAD_MB) is admin-settable.
+    const byteIntColumns = [...schema.matchAll(/^\s*(size|\w+Bytes)\s+Int\b/gm)].map((m) => m[1]);
+    expect(byteIntColumns, "use Float for byte sizes (exact up to 2^53, stays a JS number)").toEqual([]);
+  });
+
+  it.each([
+    ["Ticket", "pausedMs"],
+    ["Attachment", "size"],
+  ])("%s.%s is a Float", (model, field) => {
+    expect(schema).toMatch(new RegExp(`model ${model} \\{[\\s\\S]*?\\n\\s*${field}\\s+Float\\b`));
+  });
+});
