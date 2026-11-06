@@ -12,6 +12,9 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     setupFiles: ["tests/setup.ts"],
+    // The updater suites copy real backup files through temp dirs; alone the
+    // slowest takes ~3.5 s, so the 5 s default times out under parallel load.
+    testTimeout: 20_000,
   },
   resolve: {
     alias: {
