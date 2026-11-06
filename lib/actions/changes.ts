@@ -12,6 +12,7 @@ import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
 import { changeSelfApprovalError } from "@/lib/approval-rules";
 import { distinctIds } from "@/lib/utils";
+import { AFFECTED_CI_SEARCH_LIMIT, affectedCiSearchWhere } from "@/lib/affected-ci-search";
 import {
   approversToSeat,
   boardSizeLimit,
@@ -120,6 +121,18 @@ async function requireManagerC() {
 }
 
 const UNKNOWN_AFFECTED_CI = "One of the selected configuration items no longer exists.";
+
+/** Configuration items matching the typed text, for picking a change's affected CIs. */
+export async function searchAffectedCis(query: string): Promise<{ value: string; label: string; hint: string }[]> {
+  if (!(await requireAgentC())) return [];
+  const assets = await db.asset.findMany({
+    where: affectedCiSearchWhere(query),
+    select: { id: true, name: true, type: true },
+    orderBy: { name: "asc" },
+    take: AFFECTED_CI_SEARCH_LIMIT,
+  });
+  return assets.map((a) => ({ value: a.id, label: a.name, hint: a.type }));
+}
 
 export async function createChange(
   _prev: ActionState,

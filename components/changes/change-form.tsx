@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Lock, Plus } from "lucide-react";
-import { createChange } from "@/lib/actions/changes";
+import { createChange, searchAffectedCis } from "@/lib/actions/changes";
 import { createChangeFromTemplateAction, type TemplateActionState } from "@/lib/actions/change-templates";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/link-button";
@@ -70,11 +70,9 @@ function LockedPlan({ label, text }: { label: string; text: string | null }) {
 }
 
 export function ChangeForm({
-  options, assetOptions, currentUserId, customFieldDefs = [], template,
+  options, currentUserId, customFieldDefs = [], template,
 }: {
   options: FormOptions;
-  /** Configuration items that can be marked as affected right away. */
-  assetOptions: ComboOption[];
   currentUserId: string;
   customFieldDefs?: CustomFieldDef[];
   template?: ChangeFormTemplate;
@@ -152,7 +150,7 @@ export function ChangeForm({
         error={fe.assetIds}
         hint="Configuration items this change touches. They feed the automated impact assessment."
       >
-        <MultiCombobox name="assetIds" options={assetOptions} placeholder="Add affected CIs…" searchPlaceholder="Search assets…" emptyText="No assets found." />
+        <MultiCombobox name="assetIds" search={searchAffectedCis} placeholder="Add affected CIs…" searchPlaceholder="Search by name, tag or serial…" emptyText="No matching assets." />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
