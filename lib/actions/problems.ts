@@ -10,7 +10,7 @@ import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { fieldLockError, resolvedAtPatch, statusRequirementError, textEditError } from "@/lib/problem-rules";
-import { assertRequiredCustomFields, entityFieldValues, isFieldVisible, valuesOfDefs, type CustomFieldDef } from "@/lib/custom-fields";
+import { assertRequiredCustomFields, entityFieldValues, isFieldVisible, validateCustomFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { canActOnTicket } from "@/lib/authz";
 import { problemTraits } from "@/lib/ai-insights-rules";
 import { problemFieldsCheck } from "@/lib/ai-insights-handling";
@@ -56,8 +56,8 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
 
   const raw = Object.fromEntries(formData) as Record<string, unknown>;
   // Custom-field inputs post as `cf_<key>` — collect them into the create data.
-  const customFields = customFieldEntries(formData);
-  if (Object.keys(customFields).length) raw.customFields = customFields;
+  const submitted = customFieldEntries(formData);
+  if (Object.keys(submitted).length) raw.customFields = submitted;
 
   const parsed = createSchema.safeParse(raw);
   if (!parsed.success) {
@@ -72,11 +72,15 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   // Enforce required, currently-visible custom fields (same contract as tickets):
   // abort the create when a required field is missing rather than persisting an
   // incomplete record.
-  const defs = await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } });
+  const defs = (await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } })) as CustomFieldDef[];
   if (defs.length > 0) {
-    const res = assertRequiredCustomFields(defs as CustomFieldDef[], customFields, entityFieldValues({ status: data.status, priority: data.priority, categoryId: data.categoryId }));
+    const res = assertRequiredCustomFields(defs, submitted, entityFieldValues({ status: data.status, priority: data.priority, categoryId: data.categoryId }));
     if (!res.ok) return { error: res.error };
   }
+  // Only the problem's own fields are stored, and each value has to be valid for its field.
+  const checked = validateCustomFieldValues(defs, submitted);
+  if (!checked.ok) return { error: checked.error };
+  const customFields = checked.values;
 
   const problem = await db.problem.create({
     data: { ...data, ...resolvedAtPatch(data.status, new Date(), null), ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}) },
@@ -155,7 +159,9 @@ export async function createProblemFromTickets(formData: FormData): Promise<Rais
   const submitted = customFieldEntries(formData);
   const { defs, error: missingFields } = await problemFieldsCheck(traits.categoryId, traits.priority, submitted);
   if (missingFields) return { ok: false, error: missingFields };
-  const customFields = valuesOfDefs(defs, submitted);
+  const checked = validateCustomFieldValues(defs, submitted);
+  if (!checked.ok) return { ok: false, error: checked.error };
+  const customFields = checked.values;
 
   const candidateIds = linkable.map((t) => t.id);
   let created: { problemId: number; linkedIds: number[] };
