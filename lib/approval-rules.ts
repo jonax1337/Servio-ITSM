@@ -39,3 +39,29 @@ export function approvalTabs(counts: Record<ApprovalSection, number>): EntityTab
 export function tabShowsSection(tab: ApprovalTab, section: ApprovalSection): boolean {
   return tab === "all" || tab === section;
 }
+
+// ── Deciding a catalog request or an ad-hoc sign-off ─────────────────────────
+
+export const REQUEST_SELF_APPROVAL_ERROR =
+  "You can't approve a request you raised yourself. Another approver has to decide it.";
+export const NOT_THE_APPROVER_ERROR = "Only the assigned approver can decide this request.";
+export const ALREADY_DECIDED_ERROR = "This request has already been decided or withdrawn.";
+
+/** Why a person may not decide an approval they requested themselves, or null. */
+export function requestSelfApprovalError(requesterId: string | null, userId: string): string | null {
+  return requesterId === userId ? REQUEST_SELF_APPROVAL_ERROR : null;
+}
+
+/**
+ * Why `user` may not decide this catalog-request or sign-off approval, or null when they may.
+ * Only a pending approval can be decided, only by its assigned approver (or an admin), and
+ * never by the person who raised the request, not even as admin.
+ */
+export function decisionRefusal(
+  approval: { status: string; approverId: string | null; requesterId: string | null },
+  user: { id: string; role: string },
+): string | null {
+  if (approval.status !== "PENDING") return ALREADY_DECIDED_ERROR;
+  if (approval.approverId !== user.id && user.role !== "ADMIN") return NOT_THE_APPROVER_ERROR;
+  return requestSelfApprovalError(approval.requesterId, user.id);
+}

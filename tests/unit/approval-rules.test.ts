@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALREADY_DECIDED_ERROR,
   CHANGE_SELF_APPROVAL_ERROR,
+  NOT_THE_APPROVER_ERROR,
+  REQUEST_SELF_APPROVAL_ERROR,
   approvalTabs,
   changeSelfApprovalError,
+  decisionRefusal,
+  requestSelfApprovalError,
   tabShowsSection,
 } from "@/lib/approval-rules";
 import { resolveTab } from "@/lib/entity-tabs";
@@ -57,5 +62,39 @@ describe("approval inbox tabs", () => {
     expect(resolveTab({ tab: "changes" }, tabs, "all")).toBe("changes");
     expect(resolveTab({ tab: "bogus" }, tabs, "all")).toBe("all");
     expect(resolveTab({}, tabs, "all")).toBe("all");
+  });
+});
+
+describe("decisionRefusal (catalog requests and sign-offs)", () => {
+  const pending = { status: "PENDING", approverId: "approver", requesterId: "requester" };
+  const agent = (id: string) => ({ id, role: "AGENT" });
+
+  it("lets the assigned approver decide a pending request", () => {
+    expect(decisionRefusal(pending, agent("approver"))).toBeNull();
+  });
+
+  it("lets an admin decide on behalf of the approver", () => {
+    expect(decisionRefusal(pending, { id: "admin", role: "ADMIN" })).toBeNull();
+  });
+
+  it("refuses someone who is not the approver", () => {
+    expect(decisionRefusal(pending, agent("bystander"))).toBe(NOT_THE_APPROVER_ERROR);
+  });
+
+  it("refuses the requester even when they are the assigned approver", () => {
+    expect(decisionRefusal({ ...pending, approverId: "requester" }, agent("requester"))).toBe(REQUEST_SELF_APPROVAL_ERROR);
+  });
+
+  it("refuses the requester even as admin", () => {
+    expect(decisionRefusal(pending, { id: "requester", role: "ADMIN" })).toBe(REQUEST_SELF_APPROVAL_ERROR);
+  });
+
+  it.each(["APPROVED", "REJECTED"])("refuses a request that is already %s", (status) => {
+    expect(decisionRefusal({ ...pending, status }, agent("approver"))).toBe(ALREADY_DECIDED_ERROR);
+  });
+
+  it("does not mistake an unknown requester for the approver", () => {
+    expect(decisionRefusal({ ...pending, requesterId: null }, agent("approver"))).toBeNull();
+    expect(requestSelfApprovalError(null, "approver")).toBeNull();
   });
 });

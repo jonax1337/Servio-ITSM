@@ -12,7 +12,7 @@ import { ApprovalActions } from "@/components/changes/approval-actions";
 import { EntityApprovalDecision } from "@/components/approvals/entity-approval-decision";
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
-import { approvalTabs, changeSelfApprovalError, DEFAULT_APPROVAL_TAB, tabShowsSection } from "@/lib/approval-rules";
+import { approvalTabs, changeSelfApprovalError, requestSelfApprovalError, DEFAULT_APPROVAL_TAB, tabShowsSection } from "@/lib/approval-rules";
 import type { SearchParams } from "@/lib/query";
 import { ticketRef, changeRef, CHANGE_TYPE_META, RISK_META, APPROVAL_ENTITY_META, type ApprovalEntityType } from "@/lib/constants";
 import { formatDistanceToNow } from "date-fns";
@@ -97,7 +97,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                   } catch {
                     answers = "";
                   }
-                  const mine = t.requesterId === me.id;
+                  const selfApproval = requestSelfApprovalError(t.requesterId, me.id);
                   return (
                     <ApprovalShell
                       key={a.id}
@@ -110,11 +110,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                       when={a.createdAt}
                       detail={answers}
                       decision={
-                        mine ? (
-                          <SelfNote approverName={a.approver?.name ?? a.approver?.email} />
-                        ) : (
-                          <ApprovalDecision approvalId={a.id} />
-                        )
+                        selfApproval ? <SelfNote message={selfApproval} /> : <ApprovalDecision approvalId={a.id} />
                       }
                     />
                   );
@@ -154,7 +150,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
               <Section icon={ShieldCheck} label="Sign-off requests" count={pendingAdHoc.length}>
                 {pendingAdHoc.map((a) => {
                   const meta = APPROVAL_ENTITY_META[a.entityType as ApprovalEntityType];
-                  const mine = a.requestedById === me.id;
+                  const selfApproval = requestSelfApprovalError(a.requestedById, me.id);
                   return (
                     <ApprovalShell
                       key={a.id}
@@ -165,11 +161,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                       requesterEmail={a.requestedBy?.email ?? null}
                       when={a.createdAt}
                       decision={
-                        mine ? (
-                          <SelfNote approverName={a.approver?.name ?? a.approver?.email} />
-                        ) : (
-                          <EntityApprovalDecision approvalId={a.id} />
-                        )
+                        selfApproval ? <SelfNote message={selfApproval} /> : <EntityApprovalDecision approvalId={a.id} />
                       }
                     />
                   );
@@ -250,27 +242,12 @@ function ApprovalShell({
   );
 }
 
-/** Shown in place of decision controls when the viewer can't act (separation of
- *  duties) — you can't approve your own request / your own change. */
-function SelfNote({
-  approverName, label = "You raised this request", message,
-}: {
-  approverName?: string | null;
-  label?: string;
-  /** Replaces the default wording with the rule's own explanation. */
-  message?: string;
-}) {
+/** Shown in place of decision controls when the viewer may not decide (four-eyes): says why. */
+function SelfNote({ message }: { message: string }) {
   return (
     <div className="flex max-w-xs items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
       <Info className="mt-0.5 size-3.5 shrink-0" />
-      {message ? (
-        <span>{message}</span>
-      ) : (
-        <span>
-          {label} — it needs another approver
-          {approverName ? <>. Waiting on <span className="font-medium text-foreground">{approverName}</span>.</> : "."}
-        </span>
-      )}
+      <span>{message}</span>
     </div>
   );
 }
