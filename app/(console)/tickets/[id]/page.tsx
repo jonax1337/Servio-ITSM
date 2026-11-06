@@ -34,6 +34,7 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { MacroPicker } from "@/components/tickets/macro-picker";
 import { openChildren } from "@/lib/ticket-hierarchy-rules";
+import { canDraftArticleFrom, problemDraftFromTickets } from "@/lib/ticket-drafts";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { sanitizeCommentHtml } from "@/lib/markdown";
@@ -202,6 +203,8 @@ export default async function TicketDetailPage({
               isMajorIncident={ticket.isMajorIncident}
               candidates={candidateOpts}
               watchers={ticket.watchers.map((w) => w.user.name ?? w.user.email)}
+              problemDraft={isAgentUser && ticket.type === "INCIDENT" && ticket.problemId === null ? problemDraftFromTickets([ticket]) : null}
+              canDraftArticle={isAgentUser && canDraftArticleFrom(ticket.status)}
               people={options.agents
                 .filter((a) => a.id !== me?.id)
                 .map((a) => ({ value: a.id, label: a.name ?? a.email }))}

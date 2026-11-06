@@ -41,7 +41,7 @@ const CLUSTER_TICKET_SELECT = {
   assigneeId: true, problemId: true, mergedIntoId: true,
 } as const;
 
-async function missingRequiredProblemFields(categoryId: string | null, priority: string): Promise<string | null> {
+export async function missingRequiredProblemFields(categoryId: string | null, priority: string): Promise<string | null> {
   const defs = await db.customFieldDef.findMany({ where: { entityType: "PROBLEM", active: true } });
   if (defs.length === 0) return null;
   const check = assertRequiredCustomFields(defs as CustomFieldDef[], {}, entityFieldValues({ status: "NEW", priority, categoryId }));

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
-  Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal, UserPlus,
+  BookOpen, Eye, EyeOff, ChevronsUp, Flame, Link2, GitMerge, MoreHorizontal, TriangleAlert, UserPlus,
 } from "lucide-react";
 import {
   escalateTicket, toggleMajorIncident, toggleWatch, linkTicket, mergeTicket, addParticipant,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
 
 type Candidate = { value: string; label: string };
 
@@ -47,7 +49,7 @@ const LINK_TYPES: ComboOption[] = [
 ];
 
 export function TicketActions({
-  ticketId, isWatching, isMajorIncident, candidates, watchers = [], people = [],
+  ticketId, isWatching, isMajorIncident, candidates, watchers = [], people = [], problemDraft = null, canDraftArticle = false,
 }: {
   ticketId: number;
   isWatching: boolean;
@@ -55,7 +57,12 @@ export function TicketActions({
   candidates: Candidate[];
   watchers?: string[];
   people?: Candidate[];
+  /** Prefill for "Create problem from this incident"; null when the ticket can't be raised as a problem. */
+  problemDraft?: { title: string; description: string } | null;
+  /** Resolved or closed tickets can be turned into a knowledge article. */
+  canDraftArticle?: boolean;
 }) {
+  const [problemOpen, setProblemOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [participantOpen, setParticipantOpen] = useState(false);
@@ -101,7 +108,7 @@ export function TicketActions({
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
           <MoreHorizontal className="size-4" /> Actions
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuContent align="end" className="w-72">
           <form action={runEscalateTicket}>
             <input type="hidden" name="id" value={ticketId} />
             <DropdownMenuItem nativeButton closeOnClick={false} render={<button type="submit" className="w-full" />}>
@@ -131,8 +138,23 @@ export function TicketActions({
           <DropdownMenuItem onClick={() => setMergeOpen(true)}>
             <GitMerge className="size-4" /> Merge into…
           </DropdownMenuItem>
+          {problemDraft || canDraftArticle ? <DropdownMenuSeparator /> : null}
+          {problemDraft ? (
+            <DropdownMenuItem onClick={() => setProblemOpen(true)}>
+              <TriangleAlert className="size-4" /> Create problem from this incident…
+            </DropdownMenuItem>
+          ) : null}
+          {canDraftArticle ? (
+            <DropdownMenuItem render={<Link href={`/knowledge/new?fromTicket=${ticketId}`} />}>
+              <BookOpen className="size-4" /> Create knowledge article…
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {problemDraft ? (
+        <RaiseProblemDialog open={problemOpen} onOpenChange={setProblemOpen} ticketIds={[ticketId]} draft={problemDraft} offerSimilar />
+      ) : null}
 
       {/* Add participant — notify someone without an @mention */}
       <Dialog open={participantOpen} onOpenChange={setParticipantOpen}>

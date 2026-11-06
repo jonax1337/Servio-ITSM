@@ -11,10 +11,15 @@ import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { fieldLockError, resolvedAtPatch, statusRequirementError, textEditError } from "@/lib/problem-rules";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
+import { canActOnTicket } from "@/lib/authz";
+import { problemTraits } from "@/lib/ai-insights-rules";
+import { missingRequiredProblemFields } from "@/lib/ai-insights-handling";
+import { findSimilarTickets } from "@/lib/ai-similarity-search";
 import {
   PROBLEM_STATUSES,
   PRIORITIES,
   IMPACT_URGENCY,
+  problemRef,
 } from "@/lib/constants";
 
 const optionalId = z
@@ -77,6 +82,86 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
 
   revalidatePath("/problems");
   redirect(`/problems/${problem.id}`);
+}
+
+const MAX_RAISED_TICKETS = 200;
+const MAX_TITLE_CHARS = 160;
+const SIMILAR_INCIDENT_LIMIT = 8;
+
+const raiseSchema = z.object({
+  title: z.string().trim().min(3, "Title must be at least 3 characters").max(MAX_TITLE_CHARS),
+  description: z.string().default(""),
+  ticketIds: z
+    .string()
+    .transform((raw) => [...new Set(raw.split(",").map((id) => Number(id.trim())).filter((id) => Number.isInteger(id) && id > 0))])
+    .pipe(z.array(z.number()).min(1, "Choose at least one ticket").max(MAX_RAISED_TICKETS)),
+});
+
+export type RaiseProblemResult =
+  | { ok: true; problemId: number; linked: number; skipped: number }
+  | { ok: false; error: string };
+
+const RAISE_SELECT = {
+  id: true, prefix: true, title: true, priority: true, impact: true, categoryId: true, groupId: true,
+  assigneeId: true, problemId: true, mergedIntoId: true,
+} as const;
+
+/**
+ * Opens a problem for tickets (an incident, or a bulk selection) and links them in
+ * one step. Tickets that already belong to a problem, are merged away or are outside
+ * the agent's groups are skipped; the problem inherits priority, impact, category and
+ * group from the tickets it links.
+ */
+export async function createProblemFromTickets(formData: FormData): Promise<RaiseProblemResult> {
+  const me = await requireAgentUser();
+  if (!me) return { ok: false, error: "Not authorised" };
+  const parsed = raiseSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request." };
+  const { title, description, ticketIds } = parsed.data;
+
+  const tickets = await db.ticket.findMany({ where: { id: { in: ticketIds } }, select: RAISE_SELECT });
+  const open = tickets.filter((t) => t.mergedIntoId === null && t.problemId === null);
+  const linkable = [];
+  for (const ticket of open) if (await canActOnTicket(me, ticket)) linkable.push(ticket);
+  if (linkable.length === 0) {
+    return { ok: false, error: "None of these tickets can be linked: they already belong to a problem, or are outside your groups." };
+  }
+
+  const traits = problemTraits(linkable);
+  const missingFields = await missingRequiredProblemFields(traits.categoryId, traits.priority);
+  if (missingFields) return { ok: false, error: missingFields };
+
+  const linkedIds = linkable.map((t) => t.id);
+  const problemId = await db.$transaction(async (tx) => {
+    const problem = await tx.problem.create({ data: { title, description, status: "NEW", ...traits }, select: { id: true } });
+    await tx.ticket.updateMany({ where: { id: { in: linkedIds }, problemId: null }, data: { problemId: problem.id } });
+    return problem.id;
+  });
+
+  await writeAudit({ userId: me.id, action: "CREATE", entity: "Problem", entityId: problemId, summary: `Created problem "${title}" from ${linkedIds.length} ticket(s)` });
+  for (const id of linkedIds) {
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Linked to ${problemRef(problemId)}` });
+    revalidatePath(`/tickets/${id}`);
+  }
+  revalidatePath("/problems");
+  revalidatePath("/tickets");
+  return { ok: true, problemId, linked: linkable.length, skipped: ticketIds.length - linkable.length };
+}
+
+export type SimilarIncident = { id: number; ref: string; title: string; score: number };
+
+/** Incidents similar to `ticketId` that can still be linked to a new problem (no problem yet, within the agent's groups). */
+export async function listSimilarIncidents(ticketId: number): Promise<SimilarIncident[]> {
+  const me = await requireAgentUser();
+  if (!me || !Number.isInteger(ticketId)) return [];
+  const similar = await findSimilarTickets(ticketId, SIMILAR_INCIDENT_LIMIT);
+  const candidates = await db.ticket.findMany({
+    where: { id: { in: similar.map((s) => s.id) }, type: "INCIDENT", problemId: null },
+    select: { id: true, assigneeId: true, groupId: true },
+  });
+  const linkable = new Set<number>();
+  for (const candidate of candidates) if (await canActOnTicket(me, candidate)) linkable.add(candidate.id);
+  return similar.filter((s) => linkable.has(s.id)).map(({ id, ref, title, score }) => ({ id, ref, title, score }));
 }
 
 const updateSchema = z.object({

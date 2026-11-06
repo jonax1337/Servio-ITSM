@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { ArrowUp, ArrowDown, ChevronsUpDown, Loader2, X } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronsUpDown, Loader2, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { StatusBadge, VipBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
+import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
 import { bulkUpdateTickets } from "@/lib/actions/tickets";
+import { problemDraftFromTickets } from "@/lib/ticket-drafts";
 import {
   PRIORITY_META, TICKET_STATUS_META, PRIORITIES, ticketRef,
 } from "@/lib/constants";
@@ -97,6 +99,7 @@ export function TicketsTable({
   const [field, setField] = useState("assigneeId");
   const [value, setValue] = useState("none");
   const [applyPending, startApply] = useTransition();
+  const [problemOpen, setProblemOpen] = useState(false);
 
   function toggleSort(k: string) {
     const params = new URLSearchParams(sp.toString());
@@ -162,9 +165,18 @@ export function TicketsTable({
           <Button type="button" size="sm" onClick={apply} disabled={applyPending}>
             {applyPending ? <Loader2 className="size-4 animate-spin" /> : null} Apply
           </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setProblemOpen(true)}>
+            <TriangleAlert className="size-4" /> Create problem
+          </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setSel(new Set())}>
             <X className="size-4" /> Clear
           </Button>
+          <RaiseProblemDialog
+            open={problemOpen}
+            onOpenChange={setProblemOpen}
+            ticketIds={[...sel]}
+            draft={problemDraftFromTickets(rows.filter((r) => sel.has(r.id)))}
+          />
         </div>
       ) : null}
 
