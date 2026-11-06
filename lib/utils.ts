@@ -15,6 +15,11 @@ export function isTextEntryTarget(target: EventTarget | null) {
   return el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName ?? "");
 }
 
+/** The distinct, non-empty ids a form posted under one name (`formData.getAll`), in the order chosen. */
+export function distinctIds(values: FormDataEntryValue[]): string[] {
+  return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))];
+}
+
 /** Format a minute count as a compact "2h 15m" / "45m" / "3h" string. */
 export function formatMinutes(mins: number) {
   const m = Math.max(0, Math.floor(mins));

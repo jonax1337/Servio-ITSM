@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 
 export function ApprovalActions({ approvalId }: { approvalId: string }) {
   const [comment, setComment] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function decide(decision: "APPROVED" | "REJECTED") {
@@ -19,9 +20,11 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
     start(async () => {
       const res = await decideApproval(fd);
       if (!res.ok) {
+        setError(res.error);
         toast.error(res.error);
         return;
       }
+      setError(null);
       setComment("");
       toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
     });
@@ -52,6 +55,7 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
       >
         <X className="size-3.5" /> Reject
       </Button>
+      {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }

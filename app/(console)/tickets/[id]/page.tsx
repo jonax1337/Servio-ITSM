@@ -34,6 +34,7 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { MacroPicker } from "@/components/tickets/macro-picker";
 import { openChildren } from "@/lib/ticket-hierarchy-rules";
+import { canDraftArticleFrom, problemDraftFromTickets } from "@/lib/ticket-drafts";
 import { SlaBadge } from "@/components/tickets/sla-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { sanitizeCommentHtml } from "@/lib/markdown";
@@ -172,7 +173,7 @@ export default async function TicketDetailPage({
   });
 
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_340px] lg:overflow-hidden">
+    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
@@ -185,7 +186,7 @@ export default async function TicketDetailPage({
           <StatusBadge map={TICKET_TYPE_META} value={ticket.type} />
           <StatusBadge map={PRIORITY_META} value={ticket.priority} />
           <StatusBadge map={TICKET_STATUS_META} value={ticket.status} />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {isAgentUser ? <MacroPicker ticketId={ticket.id} macros={pickerMacros} /> : null}
             <EditEntityDialog
               action={updateTicketDetails}
@@ -202,6 +203,8 @@ export default async function TicketDetailPage({
               isMajorIncident={ticket.isMajorIncident}
               candidates={candidateOpts}
               watchers={ticket.watchers.map((w) => w.user.name ?? w.user.email)}
+              problemDraft={isAgentUser && ticket.type === "INCIDENT" && ticket.problemId === null ? problemDraftFromTickets([ticket]) : null}
+              canDraftArticle={isAgentUser && canDraftArticleFrom(ticket.status)}
               people={options.agents
                 .filter((a) => a.id !== me?.id)
                 .map((a) => ({ value: a.id, label: a.name ?? a.email }))}
@@ -292,7 +295,7 @@ export default async function TicketDetailPage({
         ) : null}
 
         <div className="p-4 sm:p-6">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-2xl font-semibold tracking-tight wrap-anywhere">
             {ticket.title}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
@@ -305,11 +308,11 @@ export default async function TicketDetailPage({
           <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed">
             {ticket.descriptionHtml ? (
               <div
-                className="prose prose-sm dark:prose-invert max-w-none"
+                className="prose prose-sm dark:prose-invert max-w-none wrap-anywhere prose-pre:overflow-x-auto prose-table:block prose-table:overflow-x-auto"
                 dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(ticket.descriptionHtml) }}
               />
             ) : ticket.description ? (
-              <div className="whitespace-pre-wrap">{ticket.description}</div>
+              <div className="whitespace-pre-wrap wrap-anywhere">{ticket.description}</div>
             ) : (
               <span className="text-muted-foreground">No description provided.</span>
             )}
@@ -364,8 +367,7 @@ export default async function TicketDetailPage({
           </CardContent>
         </Card>
 
-        {/* overflow-visible: the Card's default overflow-hidden would break the sticky Save bar. */}
-        <Card className="mt-4 overflow-visible">
+        <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
           <CardContent>
             <TicketProperties ticket={ticket} options={options} openChildCount={openChildren(ticket.children).length} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />

@@ -65,6 +65,7 @@ export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: Ch
           changeStatus={change.status}
           approvals={approvalRows}
           currentUserId={userId}
+          change={change}
           canManage={canManage}
           agentOptions={agentOptions}
         />

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,12 +17,15 @@ export function RelatedArticles({
   entityId,
   linked,
   options,
+  actions,
   className,
 }: {
   entityType: ArticleLinkEntityType;
   entityId: number;
   linked: LinkedArticle[];
   options: ArticleOption[];
+  /** Extra header actions shown beside the link picker. */
+  actions?: ReactNode;
   className?: string;
 }) {
   return (
@@ -30,7 +34,8 @@ export function RelatedArticles({
         <CardTitle className="flex items-center gap-2 text-sm">
           <BookOpen className="size-4 text-muted-foreground" />
           Related articles · {linked.length}
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-1.5">
+            {actions}
             <LinkPicker
               action={linkArticle}
               triggerLabel="Link"

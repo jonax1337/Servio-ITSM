@@ -5,7 +5,7 @@ import { LinkPicker } from "@/components/link-picker";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { attachAffectedCi, detachAffectedCi } from "@/lib/actions/change-assets";
 import { ASSET_TYPE_META, ASSET_RELATION_META, type Meta } from "@/lib/constants";
-import type { ComboOption } from "@/components/combobox";
+import type { OptionSearch } from "@/components/use-searched-options";
 
 export type AffectedCi = {
   assetId: string;
@@ -40,13 +40,14 @@ export function AffectedCiPanel({
   changeId,
   affected,
   impact,
-  assetOptions,
+  searchAssets,
   editable,
 }: {
   changeId: number;
   affected: AffectedCi[];
   impact: ChangeImpact;
-  assetOptions: ComboOption[];
+  /** Looks up the assets that can still be marked as affected, by the typed text. */
+  searchAssets: OptionSearch;
   editable: boolean;
 }) {
   return (
@@ -64,10 +65,10 @@ export function AffectedCiPanel({
             description="Link an asset that this change touches. Its downstream dependencies feed the automated impact assessment below."
             hidden={{ changeId }}
             valueName="assetId"
-            options={assetOptions}
+            search={searchAssets}
             placeholder="Choose a CI"
-            searchPlaceholder="Search assets…"
-            emptyText="No unlinked assets available."
+            searchPlaceholder="Search by name, tag or serial…"
+            emptyText="No matching unlinked assets."
             submitLabel="Add CI"
           />
         ) : null}

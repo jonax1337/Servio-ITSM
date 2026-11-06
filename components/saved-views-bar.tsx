@@ -42,7 +42,7 @@ export function SavedViewsBar({
 }: {
   entity: string;
   basePath: string;
-  filterKeys: string[];
+  filterKeys: readonly string[];
   views: SavedViewRow[];
   currentUserId: string;
   canManageShared: boolean;
@@ -79,7 +79,9 @@ export function SavedViewsBar({
     }
     return { ...v, f };
   });
-  const activeId = parsed.find((v) => same(v.f, current))?.id ?? (hasFilters ? null : "__all__");
+  const activeId =
+    parsed.find((v) => same(v.f, current))?.id ??
+    (hasFilters ? null : "__all__");
 
   const chip = (active: boolean) =>
     cn(

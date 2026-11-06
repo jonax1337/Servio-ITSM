@@ -11,6 +11,8 @@ import { resumeData, ticketCalendar } from "@/lib/sla";
 import { autoAssignTicket } from "@/lib/assignment";
 import { runAutomations } from "@/lib/automations";
 import { effectiveApprovalStages } from "@/lib/service-forms";
+import type { ActionResult } from "@/lib/action-result";
+import { ALREADY_DECIDED_ERROR, decisionRefusal } from "@/lib/approval-rules";
 import { ticketRef, APPROVAL_ENTITY_TYPES, APPROVAL_ENTITY_META, type ApprovalEntityType } from "@/lib/constants";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -28,17 +30,24 @@ import { ticketRef, APPROVAL_ENTITY_TYPES, APPROVAL_ENTITY_META, type ApprovalEn
 // lib/approval-seating.ts — server-side helpers only, never HTTP endpoints.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function decideApproval(formData: FormData) {
+const OK: ActionResult = { ok: true };
+const refuse = (error: string): ActionResult => ({ ok: false, error });
+const NOT_AUTHORISED = "You are not signed in as an agent.";
+const INVALID_REQUEST = "Invalid request.";
+const WITHDRAWN = "This request was withdrawn, so there is nothing left to decide.";
+
+/** Decide one stage of a catalog request. Every refusal comes back as `{ ok: false, error }` for the UI to show. */
+export async function decideApproval(formData: FormData): Promise<ActionResult> {
   const me = await getCurrentUser();
   // Deciding a request flips a ticket's lifecycle — agent+ only, mirroring the
   // ad-hoc decideEntityApproval policy. DB truth: role/isActive rehydrated so a
   // demoted/deactivated user with a live JWT can't keep deciding. The
   // approver/admin + SoD checks follow.
-  if (!me || !me.isActive || !isAgent(me.role as Role)) return;
+  if (!me || !me.isActive || !isAgent(me.role as Role)) return refuse(NOT_AUTHORISED);
   const approvalId = String(formData.get("approvalId") ?? "");
   const decision = String(formData.get("decision") ?? "");
   const comment = String(formData.get("comment") ?? "").trim() || null;
-  if (!["APPROVED", "REJECTED"].includes(decision)) return;
+  if (!["APPROVED", "REJECTED"].includes(decision)) return refuse(INVALID_REQUEST);
 
   const approval = await db.ticketApproval.findUnique({
     where: { id: approvalId },
@@ -48,13 +57,15 @@ export async function decideApproval(formData: FormData) {
       },
     },
   });
-  if (!approval || approval.status !== "PENDING") return;
-  // only the assigned approver (or an admin) may decide
-  if (approval.approverId !== me.id && me.role !== "ADMIN") return;
-  // separation of duties: you can never approve your own request, even as admin
-  if (approval.ticket.requesterId === me.id) return;
+  if (!approval) return refuse(ALREADY_DECIDED_ERROR);
+  // Pending, the assigned approver (or an admin), and separation of duties: never your own request, even as admin.
+  const refusal = decisionRefusal(
+    { status: approval.status, approverId: approval.approverId, requesterId: approval.ticket.requesterId },
+    me,
+  );
+  if (refusal) return refuse(refusal);
   // The request was withdrawn (e.g. an agent cancelled it) — nothing left to decide.
-  if (approval.ticket.approvalState !== "PENDING" || approval.ticket.status === "CANCELLED") return;
+  if (approval.ticket.approvalState !== "PENDING" || approval.ticket.status === "CANCELLED") return refuse(WITHDRAWN);
 
   await db.ticketApproval.update({
     where: { id: approvalId },
@@ -99,7 +110,7 @@ export async function decideApproval(formData: FormData) {
     revalidatePath("/approvals");
     revalidatePath(`/tickets/${t.id}`);
     revalidatePath(`/portal/tickets/${t.id}`);
-    return;
+    return OK;
   }
 
   if (rejected) {
@@ -108,7 +119,7 @@ export async function decideApproval(formData: FormData) {
       where: { id: t.id, approvalState: "PENDING" },
       data: { approvalState: "REJECTED", status: "CANCELLED", closedAt: new Date() },
     });
-    if (count === 0) return;
+    if (count === 0) return refuse(ALREADY_DECIDED_ERROR);
     await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: t.id, summary: "Rejected request" });
     await notify(t.requesterId, {
       type: "APPROVAL_RESULT",
@@ -124,29 +135,31 @@ export async function decideApproval(formData: FormData) {
         body: `Hello,\n\nYour request "${t.title}" has been declined${comment ? `:\n\n${comment}` : "."}\n\nYou can submit a new request from the portal if needed.\n\n— Servio Service Desk`,
       });
     }
-  } else {
-    await releaseApprovedRequest(t, me.id, comment);
+  } else if (!(await releaseApprovedRequest(t, me.id, comment))) {
+    return refuse(ALREADY_DECIDED_ERROR);
   }
 
   revalidatePath("/approvals");
   revalidatePath(`/tickets/${t.id}`);
   revalidatePath(`/portal/tickets/${t.id}`);
+  return OK;
 }
 
 /** Final-stage approval: resume the SLA clock, flip the request to live work,
- *  auto-assign it, run creation automations, and notify the requester. */
+ *  auto-assign it, run creation automations, and notify the requester.
+ *  Returns false when a concurrent cancel or decision got there first. */
 async function releaseApprovedRequest(
   t: { id: number; pendingSince: Date | null; responseDueAt: Date | null; resolveDueAt: Date | null; dueAt: Date | null; pausedMs: number; type: string; title: string; requesterId: string; requester?: { email: string | null; name: string | null } | null; catalogItem?: { name: string } | null; service?: { name: string } | null; sla?: { businessCalendarId: string | null } | null },
   actorId: string,
   comment: string | null,
-) {
+): Promise<boolean> {
   const resume = t.pendingSince ? resumeData(t, new Date(), await ticketCalendar(t)) : {};
   // Conditional: a concurrent cancel must not be resurrected.
   const { count } = await db.ticket.updateMany({
     where: { id: t.id, approvalState: "PENDING" },
     data: { approvalState: "APPROVED", status: "NEW", ...resume },
   });
-  if (count === 0) return;
+  if (count === 0) return false;
   await writeAudit({ userId: actorId, action: "UPDATE", entity: "Ticket", entityId: t.id, summary: "Approved request" });
   // Now that it's live, run the creation automations that were held back while
   // pending, then auto-assign from the routed group.
@@ -166,6 +179,7 @@ async function releaseApprovedRequest(
       body: `Hello,\n\nYour request "${t.title}" has been approved and is now being actioned${comment ? `:\n\n${comment}` : "."}\n\n— Servio Service Desk`,
     });
   }
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -236,18 +250,21 @@ const decideEntitySchema = z.object({
 
 /** Decide an ad-hoc approval. Only the assigned approver (or an admin) may act,
  *  and never on a sign-off they requested themselves (SoD). */
-export async function decideEntityApproval(formData: FormData) {
+export async function decideEntityApproval(formData: FormData): Promise<ActionResult> {
   // DB truth: role/isActive rehydrated (JWT freezes them at login).
   const me = await getCurrentUser();
-  if (!me || !me.isActive || !isAgent(me.role as Role)) return;
+  if (!me || !me.isActive || !isAgent(me.role as Role)) return refuse(NOT_AUTHORISED);
   const parsed = decideEntitySchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
+  if (!parsed.success) return refuse(INVALID_REQUEST);
   const { approvalId, decision, comment } = parsed.data;
 
   const approval = await db.approval.findUnique({ where: { id: approvalId } });
-  if (!approval || approval.status !== "PENDING") return;
-  if (approval.approverId !== me.id && me.role !== "ADMIN") return;
-  if (approval.requestedById === me.id) return; // never decide your own request
+  if (!approval) return refuse(ALREADY_DECIDED_ERROR);
+  const refusal = decisionRefusal(
+    { status: approval.status, approverId: approval.approverId, requesterId: approval.requestedById },
+    me,
+  );
+  if (refusal) return refuse(refusal);
 
   await db.approval.update({ where: { id: approvalId }, data: { status: decision, comment, decidedAt: new Date() } });
 
@@ -265,6 +282,7 @@ export async function decideEntityApproval(formData: FormData) {
   await writeAudit({ userId: me.id, action: "UPDATE", entity: meta.label, entityId: approval.entityId, summary: `Approval ${decision.toLowerCase()}` });
   revalidatePath(entityPath(entityType, approval.entityId));
   revalidatePath("/approvals");
+  return OK;
 }
 
 /** Withdraw a pending ad-hoc approval. The requester or a manager+ may cancel. */

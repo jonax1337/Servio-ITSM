@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Combobox, type ComboOption } from "@/components/combobox";
+import { Combobox, type ComboOption, type OptionSource } from "@/components/combobox";
+import type { OptionSearch } from "@/components/use-searched-options";
 
 /**
  * Generic "add a link" control: a small trigger button that opens a dialog with a
@@ -26,7 +27,8 @@ export function LinkPicker({
   description,
   hidden,
   valueName,
-  options,
+  options = [],
+  search,
   placeholder = "Choose…",
   searchPlaceholder = "Search…",
   emptyText,
@@ -42,7 +44,9 @@ export function LinkPicker({
   description?: string;
   hidden: Record<string, string | number>;
   valueName: string;
-  options: ComboOption[];
+  /** A fixed list of targets, or `search` to look them up as the user types (for sets too big to preload). */
+  options?: ComboOption[];
+  search?: OptionSearch;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyText?: string;
@@ -56,7 +60,8 @@ export function LinkPicker({
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState("");
   const [type, setType] = useState(typeDefault ?? typeOptions?.[0]?.value ?? "");
-  const noOptions = options.length === 0;
+  const source: OptionSource = search ? { search } : { options };
+  const noOptions = !search && options.length === 0;
 
   return (
     <>
@@ -102,7 +107,7 @@ export function LinkPicker({
               ) : null}
               <Combobox
                 name={valueName}
-                options={options}
+                {...source}
                 value={target}
                 onChange={setTarget}
                 placeholder={placeholder}

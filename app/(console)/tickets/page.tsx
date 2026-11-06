@@ -5,9 +5,12 @@ import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { getVisibleSavedViews } from "@/lib/board-service";
 import { SavedViewsBar } from "@/components/saved-views-bar";
+import { SLA_VIEWS, SLA_VIEW_META, activeSlaClocks } from "@/lib/sla-views";
+import { slaCell } from "@/lib/sla-column";
+import { SAVED_VIEW_KEYS } from "@/lib/saved-view-filters";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
-import { findTicketWindow, ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
+import { findTicketWindow, loadTicketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -40,7 +43,7 @@ export default async function TicketsPage({
 
   // Filters, search and sort live in lib/ticket-list.ts — shared with the CSV export
   // and matching the dashboard widgets' drill-down params.
-  const query = ticketListQuery(sp);
+  const query = await loadTicketListQuery(sp);
   const { where } = query;
   const sort = getParam(sp, "sort") ?? "updatedAt";
   const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
@@ -59,12 +62,13 @@ export default async function TicketsPage({
     findTicketWindow(query, { skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }, (args) =>
       db.ticket.findMany({
         ...args,
-        include: { assignee: true, requester: true, group: true, category: true },
+        include: { assignee: true, requester: true, group: true, category: true, sla: { select: { businessCalendarId: true } } },
       }),
     ),
   ]);
 
-  const rows = tickets.map((t) => ({
+  const clocks = await activeSlaClocks(tickets);
+  const rows = tickets.map((t, i) => ({
     id: t.id,
     prefix: t.prefix,
     title: t.title,
@@ -73,6 +77,7 @@ export default async function TicketsPage({
     requesterVip: t.requester.isVip,
     priority: t.priority,
     status: t.status,
+    sla: slaCell(clocks[i]),
     assignee: t.assignee ? { name: t.assignee.name, email: t.assignee.email } : null,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -98,6 +103,7 @@ export default async function TicketsPage({
         ...opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
       ],
     },
+    { key: "sla", label: "SLA", options: SLA_VIEWS.map((v) => ({ value: v, label: SLA_VIEW_META[v].label })) },
     { key: "category", label: "Category", options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
     { key: "service", label: "Service", options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
   ];
@@ -118,7 +124,7 @@ export default async function TicketsPage({
         <SavedViewsBar
           entity="ticket"
           basePath="/tickets"
-          filterKeys={["q", "status", "priority", "type", "group", "assignee", "category", "service"]}
+          filterKeys={SAVED_VIEW_KEYS.ticket}
           views={savedViews}
           currentUserId={me?.id ?? ""}
           canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
@@ -146,8 +152,11 @@ export default async function TicketsPage({
             sort={sort}
             dir={dir}
             canBulk={!!me && isAgent(me.role as Role)}
-            agents={opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email }))}
-            groups={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
+            bulkOptions={{
+              agents: opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
+              groups: opts.groups.map((g) => ({ value: g.id, label: g.name })),
+              categories: opts.categories.map((c) => ({ value: c.id, label: c.name })),
+            }}
           />
         )}
 

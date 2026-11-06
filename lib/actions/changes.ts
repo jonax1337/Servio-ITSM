@@ -10,6 +10,9 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
+import { changeSelfApprovalError } from "@/lib/approval-rules";
+import { distinctIds } from "@/lib/utils";
+import { AFFECTED_CI_SEARCH_LIMIT, affectedCiSearchWhere, attachableCiSearchWhere } from "@/lib/affected-ci-search";
 import {
   approversToSeat,
   boardSizeLimit,
@@ -117,6 +120,30 @@ async function requireManagerC() {
   return me && me.isActive && hasRole(me.role as Role, "MANAGER") ? me : null;
 }
 
+const UNKNOWN_AFFECTED_CI = "One of the selected configuration items no longer exists.";
+
+async function findCiOptions(where: Prisma.AssetWhereInput): Promise<{ value: string; label: string; hint: string }[]> {
+  const assets = await db.asset.findMany({
+    where,
+    select: { id: true, name: true, type: true },
+    orderBy: { name: "asc" },
+    take: AFFECTED_CI_SEARCH_LIMIT,
+  });
+  return assets.map((a) => ({ value: a.id, label: a.name, hint: a.type }));
+}
+
+/** Configuration items matching the typed text, for picking a change's affected CIs. */
+export async function searchAffectedCis(query: string): Promise<{ value: string; label: string; hint: string }[]> {
+  if (!(await requireAgentC())) return [];
+  return findCiOptions(affectedCiSearchWhere(query));
+}
+
+/** Configuration items matching the typed text that are not yet an affected CI of the change. */
+export async function searchAttachableCis(changeId: number, query: string): Promise<{ value: string; label: string; hint: string }[]> {
+  if (!(await requireAgentC())) return [];
+  return findCiOptions(attachableCiSearchWhere(query, changeId));
+}
+
 export async function createChange(
   _prev: ActionState,
   formData: FormData,
@@ -155,11 +182,17 @@ export async function createChange(
     if (!res.ok) return { error: res.error };
   }
 
+  const assetIds = distinctIds(formData.getAll("assetIds"));
+  if (assetIds.length && (await db.asset.count({ where: { id: { in: assetIds } } })) !== assetIds.length) {
+    return { error: UNKNOWN_AFFECTED_CI, fieldErrors: { assetIds: [UNKNOWN_AFFECTED_CI] } };
+  }
+
   const change = await db.change.create({
     data: {
       ...data,
       status: "DRAFT",
       createdById: me.id,
+      assets: { create: assetIds.map((assetId) => ({ assetId })) },
       ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
     },
   });
@@ -410,15 +443,14 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
   if (!existing) return refuse("Approval request not found.");
   if (existing.status !== "PENDING") return refuse("This approval request has already been decided or withdrawn.");
   if (existing.approverId !== me.id && me.role !== "ADMIN") return refuse("Only the assigned approver can decide this request.");
-  // SoD: never decide on a change you own OR created, even as ADMIN.
+  // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN.
   const { changeId } = existing;
   const ownerChange = await db.change.findUnique({
     where: { id: changeId },
     select: { status: true, assigneeId: true, createdById: true },
   });
-  if (ownerChange?.assigneeId === me.id || ownerChange?.createdById === me.id) {
-    return refuse("You cannot decide on a change you own or created.");
-  }
+  const selfApproval = ownerChange && changeSelfApprovalError(ownerChange, me.id);
+  if (selfApproval) return refuse(selfApproval);
   // Approvers may be seated while the change is still a draft; they only decide once it is submitted.
   if (ownerChange?.status !== "APPROVAL") return refuse("This change is not awaiting approval yet.");
 

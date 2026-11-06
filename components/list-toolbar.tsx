@@ -13,6 +13,9 @@ export type FilterDef = {
   options: { value: string; label: string }[];
 };
 
+/** A filter's name inside a sentence ("All priorities"): lower case, except an acronym like SLA. */
+const asNoun = (label: string) => (label === label.toUpperCase() ? label : label.toLowerCase());
+
 export function ListToolbar({
   filters = [],
   searchPlaceholder = "Search…",
@@ -68,7 +71,7 @@ export function ListToolbar({
 
       {filters.map((f) => {
         const opts: ComboOption[] = [
-          { value: "all", label: `All ${f.label.toLowerCase()}` },
+          { value: "all", label: `All ${asNoun(f.label)}` },
           ...f.options,
         ];
         return (
@@ -78,7 +81,7 @@ export function ListToolbar({
             value={sp.get(f.key) ?? "all"}
             onChange={(v) => setParam(f.key, v || "all")}
             placeholder={f.label}
-            searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
+            searchPlaceholder={`Search ${asNoun(f.label)}…`}
             size="sm"
             className="w-auto min-w-[9rem]"
           />

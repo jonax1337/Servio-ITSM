@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INSIGHT_DEFAULTS, articleSkeletonMarkdown, articleTitleFromGap, clipNote, clusterDedupeKey, clusterInsightText,
   isMostlyCovered, kbGapDedupeKey, kbGapInsightText, normalizeInsightConfig, parseClusterPayload, parseKbGapPayload,
-  problemFromCluster, serializeClusterPayload, serializeKbGapPayload, type ClusterTicket,
+  problemFromCluster, problemTraits, serializeClusterPayload, serializeKbGapPayload, type ClusterTicket,
 } from "@/lib/ai-insights-rules";
 
 describe("normalizeInsightConfig", () => {
@@ -78,6 +78,16 @@ describe("clipNote", () => {
     const clipped = clipNote("x".repeat(500));
     expect(clipped).toHaveLength(400);
     expect(clipped.endsWith("…")).toBe(true);
+  });
+});
+
+describe("problemTraits", () => {
+  it("inherits the worst severity and the most common routing of the tickets", () => {
+    const traits = problemTraits([
+      { id: 1, prefix: "INC", title: "a", priority: "LOW", impact: "HIGH", categoryId: "c", groupId: null },
+      { id: 2, prefix: "INC", title: "b", priority: "HIGH", impact: "LOW", categoryId: "c", groupId: "g" },
+    ]);
+    expect(traits).toEqual({ priority: "HIGH", impact: "HIGH", categoryId: "c", groupId: "g" });
   });
 });
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { findTicketWindow, ticketListQuery } from "@/lib/ticket-list";
+import { findTicketWindow, loadTicketListQuery } from "@/lib/ticket-list";
 import { requireUser, isAgent } from "@/lib/session";
 import { csvResponse } from "@/lib/csv";
 import { fetchAuditLogForExport, type AuditLogFilters } from "@/lib/actions/audit-log";
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       }
       // Exactly the rows the list shows for the same filters/search/sort (lib/ticket-list.ts).
       // `type` selects the export itself, so the list's ticket-type filter travels as `ticketType`.
-      const query = ticketListQuery({ ...Object.fromEntries(sp), type: sp.get("ticketType") ?? undefined });
+      const query = await loadTicketListQuery({ ...Object.fromEntries(sp), type: sp.get("ticketType") ?? undefined });
       const tickets = await findTicketWindow(query, { skip: 0, take: 10_000 }, (args) =>
         db.ticket.findMany({
           ...args,

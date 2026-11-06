@@ -180,6 +180,27 @@ export function assertRequiredCustomFields(
   return { ok: false, error: `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required`, missing };
 }
 
+/**
+ * The submitted values that belong to one of `defs`, each checked and normalised by
+ * {@link validateValue}: a forged key never reaches the stored JSON, and the first invalid
+ * value is refused with its field's label. Empty values are dropped; whether a required
+ * field is filled in is {@link assertRequiredCustomFields}'s job, which knows visibility.
+ */
+export function validateCustomFieldValues(
+  defs: readonly CustomFieldDef[],
+  values: Record<string, string>,
+): { ok: true; values: Record<string, string> } | { ok: false; error: string } {
+  const checked: Record<string, string> = {};
+  for (const def of defs) {
+    const submitted = values[def.key];
+    if (submitted === undefined || submitted.trim() === "") continue;
+    const result = validateValue(def, submitted);
+    if (!result.ok) return result;
+    if (result.value !== null) checked[def.key] = result.value;
+  }
+  return { ok: true, values: checked };
+}
+
 /** Coerce a stored customFields JSON blob into a flat string->string record. */
 export function parseValues(s: string | null | undefined): Record<string, string> {
   const obj = parseJson<Record<string, unknown>>(s ?? "{}", {});

@@ -9,6 +9,7 @@ import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/sess
 import { writeAudit, notify } from "@/lib/audit";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
 import { canMoveArticle, statusAfterEdit } from "@/lib/article-rules";
+import { canActOnTicket } from "@/lib/authz";
 import type { ActionResult } from "@/lib/action-result";
 
 export type ArticleState = {
@@ -104,6 +105,18 @@ function isUniqueSablelation(e: unknown) {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 }
 
+/** The ticket an article is written from (`linkTicketId`), once the actor may change it; null when the article stands alone. */
+async function sourceTicketOf(formData: FormData, actor: { id: string; role: string }): Promise<{ id: number } | { error: string } | null> {
+  const id = Number(formData.get("linkTicketId"));
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const ticket = await db.ticket.findUnique({ where: { id }, select: { id: true, assigneeId: true, groupId: true } });
+  if (!ticket) return { error: "The ticket this article is written from no longer exists." };
+  if (!(await canActOnTicket(actor, ticket))) {
+    return { error: "You can't link articles to this ticket — it belongs to a group you're not a member of." };
+  }
+  return { id: ticket.id };
+}
+
 export async function createArticle(_prev: ArticleState, formData: FormData): Promise<ArticleState> {
   const me = await requireAgent();
   if (!me) return { error: "You need agent access to author articles." };
@@ -112,6 +125,8 @@ export async function createArticle(_prev: ArticleState, formData: FormData): Pr
   if (!parsed.success) {
     return { error: "Please fix the errors below.", fieldErrors: parsed.fieldErrors };
   }
+  const sourceTicket = await sourceTicketOf(formData, me);
+  if (sourceTicket && "error" in sourceTicket) return { error: sourceTicket.error };
   const { title, excerpt, categoryId, visibility } = parsed.data;
   const body = parsed.body;
   const base = slugify(title);
@@ -136,6 +151,7 @@ export async function createArticle(_prev: ArticleState, formData: FormData): Pr
           revisions: {
             create: { version: 1, title, excerpt: excerpt || null, body, editorId: me.id, note: "Created" },
           },
+          ...(sourceTicket ? { links: { create: { entityType: "TICKET", entityId: sourceTicket.id, createdById: me.id } } } : {}),
         },
         select: { id: true, slug: true },
       });
@@ -147,6 +163,10 @@ export async function createArticle(_prev: ArticleState, formData: FormData): Pr
   if (!article) return { error: "Could not save the article, please try again." };
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Article", entityId: article.id, summary: `Created article "${title}"` });
+  if (sourceTicket) {
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: sourceTicket.id, summary: `Linked article "${title}"` });
+    revalidatePath(`/tickets/${sourceTicket.id}`);
+  }
   revalidatePath("/knowledge");
   redirect(`/knowledge/${article.slug}`);
 }

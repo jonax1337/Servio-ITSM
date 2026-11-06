@@ -78,6 +78,32 @@ Brand assets → [Servio + Sable brand kit](branding/README.md) · [Brand guidel
 
 ---
 
+## How Servio compares
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark/clicks-dark.svg">
+  <img src="docs/benchmark/clicks-light.svg" alt="Total clicks for 17 service-desk tasks: Servio 73, GLPI 120, Znuny 132, iTop 146" width="100%">
+</picture>
+
+We scripted 17 everyday tasks, from an end user reporting an incident to an admin adding a
+category, and ran them in Servio, GLPI, iTop and Znuny with the same seed data. Servio needs
+**73 clicks** for all of them (GLPI 120, Znuny 132, iTop 146) and is the only one of the four
+that completes every task without a workaround.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmark/features-dark.svg">
+  <img src="docs/benchmark/features-light.svg" alt="Feature matrix for Servio, GLPI, iTop and Znuny across 22 capabilities" width="100%">
+</picture>
+
+Feature for feature, Servio covers the ITSM core the others do and adds release management,
+a public status page, on-call schedules and a built-in AI assistant. Where it is behind: the UI
+is English-only, and reporting is dashboards rather than a report builder.
+
+Per-task numbers, notes and sources for every feature cell, versions, method and the limits of
+the comparison → [docs/benchmark.md](docs/benchmark.md)
+
+---
+
 ## Features
 
 - **Service desk** — incidents & requests with priority, impact/urgency, **business-hours SLA targets

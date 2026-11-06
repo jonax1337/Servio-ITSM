@@ -10,6 +10,7 @@ import {
   standardDemotion,
   standardTypeError,
   submitBlockedMessage,
+  submitBlockerDetails,
   submitBlockers,
   WINDOW_ORDER_ERROR,
 } from "@/lib/change-rules";
@@ -32,6 +33,32 @@ describe("plannedWindowError", () => {
     expect(plannedWindowError(null, at("2026-01-01T10:00"))).toBeNull();
     expect(plannedWindowError(at("2026-01-01T10:00"), null)).toBeNull();
     expect(plannedWindowError(null, null)).toBeNull();
+  });
+});
+
+describe("submitBlockerDetails", () => {
+  const draft = { id: 42, implementationPlan: "Deploy v2", rollbackPlan: "Redeploy v1", plannedStart: at("2026-01-01T10:00"), plannedEnd: at("2026-01-01T11:00") };
+
+  it("links each missing prerequisite to its field on the Planning tab", () => {
+    const missing = submitBlockerDetails({ ...draft, implementationPlan: null, rollbackPlan: "", plannedStart: null }, false);
+    expect(missing).toEqual([
+      { field: "implementationPlan", label: "an implementation plan", href: "/changes/42?tab=planning#implementation-plan" },
+      { field: "rollbackPlan", label: "a rollback plan", href: "/changes/42?tab=planning#rollback-plan" },
+      { field: "plannedWindow", label: "a planned window (start and end)", href: "/changes/42?tab=planning#planned-window" },
+    ]);
+  });
+
+  it("names a window with only one end as missing", () => {
+    expect(submitBlockerDetails({ ...draft, plannedEnd: null }, false).map((m) => m.field)).toEqual(["plannedWindow"]);
+  });
+
+  it("treats a whitespace-only plan as missing", () => {
+    expect(submitBlockerDetails({ ...draft, rollbackPlan: "   " }, false).map((m) => m.field)).toEqual(["rollbackPlan"]);
+  });
+
+  it("lists nothing for a complete or pre-approved change", () => {
+    expect(submitBlockerDetails(draft, false)).toEqual([]);
+    expect(submitBlockerDetails({ ...draft, implementationPlan: null }, true)).toEqual([]);
   });
 });
 

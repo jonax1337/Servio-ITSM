@@ -6,6 +6,7 @@ import {
   parseOptions,
   parseValues,
   validateValue,
+  validateCustomFieldValues,
   type CustomFieldDef,
 } from "@/lib/custom-fields";
 
@@ -133,5 +134,39 @@ describe("parseValues / entityFieldValues / parseOptions", () => {
     expect(parseOptions('["a","b"]')).toEqual(["a", "b"]);
     expect(parseOptions("[]")).toEqual([]);
     expect(parseOptions(null)).toEqual([]);
+  });
+});
+
+describe("validateCustomFieldValues", () => {
+  const defs = [
+    def({ key: "env" }),
+    def({ id: "cf2", key: "owner" }),
+    def({ id: "cf3", key: "seats", label: "Seats", type: "number" }),
+    def({ id: "cf4", key: "tier", label: "Tier", type: "select", options: '["gold","silver"]' }),
+    def({ id: "cf5", key: "due", label: "Due date", type: "date" }),
+    def({ id: "cf6", key: "paid", label: "Paid", type: "checkbox" }),
+  ];
+
+  it("keeps the values of known fields and drops empty ones", () => {
+    expect(validateCustomFieldValues(defs, { env: "prod", owner: "" })).toEqual({ ok: true, values: { env: "prod" } });
+  });
+
+  it("drops keys that no field defines", () => {
+    expect(validateCustomFieldValues(defs, { env: "prod", __proto__x: "1", other: "2" })).toEqual({ ok: true, values: { env: "prod" } });
+  });
+
+  it("stores the normalised value", () => {
+    expect(validateCustomFieldValues(defs, { env: "  prod ", paid: "on" })).toEqual({ ok: true, values: { env: "prod", paid: "true" } });
+  });
+
+  it("refuses an invalid value and names the field", () => {
+    expect(validateCustomFieldValues(defs, { seats: "many" })).toEqual({ ok: false, error: "Seats must be a number" });
+    expect(validateCustomFieldValues(defs, { tier: "bronze" })).toEqual({ ok: false, error: "Tier has an invalid choice" });
+    expect(validateCustomFieldValues(defs, { due: "someday" })).toEqual({ ok: false, error: "Due date must be a valid date" });
+  });
+
+  it("leaves a blank value for a required field to the required check", () => {
+    const required = [def({ key: "env", label: "Env", required: true })];
+    expect(validateCustomFieldValues(required, { env: "  " })).toEqual({ ok: true, values: {} });
   });
 });

@@ -8,6 +8,7 @@ import { requireAgentUser, requireManagerUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import type { ActionResult } from "@/lib/action-result";
 import { createChangeFromTemplate } from "@/lib/change-templates";
+import { distinctIds } from "@/lib/utils";
 import { templateProblem } from "@/lib/change-template-rules";
 import { CHANGE_TEMPLATE_TYPES, IMPACT_URGENCY, PRIORITIES, RISKS } from "@/lib/constants";
 
@@ -185,7 +186,7 @@ export async function createChangeFromTemplateAction(_prev: TemplateActionState,
     if (key.startsWith(CUSTOM_FIELD_PREFIX) && typeof value === "string") customFields[key.slice(CUSTOM_FIELD_PREFIX.length)] = value;
   }
 
-  const result = await createChangeFromTemplate(me.id, templateId, overrides, customFields);
+  const result = await createChangeFromTemplate(me.id, templateId, overrides, customFields, distinctIds(formData.getAll("assetIds")));
   if (!result.ok) return { error: result.error, fieldErrors: result.fieldErrors };
   // Stay on the form so the refusal reason is read, not lost in the redirect.
   if (result.approvalError) return { error: result.approvalError, draftChangeId: result.changeId };

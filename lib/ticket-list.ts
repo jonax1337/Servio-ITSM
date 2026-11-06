@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { buildTicketWhere } from "@/lib/dashboard/compute";
+import { parseSlaView, slaViewWhere, sortBySlaUrgency } from "@/lib/sla-views";
 import type { TicketFilters } from "@/lib/dashboard/types";
 import { db } from "@/lib/db";
 import { PRIORITIES, TICKET_STATUSES } from "@/lib/constants";
@@ -9,7 +10,7 @@ import { applyTicketSearch } from "@/lib/search";
 /** URL params the ticket list understands — the page forwards all of them to its CSV export. */
 export const TICKET_LIST_PARAMS = [
   "q", "status", "priority", "type", "group", "assignee", "category", "service",
-  "impact", "urgency", "source", "major", "vip", "breached", "sort", "dir",
+  "impact", "urgency", "source", "major", "vip", "breached", "sla", "sort", "dir",
 ] as const;
 
 /** Priority and status are String columns: SQL would sort them alphabetically, so they sort by rank. */
@@ -36,6 +37,9 @@ export function sortByRank<T extends { id: number; priority: string; status: str
   );
 }
 
+/** The SLA column sorts by urgency, which needs the live clock: breached first, then the nearest deadline. */
+export type SlaSort = { dir: "asc" | "desc" };
+
 type TicketPageArgs = Pick<Prisma.TicketFindManyArgs, "where" | "orderBy" | "skip" | "take">;
 
 /**
@@ -48,7 +52,21 @@ export async function findTicketWindow<R extends { id: number }>(
   window: { skip: number; take: number },
   fetch: (args: TicketPageArgs) => Promise<R[]>,
 ): Promise<R[]> {
-  const { where, orderBy, rankSort } = query;
+  const { where, orderBy, rankSort, slaSort } = query;
+  if (slaSort) {
+    const slim = await db.ticket.findMany({
+      where,
+      select: {
+        id: true, status: true, createdAt: true, updatedAt: true, resolvedAt: true, resolveBreached: true,
+        responseDueAt: true, resolveDueAt: true, dueAt: true, pendingSince: true, pausedMs: true,
+        sla: { select: { businessCalendarId: true } },
+      },
+    });
+    const pageIds = (await sortBySlaUrgency(slim, slaSort.dir)).slice(window.skip, window.skip + window.take).map((t) => t.id);
+    const rows = await fetch({ where: { id: { in: pageIds } } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return pageIds.flatMap((id) => byId.get(id) ?? []);
+  }
   if (!rankSort) return fetch({ where, orderBy, ...window });
 
   const slim = await db.ticket.findMany({ where, select: { id: true, priority: true, status: true, updatedAt: true } });
@@ -61,13 +79,24 @@ export async function findTicketWindow<R extends { id: number }>(
 }
 
 /**
+ * `ticketListQuery` for a request: resolves the `sla` view (which needs the live SLA clock)
+ * to the ticket ids currently in it, so /tickets and /api/export both get the same rows.
+ */
+export async function loadTicketListQuery(sp: SearchParams) {
+  const view = parseSlaView(getParam(sp, "sla"));
+  return ticketListQuery(sp, view ? await slaViewWhere(view) : undefined);
+}
+
+/**
  * The Prisma filter and sort for the ticket list, built from its URL params.
  * Shared by /tickets and /api/export so an export contains exactly the rows on screen.
+ * `slaFilter`: the filter of the requested `sla` view, from `loadTicketListQuery`.
  */
-export function ticketListQuery(sp: SearchParams): {
+export function ticketListQuery(sp: SearchParams, slaFilter?: Prisma.TicketWhereInput): {
   where: Prisma.TicketWhereInput;
   orderBy: Prisma.TicketOrderByWithRelationInput;
   rankSort?: RankSort;
+  slaSort?: SlaSort;
 } {
   // Same builder as the dashboard widgets, so widget drill-down links match exactly.
   const filters: TicketFilters = {
@@ -85,7 +114,8 @@ export function ticketListQuery(sp: SearchParams): {
     vip: getParam(sp, "vip"),
     breached: getParam(sp, "breached"),
   };
-  const where: Prisma.TicketWhereInput = buildTicketWhere(filters);
+  const filtered = buildTicketWhere(filters);
+  const where: Prisma.TicketWhereInput = slaFilter ? { AND: [filtered, slaFilter] } : filtered;
   // Cross-field text search AND'd onto the filters so search narrows the list (lib/search.ts).
   applyTicketSearch(where, getParam(sp, "q"));
 
@@ -101,5 +131,6 @@ export function ticketListQuery(sp: SearchParams): {
   const orderBy = ORDER[getParam(sp, "sort") ?? "updatedAt"] ?? { updatedAt: dir };
   const sort = getParam(sp, "sort");
   const rankSort: RankSort | undefined = sort === "priority" || sort === "status" ? { key: sort, dir } : undefined;
-  return { where, orderBy, rankSort };
+  const slaSort: SlaSort | undefined = sort === "sla" ? { dir } : undefined;
+  return { where, orderBy, rankSort, slaSort };
 }

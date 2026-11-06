@@ -12,7 +12,7 @@ import { ChangeProperties } from "@/components/changes/change-properties";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
-import { isChangeLocked, isTemplatedStandard, submitBlockers } from "@/lib/change-rules";
+import { isChangeLocked, isTemplatedStandard, submitBlockerDetails } from "@/lib/change-rules";
 import { SubmitForApproval } from "@/components/changes/submit-for-approval";
 import { CancelChangeButton } from "@/components/changes/cancel-change";
 import { ChangeDetailsDialog } from "@/components/changes/change-editors";
@@ -79,7 +79,7 @@ export default async function ChangeDetailPage({
   const locked = isChangeLocked(change.status);
   const canEdit = isAgentUser && !locked;
   const preAuthorized = isTemplatedStandard(change);
-  const missingForSubmit = submitBlockers(change, preAuthorized);
+  const missingForSubmit = submitBlockerDetails(change, preAuthorized);
 
   const approvals = {
     seated: change.approvals.length,
@@ -87,7 +87,7 @@ export default async function ChangeDetailPage({
   };
   const tabs = buildChangeTabs({
     status: change.status,
-    submitBlockers: missingForSubmit,
+    submitBlockers: missingForSubmit.map((m) => m.label),
     counts: {
       pendingApprovals: approvals.pending,
       affectedCis: change._count.assets,
@@ -98,10 +98,10 @@ export default async function ChangeDetailPage({
   const active = resolveTab(sp, tabs, DEFAULT_CHANGE_TAB);
 
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] lg:grid-cols-[1fr_320px] lg:overflow-hidden">
+    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
           <LinkButton href="/changes" variant="ghost" size="icon-sm" aria-label="Back to changes">
             <ArrowLeft className="size-4" />
           </LinkButton>
@@ -110,7 +110,7 @@ export default async function ChangeDetailPage({
           </span>
           <StatusBadge map={CHANGE_TYPE_META} value={change.type} dot />
           <ReleaseChip changeId={change.id} />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {isAgentUser && change.status === "DRAFT" ? (
               <SubmitForApproval
                 changeId={change.id}
@@ -136,7 +136,7 @@ export default async function ChangeDetailPage({
         <ChangeConflicts changeId={change.id} variant="banner" />
 
         <div className="p-4 sm:p-6">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <h1 className="font-display text-2xl font-semibold tracking-tight wrap-anywhere">
             {change.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">

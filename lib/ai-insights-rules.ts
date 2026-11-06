@@ -112,7 +112,7 @@ export function kbGapInsightText(count: number, terms: readonly string[], window
   };
 }
 
-const clipTitle = (title: string) => (title.length > MAX_TITLE_CHARS ? `${title.slice(0, MAX_TITLE_CHARS - 1)}…` : title);
+export const clipTitle = (title: string) => (title.length > MAX_TITLE_CHARS ? `${title.slice(0, MAX_TITLE_CHARS - 1)}…` : title);
 
 // ---- problem from a cluster -------------------------------------------------
 
@@ -140,6 +140,16 @@ function mostCommon(values: readonly (string | null)[]): string | null {
   return best;
 }
 
+/** Severity and routing a problem inherits from the tickets it is raised for. */
+export function problemTraits(tickets: readonly ClusterTicket[]) {
+  return {
+    priority: highest(tickets.map((t) => t.priority), PRIORITIES),
+    impact: highest(tickets.map((t) => t.impact), IMPACT_URGENCY),
+    categoryId: mostCommon(tickets.map((t) => t.categoryId)),
+    groupId: mostCommon(tickets.map((t) => t.groupId)),
+  };
+}
+
 /** The problem record to open for a cluster; the first ticket (lowest id) names it. */
 export function problemFromCluster(tickets: readonly ClusterTicket[]) {
   const [first] = [...tickets].sort((a, b) => a.id - b.id);
@@ -147,10 +157,7 @@ export function problemFromCluster(tickets: readonly ClusterTicket[]) {
   return {
     title: clipTitle(`Recurring: ${first.title}`),
     description: `Raised from a cluster of ${tickets.length} similar incidents:\n${lines.join("\n")}`,
-    priority: highest(tickets.map((t) => t.priority), PRIORITIES),
-    impact: highest(tickets.map((t) => t.impact), IMPACT_URGENCY),
-    categoryId: mostCommon(tickets.map((t) => t.categoryId)),
-    groupId: mostCommon(tickets.map((t) => t.groupId)),
+    ...problemTraits(tickets),
   };
 }
 

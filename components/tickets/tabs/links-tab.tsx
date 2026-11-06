@@ -1,13 +1,16 @@
 import { notFound } from "next/navigation";
-import { AlertTriangle, GitPullRequestArrow, Link2, Server } from "lucide-react";
+import { AlertTriangle, BookOpen, GitPullRequestArrow, Link2, Server } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkPicker } from "@/components/link-picker";
+import { LinkButton } from "@/components/link-button";
+import { RaiseProblemButton } from "@/components/tickets/raise-problem-dialog";
 import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { TicketHierarchy } from "@/components/tickets/ticket-hierarchy";
 import { RelatedArticlesCard } from "@/components/related-articles-card";
 import { SimilarTickets } from "@/components/ai/similar-tickets";
 import { unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { ticketLinkEntries } from "@/lib/ticket-link-labels";
+import { canDraftArticleFrom, problemDraftFromTickets } from "@/lib/ticket-drafts";
 import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
 import { HIERARCHY_PICKER_LIMIT, ancestorChain, descendantIds } from "@/lib/ticket-hierarchy-rules";
 import { TONE_TEXT_CLASSES, problemRef, changeRef, ticketRef } from "@/lib/constants";
@@ -74,6 +77,7 @@ export async function LinksTab({
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
     select: {
+      id: true, prefix: true, type: true, status: true, title: true, description: true,
       problem: { select: { id: true, title: true } },
       change: { select: { id: true } },
       assets: { include: { asset: true } },
@@ -99,6 +103,9 @@ export async function LinksTab({
           </h2>
           {pickers ? (
             <div className="flex flex-wrap items-center gap-1.5">
+              {ticket.type === "INCIDENT" && !ticket.problem ? (
+                <RaiseProblemButton ticketId={ticketId} draft={problemDraftFromTickets([ticket])} />
+              ) : null}
               <LinkPicker
                 action={setTicketProblem}
                 triggerLabel="Problem"
@@ -176,7 +183,17 @@ export async function LinksTab({
 
       {viewer.isAgent ? <SimilarTickets ticketId={ticketId} variant="full" canEdit /> : null}
 
-      <RelatedArticlesCard entityType="TICKET" entityId={ticketId} />
+      <RelatedArticlesCard
+        entityType="TICKET"
+        entityId={ticketId}
+        actions={
+          canDraftArticleFrom(ticket.status) ? (
+            <LinkButton href={`/knowledge/new?fromTicket=${ticketId}`} variant="outline" size="sm">
+              <BookOpen className="size-4" /> Create article
+            </LinkButton>
+          ) : null
+        }
+      />
     </div>
   );
 }

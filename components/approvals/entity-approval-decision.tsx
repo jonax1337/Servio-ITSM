@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 /** Compact approve/reject control for a generic ad-hoc approval (used in the hub). */
 export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
   const [comment, setComment] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function decide(decision: "APPROVED" | "REJECTED") {
@@ -18,7 +19,13 @@ export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
     fd.set("decision", decision);
     if (comment.trim()) fd.set("comment", comment.trim());
     start(async () => {
-      await decideEntityApproval(fd);
+      const res = await decideEntityApproval(fd);
+      if (!res.ok) {
+        setError(res.error ?? "The decision could not be recorded.");
+        toast.error(res.error ?? "The decision could not be recorded.");
+        return;
+      }
+      setError(null);
       setComment("");
       toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
     });
@@ -39,6 +46,7 @@ export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
       <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("REJECTED")}>
         <X className="size-3.5" /> Reject
       </Button>
+      {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
     </div>
   );
 }

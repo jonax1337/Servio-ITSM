@@ -3,20 +3,20 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { ArrowUp, ArrowDown, ChevronsUpDown, Loader2, X } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronsUpDown, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Combobox, type ComboOption } from "@/components/combobox";
-import { StatusBadge, VipBadge } from "@/components/status-badge";
+import { BulkEditDialog, type BulkEditOptions } from "@/components/tickets/bulk-edit-dialog";
+import { StatusBadge, ToneBadge, VipBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
-import { bulkUpdateTickets } from "@/lib/actions/tickets";
-import {
-  PRIORITY_META, TICKET_STATUS_META, PRIORITIES, ticketRef,
-} from "@/lib/constants";
+import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
+import { problemDraftFromTickets } from "@/lib/ticket-drafts";
+import { PRIORITY_META, SLA_STATE_META, TICKET_STATUS_META, metaFor, ticketRef } from "@/lib/constants";
+import type { SlaCell } from "@/lib/sla-column";
 import { format, formatDistanceToNow } from "date-fns";
 
 type Row = {
@@ -28,19 +28,20 @@ type Row = {
   requesterVip: boolean;
   priority: string;
   status: string;
+  sla: SlaCell | null;
   assignee: { name: string | null; email: string } | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 };
 
-const FIELD_OPTS: ComboOption[] = [
-  { value: "assigneeId", label: "Assignee" },
-  { value: "groupId", label: "Group" },
-  { value: "priority", label: "Priority" },
-  { value: "status", label: "Status" },
-];
-// Bulk status is limited to transitions that don't need a reason/note.
-const BULK_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"];
+function SlaIndicator({ cell }: { cell: SlaCell }) {
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <ToneBadge meta={metaFor(SLA_STATE_META, cell.state)} />
+      {cell.detail ? <span className="text-xs text-muted-foreground">{cell.detail}</span> : null}
+    </span>
+  );
+}
 
 function SortHead({
   k,
@@ -78,15 +79,13 @@ export function TicketsTable({
   sort,
   dir,
   canBulk,
-  agents,
-  groups,
+  bulkOptions,
 }: {
   rows: Row[];
   sort: string;
   dir: "asc" | "desc";
   canBulk: boolean;
-  agents: { value: string; label: string }[];
-  groups: { value: string; label: string }[];
+  bulkOptions: BulkEditOptions;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -94,9 +93,7 @@ export function TicketsTable({
   const [navPending, startNav] = useTransition();
 
   const [sel, setSel] = useState<Set<number>>(new Set());
-  const [field, setField] = useState("assigneeId");
-  const [value, setValue] = useState("none");
-  const [applyPending, startApply] = useTransition();
+  const [problemOpen, setProblemOpen] = useState(false);
 
   function toggleSort(k: string) {
     const params = new URLSearchParams(sp.toString());
@@ -123,29 +120,9 @@ export function TicketsTable({
     });
   }
 
-  function valueOptsFor(f: string): ComboOption[] {
-    if (f === "priority") return PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone }));
-    if (f === "status") return BULK_STATUSES.map((s) => ({ value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone }));
-    if (f === "groupId") return [{ value: "none", label: "No group" }, ...groups];
-    return [{ value: "none", label: "Unassigned" }, ...agents];
-  }
-  function changeField(f: string) {
-    setField(f);
-    const first = valueOptsFor(f)[0]?.value ?? "";
-    setValue(first);
-  }
-
-  function apply() {
-    if (!some) return;
-    const fd = new FormData();
-    fd.set("ids", [...sel].join(","));
-    fd.set("field", field);
-    fd.set("value", value);
-    startApply(async () => {
-      await bulkUpdateTickets(fd);
-      setSel(new Set());
-      router.refresh();
-    });
+  function onBulkApplied() {
+    setSel(new Set());
+    router.refresh();
   }
 
   const sortHead = { sort, dir, onToggle: toggleSort };
@@ -155,16 +132,19 @@ export function TicketsTable({
       {canBulk && some ? (
         <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 px-3 py-2 backdrop-blur">
           <span className="text-sm font-medium">{sel.size} selected</span>
-          <span className="mx-1 text-muted-foreground">·</span>
-          <span className="text-sm text-muted-foreground">Set</span>
-          <Combobox options={FIELD_OPTS} value={field} onChange={changeField} size="sm" className="w-auto min-w-[8rem]" />
-          <Combobox options={valueOptsFor(field)} value={value} onChange={(v) => setValue(v || "none")} size="sm" className="w-auto min-w-[10rem]" searchPlaceholder="Search…" />
-          <Button type="button" size="sm" onClick={apply} disabled={applyPending}>
-            {applyPending ? <Loader2 className="size-4 animate-spin" /> : null} Apply
+          <BulkEditDialog ticketIds={[...sel]} options={bulkOptions} onApplied={onBulkApplied} />
+          <Button type="button" variant="outline" size="sm" onClick={() => setProblemOpen(true)}>
+            <TriangleAlert className="size-4" /> Create problem
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setSel(new Set())}>
             <X className="size-4" /> Clear
           </Button>
+          <RaiseProblemDialog
+            open={problemOpen}
+            onOpenChange={setProblemOpen}
+            ticketIds={[...sel]}
+            draft={problemDraftFromTickets(rows.filter((r) => sel.has(r.id)))}
+          />
         </div>
       ) : null}
 
@@ -187,6 +167,7 @@ export function TicketsTable({
               <SortHead {...sortHead} k="requester" label="Requester" className="hidden lg:table-cell" />
               <TableHead>Priority</TableHead>
               <SortHead {...sortHead} k="status" label="Status" />
+              <SortHead {...sortHead} k="sla" label="SLA" className="hidden md:table-cell" />
               <SortHead {...sortHead} k="assignee" label="Assignee" className="hidden md:table-cell" />
               <SortHead {...sortHead} k="createdAt" label="Created" className="hidden 2xl:table-cell text-right" />
               <SortHead {...sortHead} k="updatedAt" label="Updated" className="hidden xl:table-cell text-right" />
@@ -219,6 +200,7 @@ export function TicketsTable({
                 <TableCell>
                   <StatusBadge map={TICKET_STATUS_META} value={t.status} />
                 </TableCell>
+                <TableCell className="hidden md:table-cell">{t.sla ? <SlaIndicator cell={t.sla} /> : null}</TableCell>
                 <TableCell className="hidden md:table-cell">
                   {t.assignee ? (
                     <div className="flex items-center gap-2">

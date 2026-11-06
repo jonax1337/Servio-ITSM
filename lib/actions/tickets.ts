@@ -24,13 +24,17 @@ import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
-import { canActOnTicket } from "@/lib/authz";
+import { canActOnTicket, mayActOnTicket } from "@/lib/authz";
 import { ensureDraftStatusIncident, notifyOnCallOfMajorIncident } from "@/lib/status-incidents";
 import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import {
   firstResponseData, pauseData, resumeData, statusChangeData, ticketCalendar,
 } from "@/lib/sla";
 import { canTransitionConfigured } from "@/lib/workflow";
+import {
+  BULK_CLEAR, bulkSkipDetail, buildBulkChanges, planBulkTicket, withApplyResult, type BulkApplyResult, type BulkChange, type BulkOutcome, type BulkRules, type BulkTicketState,
+} from "@/lib/bulk-edit";
+import { ASSIGNEE_NOT_IN_GROUP, AWAITING_APPROVAL, NOT_YOUR_TICKET, TRANSITION_NOT_ALLOWED } from "@/lib/ticket-refusals";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import {
   TICKET_TYPES,
@@ -109,6 +113,8 @@ const updateSchema = z.object({
     "assigneeId", "groupId", "categoryId", "serviceId", "slaId",
   ]),
   value: z.string(),
+  /** Compare-and-set: write only while the field still holds this value ("none" = empty). Undo sends it. */
+  expected: z.string().optional(),
 });
 
 export async function updateTicketField(formData: FormData): Promise<TicketActionResult> {
@@ -116,10 +122,12 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
   if (!me) return refused(NOT_AUTHORISED);
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return refused(INVALID_CHANGE);
-  const { id, field, value } = parsed.data;
+  const { id, field, value, expected } = parsed.data;
+  const isUndo = expected !== undefined;
 
   const isRelation = field.endsWith("Id");
-  const v = isRelation && (value === "none" || value === "") ? null : value;
+  const asStored = (raw: string) => (isRelation && (raw === "none" || raw === "") ? null : raw);
+  const v = asStored(value);
 
   // Authorization: only ADMIN/MANAGER, or the assignee / a member of the ticket's
   // group, may mutate a ticket.
@@ -204,11 +212,13 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
     ));
   }
 
-  const ticket = await db.ticket.update({
-    where: { id },
+  // One conditional statement, so the check and the write cannot be split by another edit.
+  const written = await db.ticket.updateMany({
+    where: { id, ...(isUndo && { [field]: asStored(expected) }) },
     data: patch,
-    include: { requester: true, assignee: true },
   });
+  if (written.count === 0) return refused(isUndo ? CHANGED_SINCE : TICKET_NOT_FOUND);
+  const ticket = await db.ticket.findUniqueOrThrow({ where: { id }, include: { requester: true, assignee: true } });
   await withdrawPendingApprovals(id, patch);
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
 
@@ -218,10 +228,14 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
     await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand())) });
   }
 
-  await runAutomations("TICKET_UPDATED", id);
-  // After automations may have (re)routed the ticket to a team, auto-assign it
-  // (no-op if it already has an assignee or the team has no strategy).
-  if (field === "groupId" && v) await autoAssignTicket(id);
+  // An Undo puts back a state the user already saw: re-running routing would overwrite it,
+  // e.g. auto-assign a member before the previous assignee is restored.
+  if (!isUndo) {
+    await runAutomations("TICKET_UPDATED", id);
+    // After automations may have (re)routed the ticket to a team, auto-assign it
+    // (no-op if it already has an assignee or the team has no strategy).
+    if (field === "groupId" && v) await autoAssignTicket(id);
+  }
 
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");
@@ -229,30 +243,119 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
 }
 
 /**
- * Apply one field change to many tickets at once (bulk action). Reuses
- * updateTicketField per ticket so transitions, the SLA clock, automations and
- * notifications all still run correctly; invalid status transitions are skipped.
+ * Apply a multi-field edit (`patch`: JSON of status / priority / group / assignee /
+ * category, see lib/bulk-edit.ts) to many tickets at once. Every ticket is checked
+ * against the whole patch first and skipped, with its reason, when any field would be
+ * refused. The writes then go through updateTicketField per ticket and field, so
+ * authorization, transitions, the SLA clock, audit, automations and notifications all
+ * still run. Automations can re-route a ticket between two writes; when that makes a
+ * later field refuse, the ticket is reported as partially updated rather than skipped.
  */
-export async function bulkUpdateTickets(formData: FormData) {
+export async function bulkUpdateTickets(formData: FormData): Promise<BulkUpdateResult> {
   const me = await requireAgent();
-  if (!me) return;
-  const ids = String(formData.get("ids") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
+  if (!me) return { ok: false, ...NOTHING_CHANGED, error: NOT_AUTHORISED };
+  const ids = [...new Set(String(formData.get("ids") ?? "").split(",").map((s) => Number(s.trim())))]
+    .filter((id) => Number.isInteger(id) && id > 0)
     .slice(0, 200);
-  const field = String(formData.get("field") ?? "");
-  const value = String(formData.get("value") ?? "");
-  if (!ids.length || !["status", "priority", "assigneeId", "groupId"].includes(field)) return;
+  const changes = buildBulkChanges(parseJson(formData.get("patch")));
+  if (!ids.length || !changes.length || !(await bulkTargetsExist(changes))) {
+    return { ok: false, ...NOTHING_CHANGED, error: INVALID_CHANGE };
+  }
 
-  for (const id of ids) {
-    const fd = new FormData();
-    fd.set("id", id);
-    fd.set("field", field);
-    fd.set("value", value);
-    await updateTicketField(fd);
+  const tickets = await db.ticket.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, prefix: true, status: true, groupId: true, assigneeId: true, approvalState: true, mergedIntoId: true },
+  });
+  const rules = await loadBulkRules(me, tickets, changes);
+  let outcome: BulkOutcome = NOTHING_CHANGED;
+
+  const found = new Set(tickets.map((t) => t.id));
+  for (const id of ids.filter((id) => !found.has(id))) {
+    outcome = withApplyResult(outcome, ticketRef(id), { applied: 0, refusal: TICKET_NOT_FOUND });
+  }
+  for (const ticket of tickets) {
+    const planned = planBulkTicket(ticket, changes, rules);
+    const result = planned ? { applied: 0, refusal: planned } : await applyChanges(ticket.id, changes);
+    outcome = withApplyResult(outcome, ticketRef(ticket.id, ticket.prefix), result);
   }
   revalidatePath("/tickets");
+  const ok = outcome.updated > 0 || outcome.partial.length > 0;
+  return { ok, ...outcome, ...(!ok && { error: bulkSkipDetail(outcome.skipped) }) };
+}
+
+const NOTHING_CHANGED: BulkOutcome = { updated: 0, partial: [], skipped: [] };
+
+export type BulkUpdateResult = TicketActionResult & BulkOutcome;
+
+/** Whether every group, agent and category a bulk patch points at exists. */
+async function bulkTargetsExist(changes: BulkChange[]): Promise<boolean> {
+  const count: Partial<Record<BulkChange["field"], (id: string) => Promise<number>>> = {
+    groupId: (id) => db.group.count({ where: { id } }),
+    assigneeId: (id) => db.user.count({ where: { id } }),
+    categoryId: (id) => db.category.count({ where: { id } }),
+  };
+  for (const { field, value } of changes) {
+    if (value !== BULK_CLEAR && count[field] && (await count[field](value)) === 0) return false;
+  }
+  return true;
+}
+
+/** The access, membership and workflow facts a bulk edit checks, read once for the whole batch. */
+async function loadBulkRules(
+  me: Agent,
+  tickets: readonly (BulkTicketState & { id: number })[],
+  changes: readonly BulkChange[],
+): Promise<BulkRules> {
+  const target = (field: BulkChange["field"]) => changes.find((c) => c.field === field && c.value !== BULK_CLEAR)?.value;
+  const groupIds = new Set([...tickets.map((t) => t.groupId), target("groupId")].filter((id): id is string => !!id));
+  const userIds = new Set([...tickets.map((t) => t.assigneeId), target("assigneeId"), me.id].filter((id): id is string => !!id));
+  const memberships = await db.groupMember.findMany({
+    where: { groupId: { in: [...groupIds] }, userId: { in: [...userIds] } },
+    select: { groupId: true, userId: true },
+  });
+  const members = new Set(memberships.map((m) => `${m.groupId}:${m.userId}`));
+  const isMember = (groupId: string, userId: string) => members.has(`${groupId}:${userId}`);
+
+  const nextStatus = changes.find((c) => c.field === "status")?.value;
+  const transitions = new Map<string, boolean>();
+  if (nextStatus) {
+    for (const from of new Set(tickets.map((t) => t.status))) {
+      transitions.set(from, await canTransitionConfigured("TICKET", from, nextStatus, me.role as Role));
+    }
+  }
+  return {
+    canAct: (state) => mayActOnTicket(me, state, isMember),
+    isMember,
+    statusRefusal(state, to) {
+      const merged = mergedStatusRefusal(state, to);
+      if (merged) return merged;
+      if (!approvalAllowsStatus(state.approvalState, to)) return AWAITING_APPROVAL;
+      return transitions.get(state.status) === false ? TRANSITION_NOT_ALLOWED : null;
+    },
+  };
+}
+
+function parseJson(raw: FormDataEntryValue | null): unknown {
+  try {
+    return JSON.parse(String(raw ?? ""));
+  } catch {
+    return null;
+  }
+}
+
+/** Runs the changes on one ticket in order, stopping at the first refusal. */
+async function applyChanges(ticketId: number, changes: BulkChange[]): Promise<BulkApplyResult> {
+  let applied = 0;
+  for (const { field, value } of changes) {
+    const fd = new FormData();
+    fd.set("id", String(ticketId));
+    fd.set("field", field);
+    fd.set("value", value);
+    const result = await updateTicketField(fd);
+    if (!result.ok) return { applied, refusal: result.error ?? INVALID_CHANGE };
+    applied++;
+  }
+  return { applied, refusal: null };
 }
 
 export async function addTicketComment(formData: FormData) {
@@ -331,11 +434,8 @@ function escapeInlineText(s: string): string {
 
 // Why a ticket change was refused — surfaced to the agent instead of a silent no-op.
 const NOT_AUTHORISED = "You are not signed in as an agent.";
-const NOT_YOUR_TICKET = "You can't change this ticket — it belongs to a group you're not a member of.";
-const AWAITING_APPROVAL = "This request is awaiting approval; it can only be cancelled until it is decided.";
-const TRANSITION_NOT_ALLOWED = "The status workflow doesn't allow this change.";
-const ASSIGNEE_NOT_IN_GROUP = "That agent isn't a member of the ticket's group.";
 const TICKET_NOT_FOUND = "Ticket not found.";
+const CHANGED_SINCE = "This field changed since — not undone.";
 const INVALID_CHANGE = "That change isn't valid for this ticket.";
 const INVALID_LINK = "That link request isn't valid.";
 const ALREADY_LINKED = "These tickets are already linked.";

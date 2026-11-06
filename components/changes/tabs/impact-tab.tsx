@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
+import { searchAttachableCis } from "@/lib/actions/changes";
 import { computeImpact } from "@/lib/cmdb-graph";
 import { blastRadiusRisk } from "@/lib/change-brief-rules";
 import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
-import type { ComboOption } from "@/components/combobox";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
 
 /**
@@ -31,22 +31,9 @@ async function impactOf(affectedIds: string[]): Promise<ChangeImpact> {
 
 /** Rendered only while the Impact tab is active: the graph walk is the expensive part of the page. */
 export async function ImpactTab({ change, isAgent }: ChangeTabContext) {
-  const [affectedLinks, candidateAssets] = await Promise.all([
-    db.changeAsset.findMany({ where: { changeId: change.id }, include: { asset: true } }),
-    db.asset.findMany({
-      where: { status: { notIn: ["RETIRED", "DISPOSED"] } },
-      select: { id: true, name: true, type: true },
-      orderBy: { name: "asc" },
-      take: 500,
-    }),
-  ]);
+  const affectedLinks = await db.changeAsset.findMany({ where: { changeId: change.id }, include: { asset: true } });
   const affectedIds = affectedLinks.map((a) => a.assetId);
   const impact = await impactOf(affectedIds);
-
-  const affectedSet = new Set(affectedIds);
-  const assetOptions: ComboOption[] = candidateAssets
-    .filter((a) => !affectedSet.has(a.id))
-    .map((a) => ({ value: a.id, label: a.name, hint: a.type }));
 
   return (
     <div className="[&>div]:mt-0">
@@ -59,7 +46,7 @@ export async function ImpactTab({ change, isAgent }: ChangeTabContext) {
           status: a.asset.status,
         }))}
         impact={impact}
-        assetOptions={assetOptions}
+        searchAssets={searchAttachableCis.bind(null, change.id)}
         editable={isAgent}
       />
     </div>

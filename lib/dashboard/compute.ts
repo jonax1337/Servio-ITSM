@@ -11,6 +11,7 @@ import {
   SURVEY_RATING_MAX,
 } from "@/lib/constants";
 import type { Widget, Computed, TicketFilters, BreakdownField, Threshold, Tone } from "@/lib/dashboard/types";
+import { parseSlaView, slaViewWhere } from "@/lib/sla-views";
 
 /** First matching threshold wins; falls back to undefined (caller uses the accent). */
 function resolveThresholdTone(value: number, thresholds?: Threshold[]): Tone | undefined {
@@ -64,13 +65,24 @@ export function buildTicketWhere(f: TicketFilters): Prisma.TicketWhereInput {
   return w;
 }
 
+/**
+ * `buildTicketWhere` plus the filters that need the live SLA clock (`sla`): those
+ * resolve to the ids currently in the view, so this one is async.
+ */
+export async function resolveTicketWhere(f: TicketFilters): Promise<Prisma.TicketWhereInput> {
+  const where = buildTicketWhere(f);
+  const view = parseSlaView(f.sla);
+  if (!view) return where;
+  return { AND: [where, await slaViewWhere(view)] };
+}
+
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 const TICKETS_HREF_KEYS: (keyof TicketFilters)[] = [
   "status", "priority", "type", "group", "assignee", "category", "service",
-  "impact", "urgency", "source", "major", "vip", "breached",
+  "impact", "urgency", "source", "major", "vip", "breached", "sla",
 ];
 
 /**
@@ -182,7 +194,7 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
 async function computeVolume(widget: Widget, filters: TicketFilters): Promise<Computed> {
   const days = Math.min(90, Math.max(7, Number(filters.days) || 14));
   // Volume ignores the status filter (we count created & resolved over time).
-  const base = buildTicketWhere({ ...filters, status: undefined });
+  const base = await resolveTicketWhere({ ...filters, status: undefined });
   const from = startOfDay(new Date(Date.now() - (days - 1) * 86400000));
   const rows = await db.ticket.findMany({
     where: { AND: [base, { OR: [{ createdAt: { gte: from } }, { resolvedAt: { gte: from } }] }] },
@@ -214,7 +226,7 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
   const days = Math.min(90, Math.max(7, Number(filters.days) || 14));
   const windowStart = new Date(Date.now() - days * 86400000);
   const now = new Date();
-  const base = buildTicketWhere({ ...filters, status: undefined });
+  const base = await resolveTicketWhere({ ...filters, status: undefined });
   const href = ticketsHref(filters);
 
   // Resolved-in-window tickets carry MTTR; those that ran under an SLA also carry
@@ -260,7 +272,7 @@ async function computeSla(filters: TicketFilters): Promise<Computed> {
 async function computeCsat(filters: TicketFilters): Promise<Computed> {
   const days = Math.min(365, Math.max(7, Number(filters.days) || 30));
   const windowStart = new Date(Date.now() - days * 86400000);
-  const base = buildTicketWhere({ ...filters, status: undefined });
+  const base = await resolveTicketWhere({ ...filters, status: undefined });
   const agg = await db.surveyResponse.aggregate({
     where: {
       respondedAt: { gte: windowStart },
@@ -335,7 +347,7 @@ function sanitizeOptions(o: unknown): Widget["options"] | undefined {
 
 /** Resolve one widget's data (uncached inner). */
 async function computeWidgetUncached(widget: Widget): Promise<Computed> {
-  const where = buildTicketWhere(widget.filters);
+  const where = await resolveTicketWhere(widget.filters);
   switch (widget.type) {
     case "stat": {
       const value = await db.ticket.count({ where });

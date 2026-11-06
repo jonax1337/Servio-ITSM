@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Lock, Plus } from "lucide-react";
-import { createChange } from "@/lib/actions/changes";
+import { createChange, searchAffectedCis } from "@/lib/actions/changes";
 import { createChangeFromTemplateAction, type TemplateActionState } from "@/lib/actions/change-templates";
 import { Button } from "@/components/ui/button";
 import { LinkButton } from "@/components/link-button";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
+import { MultiCombobox } from "@/components/multi-combobox";
 import { StatusBadge } from "@/components/status-badge";
 import { FormCustomFields } from "@/components/custom-fields/form-custom-fields";
 import type { CustomFieldDef } from "@/lib/custom-fields";
@@ -143,6 +144,14 @@ export function ChangeForm({
           <ComboField name="categoryId" defaultValue={template?.categoryId ?? undefined} options={catOpts} includeNone noneLabel="No category" />
         </Field>
       </div>
+
+      <Field
+        label="Affected CIs"
+        error={fe.assetIds}
+        hint="Configuration items this change touches. They feed the automated impact assessment."
+      >
+        <MultiCombobox name="assetIds" search={searchAffectedCis} placeholder="Add affected CIs…" searchPlaceholder="Search by name, tag or serial…" emptyText="No matching assets." />
+      </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Planned start">
