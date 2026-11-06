@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { db } from "@/lib/db";
+import { requireRole } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { formatPlannedWindow } from "@/lib/change-rules";
 import { LinkButton } from "@/components/link-button";
@@ -48,6 +49,7 @@ function Prop({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export default async function ReleaseDetailPage({ params }: { params: Params }) {
+  await requireRole("AGENT");
   const releaseId = Number((await params).id);
   if (!Number.isFinite(releaseId)) notFound();
 
@@ -56,7 +58,7 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
     db.release.findUnique({
       where: { id: releaseId },
       include: {
-        owner: true,
+        owner: { select: { id: true, name: true, email: true } },
         group: true,
         changes: {
           select: { id: true, title: true, type: true, status: true, risk: true, plannedStart: true, plannedEnd: true },
