@@ -17,7 +17,8 @@ import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
 import { problemDraftFromTickets } from "@/lib/ticket-drafts";
 import { PRIORITY_META, SLA_STATE_META, TICKET_STATUS_META, metaFor, ticketRef } from "@/lib/constants";
 import type { SlaCell } from "@/lib/sla-column";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
+import { LocalTime, timeAgo } from "@/components/local-time";
 
 type Row = {
   id: number;
@@ -212,10 +213,10 @@ export function TicketsTable({
                   )}
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell text-right text-xs text-muted-foreground">
-                  {format(new Date(t.createdAt), "PP")}
+                  <LocalTime date={t.createdAt} render={(d) => format(d, "PP")} />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell text-right text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(t.updatedAt), { addSuffix: true })}
+                  <LocalTime date={t.updatedAt} render={timeAgo} />
                 </TableCell>
               </TableRow>
             ))}
