@@ -98,7 +98,7 @@ export default async function ChangeDetailPage({
   const active = resolveTab(sp, tabs, DEFAULT_CHANGE_TAB);
 
   return (
-    <div className="grid gap-0 lg:h-[calc(100svh-3.5rem)] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+    <div data-viewport-pane className="grid gap-0 lg:h-full grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">

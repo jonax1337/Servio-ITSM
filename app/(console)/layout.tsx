@@ -26,7 +26,10 @@ export default async function ConsoleLayout({
   return (
     <SidebarProvider>
       <AppSidebar role={user.role} />
-      <SidebarInset className="min-w-0">
+      {/* Split-pane pages ([data-viewport-pane]) fill the viewport below the topbar
+          and any banner and scroll their own panes, so the inset is locked to the
+          viewport for them; every other page keeps normal window scrolling. */}
+      <SidebarInset className="min-w-0 lg:has-data-viewport-pane:h-svh lg:has-data-viewport-pane:overflow-hidden">
         <SableProvider>
           <AppTopbar
             user={{
@@ -40,7 +43,7 @@ export default async function ConsoleLayout({
           />
           <MaintenanceBanner role={user.role} />
           {/* Not a <main>: SidebarInset already renders the page's single main landmark. */}
-          <div className="min-w-0 flex-1">{children}</div>
+          <div className="min-h-0 min-w-0 flex-1">{children}</div>
           <SableMount
             configured={configured}
             teaser={teaser}
