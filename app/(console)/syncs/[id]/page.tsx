@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, RefreshCw, Clock, Settings2, Pencil } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/session";
+import { hasRole, requireRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -89,7 +89,7 @@ export default async function SyncDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("MANAGER");
+  const me = await requireRole("MANAGER");
   const { id } = await params;
 
   const source = await db.syncSource.findUnique({
@@ -124,10 +124,12 @@ export default async function SyncDetailPage({
             />
           ) : null}
           <ToggleActive sourceId={source.id} isActive={source.isActive} />
-          <LinkButton href={`/syncs/${source.id}/edit`} variant="outline" size="sm">
-            <Pencil className="size-4" />
-            Edit
-          </LinkButton>
+          {hasRole(me.role, "ADMIN") ? (
+            <LinkButton href={`/syncs/${source.id}/edit`} variant="outline" size="sm">
+              <Pencil className="size-4" />
+              Edit
+            </LinkButton>
+          ) : null}
           <RunButton sourceId={source.id} />
         </div>
       </div>
