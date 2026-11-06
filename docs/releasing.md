@@ -137,4 +137,6 @@ pushes the images and creates the release.
 (grouped), npm packages (minor and patch grouped; at most 5 open PRs) and the
 Docker base image, with `ci:` and `chore:` commit prefixes. Majors of Prisma and
 imapflow and Node image majors are ignored on purpose: they need their own
-migration branch, and the image follows the Node LTS line by hand.
+migration branch, and the image follows the Node LTS line by hand. Majors of
+`@types/node` and `unpdf` (2.x requires Node 24) are ignored for the same reason;
+they move together with the next Node LTS bump.
