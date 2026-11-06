@@ -3,7 +3,7 @@ name: Release
 # release-please keeps an open "chore(main): release x.y.z" PR that bumps
 # package.json and CHANGELOG.md from the Conventional Commits on main. Merging
 # that PR tags the release and publishes the GitHub Release; the jobs below then
-# build the multi-arch image and push it to GHCR. See docs/releasing.md.
+# build the multi-arch images (the app and the updater sidecar) and push them to GHCR. See docs/releasing.md.
 
 on:
   push:
@@ -16,9 +16,6 @@ permissions:
 concurrency:
   group: release
   cancel-in-progress: false
-
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/servio
 
 jobs:
   release-please:
@@ -41,19 +38,22 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   image:
-    name: Image (${{ matrix.platform }})
+    name: Image ${{ matrix.image.name }} (${{ matrix.platform.name }})
     needs: release-please
     if: needs.release-please.outputs.created == 'true'
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-24.04
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        image:
+          - { name: servio, context: ., dockerfile: Dockerfile }
+          - { name: servio-updater, context: updater, dockerfile: updater/Dockerfile }
+        platform:
+          - { name: linux/amd64, runner: ubuntu-24.04 }
+          - { name: linux/arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 45
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }}
     permissions:
       contents: read
       packages: write
@@ -64,7 +64,7 @@ jobs:
       - name: Platform slug
         run: echo "PLATFORM_SLUG=${PLATFORM//\//-}" >> "$GITHUB_ENV"
         env:
-          PLATFORM: ${{ matrix.platform }}
+          PLATFORM: ${{ matrix.platform.name }}
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -79,12 +79,13 @@ jobs:
       - id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
-          platforms: ${{ matrix.platform }}
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          platforms: ${{ matrix.platform.name }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ env.PLATFORM_SLUG }}
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_SLUG }}
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ env.PLATFORM_SLUG }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ env.PLATFORM_SLUG }}
       - name: Export digest
         run: |
           mkdir -p "$RUNNER_TEMP/digests"
@@ -93,23 +94,29 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
       - uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_SLUG }}
+          # "_" separates image from platform so digests-servio_* never matches digests-servio-updater_*.
+          name: digests-${{ matrix.image.name }}_${{ env.PLATFORM_SLUG }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   manifest:
-    name: Publish multi-arch tags
+    name: Publish multi-arch tags (${{ matrix.image }})
     needs: [release-please, image]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [servio, servio-updater]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
     permissions:
-      contents: write # append the pull command to the GitHub Release
       packages: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.image }}_*
           merge-multiple: true
       - uses: docker/login-action@v3
         with:
@@ -124,20 +131,35 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(needs.release-please.outputs.tag, '-') }}
       - name: Create manifest list
         working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
-          docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
-      - name: Add pull command to the release notes
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  release-notes:
+    name: Add pull commands to the release notes
+    needs: [release-please, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # edit the GitHub Release
+    steps:
+      - name: Add pull commands to the release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag }}
-          VERSION: ${{ steps.meta.outputs.version }}
+          REGISTRY_OWNER: ghcr.io/${{ github.repository_owner }}
         run: |
+          VERSION="${TAG#v}"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
-          printf '\n\n### Container image\n\n```sh\ndocker pull %s:%s\n```\n' "$IMAGE" "$VERSION" >> notes.md
+          {
+            printf '\n\n### Container images\n\n'
+            printf '```sh\ndocker pull %s/servio:%s\ndocker pull %s/servio-updater:%s\n```\n' \
+              "$REGISTRY_OWNER" "$VERSION" "$REGISTRY_OWNER" "$VERSION"
+          } >> notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

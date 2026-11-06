@@ -79,15 +79,34 @@ async function loadFreezes(range: TimeWindow): Promise<FreezeWindowRow[]> {
   }));
 }
 
+/** A maintenance window (update or general downtime) on the calendar. */
+export type MaintenanceWindowRow = {
+  id: string;
+  title: string;
+  status: string;
+  startsAt: Date;
+  endsAt: Date;
+};
+
+/** Windows that still happen or happened: cancelled ones are off the calendar. */
+function loadMaintenance(range: TimeWindow): Promise<MaintenanceWindowRow[]> {
+  return db.maintenanceWindow.findMany({
+    where: { status: { not: "CANCELLED" }, startsAt: { lt: range.end }, endsAt: { gt: range.start } },
+    select: { id: true, title: true, status: true, startsAt: true, endsAt: true },
+    orderBy: { startsAt: "asc" },
+  });
+}
+
 export type Schedule = {
   changes: ScheduledChange[];
   freezes: FreezeWindowRow[];
+  maintenance: MaintenanceWindowRow[];
   conflicts: ScheduleConflict[];
 };
 
-/** Everything planned in `range`: changes, freeze windows and the conflicts among those changes. */
+/** Everything planned in `range`: changes, freeze windows, maintenance windows and the conflicts among those changes. */
 export async function loadSchedule(range: TimeWindow): Promise<Schedule> {
-  const [rows, freezes, sameService] = await Promise.all([
+  const [rows, freezes, maintenance, sameService] = await Promise.all([
     db.change.findMany({
       where: inRangeWhere(range),
       select: scheduledChangeSelect,
@@ -95,10 +114,11 @@ export async function loadSchedule(range: TimeWindow): Promise<Schedule> {
       take: CALENDAR_CHANGE_LIMIT,
     }),
     loadFreezes(range),
+    loadMaintenance(range),
     getBoolSetting(SAME_SERVICE_SETTING, true),
   ]);
   const changes = compact(rows.map(toScheduledChange));
-  return { changes, freezes, conflicts: findConflicts(changes, { sameService }) };
+  return { changes, freezes, maintenance, conflicts: findConflicts(changes, { sameService }) };
 }
 
 async function serviceIdsOfAssets(assetIds: string[]): Promise<string[]> {

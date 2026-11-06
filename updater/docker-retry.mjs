@@ -1,0 +1,65 @@
+// Retries Docker calls while Docker, or the socket proxy in front of it, is
+// briefly unreachable (a restart of the proxy, a daemon under load). A rollback
+// that gave up on the first refused connection would leave the app down.
+import { DockerApiError, DockerUnreachableError } from "./docker-client.mjs";
+
+/** Calls that are safe to repeat: repeating one that already took effect changes nothing. */
+const REPEATABLE_METHODS = new Set(["ping", "inspectContainer", "inspectImage", "stopContainer", "startContainer", "updateContainer", "removeContainer"]);
+
+/**
+ * @typedef {{ clock: { now: () => number, sleep: (ms: number) => Promise<void> }, windowMs: number, intervalMs: number,
+ *   log: (line: string) => void }} RetryOptions
+ */
+
+/** A proxy without a reachable daemon, or a daemon that is overloaded or restarting. */
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * Only a connection that failed, or a gateway answer, is worth waiting for. A 500
+ * is usually final (port already allocated, OCI runtime error) and so is anything
+ * that is not a Docker call at all (a file error during a restore).
+ *
+ * @param {unknown} error
+ */
+export function isTransientDockerError(error) {
+  if (error instanceof DockerUnreachableError) return true;
+  return error instanceof DockerApiError && TRANSIENT_STATUSES.has(error.status);
+}
+
+/**
+ * @template T
+ * @param {() => Promise<T>} attempt must be safe to repeat
+ * @param {RetryOptions} options
+ * @returns {Promise<T>}
+ */
+export async function retryWhileUnreachable(attempt, { clock, windowMs, intervalMs, log }) {
+  const deadline = clock.now() + windowMs;
+  for (let retries = 0; ; retries += 1) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!isTransientDockerError(error) || clock.now() >= deadline) throw error;
+      if (retries === 0) {
+        log(`[updater] Docker is not answering (${error instanceof Error ? error.message : error}); retrying for up to ${windowMs / 1000}s`);
+      }
+      await clock.sleep(intervalMs);
+    }
+  }
+}
+
+/**
+ * @param {import("./docker-client.mjs").DockerClient} docker
+ * @param {RetryOptions} options
+ * @returns {import("./docker-client.mjs").DockerClient} the same client, its repeatable calls retried
+ */
+export function withRetries(docker, options) {
+  return new Proxy(docker, {
+    get(target, property) {
+      const value = Reflect.get(target, property);
+      if (typeof value !== "function") return value;
+      const call = value.bind(target);
+      if (!REPEATABLE_METHODS.has(String(property))) return call;
+      return (/** @type {unknown[]} */ ...args) => retryWhileUnreachable(() => call(...args), options);
+    },
+  });
+}

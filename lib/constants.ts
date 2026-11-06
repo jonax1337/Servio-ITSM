@@ -1,6 +1,7 @@
 // Single source of truth for the "enum" string fields (SQLite has no enums).
 // Each domain exports: the allowed values, human labels, a badge tone, and an icon.
 import type { LucideIcon } from "lucide-react";
+import type { UpdaterState } from "@/lib/maintenance-rules";
 import {
   ArrowDown, Minus, ArrowUp, Flame,
   Sparkle, CircleDot, Clock, PauseCircle, CheckCircle2, CircleCheck, XCircle, Ban,
@@ -145,10 +146,11 @@ export const RESOLUTION_CODE_META: Record<string, Meta> = {
 export const AI_ASSISTANT_NAME = "Sable";
 
 /**
- * Application version — keep in sync with package.json "version"
- * (shown in the sidebar footer and Settings › About).
+ * Application version (shown in the sidebar footer and Settings › About).
+ * release-please bumps it together with package.json "version" (extra-files in
+ * release-please-config.json); a unit test keeps the two equal.
  */
-export const APP_VERSION = "0.1.0";
+export const APP_VERSION = "0.1.0"; // x-release-please-version
 
 /** Scope of a standalone Sable conversation (String-enum strategy). */
 export const AI_SCOPES = ["GENERAL", "ADMIN"] as const;
@@ -553,6 +555,44 @@ export const STATUS_INCIDENT_IMPACT_META: Record<string, Meta> = {
   MINOR: { label: "Minor", tone: "warning", icon: TriangleAlert },
   MAJOR: { label: "Major", tone: "danger", icon: XCircle },
   CRITICAL: { label: "Critical", tone: "danger", icon: Flame },
+};
+
+// ---- Maintenance windows & self-update --------------------------------------
+export const MAINTENANCE_KINDS = ["GENERAL", "UPDATE"] as const;
+export type MaintenanceKind = (typeof MAINTENANCE_KINDS)[number];
+export const MAINTENANCE_KIND_META: Record<MaintenanceKind, Meta> = {
+  GENERAL: { label: "Maintenance", tone: "info" },
+  UPDATE: { label: "Update", tone: "purple" },
+};
+
+export const MAINTENANCE_STATUSES = [
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "FAILED",
+  "ROLLED_BACK",
+  "CANCELLED",
+] as const;
+export type MaintenanceStatus = (typeof MAINTENANCE_STATUSES)[number];
+export const MAINTENANCE_STATUS_META: Record<MaintenanceStatus, Meta> = {
+  SCHEDULED: { label: "Scheduled", tone: "info", icon: CalendarClock },
+  IN_PROGRESS: { label: "In progress", tone: "warning", icon: PlayCircle },
+  COMPLETED: { label: "Completed", tone: "success", icon: CheckCircle2 },
+  FAILED: { label: "Failed", tone: "danger", icon: XCircle },
+  ROLLED_BACK: { label: "Rolled back", tone: "warning", icon: Undo2 },
+  CANCELLED: { label: "Cancelled", tone: "neutral", icon: CircleSlash },
+};
+
+/** The updater sidecar's steps (lib/maintenance-rules.ts UPDATER_STATES), shown in the window log. */
+export const UPDATER_STATE_META: Record<UpdaterState, Meta> = {
+  PENDING: { label: "Pending", tone: "neutral" },
+  PULLING: { label: "Pulling image", tone: "info" },
+  BACKING_UP: { label: "Backing up", tone: "info" },
+  SWITCHING: { label: "Switching", tone: "warning" },
+  HEALTH_CHECK: { label: "Health check", tone: "warning" },
+  SUCCEEDED: { label: "Succeeded", tone: "success" },
+  FAILED: { label: "Failed", tone: "danger" },
+  ROLLED_BACK: { label: "Rolled back", tone: "warning" },
 };
 
 // ---- Releases & change templates -------------------------------------------

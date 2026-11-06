@@ -17,6 +17,7 @@ import {
   Workflow,
   MessageSquareText,
   SlidersHorizontal,
+  ArrowUpCircle,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -79,6 +80,13 @@ const CARDS: SettingCard[] = [
     title: "Uploads",
     description: "File attachment size limits for tickets, comments and articles.",
     icon: UploadCloud,
+    minRole: "ADMIN",
+  },
+  {
+    href: "/settings/updates",
+    title: "Updates & Maintenance",
+    description: "Update Servio from GitHub releases and plan maintenance windows with advance notice.",
+    icon: ArrowUpCircle,
     minRole: "ADMIN",
   },
   {

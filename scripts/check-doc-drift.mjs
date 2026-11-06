@@ -99,6 +99,15 @@ const DOC_MAP = [
     docs: ['docs/modules.md'],
   },
   {
+    label: 'Updates & maintenance windows',
+    code: [
+      'lib/maintenance', 'lib/updates.ts', 'lib/update-rules.ts', 'lib/state-dir.ts', 'lib/ticks/maintenance.ts',
+      'lib/ticks/update-check.ts', 'lib/actions/maintenance.ts', 'updater/', 'docker-compose.release.yml',
+      'app/maintenance', 'app/api/maintenance', 'app/(console)/settings/updates', 'components/maintenance/',
+    ],
+    docs: ['docs/updates.md'],
+  },
+  {
     label: 'Deployment / runtime / containers',
     code: ['Dockerfile', 'docker-compose.yml', 'docker/', 'instrumentation.ts', 'next.config.ts'],
     docs: ['docs/deployment.md'],

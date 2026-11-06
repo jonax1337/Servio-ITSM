@@ -73,6 +73,7 @@ model User {
   aiConversations    AiConversation[]        @relation("AiConversationUser")
   aiProjects         AiProject[]             @relation("AiProjectOwner")
   savedViews         SavedView[]             @relation("SavedViewOwner")
+  maintenanceWindows MaintenanceWindow[]
   dashboards         Dashboard[]             @relation("DashboardOwner")
   macros             Macro[]                 @relation("MacroOwner")
   articles           Article[]
@@ -1835,4 +1836,32 @@ model AiInsightTicket {
 
   @@id([insightId, ticketId])
   @@index([ticketId])
+}
+
+// A planned period during which the admins update Servio or do other maintenance.
+// While IN_PROGRESS with blockAccess, non-admins see the maintenance page
+// (the flag file in SERVIO_STATE_DIR, written by lib/maintenance.ts).
+model MaintenanceWindow {
+  id            String    @id @default(cuid())
+  title         String
+  message       String? // shown to users in banners and on /maintenance
+  kind          String    @default("GENERAL") // GENERAL | UPDATE
+  status        String    @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | COMPLETED | FAILED | ROLLED_BACK | CANCELLED
+  startsAt      DateTime
+  endsAt        DateTime // planned end; GENERAL windows end automatically here
+  announceHours Int       @default(24) // banners are visible from startsAt - announceHours
+  blockAccess   Boolean   @default(true) // maintenance mode for non-admins while IN_PROGRESS
+  targetVersion String? // UPDATE only
+  fromVersion   String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  result        String? // last updater message or failure reason
+  log           String    @default("[]") // JSON array copied from the updater's status.json
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, startsAt])
 }

@@ -389,6 +389,20 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 
 **Re-pricing:** a priority/service/SLA change re-measures the deadlines from the ticket's creation plus the pause time it already banked — the clock never restarts, so raising a priority can make a ticket late at once. A priority-bound SLA follows the new priority unless that SLA was picked explicitly; a recorded first response keeps its response deadline; terminal tickets are untouched. Every priority writer (console, macros, escalate, major incident, REST, automations, VIP bump) shares `slaRepricePatch` in `lib/sla.ts`. Resolving a ticket nobody answered stamps the first response. The dashboard **SLA met** gauge counts only resolved tickets that ran under an SLA, plus active, unpaused tickets already past their resolve deadline.
 
+### Updates & maintenance windows
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/settings/updates/page.tsx` (ADMIN; `/settings/updates` is also in `ROUTE_MIN_ROLE`), public `app/maintenance/page.tsx` (the maintenance page, outside the console and portal layouts) and `app/api/maintenance/route.ts` (`GET`, public: is maintenance mode on) |
+| Actions | `lib/actions/maintenance.ts` — `scheduleMaintenance`, `startMaintenanceNow`, `cancelMaintenance`, `endMaintenanceNow`, `checkForUpdatesNow`; `saveUpdateSettings` in `lib/actions/settings.ts` |
+| Rules / data | `lib/maintenance-rules.ts` (pure: `validateWindow`, `bannerFor`, `maintenanceGate`, `nextWindowStep`, updater file parsers, `outcomeNotice`), `lib/update-rules.ts` (pure: semver compare, `parseReleases`), `lib/maintenance.ts` (queries, `syncMaintenanceFlag`, `requestUpdate`, updater status/heartbeat reads), `lib/maintenance-flag.ts` (flag read, usable from `proxy.ts`), `lib/state-dir.ts` (`SERVIO_STATE_DIR`, atomic JSON files), `lib/updates.ts` (GitHub release check, `UPDATE_CACHE`) |
+| Ticks | `lib/ticks/maintenance.ts` (every 15 s: start, hand over to the updater, copy progress, end, rewrite `maintenance.json`), `lib/ticks/update-check.ts` (every 6 h) |
+| Components | `components/maintenance/` — `maintenance-banner` (console and portal layouts), `scheduled-maintenance` (status pages), `maintenance-countdown` (maintenance page), `schedule-window-dialog`, `windows-table`, `window-actions`, `window-log-dialog`, `check-updates-button` |
+| Elsewhere | the change calendar draws maintenance windows as a third layer (`loadSchedule().maintenance`, `components/changes/calendar/change-calendar-grid.tsx`); `/status` and `/portal/status` list scheduled maintenance |
+| Updater | `updater/` (the sidecar, no npm dependencies), `docker-compose.release.yml` |
+
+Operator guide, file contract and security notes: [updates.md](./updates.md). Notifications use types `UPDATE_AVAILABLE` and `MAINTENANCE`.
+
 ### Audit Log
 Read-only viewer over the existing `AuditLog` model, ADMIN-only (also gated in `lib/route-guard.ts`).
 

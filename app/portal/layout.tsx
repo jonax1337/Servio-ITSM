@@ -9,6 +9,7 @@ import { UserMenu } from "@/components/user-menu";
 import { LinkButton } from "@/components/link-button";
 import { SableWidget } from "@/components/portal/sable-widget";
 import { PortalStatusBanner } from "@/components/portal/portal-status-banner";
+import { MaintenanceBanner } from "@/components/maintenance/maintenance-banner";
 
 export default async function PortalLayout({
   children,
@@ -48,6 +49,7 @@ export default async function PortalLayout({
         </div>
       </header>
 
+      <MaintenanceBanner role={user.role} containerClassName="mx-auto max-w-6xl" />
       <PortalStatusBanner />
 
       <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:py-10">{children}</main>

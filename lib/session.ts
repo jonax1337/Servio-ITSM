@@ -61,6 +61,13 @@ export async function requireManagerUser() {
   return { ...row, role: row.role as Role };
 }
 
+/** DB-truth admin guard for server actions: like requireManagerUser, but requires ADMIN. */
+export async function requireAdminUser() {
+  const row = await getCurrentUser();
+  if (!row || !row.isActive || !hasRole(row.role as Role, "ADMIN")) return null;
+  return { ...row, role: row.role as Role };
+}
+
 export function hasRole(role: Role, min: Role) {
   return RANK[role] >= RANK[min];
 }

@@ -140,6 +140,43 @@ jobs:
           tags: servio:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build updater image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: updater
+          file: updater/Dockerfile
+          push: false
+          load: true
+          tags: servio-updater:ci
+          cache-from: type=gha,scope=updater
+          cache-to: type=gha,mode=max,scope=updater
+      - name: Updater image loads its modules and reads its manifest
+        run: |
+          docker run --rm servio-updater:ci node -e "
+            import('./update-flow.mjs')
+              .then(() => import('./config.mjs'))
+              .then((m) => console.log('updater', m.loadConfig({ SERVIO_IMAGE: 'ghcr.io/ci/servio' }).updaterVersion))
+          "
+      - name: Container refuses a database with migrations the image does not contain
+        run: |
+          boot() { docker run --rm -e AUTH_SECRET=ci-only-not-a-secret -e DATABASE_URL=file:/data/servio.db -v servio-guard:/data "$@"; }
+          # Migrate (and seed) a fresh database, then exit instead of starting Next.
+          boot servio:ci true
+          # Record a migration that only a newer release ships as applied.
+          boot --entrypoint node servio:ci -e '
+            const { PrismaClient } = require("@prisma/client");
+            const prisma = new PrismaClient();
+            prisma
+              .$executeRawUnsafe(
+                "INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count) VALUES (?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, 1)",
+                "ci-newer", "x", "29991231000000_from_a_newer_release",
+              )
+              .finally(() => prisma.$disconnect());
+          '
+          if boot servio:ci true > guard.log 2>&1; then
+            cat guard.log; echo "::error::the image started on a database migrated by a newer release"; exit 1
+          fi
+          grep -q "REFUSING TO START" guard.log || { cat guard.log; echo "::error::the image failed for another reason"; exit 1; }
       - name: Container boots and serves /login
         run: |
           docker run -d --name servio-ci -p 3000:3000 \
@@ -154,3 +191,12 @@ jobs:
           done
           docker logs servio-ci
           exit 1
+
+  updater-e2e:
+    name: Updater end-to-end (real Docker, socket proxy, registry)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Update to a good release, then roll back a broken one
+        run: bash tests/updater-e2e/run.sh

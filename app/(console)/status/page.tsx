@@ -13,6 +13,7 @@ import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { ScheduledMaintenance } from "@/components/maintenance/scheduled-maintenance";
 import { VisibilityBadge } from "@/components/status/visibility-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -95,6 +96,7 @@ export default async function StatusIncidentsPage({ searchParams }: { searchPara
       </PageHeader>
 
       <PageBody className="grid gap-4">
+        <ScheduledMaintenance />
         <ListToolbar filters={filters} searchPlaceholder="Search incidents…" />
 
         {incidents.length === 0 ? (

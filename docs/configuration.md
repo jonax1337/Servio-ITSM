@@ -96,6 +96,12 @@ _(not in `.env.example`)_ are real but undocumented in the sample file.
 | `CONTRACT_REMINDERS_ENABLED` | No | `true` | Send contract renewal reminders and license over-allocation alerts ([`../lib/ticks/contracts.ts`](../lib/ticks/contracts.ts)). |
 | `CONTRACTS_TICK_SECONDS` | No | `3600` | Interval of the contracts tick (floor 600). |
 | `CHANGE_CONFLICT_SAME_SERVICE` | No | `true` | Also flag changes whose windows overlap and that share a service (through their affected CIs), not only a CI. |
+| `SERVIO_STATE_DIR` | No | `/data/state` in the Docker image, `./.servio-state` otherwise | Directory shared with the updater sidecar and read by `proxy.ts`: `maintenance.json` and `updater/*.json` ([`../lib/state-dir.ts`](../lib/state-dir.ts)). See [updates.md](./updates.md). |
+| `UPDATE_CHECK_ENABLED` | No | `true` | Check GitHub Releases for new versions and notify the admins ([`../lib/ticks/update-check.ts`](../lib/ticks/update-check.ts)). Also editable at Settings › Updates. |
+| `UPDATE_REPOSITORY` | No | `jonax1337/Servio-ITSM` | GitHub `owner/name` whose releases are offered. |
+| `UPDATE_INCLUDE_PRERELEASES` | No | `false` | Also offer pre-releases. |
+| `UPDATE_CHECK_TICK_SECONDS` | No | `21600` | Interval of the update-check tick (floor 3600). |
+| `MAINTENANCE_TICK_SECONDS` | No | `15` | Interval of the maintenance tick that starts and ends windows and follows the updater (floor 5). |
 | `NEXT_PUBLIC_DEMO_MODE` | No | `false` | Set `"true"` to keep the pre-filled demo credentials (`admin@servio.dev` / `servio123`) and their hint on the login page ([`../app/login/login-form.tsx`](../app/login/login-form.tsx)) visible in production builds. They always show outside production and are hidden in production unless this is set. |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. |
 
@@ -340,6 +346,12 @@ authoritative: uploads are validated against an allow-list of MIME types
 (images, PDF, Office `docx`/`xlsx`/`pptx`, `txt`/`log`/`csv`) **and** magic-byte
 signatures, and oversized/empty/mismatched files are rejected. See
 [rest-api.md](rest-api.md) for the upload endpoint and error codes.
+
+---
+
+## Updates & maintenance
+
+Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. Operator guide: [updates.md](./updates.md).
 
 ---
 

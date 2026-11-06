@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
 import net from "node:net";
 import http from "node:http";
 import https from "node:https";
@@ -79,6 +80,34 @@ export async function assertSafePublicUrl(raw: string): Promise<URL> {
 // (a public host must not be able to 302 us onto an internal one).
 // ---------------------------------------------------------------------------
 
+const asFamily = (family: unknown): 4 | 6 | null => {
+  if (family === 4 || family === "IPv4") return 4;
+  if (family === 6 || family === "IPv6") return 6;
+  return null;
+};
+
+/**
+ * A socket `lookup` that only ever answers with the already validated addresses, and
+ * re-checks each one (defence in depth against a resolver that would otherwise return a
+ * fresh, rebound answer). Node's connect (autoSelectFamily, the default since Node 20)
+ * asks for every address (`all: true`) so it can fall back from IPv6 to IPv4; it rejects
+ * a plain string answer with "Invalid IP address: undefined". A requested `family` is honoured.
+ */
+export function pinnedLookup(validated: LookupAddress[]): LookupFunction {
+  return (_hostname, options, callback) => {
+    const family = asFamily(options.family);
+    const usable = validated.filter(
+      (a) => !isPrivateAddress(a.address) && (family === null || a.family === family),
+    );
+    if (usable.length === 0) {
+      callback(new Error("URL resolves to a private/reserved address"), "", 0);
+      return;
+    }
+    if (options.all) callback(null, usable.map(({ address, family: f }) => ({ address, family: f })));
+    else callback(null, usable[0].address, usable[0].family);
+  };
+}
+
 export type SafeFetchOptions = {
   method?: string;
   headers?: Record<string, string>;
@@ -116,17 +145,6 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
   if (validated.length === 0) throw new Error("URL resolves to a private/reserved address");
   const validatedSet = new Set(validated.map((a) => a.address));
 
-  // Custom lookup pins connect() to a validated IP and re-checks it (defence in
-  // depth against a resolver that would otherwise return a fresh, rebound answer).
-  const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
-    const chosen = validated[0];
-    if (!chosen || isPrivateAddress(chosen.address)) {
-      callback(new Error("URL resolves to a private/reserved address"), "", 0);
-      return;
-    }
-    callback(null, chosen.address, chosen.family);
-  };
-
   const isHttps = url.protocol === "https:";
   const transport = isHttps ? https : http;
   const port = url.port ? Number(url.port) : isHttps ? 443 : 80;
@@ -153,7 +171,7 @@ export async function safeFetch(rawUrl: string, opts: SafeFetchOptions = {}): Pr
         method,
         path: `${url.pathname}${url.search}`,
         headers,
-        lookup: pinnedLookup,
+        lookup: pinnedLookup(validated),
         timeout: timeoutMs,
       },
       (res) => {

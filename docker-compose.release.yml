@@ -1,0 +1,171 @@
+name: servio
+
+# Production stack from the PUBLISHED images (no build step), including the
+# updater sidecar that lets admins update Servio from the UI (Settings → Updates).
+# For a local build from source use docker-compose.yml instead.
+#
+#   docker compose -f docker-compose.release.yml up -d
+#
+# Pin the version in .env (SERVIO_VERSION=0.3.0) or leave it on `latest`.
+# NOTE: the updater swaps the `web` container to a new image behind compose's
+# back. A later manual `docker compose up` recreates `web` from the tag below,
+# so keep SERVIO_VERSION in .env in sync with what the UI installed (or use
+# `latest`, which follows the newest stable release), otherwise that command
+# would roll the app back to the pinned tag.
+#
+# SECURITY MODEL (details: updater/README.md)
+#  - The app (`web`) is internet-facing and can write everything on the shared
+#    `servio-data` volume. It never sees the Docker socket or the backups.
+#  - Only `docker-proxy` mounts the Docker socket. It serves a filtered copy as
+#    a unix socket on the `docker-api` volume, owned by a uid/gid (64999) that
+#    nothing else uses (socket 0660, directory 0750). Only the proxy and the
+#    updater mount it, and only they are in that group; neither has a network.
+#  - The proxy enforces a method + path allowlist (the calls the updater makes)
+#    and refuses host bind mounts in create requests. It does not inspect the
+#    rest of request bodies or query strings: a privileged container or an
+#    image import (`images/create?fromSrc=`) would pass. That matters only if
+#    the updater process itself is compromised; whoever controls it controls
+#    the host. Use this stack only where that is acceptable.
+#  - `updater` runs unprivileged (uid 1000, like the app, plus the socket group),
+#    read-only, without capabilities, and keeps database backups on its own volume.
+#  - Set DOCKER_GID in .env to the group of the Docker socket:
+#      DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    image: ghcr.io/jonax1337/servio:${SERVIO_VERSION:-latest}
+    # A fixed name lets the updater find the container reliably.
+    container_name: servio-web
+    restart: unless-stopped
+    depends_on:
+      gotenberg:
+        condition: service_healthy
+    labels:
+      # Marks the one container the updater may stop, replace and roll back.
+      servio.updater.managed: "true"
+    # Secrets & provider config come from your .env (AUTH_SECRET, AI keys, SMTP…).
+    env_file:
+      - .env
+    environment:
+      GOTENBERG_URL: http://gotenberg:3000
+      DATABASE_URL: file:/data/servio.db
+      UPLOAD_DIR: /data/uploads
+      # Shared with the updater (maintenance flag, update requests and status).
+      SERVIO_STATE_DIR: /data/state
+      # Background cron ticks must run on EXACTLY ONE instance.
+      SCHEDULER_ENABLED: "true"
+    volumes:
+      - servio-data:/data
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # The only service that touches the Docker socket. Every request whose method
+  # and path do not match an allow rule below is refused with 403/405; that
+  # excludes exec, attach, archive, logs, volumes, build, swarm, system, …
+  # (`$$` is compose's escape for a literal `$`.)
+  # Pinned by digest (wollomatic/socket-proxy 1.13.2): review the changelog before bumping.
+  docker-proxy:
+    image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
+    restart: unless-stopped
+    # A uid/gid of its own owns the filtered socket, so a host user that happens
+    # to have uid 1000 (the app's and updater's uid) cannot reach it. DOCKER_GID
+    # grants access to /var/run/docker.sock.
+    user: "64999:64999"
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID in .env to the group id of /var/run/docker.sock}"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    command:
+      - -proxysocketendpoint=/run/docker-api/docker.sock
+      - -proxysocketendpointfilemode=0660
+      # Host bind mounts only from this directory, which does not exist: named
+      # volumes pass, host paths are refused. A `web` with host binds needs them
+      # listed here AND in the updater's ALLOW_BIND_MOUNTS_FROM.
+      - -allowbindmountfrom=/servio-no-host-binds
+      - -allowGET=^/_ping$$
+      - -allowGET=^/v1\.[0-9]+/containers/([A-Za-z0-9][A-Za-z0-9_.-]*/)?json$$
+      - -allowGET=^/v1\.[0-9]+/images/[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*/json$$
+      - -allowPOST=^/v1\.[0-9]+/images/create$$
+      - -allowPOST=^/v1\.[0-9]+/containers/create$$
+      - -allowPOST=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*/(start|stop|rename|update)$$
+      - -allowPOST=^/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect$$
+      - -allowDELETE=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*$$
+      - -shutdowngracetime=10
+    volumes:
+      # A unix socket gives full API access whatever the mount mode says.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker-api:/run/docker-api
+
+  updater:
+    image: ghcr.io/jonax1337/servio-updater:${SERVIO_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - docker-proxy
+    # Let a running update finish when the updater itself is stopped.
+    stop_grace_period: 10m
+    # The updater needs no network: Docker pulls images, the updater only talks
+    # to the proxy's socket.
+    network_mode: none
+    # The image already runs as `node` (uid 1000, the app's uid, needed for /data);
+    # the extra group opens the proxy's socket. The rest keeps it from gaining more.
+    group_add:
+      - "64999"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Repository only — the version to install always comes from the admin's
+      # request, the image never does.
+      SERVIO_IMAGE: ghcr.io/jonax1337/servio
+      SERVIO_CONTAINER: servio-web
+      SERVIO_STATE_DIR: /data/state
+      DB_FILE: /data/servio.db
+      BACKUP_DIR: /backups
+      DOCKER_SOCKET: /run/docker-api/docker.sock
+      # Optional: base64url-encoded registry credentials for a private registry.
+      REGISTRY_AUTH: ${REGISTRY_AUTH:-}
+      # Postgres deployments: the updater cannot back up the database itself.
+      # Take your own backup first, then set this to "true".
+      ALLOW_UPDATE_WITHOUT_BACKUP: ${ALLOW_UPDATE_WITHOUT_BACKUP:-false}
+      # Host directories `web` bind-mounts; keep in sync with the proxy's -allowbindmountfrom.
+      ALLOW_BIND_MOUNTS_FROM: ${ALLOW_BIND_MOUNTS_FROM:-}
+    volumes:
+      - servio-data:/data
+      # Database backups, the crash-recovery journal and the ledger: mounted ONLY here.
+      - servio-backups:/backups
+      - docker-api:/run/docker-api
+
+volumes:
+  servio-data:
+  servio-backups:
+  # Holds only the proxy's filtered socket: tmpfs owned by the proxy's own
+  # uid/gid, readable by that group only (the updater is a member).
+  docker-api:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=64k,uid=64999,gid=64999,mode=0750,noexec,nosuid,nodev"
