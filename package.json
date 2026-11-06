@@ -43,7 +43,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^7.0.3",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@prisma/client": "^6.19.3",
     "@shadcn/react": "^0.3.1",
     "@tailwindcss/typography": "^0.5.20",
@@ -97,7 +97,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "^4.3.4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mailparser": "^3.9.0",

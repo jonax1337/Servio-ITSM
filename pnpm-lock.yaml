@@ -22,7 +22,7 @@ importers:
         version: 4.0.167(react@19.3.1)(zod@4.6.7)
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.318
-        version: 0.3.318(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))(zod@4.6.7)
+        version: 0.3.318(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
       '@assistant-ui/react':
         specifier: ^0.15.32
         version: 0.15.32(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(ai@7.0.163(zod@4.6.7))(immer@11.2.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
@@ -51,8 +51,8 @@ importers:
         specifier: ^7.0.3
         version: 7.0.3(@standard-schema/spec@1.1.0)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
       '@modelcontextprotocol/sdk':
-        specifier: 1.30.0
-        version: 1.30.0(zod@4.6.7)
+        specifier: 1.32.2
+        version: 1.32.2(zod@4.6.7)
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@6.0.3))(typescript@6.0.3)
@@ -136,10 +136,10 @@ importers:
         version: 6.0.2
       next:
         specifier: 16.4.4
-        version: 16.4.4(@babel/core@7.29.13)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        version: 16.4.4(@babel/core@7.29.13)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       next-auth:
         specifier: 5.0.0-beta.32
-        version: 5.0.0-beta.32(next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@9.1.1)(react@19.3.1)
+        version: 5.0.0-beta.32(next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@9.1.1)(react@19.3.1)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -208,8 +208,8 @@ importers:
         version: 5.0.16(@types/react@19.3.0)(immer@11.2.9)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
     devDependencies:
       '@playwright/test':
-        specifier: 1.63.0
-        version: 1.63.0
+        specifier: 1.64.1
+        version: 1.64.1
       '@tailwindcss/postcss':
         specifier: ^4.3.4
         version: 4.3.4
@@ -590,6 +590,10 @@ packages:
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/runtime@7.29.10':
+    resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
+    engines: {node: '>=6.9.0'}
 
   '@babel/runtime@7.29.13':
     resolution: {integrity: sha512-v+oN26xP4YIlQsbQ/CbTH1WG5m/l/DjKKZNy/Kp3f/AFvbgt7Em/D0FeMM3O2hX0YzeN2M16W8lOpyhIkfCBcQ==}
@@ -1222,8 +1226,8 @@ packages:
     resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/sdk@1.30.0':
-    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
+  '@modelcontextprotocol/sdk@1.32.2':
+    resolution: {integrity: sha512-SWsVtH/0vULSQStoZ6xxH2K09Li8fXYTMC64ZeogCdpZ3XSi1eCPOByV1OpuJxuI3OcmHhosDWYyii07tpPsLw==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -1394,8 +1398,8 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@playwright/test@1.63.0':
-    resolution: {integrity: sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ==}
+  '@playwright/test@1.64.1':
+    resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -4233,6 +4237,10 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
+  ip-address@10.7.5:
+    resolution: {integrity: sha512-t2v0rkILYv9WXmSL7TpAaU3HXgaFYOPUcH3QHgwQ++gpJuH3bqyMy4Fvt/DJCTKwzH3Cf+bAp5W/mFL39KPLzA==}
+    engines: {node: '>= 12'}
+
   ip-address@10.7.6:
     resolution: {integrity: sha512-00LYkM6byILa9eQIx6qoaXCM40xTLd56AZ4vyaPW3YTyb49VZYPo5xsiAq4tuQ54GH4R7gVdYScJ1B7B77PuTg==}
     engines: {node: '>= 12'}
@@ -5249,13 +5257,13 @@ packages:
     resolution: {integrity: sha512-nDywThFk1i4BQK4twPQ6TA4RT8bDY96yeuCVBWL3ePARCiEKDRSrNGbFIgUJpLp+XeIR65v8ra7WuJOFUBtkMA==}
     engines: {node: '>=8'}
 
-  playwright-core@1.63.0:
-    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+  playwright-core@1.64.1:
+    resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.63.0:
-    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
+  playwright@1.64.1:
+    resolution: {integrity: sha512-HCrVhHr5QQuwYoswEUGTb7gGp522yflbv/ST8nF4sFWGuLjQCt17Q/EubpGGSNKYn1tsTCPZxqHhHCfVURu7UA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -6590,10 +6598,10 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.318':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.318(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.7))(zod@4.6.7)':
+  '@anthropic-ai/claude-agent-sdk@0.3.318(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/sdk': 0.116.0(zod@4.6.7)
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.6.7)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
       zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.318
@@ -6917,6 +6925,8 @@ snapshots:
       '@babel/plugin-transform-typescript': 7.29.9(@babel/core@7.29.13)
     transitivePeerDependencies:
       - supports-color
+
+  '@babel/runtime@7.29.10': {}
 
   '@babel/runtime@7.29.13': {}
 
@@ -7361,7 +7371,7 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
-  '@modelcontextprotocol/sdk@1.30.0(zod@4.6.7)':
+  '@modelcontextprotocol/sdk@1.32.2(zod@4.6.7)':
     dependencies:
       '@hono/node-server': 2.1.6(hono@4.13.16)
       ajv: 8.20.0
@@ -7489,9 +7499,9 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@playwright/test@1.63.0':
+  '@playwright/test@1.64.1':
     dependencies:
-      playwright: 1.63.0
+      playwright: 1.64.1
 
   '@prisma/client@6.19.3(prisma@6.19.3(typescript@6.0.3))(typescript@6.0.3)':
     optionalDependencies:
@@ -10149,7 +10159,7 @@ snapshots:
     dependencies:
       debug: 4.4.3
       express: 5.3.0
-      ip-address: 10.7.6
+      ip-address: 10.7.5
     transitivePeerDependencies:
       - supports-color
 
@@ -10551,6 +10561,8 @@ snapshots:
 
   internmap@2.0.3: {}
 
+  ip-address@10.7.5: {}
+
   ip-address@10.7.6: {}
 
   ipaddr.js@1.9.1: {}
@@ -10790,7 +10802,7 @@ snapshots:
 
   json-schema-to-ts@3.1.1:
     dependencies:
-      '@babel/runtime': 7.29.13
+      '@babel/runtime': 7.29.10
       ts-algebra: 2.0.0
 
   json-schema-traverse@0.4.1: {}
@@ -11420,10 +11432,10 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next-auth@5.0.0-beta.32(next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@9.1.1)(react@19.3.1):
+  next-auth@5.0.0-beta.32(next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(nodemailer@9.1.1)(react@19.3.1):
     dependencies:
       '@auth/core': 0.41.3(nodemailer@9.1.1)
-      next: 16.4.4(@babel/core@7.29.13)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      next: 16.4.4(@babel/core@7.29.13)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
     optionalDependencies:
       nodemailer: 9.1.1
@@ -11433,7 +11445,7 @@ snapshots:
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
-  next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  next@16.4.4(@babel/core@7.29.13)(@playwright/test@1.64.1)(@types/node@20.19.43)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@next/env': 16.4.4
       '@swc/helpers': 0.5.23
@@ -11452,7 +11464,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.4.4
       '@next/swc-win32-arm64-msvc': 16.4.4
       '@next/swc-win32-x64-msvc': 16.4.4
-      '@playwright/test': 1.63.0
+      '@playwright/test': 1.64.1
       sharp: 0.35.5(@types/node@20.19.43)
     transitivePeerDependencies:
       - '@babel/core'
@@ -11738,11 +11750,11 @@ snapshots:
     dependencies:
       find-up: 3.0.0
 
-  playwright-core@1.63.0: {}
+  playwright-core@1.64.1: {}
 
-  playwright@1.63.0:
+  playwright@1.64.1:
     dependencies:
-      playwright-core: 1.63.0
+      playwright-core: 1.64.1
 
   possible-typed-array-names@1.1.0: {}
 
