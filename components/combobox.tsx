@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/command";
 import { ToneBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
+import { useSearchedOptions, type OptionSearch } from "@/components/use-searched-options";
 import type { Tone } from "@/lib/constants";
 
 export type ComboOption = {
@@ -30,6 +31,11 @@ export type ComboOption = {
   disabled?: boolean;
   disabledReason?: string;
 };
+
+/** What a picker offers: a fixed set of options, or whatever a search finds for what was typed. */
+export type OptionSource =
+  | { options: ComboOption[]; search?: never }
+  | { search: OptionSearch; options?: never };
 
 function OptionInner({ o }: { o: ComboOption }) {
   const Icon = o.icon;
@@ -51,8 +57,13 @@ function OptionInner({ o }: { o: ComboOption }) {
   );
 }
 
+/**
+ * A searchable single select. With `search` the list is whatever the search returns for the typed
+ * text (the caller decides how many), instead of a fixed `options` list.
+ */
 export function Combobox({
   options,
+  search,
   value,
   onChange,
   placeholder = "Select…",
@@ -63,8 +74,7 @@ export function Combobox({
   className,
   size = "default",
   pending,
-}: {
-  options: ComboOption[];
+}: OptionSource & {
   value: string | null | undefined;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -77,12 +87,22 @@ export function Combobox({
   pending?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<ComboOption>();
+  const found = useSearchedOptions(search, open, query);
+  const listed = search ? found : options;
+  const selected = listed.find((o) => o.value === value) ?? (picked?.value === value ? picked : undefined);
 
   return (
     <>
       {name ? <input type="hidden" name={name} value={value ?? ""} /> : null}
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
+      >
         <PopoverTrigger
           render={
             <Button
@@ -116,21 +136,22 @@ export function Combobox({
           <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[var(--anchor-width)] min-w-56 rounded-md p-0">
-          <Command>
-            <CommandInput placeholder={searchPlaceholder} />
+          <Command shouldFilter={!search}>
+            <CommandInput placeholder={searchPlaceholder} value={query} onValueChange={setQuery} />
             <CommandList>
               <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup>
-                {options.map((o) => (
+                {listed.map((o) => (
                   <CommandItem
                     key={o.value}
-                    value={`${o.label} ${o.hint ?? ""}`}
+                    value={search ? o.value : `${o.label} ${o.hint ?? ""}`}
                     data-checked={o.value === value}
                     disabled={o.disabled}
                     title={o.disabled ? o.disabledReason : undefined}
                     onSelect={() => {
                       if (o.disabled) return;
                       onChange(o.value);
+                      setPicked(o);
                       setOpen(false);
                     }}
                   >

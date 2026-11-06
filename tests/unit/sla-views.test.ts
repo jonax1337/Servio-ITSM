@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OPEN_TICKET_STATUSES } from "@/lib/constants";
-import { matchesSlaView, parseSlaView, slaViewCandidateWhere, slaViewHref, ticketIdsFilter } from "@/lib/sla-views";
+import { SLA_VIEW_META, matchesSlaView, parseSlaView, slaViewCandidateWhere, slaViewHref, ticketIdsFilter } from "@/lib/sla-views";
 
 const HOUR = 3_600_000;
 const created = new Date("2026-01-05T08:00:00Z");
@@ -185,5 +185,11 @@ describe("ticketIdsFilter", () => {
 
   it("matches nothing for an empty list", () => {
     expect(ticketIdsFilter([])).toEqual({ id: { in: [] } });
+  });
+});
+
+describe("SLA view labels", () => {
+  it("calls the no-clock view \"No active SLA\" because it also covers finished tickets", () => {
+    expect(SLA_VIEW_META.none.label).toBe("No active SLA");
   });
 });

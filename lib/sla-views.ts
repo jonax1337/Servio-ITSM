@@ -10,7 +10,7 @@ import type { BusinessCalendarLike } from "@/lib/business-hours";
  * state the SLA column and badge show, so a filter never disagrees with a ticket's
  * badge. Paused (PENDING/ON_HOLD) tickets are neither breached nor at risk — their
  * clock is stopped — and finished tickets have no clock: like tickets without a
- * deadline they are "No SLA".
+ * deadline they are "No active SLA".
  */
 export const SLA_VIEWS = ["breached", "at_risk", "on_track", "paused", "none"] as const;
 export type SlaView = (typeof SLA_VIEWS)[number];
@@ -20,7 +20,7 @@ export const SLA_VIEW_META: Record<SlaView, { label: string; description: string
   at_risk: { label: "At risk", description: "Active tickets in the last 20% of their resolve window" },
   on_track: { label: "On track", description: "Active tickets with time left on their resolve deadline" },
   paused: { label: "Paused", description: "Tickets whose SLA clock is stopped while they wait" },
-  none: { label: "No SLA", description: "Tickets without a deadline, and finished tickets" },
+  none: { label: "No active SLA", description: "Tickets without a deadline, and finished tickets" },
 };
 
 /** The `sla` URL param (list page, CSV export, dashboard filters) → a known view, or undefined. */
@@ -200,7 +200,7 @@ export function findSlaViewTicketIds(view: ClockView): Promise<number[]> {
   })();
 }
 
-/** The ticket filter for a view: a plain filter for "No SLA", otherwise the (cached) ids currently in it. */
+/** The ticket filter for a view: a plain filter for "No active SLA", otherwise the (cached) ids currently in it. */
 export async function slaViewWhere(view: SlaView): Promise<Prisma.TicketWhereInput> {
   return view === "none" ? NO_ACTIVE_SLA_WHERE : ticketIdsFilter(await findSlaViewTicketIds(view));
 }

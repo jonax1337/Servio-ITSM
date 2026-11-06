@@ -15,3 +15,8 @@ export function affectedCiSearchWhere(query: string): Prisma.AssetWhereInput {
     OR: [{ name: { contains: text } }, { assetTag: { contains: text } }, { serial: { contains: text } }],
   };
 }
+
+/** The in-service assets matching the typed text that are not yet an affected CI of the change. */
+export function attachableCiSearchWhere(query: string, changeId: number): Prisma.AssetWhereInput {
+  return { ...affectedCiSearchWhere(query), changes: { none: { changeId } } };
+}

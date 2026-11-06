@@ -1,20 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronsUpDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import type { ComboOption } from "@/components/combobox";
-
-const SEARCH_DEBOUNCE_MS = 200;
-
-/** What the list offers: a fixed set of options, or whatever a search finds for what was typed. */
-type Source =
-  | { options: ComboOption[]; search?: never }
-  | { search: (query: string) => Promise<ComboOption[]>; options?: never };
+import type { ComboOption, OptionSource } from "@/components/combobox";
+import { useSearchedOptions } from "@/components/use-searched-options";
 
 /**
  * A searchable multi-select for native forms: every chosen option is posted as its own hidden
@@ -32,7 +26,7 @@ export function MultiCombobox({
   placeholder = "Select…",
   searchPlaceholder = "Search…",
   emptyText = "No results found.",
-}: Source & {
+}: OptionSource & {
   name: string;
   placeholder?: string;
   searchPlaceholder?: string;
@@ -41,25 +35,7 @@ export function MultiCombobox({
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<ComboOption[]>([]);
   const [query, setQuery] = useState("");
-  const [found, setFound] = useState<ComboOption[]>([]);
-
-  useEffect(() => {
-    if (!search || !open) return;
-    let current = true;
-    const timer = setTimeout(
-      () => {
-        search(query)
-          .then((results) => current && setFound(results))
-          .catch(() => current && setFound([]));
-      },
-      query ? SEARCH_DEBOUNCE_MS : 0,
-    );
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [search, open, query]);
-
+  const found = useSearchedOptions(search, open, query);
   const listed = search ? found : options;
   const isChosen = (value: string) => chosen.some((o) => o.value === value);
   const toggle = (option: ComboOption) =>

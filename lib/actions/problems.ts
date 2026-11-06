@@ -14,6 +14,7 @@ import { assertRequiredCustomFields, entityFieldValues, isFieldVisible, valuesOf
 import { canActOnTicket } from "@/lib/authz";
 import { problemTraits } from "@/lib/ai-insights-rules";
 import { problemFieldsCheck } from "@/lib/ai-insights-handling";
+import { linkTicketsToProblem, NONE_LINKABLE, NothingToLink } from "@/lib/problem-linking";
 import { findSimilarTickets } from "@/lib/ai-similarity-search";
 import {
   PROBLEM_STATUSES,
@@ -112,11 +113,6 @@ const RAISE_SELECT = {
   assigneeId: true, problemId: true, mergedIntoId: true,
 } as const;
 
-const NONE_LINKABLE = "None of these tickets can be linked: they already belong to a problem, or are outside your groups.";
-
-/** Thrown inside the transaction to roll the new problem back when another agent took every ticket first. */
-class NothingToLink extends Error {}
-
 /** The tickets among `ticketIds` that can still be linked to a new problem by `me`. */
 async function linkableTickets(me: { id: string; role: string }, ticketIds: readonly number[]) {
   const tickets = await db.ticket.findMany({ where: { id: { in: [...ticketIds] } }, select: RAISE_SELECT });
@@ -172,10 +168,7 @@ export async function createProblemFromTickets(formData: FormData): Promise<Rais
         },
         select: { id: true },
       });
-      const claimed = await tx.ticket.updateMany({ where: { id: { in: candidateIds }, problemId: null }, data: { problemId: problem.id } });
-      if (claimed.count === 0) throw new NothingToLink();
-      const linked = await tx.ticket.findMany({ where: { problemId: problem.id }, select: { id: true } });
-      return { problemId: problem.id, linkedIds: linked.map((t) => t.id) };
+      return { problemId: problem.id, linkedIds: await linkTicketsToProblem(tx, problem.id, candidateIds) };
     });
   } catch (error) {
     if (error instanceof NothingToLink) return { ok: false, error: NONE_LINKABLE };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AFFECTED_CI_SEARCH_LIMIT, affectedCiSearchWhere } from "@/lib/affected-ci-search";
+import { AFFECTED_CI_SEARCH_LIMIT, affectedCiSearchWhere, attachableCiSearchWhere } from "@/lib/affected-ci-search";
 
 const inService = { status: { notIn: ["RETIRED", "DISPOSED"] } };
 
@@ -23,5 +23,14 @@ describe("affectedCiSearchWhere", () => {
 
   it("offers at most 20 matches", () => {
     expect(AFFECTED_CI_SEARCH_LIMIT).toBe(20);
+  });
+});
+
+describe("attachableCiSearchWhere", () => {
+  it("keeps the search and leaves out the CIs already linked to the change", () => {
+    expect(attachableCiSearchWhere("srv", 12)).toEqual({
+      ...affectedCiSearchWhere("srv"),
+      changes: { none: { changeId: 12 } },
+    });
   });
 });

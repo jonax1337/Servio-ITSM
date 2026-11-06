@@ -13,6 +13,7 @@ import { aiConfigured, generateAiObject } from "@/lib/ai";
 import { renderMarkdown } from "@/lib/markdown";
 import { assertRequiredCustomFields, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { AI_ASSISTANT_NAME, problemRef } from "@/lib/constants";
+import { linkTicketsToProblem, NONE_LINKABLE, NothingToLink } from "@/lib/problem-linking";
 import {
   articleSkeletonMarkdown, articleTitleFromGap, parseKbGapPayload, problemFromCluster, type KbGapResolution,
 } from "@/lib/ai-insights-rules";
@@ -74,43 +75,43 @@ export async function createProblemFromCluster(
   const members = insight.tickets.map((row) => row.ticket).filter((t) => t.mergedIntoId === null && t.problemId === null);
   const linkable = [];
   for (const ticket of members) if (await canActOnTicket(actor, ticket)) linkable.push(ticket);
-  if (linkable.length === 0) {
-    return refuse("None of these tickets can be linked: they already belong to a problem, or are outside your groups.");
-  }
+  if (linkable.length === 0) return refuse(NONE_LINKABLE);
 
   const fields = problemFromCluster(linkable);
   const missingFields = await missingRequiredProblemFields(fields.categoryId, fields.priority);
   if (missingFields) return refuse(missingFields);
 
-  const linkedIds = linkable.map((t) => t.id);
-  let problemId: number;
+  const candidateIds = linkable.map((t) => t.id);
+  let created: { problemId: number; linkedIds: number[] };
   try {
-    problemId = await db.$transaction(async (tx) => {
+    created = await db.$transaction(async (tx) => {
       const claimed = await tx.aiInsight.updateMany({ where: { id: insightId, status: "OPEN" }, data: { status: "ACTIONED" } });
       if (claimed.count === 0) throw new InsightAlreadyHandled();
       const problem = await tx.problem.create({ data: { ...fields, status: "NEW" }, select: { id: true } });
       await tx.aiInsight.update({ where: { id: insightId }, data: { problemId: problem.id } });
-      await tx.ticket.updateMany({ where: { id: { in: linkedIds }, problemId: null }, data: { problemId: problem.id } });
-      return problem.id;
+      return { problemId: problem.id, linkedIds: await linkTicketsToProblem(tx, problem.id, candidateIds) };
     });
   } catch (error) {
     if (error instanceof InsightAlreadyHandled) return refuse(ALREADY_HANDLED);
+    if (error instanceof NothingToLink) return refuse(NONE_LINKABLE);
     throw error;
   }
+
+  const { problemId, linkedIds } = created;
 
   await writeAudit({
     userId: actor.id, action: "CREATE", entity: "Problem", entityId: problemId,
     summary: `Created problem "${fields.title}" from an incident cluster`,
   });
-  for (const ticket of linkable) {
+  for (const id of linkedIds) {
     await writeAudit({
-      userId: actor.id, action: "UPDATE", entity: "Ticket", entityId: ticket.id,
+      userId: actor.id, action: "UPDATE", entity: "Ticket", entityId: id,
       summary: `Linked to ${problemRef(problemId)}`,
     });
   }
   revalidatePath("/problems");
   revalidateInsightPages(linkedIds);
-  return { ok: true, problemId, linked: linkable.length, skipped: members.length - linkable.length };
+  return { ok: true, problemId, linked: linkedIds.length, skipped: members.length - linkedIds.length };
 }
 
 // ---- knowledge gap → article draft -------------------------------------------
