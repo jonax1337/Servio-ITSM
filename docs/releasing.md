@@ -14,6 +14,7 @@ Runs on every pull request, on every push to `main`, and on demand
 | --- | --- |
 | **Lint, types, schema & unit tests** | `prisma validate`; committed migrations produce exactly `schema.prisma` (`prisma migrate diff … --exit-code`); `brand:check`; `pnpm typecheck` (`next typegen && tsc --noEmit`); `pnpm lint`; `pnpm test` (Vitest). On PRs it also prints the advisory [doc-drift](./maintaining-docs.md) report. |
 | **Production build** | `pnpm build` succeeds with throwaway env values and no `.env` file. |
+| **Link crawl (Playwright)** | Builds the app against a migrated and seeded throwaway SQLite DB, logs in as each role and crawls every linked page (see [Link integrity tests](#-link-integrity-tests)). On failure the Playwright report is uploaded as an artifact. |
 | **Docker image builds** | The [`Dockerfile`](../Dockerfile) and [`updater/Dockerfile`](../updater/Dockerfile) build; the app container refuses a database with migrations it does not ship, then boots (migrations + seed via [`docker/entrypoint.sh`](../docker/entrypoint.sh)) and serves `/login`. |
 | **Updater end-to-end** | [`tests/updater-e2e/run.sh`](../tests/updater-e2e/run.sh) runs the real updater and socket proxy against a local registry: an update to a good release succeeds, and a broken release is rolled back with the database restored byte-for-byte. See [updates.md](./updates.md). |
 
@@ -34,6 +35,39 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
 To make the checks mandatory, mark the CI jobs as **required status
 checks** in the branch protection rule for `main`.
+
+---
+
+## 🔗 Link integrity tests
+
+Two layers keep internal links from pointing at routes that do not exist.
+
+| Layer | Where | What it checks |
+| --- | --- | --- |
+| **Static** | [`tests/unit/route-links.test.ts`](../tests/unit/route-links.test.ts), part of `pnpm test` | Builds the route manifest from `app/**/page.tsx`, `route.ts`, metadata files and `public/`, extracts every internal link target from `app/`, `components/`, `lib/` (JSX `href`/`backHref`, nav and config objects, `redirect`, `router.push`, `revalidatePath`, `new URL("/…")`, entity-to-path maps) and fails with `file:line -> target` when a target matches no route. Also checks that every approval, article-link and inline-ref entity type resolves to a detail page. No DB, no network. |
+| **Runtime** | [`e2e/links.spec.ts`](../e2e/links.spec.ts), `pnpm test:e2e` | Logs in through the real `/login` form as ADMIN, MANAGER, AGENT and USER (seed users) and crawls same-origin `a[href]` links breadth-first from `/` (staff) or `/portal` (USER). Pages are only navigated, never clicked or submitted. Visits at most 3 concrete URLs per page shape (id-like segments collapsed, so `/contracts/licenses` is not hidden behind `/contracts/[id]`) and 250 pages per role. |
+
+The crawler reports a page as broken when it answers HTTP 400 or above, renders the
+not-found or an error-boundary heading, raises an uncaught page error, or when the
+proxy redirects away from it: a link **shown** to a role that ends on `/no-access`,
+`/login` or (for the USER role) `/portal` is a bug in what that role is shown. Every
+failure is listed in one table (role, source page, target, reason).
+
+Links that are broken today but wait for a decision go into `KNOWN_BROKEN` in the
+static test, with a one-line reason; the test fails once such an entry is fixed so the
+list cannot go stale.
+
+Run the crawler locally against a production build (port 3200, throwaway DB):
+
+```bash
+export DATABASE_URL=file:./e2e.db AUTH_SECRET=e2e-only AUTH_TRUST_HOST=true   APP_URL=http://localhost:3200 AUTH_URL=http://localhost:3200 SCHEDULER_ENABLED=false
+pnpm exec prisma migrate deploy && pnpm db:seed
+pnpm build
+pnpm exec playwright install chromium   # first run only
+pnpm test:e2e                           # starts `next start -p 3200`, or reuses a running one
+```
+
+Delete `prisma/e2e.db` afterwards. `playwright-report/` and `test-results/` are git-ignored.
 
 ---
 

@@ -47,6 +47,7 @@ Useful scripts from [`package.json`](package.json):
 | `pnpm dev` | Run the dev server (`next dev`, Turbopack) |
 | `pnpm build` | Production build — **must pass before you open a PR** |
 | `pnpm lint` | ESLint (`eslint-config-next`) — **must pass before you open a PR** |
+| `pnpm test:e2e` | Playwright link crawl per role against a built app on :3200 (needs `pnpm build` and a seeded DB, see [CI & releases](docs/releasing.md#-link-integrity-tests)) |
 | `pnpm brand:check` | Verify application logos, icons, metadata images and brand tokens |
 | `pnpm brand:sync` | Regenerate application copies after updating the canonical brand kit |
 | `pnpm db:migrate` | `prisma migrate dev` — create/apply a dev migration |
@@ -264,7 +265,7 @@ pnpm build
 ```
 
 [CI](docs/releasing.md) runs them on every PR together with the typecheck, the unit
-tests, the migration-drift check and a Docker build.
+tests, the migration-drift check, the `pnpm test:e2e` link crawl and a Docker build.
 
 PR expectations:
 

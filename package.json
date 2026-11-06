@@ -20,7 +20,8 @@
     "docs:check": "node scripts/check-doc-drift.mjs --working",
     "hooks:install": "git config core.hooksPath .githooks",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts && tsx prisma/seed-extras.ts"
@@ -94,6 +95,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^3.0.0",
     "@types/mailparser": "^3.4.6",

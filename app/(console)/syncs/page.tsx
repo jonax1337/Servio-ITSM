@@ -2,7 +2,7 @@ import Link from "next/link";
 import { RefreshCw, Clock, ArrowLeftRight, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/session";
+import { hasRole, requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -28,7 +28,8 @@ const SCOPE_LABEL: Record<string, string> = {
 };
 
 export default async function SyncsPage() {
-  await requireRole("MANAGER");
+  const me = await requireRole("MANAGER");
+  const canCreate = hasRole(me.role, "ADMIN");
   const sources = await db.syncSource.findMany({
     orderBy: [{ name: "asc" }],
   });
@@ -40,10 +41,12 @@ export default async function SyncsPage() {
         title="Syncs"
         description="Integrations that import and export users, assets and tickets between systems."
       >
-        <LinkButton href="/syncs/new">
-          <Plus className="size-4" />
-          New source
-        </LinkButton>
+        {canCreate ? (
+          <LinkButton href="/syncs/new">
+            <Plus className="size-4" />
+            New source
+          </LinkButton>
+        ) : null}
       </PageHeader>
 
       <PageBody>
@@ -53,10 +56,12 @@ export default async function SyncsPage() {
             title="No sync sources configured"
             description="Sync sources connect Servio to directories, MDM and other ITSM tools."
           >
-            <LinkButton href="/syncs/new">
-              <Plus className="size-4" />
-              New source
-            </LinkButton>
+            {canCreate ? (
+              <LinkButton href="/syncs/new">
+                <Plus className="size-4" />
+                New source
+              </LinkButton>
+            ) : null}
           </EmptyState>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
