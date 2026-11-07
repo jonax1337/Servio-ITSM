@@ -1,10 +1,8 @@
-import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, principalIsAgent } from "@/lib/api";
-import { camelizeBody } from "@/lib/api-case";
-import { writeAudit } from "@/lib/audit";
-import { serializeAsset } from "../../_serializers";
-import { ASSET_STATUSES, ASSET_TYPES } from "@/lib/constants";
+import { guard, apiError, preflight, principalIsAgent } from "@/lib/api";
+import { assetPatchSchema } from "@/lib/api-asset-input";
+import { ASSET_INCLUDE } from "../../_serializers";
+import { assetReferenceErrors, assetResponse, readAssetBody, uniqueConflict, updateAssetRecord } from "../../_assets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,21 +17,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id } = await ctx.params;
 
-  const asset = await db.asset.findUnique({ where: { id }, include: { owner: true } });
+  const asset = await db.asset.findUnique({ where: { id }, include: ASSET_INCLUDE });
   if (!asset) return apiError(404, "Asset not found");
-  return ok(serializeAsset(asset));
+  return assetResponse(asset);
 }
 
-const patchSchema = z.object({
-  name: z.string().min(1).optional(),
-  type: z.enum(ASSET_TYPES).optional(),
-  status: z.enum(ASSET_STATUSES).optional(),
-  location: z.string().nullable().optional(),
-  ipAddress: z.string().nullable().optional(),
-  os: z.string().nullable().optional(),
-  ownerId: z.string().nullable().optional(),
-});
-
+/**
+ * Update any asset field (`null` clears a nullable one). Only values that
+ * actually change are written and audited; the response's `meta.changed`
+ * lists them.
+ */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
@@ -43,19 +36,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const existing = await db.asset.findUnique({ where: { id } });
   if (!existing) return apiError(404, "Asset not found");
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return apiError(400, "Invalid JSON body");
-  }
-  // snake_case keys are accepted too (lib/api-case.ts).
-  const normalized = camelizeBody(body);
-  if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
-  const parsed = patchSchema.safeParse(normalized.body);
-  if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
+  const body = await readAssetBody(req, assetPatchSchema);
+  if ("response" in body) return body.response;
+  const refs = await assetReferenceErrors(body.data);
+  if (refs) return apiError(422, "Validation failed", refs);
 
-  const asset = await db.asset.update({ where: { id }, data: parsed.data, include: { owner: true } });
-  await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Asset", entityId: asset.id, summary: "Updated via API" });
-  return ok(serializeAsset(asset));
+  try {
+    const { asset, changed } = await updateAssetRecord(id, existing, body.data, auth.principal.userId, "API");
+    return assetResponse(asset, { meta: { changed } });
+  } catch (err) {
+    const conflict = uniqueConflict(err);
+    if (conflict) return conflict;
+    throw err;
+  }
 }

@@ -1,11 +1,9 @@
 import type { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
-import { camelizeBody } from "@/lib/api-case";
-import { writeAudit } from "@/lib/audit";
-import { serializeAsset } from "../_serializers";
-import { ASSET_TYPES, ASSET_STATUSES } from "@/lib/constants";
+import { assetCreateSchema } from "@/lib/api-asset-input";
+import { ASSET_INCLUDE, serializeAsset } from "../_serializers";
+import { assetReferenceErrors, assetResponse, createAssetRecord, readAssetBody, uniqueConflict } from "../_assets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,65 +12,65 @@ export function OPTIONS() {
   return preflight();
 }
 
+/**
+ * List assets. Filters: `type`, `status`, `q` (name, tag, serial), and exact
+ * matches for syncs: `serial`, `asset_tag`, `ip_address`, `mac_address`,
+ * `import_ref`, `owner_id`, `group_id`, `updated_since` (ISO time).
+ */
 export async function GET(req: Request) {
   const auth = await guard(req, "read");
   if ("response" in auth) return auth.response;
   // The CMDB is agent data. Non-agent tokens must not enumerate assets (BOLA).
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
 
-  const url = new URL(req.url);
-  const { page, perPage, skip, take } = paginate(url.searchParams);
+  const p = new URL(req.url).searchParams;
+  const { page, perPage, skip, take } = paginate(p);
 
   const where: Prisma.AssetWhereInput = {};
-  const type = url.searchParams.get("type");
-  const status = url.searchParams.get("status");
-  const q = url.searchParams.get("q");
-  if (type) where.type = type;
-  if (status) where.status = status;
+  if (p.get("type")) where.type = p.get("type")!;
+  if (p.get("status")) where.status = p.get("status")!;
+  const q = p.get("q");
   if (q) where.OR = [{ name: { contains: q } }, { assetTag: { contains: q } }, { serial: { contains: q } }];
+  const exact: [string, keyof Prisma.AssetWhereInput][] = [
+    ["serial", "serial"], ["asset_tag", "assetTag"], ["ip_address", "ipAddress"], ["mac_address", "macAddress"],
+    ["import_ref", "importRef"], ["owner_id", "ownerId"], ["group_id", "groupId"],
+  ];
+  for (const [param, field] of exact) {
+    const v = p.get(param);
+    if (v) (where as Record<string, unknown>)[field] = v;
+  }
+  const since = p.get("updated_since");
+  if (since) {
+    const d = new Date(since);
+    if (Number.isNaN(d.getTime())) return apiError(422, "Validation failed", { updated_since: ["Must be an ISO date/time"] });
+    where.updatedAt = { gte: d };
+  }
 
   const [total, assets] = await Promise.all([
     db.asset.count({ where }),
-    db.asset.findMany({ where, include: { owner: true }, orderBy: { name: "asc" }, skip, take }),
+    db.asset.findMany({ where, include: ASSET_INCLUDE, orderBy: { name: "asc" }, skip, take }),
   ]);
 
   return ok(assets.map(serializeAsset), { meta: pageMeta(page, perPage, total) });
 }
 
-const createSchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(ASSET_TYPES).optional().default("SERVER"),
-  status: z.enum(ASSET_STATUSES).optional().default("IN_USE"),
-  assetTag: z.string().optional(),
-  serial: z.string().optional(),
-  model: z.string().optional(),
-  manufacturer: z.string().optional(),
-  location: z.string().optional(),
-  ipAddress: z.string().optional(),
-  os: z.string().optional(),
-  externalId: z.string().optional(),
-  syncSourceId: z.string().optional(),
-});
-
+/** Create an asset. Every field of the asset form is accepted; unknown owner/group/location ids are a 422, a taken asset tag or import ref a 409. */
 export async function POST(req: Request) {
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
 
-  let body: unknown;
+  const body = await readAssetBody(req, assetCreateSchema);
+  if ("response" in body) return body.response;
+  const refs = await assetReferenceErrors(body.data);
+  if (refs) return apiError(422, "Validation failed", refs);
+
   try {
-    body = await req.json();
-  } catch {
-    return apiError(400, "Invalid JSON body");
+    const asset = await createAssetRecord(body.data, auth.principal.userId, "Created via API");
+    return assetResponse(asset, { status: 201 });
+  } catch (err) {
+    const conflict = uniqueConflict(err);
+    if (conflict) return conflict;
+    throw err;
   }
-  // snake_case keys are accepted too (lib/api-case.ts).
-  const normalized = camelizeBody(body);
-  if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
-  const parsed = createSchema.safeParse(normalized.body);
-  if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
-
-  const asset = await db.asset.create({ data: parsed.data, include: { owner: true } });
-  await writeAudit({ userId: auth.principal.userId, action: "CREATE", entity: "Asset", entityId: asset.id, summary: "Created via API" });
-
-  return ok(serializeAsset(asset), { status: 201 });
 }

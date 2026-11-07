@@ -54,6 +54,13 @@ export function serializeTicket(t: {
   };
 }
 
+/** Relations loaded for an asset by the /assets endpoints. */
+export const ASSET_INCLUDE = {
+  owner: true,
+  group: { select: { id: true, name: true } },
+  locationRef: { select: { id: true, name: true } },
+} as const;
+
 export function serializeAsset(a: {
   id: string;
   assetTag: string | null;
@@ -67,9 +74,23 @@ export function serializeAsset(a: {
   ipAddress: string | null;
   os: string | null;
   owner?: Userish;
+  macAddress?: string | null;
+  cpu?: string | null;
+  ramGb?: number | null;
+  storageGb?: number | null;
+  cost?: number | null;
+  purchaseDate?: Date | null;
+  warrantyEnd?: Date | null;
+  notes?: string | null;
+  group?: { id: string; name: string } | null;
+  locationRef?: { id: string; name: string } | null;
+  externalId?: string | null;
+  importRef?: string | null;
+  lastSeenAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
+  const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
   return {
     id: a.id,
     asset_tag: a.assetTag,
@@ -80,11 +101,73 @@ export function serializeAsset(a: {
     model: a.model,
     manufacturer: a.manufacturer,
     location: a.location,
+    location_ref: a.locationRef ? { id: a.locationRef.id, name: a.locationRef.name } : null,
     ip_address: a.ipAddress,
+    mac_address: a.macAddress ?? null,
     os: a.os,
+    cpu: a.cpu ?? null,
+    ram_gb: a.ramGb ?? null,
+    storage_gb: a.storageGb ?? null,
+    cost: a.cost ?? null,
+    purchase_date: day(a.purchaseDate),
+    warranty_end: day(a.warrantyEnd),
+    notes: a.notes ?? null,
     owner: user(a.owner ?? null),
+    group: a.group ? { id: a.group.id, name: a.group.name } : null,
+    external_id: a.externalId ?? null,
+    import_ref: a.importRef ?? null,
+    last_seen_at: a.lastSeenAt?.toISOString() ?? null,
     created_at: a.createdAt.toISOString(),
     updated_at: a.updatedAt.toISOString(),
+  };
+}
+
+export function serializeAssetRelation(r: { id: string; type: string; sourceId: string; targetId: string; source?: { id: string; name: string; type: string }; target?: { id: string; name: string; type: string } }, assetId: string) {
+  const outgoing = r.sourceId === assetId;
+  const other = outgoing ? r.target : r.source;
+  return {
+    id: r.id,
+    type: r.type,
+    direction: outgoing ? "outgoing" : "incoming",
+    source_id: r.sourceId,
+    target_id: r.targetId,
+    other: other ? { id: other.id, name: other.name, type: other.type } : null,
+  };
+}
+
+export function serializeVendor(v: { id: string; name: string; website: string | null; email: string | null; phone: string | null; notes: string | null; isActive: boolean; createdAt: Date; updatedAt: Date }) {
+  return { id: v.id, name: v.name, website: v.website, email: v.email, phone: v.phone, notes: v.notes, active: v.isActive, created_at: v.createdAt.toISOString(), updated_at: v.updatedAt.toISOString() };
+}
+
+export const LICENSE_INCLUDE = {
+  vendor: { select: { id: true, name: true } },
+  owner: true,
+  assignments: { include: { user: true, asset: { select: { id: true, name: true } } }, orderBy: { assignedAt: "asc" } },
+} as const;
+
+export function serializeLicense(l: {
+  id: string; name: string; licenseType: string; seats: number; expiresAt: Date | null; cost: number | null; notes: string | null;
+  vendorId: string | null; contractId: string | null; createdAt: Date; updatedAt: Date;
+  vendor?: { id: string; name: string } | null; owner?: Userish;
+  assignments?: { id: string; assignedAt: Date; user: Userish; asset: { id: string; name: string } | null }[];
+}) {
+  const assignments = l.assignments ?? [];
+  return {
+    id: l.id,
+    name: l.name,
+    license_type: l.licenseType,
+    seats: l.seats,
+    used_seats: assignments.length,
+    over_allocated: assignments.length > l.seats,
+    expires_at: l.expiresAt ? l.expiresAt.toISOString().slice(0, 10) : null,
+    cost: l.cost,
+    notes: l.notes,
+    vendor: l.vendor ? { id: l.vendor.id, name: l.vendor.name } : null,
+    contract_id: l.contractId,
+    owner: user(l.owner ?? null),
+    assignments: assignments.map((a) => ({ id: a.id, assigned_at: a.assignedAt.toISOString(), user: user(a.user), asset: a.asset ? { id: a.asset.id, name: a.asset.name } : null })),
+    created_at: l.createdAt.toISOString(),
+    updated_at: l.updatedAt.toISOString(),
   };
 }
 
