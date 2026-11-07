@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, principalIsAgent } from "@/lib/api";
+import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
 import { serializeAsset } from "../../_serializers";
 import { ASSET_STATUSES, ASSET_TYPES } from "@/lib/constants";
@@ -48,7 +49,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   } catch {
     return apiError(400, "Invalid JSON body");
   }
-  const parsed = patchSchema.safeParse(body);
+  // snake_case keys are accepted too (lib/api-case.ts).
+  const normalized = camelizeBody(body);
+  if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
+  const parsed = patchSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
   const asset = await db.asset.update({ where: { id }, data: parsed.data, include: { owner: true } });
