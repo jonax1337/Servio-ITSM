@@ -79,6 +79,10 @@ services:
   # and path do not match an allow rule below is refused with 403/405; that
   # excludes exec, attach, archive, logs, volumes, build, swarm, system, …
   # (`$$` is compose's escape for a literal `$`.)
+  # Container calls are scoped: by name only `servio-web` and its `-pre-<version>`
+  # twin, otherwise a full 64-hex id (no short-id prefixes, and no container list,
+  # so ids of unrelated containers cannot be discovered). Renaming the `web`
+  # container means changing SERVIO_CONTAINER and these rules together.
   # Pinned by digest (wollomatic/socket-proxy 1.13.2): review the changelog before bumping.
   docker-proxy:
     image: wollomatic/socket-proxy:1.13.2@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
@@ -104,13 +108,13 @@ services:
       # listed here AND in the updater's ALLOW_BIND_MOUNTS_FROM.
       - -allowbindmountfrom=/servio-no-host-binds
       - -allowGET=^/_ping$$
-      - -allowGET=^/v1\.[0-9]+/containers/([A-Za-z0-9][A-Za-z0-9_.-]*/)?json$$
+      - -allowGET=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/json$$
       - -allowGET=^/v1\.[0-9]+/images/[A-Za-z0-9][A-Za-z0-9_.:@-]*(/[A-Za-z0-9][A-Za-z0-9_.:@-]*)*/json$$
       - -allowPOST=^/v1\.[0-9]+/images/create$$
       - -allowPOST=^/v1\.[0-9]+/containers/create$$
-      - -allowPOST=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*/(start|stop|rename|update)$$
+      - -allowPOST=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/(start|stop|rename|update)$$
       - -allowPOST=^/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect$$
-      - -allowDELETE=^/v1\.[0-9]+/containers/[A-Za-z0-9][A-Za-z0-9_.-]*$$
+      - -allowDELETE=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})$$
       - -shutdowngracetime=10
     volumes:
       # A unix socket gives full API access whatever the mount mode says.

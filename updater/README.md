@@ -26,7 +26,7 @@ container the operator put in place. That is why:
 | Measure | Where |
 | --- | --- |
 | The updater runs as `node` (uid 1000), `read_only`, `cap_drop: ALL`, `no-new-privileges`, `network_mode: none`. It has no more file privileges on `/data` than the attacker; no chown, no root. | `updater/Dockerfile`, compose |
-| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file) and refuses host `Binds`/bind mounts in create requests. Request bodies and query strings are not inspected otherwise. | compose |
+| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file) and refuses host `Binds`/bind mounts in create requests. Container calls are scoped: by name only `servio-web` and `servio-web-pre-<version>`, otherwise a full 64-hex id; short-id prefixes and the container list are refused, so the updater cannot discover other containers on the host. This requires `SERVIO_CONTAINER` (the label-only lookup needs the list); renaming the `web` container means changing it and the proxy rules together. Request bodies and query strings are not inspected otherwise. | compose |
 | Backups, the crash journal, the ledger of handled requests and the liveness stamp live on their own volume (`servio-backups` at `/backups`) that the app never mounts. | compose |
 | Every file under `/data` is `lstat`-checked, opened with `O_NOFOLLOW` and `O_NONBLOCK`, then `fstat`-checked: the database and its sidecars (`-wal`, `-shm`, `-journal`) and `request.json` must be regular files, the state directories real directories. A FIFO cannot block a read. | `safe-fs.mjs`, `backup.mjs` |
 | State files are written through a directory descriptor (Linux `/proc/self/fd`), so swapping `/data/state/updater` for a symlink mid-write cannot redirect the write. Temp files carry a random UUID, are created exclusively and fsynced, then renamed, and the directory is fsynced. | `safe-fs.mjs`, `state-files.mjs` |
@@ -41,8 +41,9 @@ Residual risk. Docker access is still powerful. The proxy filters methods,
 paths and host bind mounts, but it does not inspect the rest of a request
 body or any query string, so these still pass: a create request for a
 privileged container (devices, host namespaces, capabilities), an image import
-through `images/create?fromSrc=…`, and calls naming any container id, not just
-the managed one. Whoever gains code execution **in the updater process** (not
+through `images/create?fromSrc=…`, and calls naming another container by its
+full 64-hex id (the updater has no way to learn one: listing, short ids and
+foreign names are refused). Whoever gains code execution **in the updater process** (not
 just write access to `/data`) therefore controls the host. The updater only
 ever sends create bodies derived from the managed container's own inspected
 configuration, which the app cannot change, and pulls with `fromImage` only.
