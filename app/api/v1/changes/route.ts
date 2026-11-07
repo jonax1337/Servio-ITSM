@@ -42,6 +42,7 @@ export async function GET(req: Request) {
     if (!Number.isInteger(problemId)) return apiError(422, "Validation failed", { problem_id: ["Must be an integer"] });
     where.problemId = problemId;
   }
+  if (p.get("import_ref")) where.importRef = p.get("import_ref")!;
   const since = p.get("updated_since");
   if (since) {
     const d = new Date(since);

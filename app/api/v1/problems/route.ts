@@ -37,6 +37,7 @@ export async function GET(req: Request) {
   if (p.get("assignee_id")) where.assigneeId = p.get("assignee_id")!;
   if (p.get("group_id")) where.groupId = p.get("group_id")!;
   if (p.get("category_id")) where.categoryId = p.get("category_id")!;
+  if (p.get("import_ref")) where.importRef = p.get("import_ref")!;
   const since = p.get("updated_since");
   if (since) {
     const d = new Date(since);

@@ -232,6 +232,9 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `read` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `read` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `read` |
+| `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
+| `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
+| `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
 
 There are no `DELETE` endpoints and no endpoints for knowledge, releases or
 assets' relationships yet.
@@ -501,6 +504,46 @@ automation has to opt in to writing to a requester. On tickets a public reply
 behaves like one typed in the console: it stamps the first response, notifies
 watchers and mentions and emails the requester. Change and problem comments send
 no mail. Every comment writes an audit row as the token owner.
+
+### History import
+
+`POST /import/tickets`, `/import/problems`, `/import/changes` write one record **as
+it was in the source system** (e.g. when migrating from GLPI): its final status,
+original timestamps, closure details and comment thread. This deliberately
+bypasses the lifecycle (no transition map, CAB, SLA clock, mail or automations),
+so it needs a token with the **`admin` scope whose owner is an `ADMIN`** (else
+`403`). The bodies are defined in
+[`lib/api-import-input.ts`](../lib/api-import-input.ts) and validated strictly.
+
+- **`import_ref`** (required, ≤ 200 chars, e.g. `glpi:change:129`) identifies the
+  source record and is stored as `importRef` (unique). Sending the same ref again
+  returns the existing record with `200` and `meta.created: false`; nothing is
+  overwritten, so a migration script can be re-run. New records return `201` with
+  `meta.created: true`. List endpoints filter by `import_ref`, and every
+  serialized ticket, problem and change carries `import_ref`.
+- **Required:** `import_ref`, `title`, `status` (any status of the entity, also
+  ones the console only reaches through workflows, like `APPROVED`), `created_at`.
+- **Timestamps** are ISO with offset. `updated_at` defaults to the latest
+  timestamp in the record, including comments. A timestamp before `created_at`
+  or an end before its start is a `422`.
+- **Changes:** the change fields of `POST /changes` plus `status`, `outcome`,
+  `closure_notes`, `cancel_reason`, `created_by_id` (default: the token owner),
+  `problem_id`, `actual_start`/`actual_end`. **Problems:** `status`,
+  `root_cause`, `workaround`, `resolved_at`. **Tickets:** `type`, `status`,
+  `priority`, `impact`, `urgency`, `requester_id` (default: the token owner),
+  `assignee_id`, `group_id`, `category_id`, `service_id`, `problem_id`,
+  `change_id`, `resolution_code`, `resolution_note`, `first_response_at`,
+  `resolved_at`, `closed_at`; imported tickets have `source = API`, no SLA and no
+  breach flags.
+- **`comments`** (up to 1000): `{ body, internal (default true), author_id
+  (default: the token owner), created_at }`.
+- Every referenced id (users incl. comment authors, group, category, service,
+  problem, change) is checked first; unknown ids are a `422`, never a `500`.
+- One audit row per record (`CREATE`, "Imported from <ref> via API").
+
+Import problems first, then changes and tickets that point at them via
+`problem_id` (look ids up with `GET /problems?import_ref=…`). Once imported, a
+record is an ordinary one: e.g. a `CLOSED` change is locked like any other.
 
 ### Lookups
 

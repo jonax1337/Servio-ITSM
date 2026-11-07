@@ -23,6 +23,7 @@ export function serializeTicket(t: {
   serviceId: string | null;
   problemId?: number | null;
   changeId?: number | null;
+  importRef?: string | null;
   dueAt: Date | null;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -45,6 +46,7 @@ export function serializeTicket(t: {
     service_id: t.serviceId,
     problem_id: t.problemId ?? null,
     change_id: t.changeId ?? null,
+    import_ref: t.importRef ?? null,
     due_at: t.dueAt?.toISOString() ?? null,
     resolved_at: t.resolvedAt?.toISOString() ?? null,
     created_at: t.createdAt.toISOString(),
@@ -107,7 +109,7 @@ export function serializeChange(c: {
   rollbackPlan: string | null; outcome: string | null; closureNotes: string | null; cancelReason: string | null;
   customFields: string; problemId: number | null; releaseId: number | null; templateId: string | null;
   plannedStart: Date | null; plannedEnd: Date | null; actualStart: Date | null; actualEnd: Date | null;
-  createdAt: Date; updatedAt: Date;
+  createdAt: Date; updatedAt: Date; importRef?: string | null;
   assignee?: Userish; createdBy?: Userish; group?: Named; category?: Named;
   approvals?: { id: string; status: string; comment: string | null; decidedAt: Date | null; approver: Userish }[];
   assets?: { asset: { id: string; name: string; type: string } }[];
@@ -137,6 +139,7 @@ export function serializeChange(c: {
     problem_id: c.problemId,
     release_id: c.releaseId,
     template_id: c.templateId,
+    import_ref: c.importRef ?? null,
     approvals: (c.approvals ?? []).map((a) => ({
       id: a.id, status: a.status, comment: a.comment, decided_at: iso(a.decidedAt), approver: user(a.approver),
     })),
@@ -164,7 +167,7 @@ export const PROBLEM_INCLUDE = {
 export function serializeProblem(p: {
   id: number; title: string; description: string; status: string; priority: string; impact: string;
   rootCause: string | null; workaround: string | null; customFields: string;
-  createdAt: Date; updatedAt: Date; resolvedAt: Date | null;
+  createdAt: Date; updatedAt: Date; resolvedAt: Date | null; importRef?: string | null;
   assignee?: Userish; group?: Named; category?: Named;
   tickets?: { id: number; prefix: string | null; type: string; title: string; status: string }[];
   changes?: { id: number; title: string; status: string }[];
@@ -187,6 +190,7 @@ export function serializeProblem(p: {
     tickets: (p.tickets ?? []).map((t) => ({ id: t.id, ref: ticketRef(t.id, t.prefix ?? t.type), title: t.title, status: t.status })),
     changes: (p.changes ?? []).map((c) => ({ id: c.id, ref: changeRef(c.id), title: c.title, status: c.status })),
     comment_count: p._count?.comments ?? null,
+    import_ref: p.importRef ?? null,
     resolved_at: iso(p.resolvedAt),
     created_at: p.createdAt.toISOString(),
     updated_at: p.updatedAt.toISOString(),
