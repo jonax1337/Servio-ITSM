@@ -274,8 +274,11 @@ every server-action agent guard shares the same DB-truth check via
   account by email collision. `ssoEnabled` / `ssoProviderName` are exported so
   the login page can conditionally render the SSO button. The login page is
   `force-dynamic`: prerendered at build time it would bake in the build's
-  (empty) `AUTH_OIDC_*` env and never show the button in the Docker image. See
-  [configuration.md](./configuration.md).
+  (empty) `AUTH_OIDC_*` env and never show the button in the Docker image. With
+  `AUTH_OIDC_ROLE_MAP` set, the `jwt` callback in `auth.ts` derives the role from
+  the IdP's groups/roles claim ([`lib/oidc-roles.ts`](../lib/oidc-roles.ts)),
+  persists it on the user row and audits the change. See
+  [configuration.md](./configuration.md#role-mapping-from-the-idp).
 
 ## 🛡️ RBAC — four roles, three enforcement layers
 

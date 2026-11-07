@@ -226,6 +226,7 @@ empty to hide the SSO button.
 | `AUTH_OIDC_SECRET` | OIDC client secret. |
 | `AUTH_OIDC_ISSUER` | Issuer URL (Keycloak, Authentik, Azure AD, Okta, Google, …). |
 | `AUTH_OIDC_NAME` | Button label (defaults to `SSO`). |
+| `AUTH_OIDC_ROLE_MAP` | Optional IdP group → role map, e.g. `it-admins=ADMIN` (see [configuration.md](./configuration.md#role-mapping-from-the-idp)). |
 
 ### Email / SMTP (optional)
 
