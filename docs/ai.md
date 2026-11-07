@@ -27,14 +27,14 @@ conversation and in-flight stream) survive client-side navigation.
 | Surface | Location | Audience |
 | --- | --- | --- |
 | Global floating window | `<SableMount>` (`components/assistant/sable-mount.tsx`) → the `<SableWindow>` overlay | Agents+ |
-| Floating action button | `SableFab` (`components/assistant/{sable-fab,sable-chrome}.tsx`), bottom-right | Agents+ |
+| Floating action button | `SableLauncher` (`components/assistant/sable-launcher.tsx`, rendering `SableFab` from `sable-chrome.tsx`), bottom-right; hidden while a window is open and on `/assistant` | Agents+ |
 | Inline route | `app/(console)/assistant/` → route `/assistant` (the same window, `variant="inline"`) | Agents+ |
 
 - **The window is a small state machine** (`components/assistant/sable-provider.tsx`): `closed` → nothing
   but the FAB; `min` → a small floating chat card; `max` → a large centered window that adds the
   conversation-history rail. `min` and `max` render the **same** conversation, so
   expanding/minimising never loses context.
-- **The FAB is the entry point.** The old top-bar launcher is gone; the always-present `SableFab`
+- **The FAB is the entry point.** The old top-bar launcher is gone; the always-present launcher
   restores whatever state (min/max) Sable was last left in, with the last conversation reopened.
 - **`/assistant` renders the same window inline** (docked, full-page, no overlay) so the surface stays
   deep-linkable while sharing the one `<SableProvider>` state. There is no separate standalone shell.
@@ -48,16 +48,15 @@ server-side in every route/action.
 
 ### Scopes
 
-| Scope | Who sees it | What it's for |
-| --- | --- | --- |
-| **General** | All agents | Day-to-day service-desk work: your queue, tickets, KB, records. |
-| **Admin** | Admins only (extra tab) | System-wide stats, settings, and management operations. |
-
 There is **no scope switch in the UI** — the old General/Admin rail toggle was removed. Admin
 operations (system-wide stats, settings, management ops) surface in the normal chat and are gated
-**per-operation by the acting user's role** (`minRole` / `adminOnly` = ADMIN, checked against the
-fresh DB role at propose AND apply time). Legacy conversations may still carry `scope=ADMIN` in the
-database; the column no longer gates anything.
+**per-operation by the acting user's role** (`minRole`, `adminOnly` = ADMIN), checked against the
+fresh DB role at propose AND apply time. For an ADMIN, `prepareAssistantTurn` adds the admin read
+tools (`ASSISTANT_ADMIN_TOOLS`) and appends `adminSystemPromptSection()` to the general system prompt.
+
+`AiConversation.scope` (`GENERAL`/`ADMIN`) still exists as a legacy column and never widens or narrows
+the tool set (`filterOperationsForRole` in `lib/ai-operations/availability.ts` ignores it). It is only
+a visibility guard: non-admins cannot create, list, open or chat in an `ADMIN`-scoped conversation.
 
 ---
 
@@ -85,9 +84,14 @@ single `<SableThread>` mounted across the min↔max morph so an in-flight stream
 
 ## The streaming route
 
-Chat runs through **`app/api/assistant/chat/route.ts`** (`POST`, AGENT+). It is
+Chat runs through **`app/api/assistant/chat/route.ts`** (`POST`, AGENT+; `maxDuration = 120`). It is
 **server-authoritative**: assistant-ui/`useChat` posts the full `messages[]` array, but the route
-ignores that history and **rebuilds context from the DB**, then streams the reply.
+takes only the new user turn (text + attachments) from it, **rebuilds context from the DB**, then
+streams the reply. Before any of that it returns `401` (not an active agent), `429` with `retry-after`
+(per-user sliding window `checkAiRate`: `AI_RATE_LIMIT`, default 20 requests per `AI_RATE_WINDOW_MS`,
+default 60 s; shared with the portal chat, confirm-create and triage routes) and `400` when AI is not
+configured. The body may carry `context: { ticketId?, projectId? }`; an agent run is capped at 10
+steps (`maxSteps`).
 
 **Answers outlive the request.** The agent run has its own abort controller and is pumped into an
 in-memory registry (`lib/sable-active-runs.ts`; one self-hosted process, so no Redis). The run is
@@ -107,20 +111,29 @@ after 15 minutes. The portal chat keeps the request-bound behaviour.
 The pre-model logic is shared, non-`"use server"` code in **`lib/assistant-core.ts`**:
 
 - `getActingAgent()` — the acting user with a **fresh** role from the DB (never the stale JWT).
-- `prepareAssistantTurn()` — authorise the conversation + scope, persist the user turn, auto-title
+- `prepareAssistantTurn()` — authorise the conversation, persist the user turn, auto-title
   from the first message, load bounded history (last 16 turns), and assemble system + messages +
-  tools. Returns everything up to (but not including) the model call.
+  tools (read tools, admin read tools for ADMINs, the registry operations the role may use). It also
+  appends the current-ticket context (`context.ticketId`) and, when the chat is pinned to a project
+  the user can access, the project's instructions, bound records and file list. Returns everything up
+  to (but not including) the model call.
 - `buildUserContent()` / `sanitizeUploads()` — turn uploads into multimodal model content
-  (images → image parts, text files inlined, PDFs → file parts) with a text-only fallback.
-- `generalSystemPrompt` / `adminSystemPrompt` — the per-scope system prompts.
-- `buildAssistantProposals()` — turn `propose_*` tool calls into deduped approval cards.
+  (images → image parts, text files inlined, PDFs → file parts) with a text-only fallback. Limits:
+  6 attachments per turn, 8 MB each, at most 4 images sent to the model, 6000 characters inlined per
+  text file.
+- `generalSystemPrompt` / `adminSystemPromptSection` — the system prompt; the admin section is
+  appended for ADMINs.
+- `buildAssistantProposals()` — turn `propose_*` tool calls into approval cards (not deduped: each
+  tool call is its own proposal with its own decision).
 
 Streaming itself — **one agent harness for every provider**:
 
 - Every turn runs through the locally installed **Claude Code** CLI via the Claude Agent SDK
   (`lib/claude-cli.ts`, `streamClaudeAgent`). Sable's ai-sdk tools are adapted 1:1 into an
-  in-process MCP server, so tool handlers keep direct DB access. All built-in Claude Code tools are
-  disabled (`tools: []`), project settings are not loaded, and sessions are not persisted to disk.
+  in-process MCP server, so tool handlers keep direct DB access. Claude Code's built-in tools are
+  all off except `Skill` on console runs (`tools: []` for the portal), only the isolated "user"
+  settings tier is loaded (see [Sable's isolated agent home](#sables-isolated-agent-home-sable-libsable-workspacets)),
+  and sessions are not persisted to disk.
 - `lib/claude-agent-events.ts` maps the SDK's partial stream events to ai-sdk UI chunks **live**:
   thinking → `reasoning-*`, each tool call → `tool-input-start/delta/available` while the model writes
   it, each tool result → `tool-output-available`, and the text between steps → `text-*`. The chat
@@ -167,7 +180,12 @@ General scope (`lib/assistant-tools.ts` + `lib/ai-tools.ts`):
 - `web_search`, `fetch_url` — public web + read a URL, for facts not documented in-house.
   `web_search` uses a real provider API when configured — **Tavily** or **Brave** (clean,
   LLM-friendly results) — else the keyless DuckDuckGo scraper (`lib/ai-tools.ts` `webSearch`; set
-  `WEB_SEARCH_PROVIDER` + the key in Settings → AI). `fetch_url` strips page chrome before reading.
+  `WEB_SEARCH_PROVIDER` (`auto` by default, tried in the order Tavily → Brave) + the key under
+  Settings › Sable (AI assistant) › Web search; a provider error or empty result falls back to
+  DuckDuckGo). `fetch_url` strips page chrome before reading.
+- `project_search_files`, `project_list_files` — read the files of the project the chat is pinned to
+  (operations `project.search_files` / `project.list_files`, `lib/ai-operations/modules/projects.ts`;
+  see [Projects](#projects-persistent-workspaces)). Access is re-checked on every call.
 - `draft_document` — hand a long free-standing document (runbook, RCA, KB draft) or **script** to the read-only **canvas**; never used for a record the user asked to create, whose content goes into the `propose_*` fields (see
   [Artifacts & the canvas](#artifacts--the-canvas)).
 
@@ -203,12 +221,13 @@ Coverage by module:
 | --- | --- | --- |
 | Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), parent/child (`ticket.set_parent`), merge / undo merge (`ticket.merge`, `ticket.unmerge`), tasks, work-log, watch, major-incident |
 | Categories | `modules/taxonomy.ts` | category create/update |
-| Groups & Users | `modules/org.ts` | group create / auto-assign, user field (role/active — ADMIN) |
+| Groups & Users | `modules/org.ts` | `group.list` (read), group create / auto-assign (MANAGER), user field (`role` / `isActive` / `isVip`, ADMIN) |
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |
 | Assets & Locations (CMDB) | `modules/cmdb.ts` | asset create/update, `asset.link_ticket` / `asset.unlink_ticket`, location create/update/delete |
 | Knowledge base | `modules/knowledge.ts` | article create, set status, delete; `article.link` / `article.unlink` (attach to a ticket, problem or change by ref) |
 | Problems & Changes | `modules/problems-changes.ts` | problem/change create (`change.create` takes the full record: reason, implementation/rollback plan, planned window, problem link), update field, comment; `change.set_plan` / `change.set_window`; `change.set_problem`, `change.close` (outcome + closure notes), `change.cancel` (reason); `problem.set_root_cause` / `problem.set_workaround` (a known error needs a workaround, a resolved problem a root cause, closed problems are read-only — the same gates as the UI, from `lib/problem-rules.ts`); `ticket.set_problem` / `ticket.set_change` (link or unlink); reads `problem.get` / `change.get` |
-| SLAs, Automations, Settings | `modules/config.ts` | SLA CRUD, automation toggle/delete, setting update (ADMIN) |
+| SLAs, Automations, Settings | `modules/config.ts` | SLA create/update/set-active/delete, automation toggle/delete (MANAGER), setting update (ADMIN, allowlisted non-secret keys) |
+| Projects | `modules/projects.ts` | `project.search_files`, `project.list_files` (read, AGENT), `project.file_delete` (write, AGENT; takes a file id, re-checks access to that file's project, audited) |
 | Change schedule | `modules/change-schedule.ts` | `change.schedule` (read, AGENT: windows, conflicts and freezes for a period), `freeze.create` (write, MANAGER) |
 | On-call | `modules/oncall.ts` | `oncall.who` (read, AGENT), `oncall.override` (write, MANAGER) |
 | Status page | `modules/status.ts` | `status_incident.list` (read, AGENT), `status_incident.create` / `.update` / `.post_update` (write, AGENT; publishing needs MANAGER, checked inside `run`, and the ops reuse the shared actions so the ticket-link checks apply) |
@@ -221,7 +240,9 @@ Coverage by module:
 
 **Insights, similarity and copilots.** `lib/ai-similarity.ts` ranks tickets with local lexical TF-IDF, so `ticket.find_similar` and the "similar tickets" panel need no AI provider. The `lib/ticks/ai-insights.ts` tick (`runInsightsTick`) raises `AiInsight` rows (`CLUSTER`: a burst of similar tickets, `KB_GAP`: recurring tickets without an article); each is created at most once through the unique `dedupeKey`, and agents act on them from `/insights` (create a problem, draft an article, dismiss); the severity and routing a problem inherits from its tickets (`problemTraits` in `lib/ai-insights-rules.ts`) is shared with the ticket page's *Create problem* actions (`createProblemFromTickets`, `lib/actions/problems.ts`). Draft articles use `generateAiObject` when AI is configured and a plain skeleton otherwise. The other AI surfaces are agent-only buttons that call `lib/ai.ts` through server actions and render nothing for non-agents: the ticket summary card (`components/ai/ticket-summary-card.tsx`), the change plan copilot and CAB brief (`lib/actions/change-copilot.ts`, `lib/change-brief.ts`; the copilot writes only through `updateChangeText`) and the dashboard `briefing` widget (`lib/dashboard/briefing*.ts`). When AI is off they show the teaser, like the rest of Sable.
 
-**Proactive SLA nudges.** `lib/ticks/sla-nudges.ts` (`runSlaNudgeTick`, rules in `lib/sla-nudge-rules.ts`) notifies a ticket's assignee (notification type `SLA_NUDGE`) once when the SLA clock passes `SLA_NUDGE_PERCENT`. The marker is `Ticket.slaNudgedAt`; it is independent of the escalation sweep and of `slaAtRiskNotifiedAt`.
+**Ticket triage suggestions.** `GET /api/ai/triage?ticketId=` (`app/api/ai/triage/route.ts`; a route handler rather than a server action so it never blocks the agent's other actions, rate-limited with `checkAiRate`) calls `suggestTriage` (`lib/actions/ai.ts`) to suggest priority, impact, urgency, type, team, category and service, grounded in similar past tickets. The model can only return real ids. Admins switch it off with `AI_TICKET_TRIAGE` (default on). `lib/actions/ai.ts` also holds `summarizeThread`, `draftReply` and `improveText`.
+
+**Proactive SLA nudges.** `lib/ticks/sla-nudges.ts` (`runSlaNudgeTick`, rules in `lib/sla-nudge-rules.ts`) notifies a ticket's assignee (notification type `SLA_NUDGE`) once per assignee and deadline when the share of the resolve SLA that has elapsed (business-calendar aware; paused tickets are skipped) passes `SLA_NUDGE_PERCENT` (default 75; `SLA_NUDGE_ENABLED`, default on). The marker is `Ticket.slaNudgedAt`, cleared on reassignment and repricing; it is independent of the escalation sweep and of `slaAtRiskNotifiedAt`. The scheduler runs the tick every `SLA_NUDGE_TICK_SECONDS` (default 180, min 60) and the insights tick every `INSIGHTS_TICK_SECONDS` (default 900, min 300; `INSIGHTS_ENABLED`, default on) (`lib/scheduler.ts`).
 
 **Ticket to problem/change links.** `ticket.set_problem` and `ticket.set_change` (both `minRole` AGENT) take a
 ticket ref (`INC-0157`) and a `PRB-0019` / `CHG-0025` ref, or `none` to unlink. They reuse `setTicketProblem` /
@@ -244,19 +265,19 @@ keyword search.
 
 Authority is **the app's real RBAC**. Each operation's `minRole` mirrors the underlying UI
 action, so Sable can do exactly what the acting user could do by hand — no more. Operations flagged
-`adminOnly` require the **ADMIN role _and_ an ADMIN-scoped conversation** (defence in depth).
-`setting.update` refuses any key that looks secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`) **and
-hard-refuses the self-locked privacy keys `AI_ALLOW_EXTERNAL` / `AI_PROVIDER`** so a prompt-injection
+`adminOnly` (`setting.update`, `user.set_field`) are also `minRole: "ADMIN"`; that role check is the gate.
+`setting.update` only accepts keys on an allowlist (`ALLOWED_SETTING_KEYS`), refuses any key that
+looks secret (contains `KEY`/`PASS`/`SECRET`/`TOKEN`) **and hard-refuses the self-locked privacy keys
+`SELF_LOCKED_SETTING_KEYS`** (`AI_ALLOW_EXTERNAL`, `AI_PROVIDER`, `OLLAMA_BASE_URL`) so a prompt-injection
 can never steer an admin into opening the off-box data path — change those in the Settings UI only.
 When the underlying server action fails, ops like `ticket.escalate` / `ticket.watch` propagate its
 `{ ok: false, error }` result back to the model as `err(...)` instead of always reporting success.
 
-> **`adminOnly` ops are gated by role AND scope.** `availableOperations` / `runOperation`
-> (`lib/ai-operations/tools.ts`) filter and re-check `adminOnly` operations against **both**
-> `hasRole(role, 'ADMIN')` **and** `scope === 'ADMIN'` — at propose time and again at approve time.
-> An ADMIN chatting in the General scope is **not** offered system-wide config ops; they must switch
-> to the Admin scope. Non-`adminOnly` operations are still gated purely by `minRole`. (Historical note:
-> the `scope` argument used to be plumbed through unused — it is now enforced.)
+> **Gating is role-only.** `availableOperations` (propose time, via `filterOperationsForRole` in
+> `lib/ai-operations/availability.ts`) and `runOperation` (apply time, `lib/ai-operations/tools.ts`)
+> check `minRole` against the fresh DB role. The `scope` argument is still passed through but ignored
+> (`_scope`), so an ADMIN is offered `adminOnly` operations in any conversation. A demoted admin can no
+> longer apply one.
 
 ---
 
@@ -272,8 +293,8 @@ Nothing Sable "decides" to change is applied automatically. The path is:
    (`components/assistant/proposal-card.tsx`) with **Approve** and **Dismiss** buttons. (Proposals
    are also collected into message metadata and persisted, so the cards survive a re-hydrate.)
 3. **Approve.** Clicking Approve calls the `applyAssistantProposal` server action, which
-   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`; `adminOnly` ops
-   additionally require the ADMIN role), **re-validates the args** (via `runOperation`), then runs
+   **re-resolves the operation, re-checks RBAC** (fresh DB role vs. `minRole`, which for `adminOnly`
+   ops is ADMIN), **re-validates the args** (via `runOperation`), then runs
    the real mutation —
    reusing existing server actions where possible, else a guarded Prisma write plus an audit entry.
 
@@ -336,8 +357,9 @@ extracted + indexed for retrieval and auto-tagged; office documents preview at h
 Configured via `AI_PROVIDER` (`lib/ai.ts`). Config resolves through `lib/settings` — a DB
 `AppSetting` row overrides `process.env` — so an admin can manage everything from the UI.
 
-**Every provider runs through the local Claude Code CLI** (the `claude` binary must be installed on
-the server). The provider only decides which endpoint Claude Code talks to (`openClaudeBackend()`):
+**Every provider runs through the local Claude Code CLI.** Its binary ships with the Claude Agent
+SDK as a platform-specific optional dependency (`@anthropic-ai/claude-agent-sdk-<os>-<arch>`), so a
+normal `pnpm install` and the Docker image already contain it — no separate `claude` install. The provider only decides which endpoint Claude Code talks to (`openClaudeBackend()`):
 
 | Provider | `AI_PROVIDER` | Claude Code talks to | Key | Privacy gate | Default model |
 | --- | --- | --- | --- | --- | --- |
@@ -347,7 +369,8 @@ the server). The provider only decides which endpoint Claude Code talks to (`ope
 | **Claude subscription** | `claude-code` | Anthropic, via your Pro/Max plan | `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) | not gated (self-authorized) | `sonnet` |
 
 - **Ollama** is a local, OpenAI-compatible endpoint — no key, data stays on the machine. This is
-  the privacy-safe default and the recommended way to try Sable.
+  the privacy-safe default and the recommended way to try Sable. It is treated as text-only
+  (`supportsImages` is false for `ollama`, true for `openai`), so image attachments are not sent to it.
 - **OpenAI-compatible** works with any compatible cloud via `OPENAI_BASE_URL` (OpenAI, OpenRouter,
   Moonshot/Kimi, Zhipu/GLM, …); the model id comes from `AI_MODEL`.
 - **Claude subscription** (`claude-code`) uses the operator's Pro/Max plan. Because Sable runs in
@@ -471,9 +494,12 @@ re-entering every header value), a `mode`, a `minRole` (`AGENT`/`MANAGER`/`ADMIN
   registers remote servers over the SDK control channel (`query.setMcpServers`, stdin) and holds the
   prompt back until they are connected (`lib/claude-cli.ts`, `connectRemoteServers`). Verified: the
   CLI's command line carries neither `--mcp-config` nor the header value.
-- **Known gap: replay.** `applyAssistantProposal` takes the proposal from the client, so an
-  `mcp.call` can be approved again (or one composed by hand) by a user who meets the server's
-  `minRole`; every run is audited. Binding approval to the persisted proposal is open.
+- **Known gap: hand-made proposals.** `mcp.call` proposals carry their `toolCallId`, so once the turn
+  is stored `applyAssistantProposal` applies the stored args and the decision claim (see
+  [the approve-first flow](#the-approve-first-flow)) stops the same call from running twice. But a
+  proposal whose `toolCallId` matches no stored turn is applied from the client's args, so one
+  composed by hand can still be approved by a user who meets the server's `minRole`; every run is
+  audited.
 - **Trust caveat.** "Read-only" comes from the server's own `readOnlyHint`; Servio cannot verify
   it. Use `READ_ONLY`/`APPROVAL` only for servers you trust to annotate honestly, and `TRUSTED`
   sparingly.
@@ -486,8 +512,8 @@ re-entering every header value), a `mode`, a `minRole` (`AGENT`/`MANAGER`/`ADMIN
 
 ### Settings page (`/settings/ai`, ADMIN)
 
-`app/(console)/settings/ai/page.tsx` loads the values and `components/settings/ai-settings-form.tsx`
-renders them:
+`app/(console)/settings/ai/page.tsx` (titled "Sable (AI assistant)") loads the values and
+`components/settings/ai-settings-form.tsx` renders them:
 
 - A **status card** (configured or not) with a **Test connection** button that runs a live round trip
   for the saved provider (`testAiConnection`).
@@ -500,8 +526,12 @@ renders them:
   list where useful, and a model id can always be typed by hand. A refresh button reloads it. For the
   external providers (Anthropic, OpenAI-compatible) nothing is fetched while `AI_ALLOW_EXTERNAL` is
   off — the saved key never leaves the box just to fill a dropdown.
-- **Max output tokens** (blank = Auto), privacy and behaviour switches, then the **Skills** and
-  **MCP servers** managers described above.
+- **Max output tokens** (blank = Auto) and the **Privacy & behaviour** switches: *Allow external
+  providers* (`AI_ALLOW_EXTERNAL`), *In-ticket triage suggestions* (`AI_TICKET_TRIAGE`) and *Teaser
+  mode* (`AI_TEASER`).
+- **Web search**: provider (`WEB_SEARCH_PROVIDER`) plus the Tavily and Brave API keys.
+- The **Agent skills** and **MCP servers** managers described above. They sit outside the form and
+  save on their own, not with *Save changes*.
 
 ### The built-in LLM proxy (`lib/llm-proxy/`)
 
@@ -547,11 +577,20 @@ All keys are read through `lib/settings` (DB overrides `.env`); secrets are encr
 | `AI_MODEL` | provider default | Explicit model id (blank = provider default); the settings page offers a live dropdown |
 | `AI_MAX_OUTPUT_TOKENS` | blank (Auto) | Output token cap; blank / `auto` / `0` = model default, a number is floored at 8192 |
 | `AI_TEASER` | `false` | Show AI buttons as a preview when AI is off |
+| `AI_TICKET_TRIAGE` | `true` | In-ticket triage suggestions (`/api/ai/triage`) |
 | `ANTHROPIC_API_KEY` | — | Anthropic key (external; needs the gate) |
 | `OPENAI_API_KEY` | — | OpenAI key (external; needs the gate) |
-| `OPENAI_BASE_URL` | — | Override endpoint for any OpenAI-compatible cloud |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override endpoint for any OpenAI-compatible cloud (no field on the settings page) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Local Ollama endpoint |
 | `OLLAMA_MODEL` | `llama3.1` | Local Ollama model |
+| `CLAUDE_CODE_OAUTH_TOKEN` | — | Claude subscription token (`claude-code` provider; set via the Connect Claude dialog) |
+| `WEB_SEARCH_PROVIDER` | `auto` | `tavily` \| `brave` \| `duckduckgo` \| `auto` |
+| `TAVILY_API_KEY` / `BRAVE_API_KEY` | — | Web-search provider keys |
+| `SABLE_HOME` | `~/.servio/sable` | Sable's isolated agent home (env only) |
+| `SABLE_DISABLED_SKILLS` | — | Comma-separated built-in skills turned off (managed on the Skills card) |
+| `AI_RATE_LIMIT` / `AI_RATE_WINDOW_MS` | `20` / `60000` | Per-user AI endpoint limiter (env only) |
+
+The full reference, including the other variables, is in [configuration.md](configuration.md).
 
 ### Quick start: local, private (Ollama)
 
@@ -573,17 +612,18 @@ ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 
 ## Conversation persistence & folders
 
-Chats are saved per user (base migration
-`20260809000000_vio_assistant_conversations`, plus the folder additions in the schema):
+Chats are saved per user (`prisma/schema.prisma`; the tables come from the squashed baseline
+migration `20260823000000_init_baseline`, and `AiProposalDecision`, `AiSkill` and `AiMcpServer` from
+`20261106000000_sable_skills_mcp_proposal_decisions`):
 
 - **`AiConversation`** — `title` (auto-titled from the first user message), `scope`
-  (`GENERAL`/`ADMIN`), `archived`, `folderId` (optional), timestamps, owner. Indexed by
-  `(userId, archived, updatedAt)` so the left rail sorts newest-first.
+  (`GENERAL`/`ADMIN`, legacy), `archived`, `folderId` and `projectId` (both optional, `SetNull`),
+  timestamps, owner. Indexed by `(userId, archived, updatedAt)` so the left rail sorts newest-first.
 - **`AiMessage`** — one turn: `role` (`user`/`assistant`), `content`, sanitized `html`,
   `toolCalls` (JSON), and `proposals` (JSON). Cascades with its conversation.
 - **`AiProposalDecision`** — the user's decision on one proposal: `proposalKey` (unique per
-  conversation), `status` (`APPLYING`/`APPLIED`/`DISMISSED`), `claimId`, `summary`. Cascades with
-  its conversation.
+  conversation), `status` (`APPLYING`/`APPLIED`/`DISMISSED`), `claimId`, `summary`, `decidedById`.
+  Cascades with its conversation.
 - **`AiFolder`** — a per-user folder (`id`, `userId`, `name`, timestamps). Deleting a folder just
   **un-groups** its chats (`AiConversation.folderId` is `onDelete: SetNull`) — it never deletes
   conversations. `folderId` is indexed.
@@ -608,18 +648,25 @@ a search box, user **folders**
 The help center has its own **USER-scoped** Sable — a floating widget
 (`components/portal/sable-widget.tsx`, launched with the same `SableFab`) mounted in
 `app/portal/layout.tsx`, gated by the same `aiConfigured()` / `aiTeaserEnabled()` switches. It is
-deliberately smaller and safer than the console Sable and shares **none** of the agent tools.
+deliberately smaller and safer than the console Sable: apart from `web_search` / `fetch_url` it
+shares **none** of the agent tools (and no registry operations).
 
-The portal is being migrated to the **same assistant-ui `Thread`** used by the console: a streaming
-portal route `app/api/portal/assistant/route.ts` with a portal tool UI for the ticket / service /
-comment confirm cards. In the end state the portal renders the identical assistant-ui surface — a
-USER-scoped, confirm-to-create variant of the console thread.
+The portal renders the **same assistant-ui `Thread`** as the console: a streaming portal route
+`app/api/portal/assistant/route.ts` with a portal tool UI for the ticket / service / comment confirm
+cards — a USER-scoped, confirm-to-create variant of the console thread. Unlike the console it is
+**ephemeral**: the client runtime holds the transcript (the route takes the last 12 messages, each
+cut to 4000 characters, from the request), nothing is stored in `AiConversation`, the answer is
+request-bound (it is not registered in `lib/sable-active-runs.ts`), and a run is capped at 6 steps.
+Both portal routes need an active signed-in user (re-checked in the DB) and share the `checkAiRate`
+limiter.
 
 - **Backend:** `lib/portal-assistant.ts` builds a per-request tool set bound to the caller's id
-  (`buildPortalTools(userId)`). Chat runs through `app/api/portal/assistant/route.ts`; drafts are
-  confirmed via `app/api/portal/assistant/create/route.ts`.
+  (`buildPortalTools(userId, attachments)`). Chat runs through `app/api/portal/assistant/route.ts`
+  (`audience: "portal"`: no charter, no skills, no MCP servers); drafts are confirmed via
+  `app/api/portal/assistant/create/route.ts`.
 - **Read tools (public / own only):** `search_knowledge` (published **public** articles),
-  `search_catalog`, `list_categories`, `get_service_form`, keyless `web_search` / `fetch_url`, and
+  `search_catalog`, `list_categories`, `get_service_form`, the same `web_search` / `fetch_url` as the
+  console (so `WEB_SEARCH_PROVIDER` and its keys apply here too), and
   the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
   notes are excluded by the same `isInternal: false` filter the portal UI uses), and
   `list_status_incidents` (**public** status incidents only; the system prompt tells the model to check it
@@ -668,16 +715,17 @@ Headings use local Manrope; body text remains Inter. See
 
 | Concern | Files |
 | --- | --- |
-| Window & state | `components/assistant/{sable-provider,sable-mount,sable-window,sable-fab,sable-chrome}.tsx` |
-| Chat surface | `components/assistant/{sable-thread,sable-tool-ui,proposal-card,sable-read-cards,sable-rail,composer-commands,typing-dots}.tsx` |
+| Window & state | `components/assistant/{sable-provider,sable-mount,sable-window,sable-launcher,sable-chrome}.tsx` |
+| Chat surface | `components/assistant/{sable-thread,sable-tool-ui,tool-activity,proposal-card,sable-read-cards,sable-rail,sable-adapters,composer-commands,typing-dots}.tsx` |
 | Artifacts / canvas | `components/assistant/{sable-canvas,canvas-code}.tsx`, `lib/assistant-tools.ts` (`draft_document`) |
-| Projects | `components/assistant/{project-home,project-rail-section,project-file-browser}.tsx`, `lib/ai-projects.ts`, `lib/actions/ai-project-files.ts` |
+| Projects | `components/assistant/{project-home,project-rail-section,project-file-browser,name-dialog}.tsx`, `lib/ai-projects.ts`, `lib/ai-context.ts` (`getOrgDirectory`, `getProjectContext`), `lib/ai-file-tag.ts`, `lib/rag/{extract,chunk,retrieve}.ts`, `lib/actions/ai-project-files.ts`, `lib/ai-operations/modules/projects.ts` |
 | Office previews | `lib/office-convert.ts`, `app/api/files/[id]/{preview,pdf}/route.ts`, `lib/rag/render.ts`, `components/file-preview.tsx` |
 | assistant-ui thread | `components/thread.tsx` + `components/{markdown-text,reasoning,tool-fallback,tool-group,tooltip-icon-button,attachment,follow-up-suggestions}.tsx` |
 | Inline route | `app/(console)/assistant/{page,layout}.tsx` (route `/assistant`) |
-| Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+) |
+| Streaming route | `app/api/assistant/chat/route.ts` (POST, AGENT+), `app/api/assistant/chat/[id]/stream/route.ts` (GET rejoin, DELETE stop), `lib/sable-active-runs.ts` (in-memory run registry) |
 | Shared pre-model core | `lib/assistant-core.ts` (identity, `prepareAssistantTurn`, prompts, proposals, uploads) |
-| Server actions | `lib/actions/ai-assistant.ts` (conversation + folder CRUD, `applyAssistantProposal`; shared types) |
+| Server actions | `lib/actions/ai-assistant.ts` (conversation, folder and project CRUD, `applyAssistantProposal` / `dismissAssistantProposal`; shared types), `lib/actions/ai.ts` (triage, thread summary, reply drafts, ticket context) |
+| Proposal decisions | `lib/ai-proposal-decisions.ts`, `lib/ai-proposal-signature.ts` |
 | Provider layer | `lib/ai.ts` (config, gate, `openClaudeBackend`, `streamAiChat`, `generateAi*`), `lib/ai-models.ts` (model lists for the settings dropdown), `lib/claude-cli.ts` (Claude Code harness; `remoteMcp`, `audience`), `lib/claude-env.ts` (allowlisted CLI env), `lib/claude-agent-events.ts` (SDK events → live UI chunks), `lib/llm-proxy/{server,translate,token-cap}.ts` (built-in Anthropic⇄OpenAI proxy) |
 | Skills & MCP | `lib/sable-skills.ts`, `lib/sable-workspace.ts`, `lib/actions/sable-skills.ts`, `lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`, `lib/actions/sable-mcp.ts`, `lib/ai-operations/modules/mcp.ts` |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |

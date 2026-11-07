@@ -7,8 +7,12 @@
 
 Developer and operator documentation for **Servio**, an open-source ITSM platform
 built with Next.js 16, React 19, Prisma 6, and Auth.js v5. Every page is verified
-against the code and kept in sync with the repository. New here? Start with
-[development.md](./development.md), then read [architecture.md](./architecture.md).
+against the code and kept in sync with the repository.
+
+- **Running Servio?** Use the published Docker images: [deployment.md](./deployment.md#-docker),
+  then [updates.md](./updates.md) for in-app updates.
+- **Working on the code?** Start with [development.md](./development.md), then read
+  [architecture.md](./architecture.md).
 
 ## Getting started
 
@@ -28,13 +32,14 @@ against the code and kept in sync with the repository. New here? Start with
 | [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
 | [branding.md](./branding.md) | Relay/Nova Flow, canonical assets, fonts, generated application files and sync commands. |
 | [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
+| [audit.md](./audit.md) | The 2026-08-23 remediation audit (a dated snapshot, not kept in sync). |
 | [benchmark.md](./benchmark.md) | The ITSM usability benchmark against GLPI, iTop and Znuny: per-task clicks and fields, method, limits, and how to regenerate the README chart. |
 
 ## Operations
 
 | Doc | What it covers |
 | --- | --- |
-| [deployment.md](./deployment.md) | Moving to PostgreSQL, production environment, build/run, persistent storage, and scheduled syncs. |
+| [deployment.md](./deployment.md) | Installing from the published Docker images, moving to PostgreSQL, production environment, build/run from source, persistent storage, and scheduled background work. |
 | [updates.md](./updates.md) | Self-update with maintenance windows: how releases are found and installed by the updater sidecar, the maintenance page, setup, security and rollback. |
 | [releasing.md](./releasing.md) | The CI checks on every PR, cutting a release with `pnpm release` and a version tag, the multi-arch GHCR images and the GitHub Release, and Dependabot. |
 

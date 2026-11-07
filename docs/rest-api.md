@@ -70,8 +70,9 @@ scope check. The three scope sets offered in the UI (`SCOPE_OPTIONS` in
 | `read,write` | Read + create/update (`GET`, `POST`, `PATCH`) |
 | `read,write,admin` | Read + write, and satisfies any future `admin`-gated checks |
 
-Each protected handler calls `guard(req, "read" | "write")`, which returns `401` if
-the token is invalid and `403` if it lacks the required scope.
+Each protected handler calls `guard(req, "read" | "write")`, which first applies the
+rate limit (`429`), then returns `401` if the token is invalid and `403` if it lacks
+the required scope. No handler checks `admin` on its own; it only widens `read`/`write`.
 
 ### Actor scoping (agent vs. user)
 
@@ -109,7 +110,8 @@ revoke any. Revoked tokens are excluded from authentication immediately.
 | Current version | `1.0.0` (see `GET /api/v1`) |
 | Content type | `application/json` |
 | Runtime | Node.js (`runtime = "nodejs"`); list/detail routes are `dynamic = "force-dynamic"` |
-| CORS | Default **closed**: no `Access-Control-*` headers are emitted unless `API_CORS_ORIGIN` is set to an explicit origin (never `*`); when set, methods `GET, POST, PATCH, OPTIONS`, allowed headers `Authorization, Content-Type`. Every route implements `OPTIONS` (preflight → `204`). |
+| CORS | Default **closed**: no `Access-Control-*` headers are emitted unless `API_CORS_ORIGIN` is set to an explicit origin (never `*`); when set, methods `GET, POST, PATCH, OPTIONS`, allowed headers `Authorization, Content-Type`. Every route except `/openapi` implements `OPTIONS` (preflight → `204`). `GET /openapi` is the exception: it always sends `Access-Control-Allow-Origin: *`. |
+| Session | `/api/v1` is a public path in the session middleware ([`lib/route-guard.ts`](../lib/route-guard.ts)), so it never needs a cookie; only the Bearer token authenticates. |
 
 Because these are Bearer-token endpoints, they do not rely on cookies.
 
@@ -147,18 +149,24 @@ only for validation failures:
 | `200` | Successful `GET` / `PATCH` |
 | `201` | Resource created (`POST`) |
 | `204` | `OPTIONS` preflight |
-| `400` | Malformed JSON body |
+| `400` | Malformed JSON body (`POST` / `PATCH`) |
 | `401` | Missing or invalid token |
 | `403` | Token lacks the required scope, or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
-| `404` | Resource not found (or hidden from a non-agent) |
-| `409` | Illegal ticket status transition, or a request awaiting approval (only cancelling is allowed) |
+| `404` | Resource not found (or hidden from a non-agent); a non-numeric ticket id is also `404` |
+| `409` | Illegal ticket status transition, a merged ticket (only `CANCELLED` is allowed), or a request awaiting approval (only cancelling is allowed) |
 | `422` | Zod validation failed, or an invalid `assigneeId` (`details` holds field errors) |
 | `429` | Rate limit exceeded — a `Retry-After` header is returned |
+| `503` | Maintenance mode is active: the middleware answers every `/api/*` request except `/api/auth` and `/api/maintenance` with `{ "error": "maintenance", "endsAt": … }` and a `Retry-After` header. Bearer clients carry no admin session, so they are refused until the window ends ([`proxy.ts`](../proxy.ts), [`lib/maintenance-rules.ts`](../lib/maintenance-rules.ts)) |
 
 The API is rate-limited per token (falling back to client IP) with an in-memory
-sliding window; a `429` carries `Retry-After`. Limits are per-process and env-tunable
-(`API_RATE_LIMIT`, `API_RATE_WINDOW_MS`) — see the multi-instance caveat in
-[deployment.md](./deployment.md). Login is separately throttled with failed-attempt
+sliding window ([`lib/rate-limit.ts`](../lib/rate-limit.ts)). The key is the first 18
+characters of the presented token, or the client IP (`X-Forwarded-For`, then
+`X-Real-IP`) when no Bearer header is sent; it is checked before the token is
+verified, on every guarded route (not on `/` or `/openapi`). The default is `120`
+requests per `60000` ms. A `429` carries `Retry-After` (seconds) and the body
+`{ "error": { "message": "Rate limit exceeded. Slow down and retry later." } }`. Limits
+are per-process and env-tunable (`API_RATE_LIMIT`, `API_RATE_WINDOW_MS`) — see the
+multi-instance caveat in [deployment.md](./deployment.md). Login is separately throttled with failed-attempt
 lockout + backoff. Token creation/revocation is **ADMIN-only**.
 
 ---
@@ -193,21 +201,25 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | Method | Path | Description | Scope |
 | --- | --- | --- | --- |
 | `GET` | `/` | API index: name, version, and resource links. **No auth.** | — |
-| `GET` | `/openapi` | OpenAPI 3.1 spec (JSON). **No auth.** | — |
+| `GET` | `/openapi` | OpenAPI 3.1 spec (JSON), hand-written — see [OpenAPI spec](#openapi-spec). **No auth.** | — |
 | `GET` | `/tickets` | List tickets (paginated, filterable). Non-agents see only their own. | `read` |
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
 | `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `write` |
-| `GET` | `/assets` | List assets (paginated, filterable). | `read` |
-| `POST` | `/assets` | Create an asset. | `write` |
-| `GET` | `/assets/{id}` | Get one asset by id (cuid string). | `read` |
-| `PATCH` | `/assets/{id}` | Update an asset. | `write` |
-| `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). | `read` |
+| `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
+| `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
+| `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
+| `PATCH` | `/assets/{id}` | Update an asset. Agent tokens only. | `write` |
+| `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
+
+There are no `DELETE` endpoints and no endpoints for other entities (problems,
+changes, knowledge, users, …).
 
 ### Tickets
 
 Ticket `id` is a **numeric** id; the serializer also returns a human `ref`
-(`INC-0001` / `REQ-0001`, from [`ticketRef`](../lib/constants.ts)). Field names in
+(`INC-0001` / `REQ-0001`, from [`ticketRef`](../lib/constants.ts) and the ticket's
+stored `prefix`). Field names in
 the JSON payload are `snake_case` even though the DB columns are `camelCase` (see
 [`_serializers.ts`](../app/api/v1/_serializers.ts)).
 
@@ -252,13 +264,15 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
-`urgency` are honored; all other fields fall back to defaults. SLA response/resolve
+`urgency` are honored; all other fields fall back to defaults (an unknown
+`requesterId`/`categoryId`/`serviceId` is still rejected with `422` before that
+filtering). SLA response/resolve
 deadlines are resolved from the service + priority at creation time. Agents may
 pick a starting status, but only an **open** one (`NEW`, `OPEN`, `IN_PROGRESS`,
 `PENDING`, `ON_HOLD`) — a ticket can't be born `RESOLVED`/`CLOSED`/`CANCELLED`,
 which would skip breach stamping, automations and the survey pipeline (else `422`).
 
-**`PATCH /tickets/{id}` body** (agents only): `title`, `description`, `status`,
+**`PATCH /tickets/{id}` body** (agents only): `title` (min 3), `description`, `status`,
 `priority`, `assigneeId` (nullable). Changing `status`:
 
 - The transition is validated against the **admin-configured workflow**
@@ -334,6 +348,18 @@ Asset type and status enums are defined in [`lib/constants.ts`](../lib/constants
 
 ---
 
+## OpenAPI spec
+
+`GET /api/v1/openapi` serves a static, hand-written OpenAPI 3.1 document
+([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)); nothing is generated
+from the handlers or their Zod schemas, so it can lag behind them. It lists the
+paths and methods above, the `status`/`priority`/`type`/`q`/`page`/`per_page` query
+parameters of `GET /tickets`, and the Bearer security scheme. It has only minimal
+`Ticket` and `Asset` schemas and no error or write-body detail for most operations;
+this page is the authoritative reference.
+
+---
+
 ## curl examples
 
 The seed data ([`prisma/seed.ts`](../prisma/seed.ts)) creates a demo token named
@@ -344,7 +370,10 @@ servio_demo_pat_0123456789abcdef
 ```
 
 > Development only. This token exists purely to make the API explorable after
-> seeding — never rely on it in production.
+> seeding — never rely on it in production. The Docker entrypoint runs the seed once
+> per data volume (`/data/.seeded`, [`docker/entrypoint.sh`](../docker/entrypoint.sh)),
+> so a fresh container install also contains this token and its admin owner: revoke
+> it under **Settings › API Tokens**.
 
 ```bash
 BASE=http://localhost:3000/api/v1
@@ -389,13 +418,22 @@ versioned or guaranteed stable:
 
 | Route | Purpose | File |
 | --- | --- | --- |
-| `GET /api/search?q=…` | Global spotlight search across tickets, problems, changes, assets, people, services | [`app/api/search/route.ts`](../app/api/search/route.ts) |
+| `GET /api/search?q=…` | Global spotlight search across tickets, problems, changes, assets, people, services (`AGENT`+; `403` for `USER` sessions) | [`app/api/search/route.ts`](../app/api/search/route.ts) |
+| `GET /api/portal/search?q=…` | Portal search for end users: published public articles, published catalog items and the caller's own tickets | [`app/api/portal/search/route.ts`](../app/api/portal/search/route.ts) |
+| `GET /api/ai/triage?ticketId=…` | Sable's inline triage suggestion for a ticket (session user, rate-limited by `AI_RATE_LIMIT`). A route handler rather than a Server Action so it does not block the agent's other actions. | [`app/api/ai/triage/route.ts`](../app/api/ai/triage/route.ts) |
+| `POST /api/dashboard/widget` | Computes one dashboard widget on demand for the editor's live preview (`AGENT`+) | [`app/api/dashboard/widget/route.ts`](../app/api/dashboard/widget/route.ts) |
+| `GET /api/maintenance` | **Public.** Whether maintenance mode is on (`{ "active": false }` otherwise); the maintenance page polls it | [`app/api/maintenance/route.ts`](../app/api/maintenance/route.ts) |
+| `GET` / `POST /api/auth/*` | Auth.js handlers (sign-in, callbacks, session) | [`app/api/auth/[...nextauth]/route.ts`](../app/api/auth/[...nextauth]/route.ts) |
 | `GET /api/export?type=…` | CSV export. `type=tickets` (AGENT+) exports the ticket list; `type=audit` (ADMIN, honours the viewer's filters) exports the audit log. Returns a `text/csv` download. | [`app/api/export/route.ts`](../app/api/export/route.ts) |
-| `POST /api/files/upload` | Attachment upload | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
+| `POST /api/files/upload` | Attachment upload (session only, never Bearer). `multipart/form-data` with a `file` and at most one target (`ticketId`, `commentId`, `articleId` or `aiProjectId`); no target stages the file for a later form submit. The per-file cap is `MAX_UPLOAD_MB`. Errors: `401`, `413` (too large), `415` (not multipart, or type / extension / magic bytes not allowed), `422` (no file, empty file, unparsable body, bad target), `429` (`USER`-role accounts only, `UPLOAD_RATE_LIMIT`), plus `400` / `404` / `409` when the target or the store refuses it. | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
 | `GET /api/files/{id}` | Attachment download | [`app/api/files/[id]/route.ts`](../app/api/files/[id]/route.ts) |
+| `GET /api/files/{id}/preview` | Rendered HTML preview of an attachment for the lightbox (files above 25 MB fall back to download) | [`app/api/files/[id]/preview/route.ts`](../app/api/files/[id]/preview/route.ts) |
+| `GET /api/files/{id}/pdf` | Office document → PDF preview via Gotenberg (`GOTENBERG_URL`); `204` when the file is not convertible or Gotenberg is not configured or fails | [`app/api/files/[id]/pdf/route.ts`](../app/api/files/[id]/pdf/route.ts) |
 | `POST /api/assistant/chat` | Console **Sable** streaming chat turn (`AGENT`+). Consumes the assistant-ui / `useChat` `messages[]` body (plus `conversationId` and optional `context`), rebuilds history server-side from the DB, and streams the reply as an AI SDK UI message stream (`toUIMessageStreamResponse`; the `claude-code` provider is buffered into one uniform stream). `propose_*` tool calls ride back as message metadata for the approve-first cards. | [`app/api/assistant/chat/route.ts`](../app/api/assistant/chat/route.ts) |
 | `GET` / `DELETE /api/assistant/chat/{conversationId}/stream` | Console **Sable** running answers (`AGENT`+, own conversations only). `GET` rejoins an answer still streaming (replay so far, then live; `204` when none runs), `DELETE` is the Stop button (`204` stopped, `404` nothing of yours running). The POST run outlives its request; see [ai.md](ai.md#the-streaming-route). | [`app/api/assistant/chat/[id]/stream/route.ts`](../app/api/assistant/chat/[id]/stream/route.ts) |
 | `POST /api/portal/assistant` | Portal self-service **Sable** turn (`USER`-scoped, ephemeral — the assistant-ui runtime holds the transcript). Consumes the assistant-ui / `useChat` `messages[]` body and streams the reply as an AI SDK UI message stream (same engine as the console); `propose_*` drafts stream as tool results the portal renders as confirm-to-create ticket/service/comment cards (confirmed via the create endpoint below). | [`app/api/portal/assistant/route.ts`](../app/api/portal/assistant/route.ts) |
 | `POST /api/portal/assistant/create` | Confirms and creates the portal assistant's proposed ticket/service/comment. | [`app/api/portal/assistant/create/route.ts`](../app/api/portal/assistant/create/route.ts) |
 
-Do not build integrations against these — use `/api/v1`.
+Do not build integrations against these — use `/api/v1`. While maintenance mode is
+active, non-admin sessions get `503` from all of them except `/api/auth/*` and
+`/api/maintenance` (see the status codes above).
