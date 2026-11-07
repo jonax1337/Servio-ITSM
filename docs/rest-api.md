@@ -238,6 +238,11 @@ assets' relationships yet.
 
 ### Tickets
 
+Ticket and asset request bodies were defined in `camelCase` (`assigneeId`) and
+also accept the `snake_case` spelling used everywhere else (`assignee_id`): top-level
+keys are translated before validation ([`lib/api-case.ts`](../lib/api-case.ts)).
+Sending one field in both spellings with different values is a `422`.
+
 Ticket `id` is a **numeric** id; the serializer also returns a human `ref`
 (`INC-0001` / `REQ-0001`, from [`ticketRef`](../lib/constants.ts) and the ticket's
 stored `prefix`). Field names in
@@ -390,8 +395,7 @@ it to a status ([`refusalStatus`](../lib/api-itsm-input.ts)): "not found" `404`,
 permission refusals `403`, invalid input `422`, everything else (workflow,
 freeze, lock, concurrency) `409`.
 
-Request bodies of these endpoints are `snake_case` like the responses (the older
-ticket and asset bodies are `camelCase`) and **strict**: an unknown field is a
+Request bodies of these endpoints are `snake_case` like the responses and **strict**: an unknown field is a
 `422`, so a typo like `rollback_plna` cannot silently drop a rollback plan.
 Bodies are validated by the Zod schemas in
 [`lib/api-itsm-input.ts`](../lib/api-itsm-input.ts), from which the OpenAPI

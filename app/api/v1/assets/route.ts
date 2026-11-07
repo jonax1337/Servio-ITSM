@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
+import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
 import { serializeAsset } from "../_serializers";
 import { ASSET_TYPES, ASSET_STATUSES } from "@/lib/constants";
@@ -64,7 +65,10 @@ export async function POST(req: Request) {
   } catch {
     return apiError(400, "Invalid JSON body");
   }
-  const parsed = createSchema.safeParse(body);
+  // snake_case keys are accepted too (lib/api-case.ts).
+  const normalized = camelizeBody(body);
+  if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
+  const parsed = createSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
   const asset = await db.asset.create({ data: parsed.data, include: { owner: true } });
