@@ -88,7 +88,10 @@ and may act org-wide; a plain `USER` is scoped to their own objects.
 To avoid leaking existence, a non-agent requesting a ticket they don't own gets
 `404`, not `403`. **Assets and Services are agent-only**: a non-agent (`USER`) token
 gets `403` on every `/assets` and `/services` request — the CMDB and catalog are
-agent data and cannot be enumerated by a plain user token.
+agent data and cannot be enumerated by a plain user token. The same holds for
+**changes, problems and the lookups** (`/categories`, `/groups`, `/users`).
+Ticket comments follow the ticket rule: a `USER` token reads the public replies of
+its own tickets and cannot write.
 
 When an agent sets `assigneeId` on ticket create/update, the assignee is validated
 (must be an active `AGENT` who — if the ticket has a group — belongs to that group);
@@ -201,7 +204,7 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | Method | Path | Description | Scope |
 | --- | --- | --- | --- |
 | `GET` | `/` | API index: name, version, and resource links. **No auth.** | — |
-| `GET` | `/openapi` | OpenAPI 3.1 spec (JSON), hand-written — see [OpenAPI spec](#openapi-spec). **No auth.** | — |
+| `GET` | `/openapi` | OpenAPI 3.1 spec (JSON) — see [OpenAPI spec](#openapi-spec). **No auth.** | — |
 | `GET` | `/tickets` | List tickets (paginated, filterable). Non-agents see only their own. | `read` |
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
@@ -211,9 +214,27 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
 | `PATCH` | `/assets/{id}` | Update an asset. Agent tokens only. | `write` |
 | `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
+| `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
+| `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
+| `GET` | `/changes` | List changes (paginated, filterable, full-text `q`). Agent tokens only. | `read` |
+| `POST` | `/changes` | Create a change (always `DRAFT`). Agent tokens only. | `write` |
+| `GET` | `/changes/{id}` | Get one change with approvals and affected CIs. | `read` |
+| `PATCH` | `/changes/{id}` | Edit fields, plans, window, problem link (not the status). | `write` |
+| `POST` | `/changes/{id}/transitions` | Move along the lifecycle, incl. submit for approval. | `write` |
+| `POST` | `/changes/{id}/approvals/{approval_id}` | Record a CAB decision. | `write` |
+| `GET`/`POST` | `/changes/{id}/comments` | List / add comments. | `read` / `write` |
+| `GET` | `/problems` | List problems (paginated, filterable, full-text `q`). Agent tokens only. | `read` |
+| `POST` | `/problems` | Create a problem. Agent tokens only. | `write` |
+| `GET` | `/problems/{id}` | Get one problem with linked tickets and changes. | `read` |
+| `PATCH` | `/problems/{id}` | Edit fields, root cause, workaround (not the status). | `write` |
+| `POST` | `/problems/{id}/transitions` | Move along the lifecycle. | `write` |
+| `GET`/`POST` | `/problems/{id}/comments` | List / add comments. | `read` / `write` |
+| `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `read` |
+| `GET` | `/groups` | Groups with member ids. Agent tokens only. | `read` |
+| `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `read` |
 
-There are no `DELETE` endpoints and no endpoints for other entities (problems,
-changes, knowledge, users, …).
+There are no `DELETE` endpoints and no endpoints for knowledge, releases or
+assets' relationships yet.
 
 ### Tickets
 
@@ -273,7 +294,10 @@ pick a starting status, but only an **open** one (`NEW`, `OPEN`, `IN_PROGRESS`,
 which would skip breach stamping, automations and the survey pipeline (else `422`).
 
 **`PATCH /tickets/{id}` body** (agents only): `title` (min 3), `description`, `status`,
-`priority`, `assigneeId` (nullable). Changing `status`:
+`priority`, `assigneeId` (nullable), `problemId` / `changeId` (integer, `null`
+unlinks; applied through the console's `setTicketProblem` / `setTicketChange`, so
+only someone who may act on the ticket can link it, else `403`). The serialized
+ticket carries `problem_id` and `change_id`. Changing `status`:
 
 - The transition is validated against the **admin-configured workflow**
   ([`lib/workflow.ts`](../lib/workflow.ts): built-in map + admin overrides + role
@@ -346,17 +370,153 @@ Asset type and status enums are defined in [`lib/constants.ts`](../lib/constants
 
 `category` is the category name (or `null`); `sla` is `null` when no SLA is attached.
 
+### How the ITSM endpoints enforce the console's rules
+
+Changes, problems and ticket links do not re-implement their business rules.
+The handlers run the console's own server actions (`lib/actions/changes.ts`,
+`lib/actions/problems.ts`, `lib/actions/tickets.ts`) **as the token's owner**:
+[`lib/api-actor.ts`](../lib/api-actor.ts) puts the owner's id in an
+`AsyncLocalStorage` scope that `getSessionUser()` in
+[`lib/session.ts`](../lib/session.ts) consults before the Auth.js session. The
+role and `isActive` are read from the user row on every call. So the transition
+map and role gates, CAB seating and separation of duties, change freezes,
+standard-template demotion, field locks after `CLOSED`/`CANCELLED`, required
+custom fields and the audit trail (attributed to the token owner) behave exactly
+as in the UI. Only `runAsApiActor` enters that scope, and only the `/api/v1`
+handlers call it after `guard()` authenticated the token.
+
+The actions report refusals as text; the API keeps it as `error.message` and maps
+it to a status ([`refusalStatus`](../lib/api-itsm-input.ts)): "not found" `404`,
+permission refusals `403`, invalid input `422`, everything else (workflow,
+freeze, lock, concurrency) `409`.
+
+Request bodies of these endpoints are `snake_case` like the responses (the older
+ticket and asset bodies are `camelCase`) and **strict**: an unknown field is a
+`422`, so a typo like `rollback_plna` cannot silently drop a rollback plan.
+Bodies are validated by the Zod schemas in
+[`lib/api-itsm-input.ts`](../lib/api-itsm-input.ts), from which the OpenAPI
+request schemas are generated. Text fields (`description`, comments) are plain
+text; editing a description through the API replaces its rich-text version.
+
+### Changes
+
+Change `id` is numeric; `ref` is `CHG-0001`. Serialized shape
+([`serializeChange`](../app/api/v1/_serializers.ts)):
+
+```json
+{
+  "id": 8, "ref": "CHG-0008", "title": "Patch dc01", "description": "…",
+  "type": "NORMAL", "status": "CLOSED", "risk": "LOW", "priority": "MEDIUM", "impact": "MEDIUM",
+  "reason": "…", "implementation_plan": "…", "rollback_plan": "…",
+  "outcome": "SUCCESSFUL", "closure_notes": "…", "cancel_reason": null,
+  "custom_fields": {}, "assignee": { "id": "…", "name": "…", "email": "…" }, "created_by": { … },
+  "group": { "id": "…", "name": "Infrastructure" }, "category": null,
+  "problem_id": 5, "release_id": null, "template_id": null,
+  "approvals": [{ "id": "…", "status": "APPROVED", "comment": "ok", "decided_at": "…", "approver": { … } }],
+  "assets": [{ "id": "…", "name": "dc01", "type": "SERVER" }],
+  "comment_count": 2,
+  "planned_start": "…", "planned_end": "…", "actual_start": "…", "actual_end": "…",
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+**`GET /changes` query:** `status` (a status, or `open` = not `CLOSED`/`REJECTED`/
+`FAILED`/`CANCELLED`), `type`, `risk`, `assignee_id`, `group_id`, `category_id`,
+`problem_id`, `updated_since` (ISO time), `q` (substring of title, description,
+reason, both plans, closure notes and comment bodies), `page`, `per_page`. Sorted
+by `updated_at` descending.
+
+**`POST /changes` body:** `title` (min 3, required), `description`, `type`
+(`STANDARD`/`NORMAL`/`EMERGENCY`, default `NORMAL`), `risk`, `priority`, `impact`
+(default `MEDIUM`), `reason`, `implementation_plan`, `rollback_plan`,
+`assignee_id`, `group_id`, `category_id`, `planned_start`/`planned_end` (ISO with
+offset), `asset_ids` (affected CIs), `custom_fields` (`{ key: value }`). Always
+created in `DRAFT`, through `createChange` (standard-type rule, window check,
+required custom fields, unknown CI → `422`).
+
+**`PATCH /changes/{id}` body:** any of `title`, `description`, `type`, `risk`,
+`priority`, `impact`, `assignee_id`, `group_id`, `category_id` (the three nullable),
+`reason`, `implementation_plan`, `rollback_plan` (nullable), `planned_start`,
+`planned_end` (with `reschedule_reason` when an approved change's window moves, and
+`justification` for an emergency change moving into a freeze), `problem_id`
+(nullable). The edits are applied in a fixed order (details, fields with the
+group before the assignee, plans, window, problem link), each through the action
+that owns it. When one is refused, the earlier ones stay applied: the error's
+`details` hold `field`, `applied` and the change as it now is. `status` is not
+accepted here.
+
+**`POST /changes/{id}/transitions` body:** `to` plus `outcome`, `closure_notes`,
+`cancel_reason`, `justification` as the move needs them.
+
+- `to: "APPROVAL"` submits a draft: plans and window required, freeze check (an
+  `EMERGENCY` change may pass a freeze with a `justification`; the refusal then
+  carries `details.needs_justification: true`), CAB seated and notified. A
+  standard change from an active template is approved directly.
+- `APPROVED` / `REJECTED` cannot be set by hand (`409`): the board decides through
+  `POST /changes/{id}/approvals/{approval_id}` with `{ "decision": "APPROVED" |
+  "REJECTED", "comment"? }`. Only the seated approver (or an admin) may decide, and
+  never on a change they requested or own (`409`).
+- All other moves follow the configured transition map and role gates (`409` when
+  not allowed). `IN_PROGRESS` stamps `actual_start`, closing stamps `actual_end`.
+  `CLOSED`/`FAILED` need an `outcome` (`SUCCESSFUL`, `SUCCESSFUL_WITH_ISSUES`,
+  `FAILED`, `ROLLED_BACK`), `CANCELLED` a `cancel_reason`.
+
+Once `CLOSED` or `CANCELLED`, the change's fields are locked (`409`); comments and
+the problem link stay editable, as in the console.
+
+### Problems
+
+`ref` is `PRB-0001`. The serialized problem has `id`, `ref`, `title`,
+`description`, `status`, `priority`, `impact`, `root_cause`, `workaround`,
+`custom_fields`, `assignee`, `group`, `category`, `tickets` (`id`, `ref`, `title`,
+`status`), `changes` (`id`, `ref`, `title`, `status`), `comment_count`,
+`resolved_at`, `created_at`, `updated_at`.
+
+- **`GET /problems` query:** `status` (or `open` = not `RESOLVED`/`CLOSED`),
+  `priority`, `assignee_id`, `group_id`, `category_id`, `updated_since`, `q` (title,
+  description, root cause, workaround, comments).
+- **`POST /problems` body:** `title` (required), `description`, `status` (default
+  `NEW`), `priority`, `impact`, `assignee_id`, `group_id`, `category_id`,
+  `custom_fields`, through `createProblem`.
+- **`PATCH /problems/{id}` body:** `title`, `description`, `priority`, `impact`,
+  `assignee_id`, `group_id`, `category_id`, `root_cause`, `workaround`; same
+  ordering and partial-failure contract as changes.
+- **`POST /problems/{id}/transitions` body:** `{ "to": "<status>" }`. A status that
+  needs documentation (e.g. `KNOWN_ERROR` needs a workaround) is refused with `409`
+  until it is set via `PATCH`.
+
+Link tickets with `PATCH /tickets/{id}` (`problemId`) and changes with
+`PATCH /changes/{id}` (`problem_id`).
+
+### Comments
+
+`GET` returns the thread oldest first, paginated: `id`, `body`, `body_html`,
+`internal`, `author`, `created_at` (tickets also `channel`). `POST` takes
+`{ "body": "…", "internal": true }`. **`internal` defaults to `true`**, so an
+automation has to opt in to writing to a requester. On tickets a public reply
+behaves like one typed in the console: it stamps the first response, notifies
+watchers and mentions and emails the requester. Change and problem comments send
+no mail. Every comment writes an audit row as the token owner.
+
+### Lookups
+
+`GET /categories` (`id`, `name`, `description`, `parent_id`, `group_id`,
+`archived`; archived hidden unless `include_archived=true`), `GET /groups` (`id`,
+`name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
+`GET /users` (`id`, `name`, `email`, `role`, `active`; `q` matches name or email,
+`role`, `active=true|false|all`, paginated).
+
 ---
 
 ## OpenAPI spec
 
-`GET /api/v1/openapi` serves a static, hand-written OpenAPI 3.1 document
-([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)); nothing is generated
-from the handlers or their Zod schemas, so it can lag behind them. It lists the
-paths and methods above, the `status`/`priority`/`type`/`q`/`page`/`per_page` query
-parameters of `GET /tickets`, and the Bearer security scheme. It has only minimal
-`Ticket` and `Asset` schemas and no error or write-body detail for most operations;
-this page is the authoritative reference.
+`GET /api/v1/openapi` serves an OpenAPI 3.1 document
+([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)). For the ticket,
+asset and service paths it is hand-written: minimal `Ticket` and `Asset` schemas
+and no write-body detail. For the ITSM paths (changes, problems, comments,
+lookups) the request bodies are generated from the same Zod schemas the handlers
+validate with (`z.toJSONSchema`), so they cannot drift; responses are described in
+prose. This page is the authoritative reference.
 
 ---
 

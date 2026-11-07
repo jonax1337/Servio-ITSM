@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
+import { apiActorUserId } from "@/lib/api-actor";
 import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
@@ -97,7 +98,8 @@ const createSchema = z.object({
 });
 
 export type ActionState =
-  | { error?: string; fieldErrors?: Record<string, string[]> }
+  // createdId: only for /api/v1 callers (they get the id instead of a redirect).
+  | { error?: string; fieldErrors?: Record<string, string[]>; createdId?: number }
   | undefined;
 
 /**
@@ -215,6 +217,7 @@ export async function createChange(
   }
 
   revalidatePath("/changes");
+  if (apiActorUserId()) return { createdId: change.id };
   redirect(`/changes/${change.id}`);
 }
 
