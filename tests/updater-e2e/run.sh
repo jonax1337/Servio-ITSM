@@ -112,8 +112,15 @@ wait_for 60 "the updater heartbeat" heartbeat_reports_docker
 echo "== socket proxy allowlist"
 [[ $(proxy_call GET /_ping) == 200 ]] || fail "the proxy refused /_ping"
 [[ $(proxy_call GET /v1.44/containers/servio-web/json) == 200 ]] || fail "the proxy refused container inspect"
+web_id=$(inspect_web '{{.Id}}')
+[[ $(proxy_call GET "/v1.44/containers/$web_id/json") == 200 ]] || fail "the proxy refused container inspect by full id"
+# Unrelated containers stay out of reach: no list, no inspect/stop/rename/remove by name, no short-id
+# prefixes. A full id of a foreign container still passes the path filter; the updater just cannot learn one.
 for call in "GET /v1.44/info" "GET /v1.44/x/_ping" "GET /v1.44/containers/servio-web/logs" "POST /v1.44/containers/servio-web/exec" \
-  "POST /v1.44/volumes/create" "DELETE /v1.44/images/$REPO:1.0.0"; do
+  "POST /v1.44/volumes/create" "DELETE /v1.44/images/$REPO:1.0.0" \
+  "GET /v1.44/containers/json" "GET /v1.44/containers/e2e-registry/json" "POST /v1.44/containers/e2e-registry/stop" \
+  "POST /v1.44/containers/e2e-registry/rename" "DELETE /v1.44/containers/e2e-registry" \
+  "GET /v1.44/containers/${web_id:0:12}/json"; do
   # shellcheck disable=SC2086 # method and path are meant to split
   status=$(proxy_call $call)
   [[ $status == 403 || $status == 405 ]] || fail "the proxy allowed $call ($status)"
