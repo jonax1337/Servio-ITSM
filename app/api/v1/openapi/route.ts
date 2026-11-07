@@ -11,6 +11,10 @@ import {
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
 import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
+import {
+  assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
+  licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
+} from "@/lib/api-asset-input";
 
 export const runtime = "nodejs";
 
@@ -22,6 +26,8 @@ function body(schema: z.ZodType) {
   return { required: true, content: { "application/json": { schema: json } } };
 }
 const idParam = { name: "id", in: "path", required: true, schema: { type: "integer" } };
+const strId = { name: "id", in: "path", required: true, schema: { type: "string" } };
+const refParam = { name: "ref", in: "path", required: true, schema: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$" } };
 const pageParams = [
   { name: "page", in: "query", schema: { type: "integer" } },
   { name: "per_page", in: "query", schema: { type: "integer", maximum: 100 } },
@@ -98,12 +104,55 @@ const spec = {
       patch: { summary: "Update a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Updated" } } },
     },
     "/assets": {
-      get: { summary: "List assets", responses: { "200": { description: "OK" } } },
-      post: { summary: "Create an asset", responses: { "201": { description: "Created" } } },
+      get: {
+        summary: "List assets",
+        parameters: [q("type"), q("status"), q("q", "Substring of name, tag or serial"), q("serial"), q("asset_tag"), q("ip_address"), q("mac_address"), q("import_ref"), q("owner_id"), q("group_id"), q("updated_since", "ISO date/time"), ...pageParams],
+        responses: { "200": { description: "OK" } },
+      },
+      post: { summary: "Create an asset", requestBody: body(assetCreateSchema), responses: { "201": { description: "Created" }, "409": { description: "Asset tag or import ref already used" }, "422": { description: "Validation failed or unknown ids" } } },
     },
     "/assets/{id}": {
-      get: { summary: "Get an asset", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "OK" } } },
-      patch: { summary: "Update an asset", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Updated" } } },
+      get: { summary: "Get an asset", parameters: [strId], responses: { "200": { description: "OK" } } },
+      patch: { summary: "Update any asset field (meta.changed lists what changed)", parameters: [strId], requestBody: body(assetPatchSchema), responses: { "200": { description: "Updated" }, "409": { description: "Unique value taken" }, "422": { description: "Validation failed" } } },
+    },
+    "/assets/ref/{ref}": {
+      get: { summary: "Get an asset by origin reference", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Upsert an asset by origin reference (for syncs)",
+        description: "Creates the asset (201, name required) or writes only the fields sent (200). Unchanged facts write nothing and no audit row. Strict body.",
+        parameters: [refParam],
+        requestBody: body(assetUpsertSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "409": { description: "Unique value taken" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/assets/{id}/relations": {
+      get: { summary: "List an asset's dependency edges (both directions)", parameters: [strId], responses: { "200": { description: "OK" } } },
+      post: { summary: "Add a dependency edge", parameters: [strId], requestBody: body(relationCreateSchema), responses: { "201": { description: "Added (idempotent)" }, ...refused } },
+    },
+    "/assets/{id}/relations/{relation_id}": {
+      delete: { summary: "Remove a dependency edge", parameters: [strId, { name: "relation_id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Removed" }, "404": { description: "Not an edge of this asset" } } },
+    },
+    "/vendors": {
+      get: { summary: "List vendors", parameters: [q("name"), q("q"), q("active"), ...pageParams], responses: { "200": { description: "OK" } } },
+      post: { summary: "Create a vendor (MANAGER+)", requestBody: body(vendorCreateSchema), responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "Name taken" } } },
+    },
+    "/vendors/{id}": {
+      get: { summary: "Get a vendor", parameters: [strId], responses: { "200": { description: "OK" } } },
+      patch: { summary: "Edit a vendor (MANAGER+)", parameters: [strId], requestBody: body(vendorPatchSchema), responses: { "200": { description: "Updated" }, ...refused } },
+    },
+    "/licenses": {
+      get: { summary: "List licenses with seat usage", parameters: [q("vendor_id"), q("q"), q("asset_id"), q("user_id"), ...pageParams], responses: { "200": { description: "OK" } } },
+      post: { summary: "Create a license (MANAGER+)", requestBody: body(licenseCreateSchema), responses: { "201": { description: "Created" }, ...refused } },
+    },
+    "/licenses/{id}": {
+      get: { summary: "Get a license", parameters: [strId], responses: { "200": { description: "OK" } } },
+      patch: { summary: "Edit a license (MANAGER+)", parameters: [strId], requestBody: body(licensePatchSchema), responses: { "200": { description: "Updated" }, ...refused } },
+    },
+    "/licenses/{id}/assignments": {
+      post: { summary: "Assign a seat (MANAGER+)", parameters: [strId], requestBody: body(licenseAssignSchema), responses: { "201": { description: "Assigned" }, ...refused } },
+    },
+    "/licenses/{id}/assignments/{assignment_id}": {
+      delete: { summary: "Release a seat (MANAGER+)", parameters: [strId, { name: "assignment_id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Released" }, "404": { description: "Not an assignment of this license" } } },
     },
     "/services": {
       get: { summary: "List services and their status", responses: { "200": { description: "OK" } } },

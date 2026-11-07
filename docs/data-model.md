@@ -139,7 +139,7 @@ The derived clock state
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Asset` | Configuration item (hardware, VM, cloud, software) | `assetTag` (unique), `name`, `type` (12 values), `status`, hardware detail (`serial`, `model`, `manufacturer`, `ipAddress`, `macAddress`, `os`, `cpu`, `ramGb`, `storageGb`), lifecycle (`cost`, `purchaseDate`, `warrantyEnd`), `ownerId`, `groupId`, `location` (free text) and `locationId`, `syncSourceId`/`externalId` (unique together), `lastSeenAt`; relations to tickets, changes, services, contracts, license assignments, and asset-to-asset relations |
+| `Asset` | Configuration item (hardware, VM, cloud, software) | `assetTag` (unique), `name`, `type` (12 values), `status`, hardware detail (`serial`, `model`, `manufacturer`, `ipAddress`, `macAddress`, `os`, `cpu`, `ramGb`, `storageGb`), lifecycle (`cost`, `purchaseDate`, `warrantyEnd`), `ownerId`, `groupId`, `location` (free text) and `locationId`, `syncSourceId`/`externalId` (unique together), `lastSeenAt`; relations to tickets, changes, services, contracts, license assignments, and asset-to-asset relations; `importRef` (unique, nullable): origin key set by the API (`PUT /api/v1/assets/ref/{ref}`) for syncs and imports |
 | `AssetRelation` | Directed dependency edge between two assets | `(sourceId, targetId, type)` unique; `type` (`DEPENDS_ON`/`CONNECTS_TO`/`RUNS_ON`/`HOSTS`/`PART_OF`/`BACKS_UP`) |
 | `TicketAsset` | Ticket ↔ affected-asset join | composite PK `(ticketId, assetId)` |
 | `ServiceAsset` | Service ↔ supporting-CI join (CMDB service mapping) | composite PK `(serviceId, assetId)`, `createdAt` |

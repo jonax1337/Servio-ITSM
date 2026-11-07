@@ -176,7 +176,7 @@ lockout + backoff. Token creation/revocation is **ADMIN-only**.
 
 ## Pagination, filtering & sorting
 
-Pagination applies to the two list endpoints (`GET /tickets`, `GET /assets`) via
+Pagination applies to every list endpoint except `GET /services`, `/categories`, `/groups` and `/assets/{id}/relations` (those return everything) via
 [`paginate`](../lib/api.ts):
 
 | Param | Default | Bounds |
@@ -189,7 +189,7 @@ Pagination applies to the two list endpoints (`GET /tickets`, `GET /assets`) via
 | Endpoint | Filters |
 | --- | --- |
 | `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`) |
-| `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`) |
+| `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
 
 **Sorting is fixed** (not client-configurable): tickets by `updatedAt` descending,
 assets by `name` ascending, services by `name` ascending.
@@ -212,7 +212,16 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
 | `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
-| `PATCH` | `/assets/{id}` | Update an asset. Agent tokens only. | `write` |
+| `PATCH` | `/assets/{id}` | Update any asset field. Agent tokens only. | `write` |
+| `GET` / `PUT` | `/assets/ref/{ref}` | Read / upsert an asset by its origin reference (for syncs). | `read` / `write` |
+| `GET` / `POST` | `/assets/{id}/relations` | List / add dependency edges. | `read` / `write` |
+| `DELETE` | `/assets/{id}/relations/{relation_id}` | Remove an edge. | `write` |
+| `GET` / `POST` | `/vendors` | List / create vendors (writes: MANAGER+). | `read` / `write` |
+| `GET` / `PATCH` | `/vendors/{id}` | Get / edit a vendor. | `read` / `write` |
+| `GET` / `POST` | `/licenses` | List / create software licenses (writes: MANAGER+). | `read` / `write` |
+| `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `read` / `write` |
+| `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `write` |
+| `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `write` |
 | `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
 | `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
 | `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
@@ -331,30 +340,84 @@ Asset `id` is a cuid string. Serialized shape ([`serializeAsset`](../app/api/v1/
 
 ```json
 {
-  "id": "clx…",
-  "asset_tag": "LT-0007",
-  "name": "Dev Laptop 07",
-  "type": "LAPTOP",
-  "status": "IN_USE",
-  "serial": "SN123",
-  "model": "…", "manufacturer": "…", "location": "HQ",
-  "ip_address": "10.0.0.7", "os": "Ubuntu 24.04",
-  "owner": { "id": "…", "name": "…", "email": "…" },
+  "id": "clx…", "asset_tag": "LT-0007", "name": "Dev Laptop 07", "type": "LAPTOP", "status": "IN_USE",
+  "serial": "SN123", "model": "…", "manufacturer": "…",
+  "location": "HQ", "location_ref": { "id": "…", "name": "Berlin HQ" },
+  "ip_address": "10.0.0.7", "mac_address": "aa:bb:cc:dd:ee:01", "os": "Ubuntu 24.04",
+  "cpu": "i5-12400T", "ram_gb": 16, "storage_gb": 512, "cost": 899, "purchase_date": "2024-05-01", "warranty_end": "2027-05-01",
+  "notes": "…", "owner": { "id": "…", "name": "…", "email": "…" }, "group": { "id": "…", "name": "IT" },
+  "external_id": null, "import_ref": "opsi:host:ws01", "last_seen_at": "…",
   "created_at": "…", "updated_at": "…"
 }
 ```
 
-**`POST /assets` body:** `name` (required), `type` (default `SERVER`),
-`status` (default `IN_USE`), plus optional `assetTag`, `serial`, `model`,
-`manufacturer`, `location`, `ipAddress`, `os`, `externalId`, `syncSourceId`.
+Asset request bodies use the camelCase field names (`ipAddress`); the snake_case
+spelling (`ip_address`) is accepted too. Writable fields: `name`, `type`, `status`,
+`assetTag`, `serial`, `model`, `manufacturer`, `location`, `locationId`, `ipAddress`,
+`macAddress`, `os`, `cpu`, `ramGb`, `storageGb`, `cost`, `purchaseDate`, `warrantyEnd`
+(`YYYY-MM-DD` or an ISO time), `notes`, `ownerId`, `groupId`, `lastSeenAt`. Text fields
+are trimmed and an empty string is stored as `null`. Unknown `ownerId` / `groupId` /
+`locationId` ids are a `422`; an asset tag or import reference that another asset
+already uses is a `409`.
 
-**`PATCH /assets/{id}` body:** any of `name`, `type`, `status`, `location`,
-`ipAddress`, `os`, `ownerId` (the last four nullable).
+- **`POST /assets`:** `name` required, `type` (default `SERVER`), `status` (default
+  `IN_USE`), any field above, plus `externalId`, `syncSourceId`, `importRef`.
+- **`PATCH /assets/{id}`:** any field above; `null` clears a nullable one. Only
+  values that actually change are written and audited; `meta.changed` lists them.
+- **`GET /assets` filters:** `type`, `status`, `q` (substring of name, tag, serial),
+  and exact matches for syncs: `serial`, `asset_tag`, `ip_address`, `mac_address`,
+  `import_ref`, `owner_id`, `group_id`, `updated_since`.
+
+#### Upsert by origin reference (for syncs)
+
+`PUT /assets/ref/{ref}` is the entry point for an inventory sync. `{ref}` is the
+asset's origin key, chosen by the caller, e.g. `opsi:host:ws01.intern` or
+`glpi:computer:12` (1–200 characters: letters, digits and `. _ : @ -`; no `/`).
+It is stored as `importRef` (unique).
+
+- Unknown ref: the asset is created (`201`, `meta.created: true`); `name` is
+  required, `type`/`status` default like `POST`.
+- Known ref: only the fields sent are written (`200`, `meta.created: false`).
+  Re-sending unchanged facts changes nothing and writes **no** audit row, so a
+  sync can push its full state every run; `meta.changed` lists what did change.
+- The body is **strict** (unknown field = `422`): in a sync a typo must fail
+  loudly. Two syncs creating the same ref at once end in one asset.
+- `GET /assets/ref/{ref}` reads it back.
+
+#### Relations (CMDB graph)
+
+- `GET /assets/{id}/relations`: the asset's edges in both directions
+  (`direction`: `outgoing` when this asset is the source, `other` = the far end).
+- `POST /assets/{id}/relations` `{ "target_id": "…", "type": "RUNS_ON" }` (`type`
+  default `DEPENDS_ON`; `DEPENDS_ON`, `CONNECTS_TO`, `RUNS_ON`, `HOSTS`, `PART_OF`,
+  `BACKS_UP`): through the console's `addAssetRelation` (no self-links, both ends
+  must exist, an identical edge is kept, not duplicated).
+- `DELETE /assets/{id}/relations/{relation_id}`: the edge must touch this asset,
+  else `404`.
 
 Asset type and status enums are defined in [`lib/constants.ts`](../lib/constants.ts)
 (`ASSET_TYPES`: `SERVER`, `WORKSTATION`, `LAPTOP`, `NETWORK`, `SOFTWARE`, `MOBILE`,
 `PRINTER`, `VM`, `CLOUD`, `SERVICE`, `MONITOR`, `PHONE`; `ASSET_STATUSES`: `IN_USE`,
 `IN_STOCK`, `MAINTENANCE`, `RETIRED`, `DISPOSED`).
+
+### Vendors & licenses
+
+Agent tokens only; writes need a token owned by a **MANAGER or above** (the
+console's rule for vendors, contracts and licenses; else `403`). Writes go through
+the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and strict.
+
+- `GET /vendors` (`name` exact, `q`, `active`), `POST /vendors` `{ name, website?,
+  email?, phone?, notes? }` (names are unique: duplicate `409`), `GET` / `PATCH
+  /vendors/{id}` (`active` to deactivate; fields left out keep their value).
+- `GET /licenses` (`vendor_id`, `q`, `asset_id` / `user_id` = licenses assigned to
+  it), `POST /licenses` `{ name, license_type (default PER_USER), seats (default 1),
+  vendor_id?, contract_id?, owner_id?, expires_at? (YYYY-MM-DD), cost?, notes? }`,
+  `GET` / `PATCH /licenses/{id}`. The serialized license carries `seats`,
+  `used_seats`, `over_allocated` and its `assignments`.
+- `POST /licenses/{id}/assignments` `{ asset_id?, user_id? }` (at least one)
+  assigns a seat; a duplicate seat is refused (`409`); more seats than purchased
+  are allowed and show as `over_allocated`. `DELETE
+  /licenses/{id}/assignments/{assignment_id}` releases one.
 
 ### Services
 
