@@ -654,6 +654,7 @@ model Ticket {
   closedAt            DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  importRef           String?   @unique // origin of a record imported via POST /api/v1/import/tickets (e.g. "glpi:ticket:42")
 
   requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
   requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
@@ -914,6 +915,7 @@ model Problem {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   resolvedAt      DateTime?
+  importRef       String?   @unique // origin of a record imported via POST /api/v1/import/problems
 
   assignee   User?            @relation("ProblemAssignee", fields: [assigneeId], references: [id])
   group      Group?           @relation(fields: [groupId], references: [id])
@@ -978,6 +980,7 @@ model Change {
   actualEnd          DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+  importRef          String?   @unique // origin of a record imported via POST /api/v1/import/changes (e.g. "glpi:change:129")
 
   assignee   User?            @relation("ChangeAssignee", fields: [assigneeId], references: [id])
   createdBy  User?            @relation("ChangeCreatedBy", fields: [createdById], references: [id])

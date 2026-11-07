@@ -10,6 +10,7 @@ import {
   problemPatchSchema,
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
+import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
 
 export const runtime = "nodejs";
 
@@ -177,6 +178,19 @@ const spec = {
     "/problems/{id}/comments": commentPaths("problem"),
     "/categories": { get: { summary: "List categories", description: agentOnly, parameters: [q("include_archived", "true to include archived")], responses: { "200": { description: "OK" } } } },
     "/groups": { get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } } },
+    ...Object.fromEntries(
+      ([["tickets", ticketImportSchema], ["problems", problemImportSchema], ["changes", changeImportSchema]] as const).map(([path, schema]) => [
+        `/import/${path}`,
+        {
+          post: {
+            summary: `Import a historical ${path.slice(0, -1)} with its thread`,
+            description: "Needs the `admin` scope and an ADMIN owner. Bypasses the lifecycle on purpose; `import_ref` makes re-runs idempotent (200, meta.created false).",
+            requestBody: body(schema),
+            responses: { "201": { description: "Imported" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Not an admin token" }, "422": { description: "Validation failed or unknown ids" } },
+          },
+        },
+      ]),
+    ),
     "/users": { get: { summary: "Look up users (minimal fields)", description: agentOnly, parameters: [q("q", "Name or email"), q("role"), q("active", "true (default), false or all"), ...pageParams], responses: { "200": { description: "OK" } } } },
   },
 };

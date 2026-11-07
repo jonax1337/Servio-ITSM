@@ -37,6 +37,8 @@ export async function GET(req: Request) {
   if (priority) where.priority = priority;
   if (type) where.type = type;
   if (q) where.title = { contains: q };
+  const importRef = url.searchParams.get("import_ref");
+  if (importRef) where.importRef = importRef;
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),

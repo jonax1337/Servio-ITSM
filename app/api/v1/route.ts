@@ -31,6 +31,7 @@ export function GET() {
       categories: "/api/v1/categories",
       groups: "/api/v1/groups",
       users: "/api/v1/users",
+      import: "/api/v1/import/{tickets|problems|changes}",
     },
   });
 }
