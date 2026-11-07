@@ -280,13 +280,18 @@ export function serializeProblem(p: {
   };
 }
 
-export function serializeComment(c: { id: string; body: string; bodyHtml: string | null; isInternal: boolean; createdAt: Date; author?: Userish; channel?: string }) {
+export function serializeComment(c: {
+  id: string; body: string; bodyHtml: string | null; isInternal: boolean; createdAt: Date; author?: Userish; channel?: string;
+  importRef?: string | null;
+}) {
   return {
     id: c.id,
     body: c.body,
     body_html: c.bodyHtml,
     internal: c.isInternal,
     ...(c.channel ? { channel: c.channel } : {}),
+    // Only on comments written by the history import with a source id.
+    ...(c.importRef ? { import_ref: c.importRef } : {}),
     author: user(c.author ?? null),
     created_at: c.createdAt.toISOString(),
   };
