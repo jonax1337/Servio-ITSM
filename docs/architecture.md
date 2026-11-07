@@ -272,7 +272,9 @@ every server-action agent guard shares the same DB-truth check via
   assert a **verified** email (`allowDangerousEmailAccountLinking: false`);
   unverified emails surface `OAuthAccountNotLinked` instead of taking over an
   account by email collision. `ssoEnabled` / `ssoProviderName` are exported so
-  the login page can conditionally render the SSO button. See
+  the login page can conditionally render the SSO button. The login page is
+  `force-dynamic`: prerendered at build time it would bake in the build's
+  (empty) `AUTH_OIDC_*` env and never show the button in the Docker image. See
   [configuration.md](./configuration.md).
 
 ## 🛡️ RBAC — four roles, three enforcement layers
