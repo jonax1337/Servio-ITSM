@@ -67,6 +67,10 @@ file. The sample file is a starting point, not the full list.
 | `AUTH_OIDC_SECRET` | No | — | OIDC client secret. Passed to the provider; not part of the enable gate. |
 | `AUTH_OIDC_ISSUER` | No | — | OIDC issuer URL (the IdP's discovery base, e.g. `https://idp/realms/main`). Required to enable SSO. |
 | `AUTH_OIDC_NAME` | No | `SSO` | Display name for the SSO button ("Continue with _{name}_"). |
+| `AUTH_OIDC_ROLE_MAP` | No | — | Map IdP groups/roles to Servio roles, e.g. `it-admins=ADMIN,service-desk=AGENT`. Unset = roles are managed in Servio only. See [Role mapping](#role-mapping-from-the-idp). |
+| `AUTH_OIDC_ROLES_CLAIM` | No | `groups` | Claim holding the groups/roles; dot paths allowed (`realm_access.roles`). |
+| `AUTH_OIDC_DEFAULT_ROLE` | No | `USER` | Role when the claim is present but no entry matches. |
+| `AUTH_OIDC_ROLE_SYNC` | No | `login` | `login` = re-apply the mapping on every SSO sign-in (IdP is the source of truth); `signup` = only on the first sign-in. |
 | `APP_NAME` | No | `Servio` | Application display name used in outgoing mail and in Sable's context. Overridable in Settings › General. |
 | `APP_URL` | No | _empty_ | Public origin for absolute mail/CSAT links and build-time social image URLs. Overridable in Settings › General, which wins for runtime mail/survey links; static share metadata uses the build environment and requires a rebuild when the origin changes. `docker-compose.yml` forwards this value as a build argument (the Dockerfile `APP_URL` arg defaults to `http://localhost:3000`). |
 | `SMTP_HOST` | No | _empty_ | SMTP server host. **Leaving it empty enables outbox mode** — see [Email / SMTP](#email--smtp). Overridable in Settings › Email (as are the other `SMTP_*`). |
@@ -247,7 +251,33 @@ Notes:
   verify the email at the IdP, or an admin links the account manually.
 - Session role/id come from the JWT callbacks in
   [`../auth.config.ts`](../auth.config.ts); a first-time OIDC user gets the
-  default `USER` role via the Prisma adapter.
+  default `USER` role via the Prisma adapter — unless role mapping is configured.
+
+### Role mapping from the IdP
+
+Set `AUTH_OIDC_ROLE_MAP` to derive the Servio role from the IdP instead of
+promoting every SSO user by hand. The logic is in
+[`../lib/oidc-roles.ts`](../lib/oidc-roles.ts) and runs in the `jwt` callback in
+[`../auth.ts`](../auth.ts), after the account was created or linked:
+
+- The user gets the **highest** role any of their groups maps to. Group names
+  are compared case-insensitively and without a leading `/` (Keycloak's group
+  mapper emits full paths like `/it-admins` by default).
+- Claim present, nothing matches: `AUTH_OIDC_DEFAULT_ROLE` (default `USER`).
+  With `AUTH_OIDC_ROLE_SYNC=login` this **demotes** users who left the group on
+  their next sign-in.
+- Claim **missing**: the role is left unchanged and a warning is logged. A
+  missing claim usually means the IdP mapper is not set up; it must not demote
+  everyone.
+- A role change is written to the audit log (`User`, "Role X -> Y from SSO claim").
+- An invalid map (unknown role, entry without `=`) is logged at startup and
+  turns mapping off; it never changes a role.
+- Local (password) accounts are never touched.
+
+Keycloak example: add a **Group Membership** mapper to the client (token claim
+name `groups`, "Add to ID token" on), then
+`AUTH_OIDC_ROLE_MAP="it-admins=ADMIN,service-desk=AGENT"`. For realm/client
+roles instead of groups use `AUTH_OIDC_ROLES_CLAIM=realm_access.roles`.
 
 ### Worked example (generic OIDC provider)
 

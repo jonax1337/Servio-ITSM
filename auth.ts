@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { authConfig } from "@/auth.config";
 import { loginRetryAfter, recordLoginFailure, recordLoginSuccess } from "@/lib/rate-limit";
 import { writeAudit } from "@/lib/audit";
+import { oidcRoleConfig, resolveOidcRole, shouldSyncRole, type OidcRoleConfig } from "@/lib/oidc-roles";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -118,8 +119,51 @@ export const ssoEnabled = Boolean(
 );
 export const ssoProviderName = process.env.AUTH_OIDC_NAME || "SSO";
 
+// Optional IdP group/role -> Servio role mapping (#48). A broken map is logged and
+// switches mapping off rather than crashing auth; "off" never changes a role.
+let roleConfig: OidcRoleConfig | null = null;
+try {
+  roleConfig = ssoEnabled ? oidcRoleConfig() : null;
+} catch (err) {
+  console.error(`[auth] OIDC role mapping disabled: ${(err as Error).message}`);
+}
+
+/**
+ * Persist the mapped role on an SSO sign-in and return the role the session should
+ * carry. Runs after the adapter created/linked the user, so `userId` is the DB id.
+ */
+async function syncOidcRole(userId: string, currentRole: string | undefined, profile: Record<string, unknown> | undefined, isNewUser: boolean) {
+  if (!roleConfig || !shouldSyncRole(roleConfig, isNewUser)) return currentRole;
+  const role = resolveOidcRole(profile, roleConfig);
+  if (!role) {
+    console.warn(`[auth] OIDC claim "${roleConfig.claim}" missing for user ${userId}; role left unchanged`);
+    return currentRole;
+  }
+  if (role === currentRole) return role;
+  await db.user.update({ where: { id: userId }, data: { role } });
+  await writeAudit({
+    userId,
+    action: "UPDATE",
+    entity: "User",
+    entityId: userId,
+    summary: `Role ${currentRole ?? "USER"} -> ${role} from SSO claim "${roleConfig.claim}"`,
+  });
+  return role;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),
   providers,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt(params) {
+      const token = authConfig.callbacks.jwt(params);
+      const { account, user, profile, isNewUser } = params;
+      if (account?.provider === "oidc" && user?.id) {
+        token.role = await syncOidcRole(user.id, (user as { role?: string }).role, profile as Record<string, unknown> | undefined, Boolean(isNewUser));
+      }
+      return token;
+    },
+  },
 });
