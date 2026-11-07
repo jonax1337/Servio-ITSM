@@ -105,11 +105,13 @@ The `@layer base` block applies sensible global defaults: every element gets
 antialiases; `h1/h2/h3` (and any `.font-display`) use the display font with
 `-0.02em` letter-spacing.
 
-Two custom utilities are worth knowing:
+A few custom utilities are worth knowing:
 
 | Utility | Purpose |
 |---------|---------|
 | `.bg-grid` | Subtle 40px grid texture (used on auth/hero backdrops), drawn with `color-mix` over `--border`. |
+| `.bg-grid-fade` | Grid texture masked by a radial fade, for refined hero backdrops (pair with `.bg-grid`). |
+| `.bg-aurora` | Cobalt/Ice ambient wash anchored top-centre; once per surface as a hero backdrop. |
 | `.glow` | Soft primary-tinted ring + drop shadow for emphasised surfaces. |
 
 Scrollbars are globally set to `thin` with a `--border` thumb.
@@ -149,7 +151,7 @@ in the root layout with `attribute="class"`, `defaultTheme="dark"`,
 ## base-ui / shadcn setup
 
 Servio uses shadcn's newer **`base-nova`** style, which generates components on top
-of [**base-ui**](https://base-ui.com) (`@base-ui/react` **^1.7.0**) rather than
+of [**base-ui**](https://base-ui.com) (`@base-ui/react` **^1.9.0**) rather than
 Radix. Configuration lives in [`components.json`](../components.json):
 
 ```jsonc
@@ -187,7 +189,7 @@ element. You can see this throughout the codebase:
 <BreadcrumbLink render={<Link href="/" />}>Servio</BreadcrumbLink>
 ```
 
-The same appears in `select.tsx` (`SelectPrimitive.Icon render={<ChevronDownIcon …/>}`).
+The same prop is used inside the primitives themselves, e.g. `DialogPrimitive.Close render={<Button variant="outline" />}` in `dialog.tsx`.
 If you write `asChild`, it will silently do nothing. `Button`
 ([`components/ui/button.tsx`](../components/ui/button.tsx)) also accepts `render`
 because it wraps `@base-ui/react/button`; the shared
@@ -196,14 +198,14 @@ because it wraps `@base-ui/react/button`; the shared
 
 ### Gotcha 2 — `Select` needs `items` for typeahead/value display
 
-base-ui's `Select` ([`components/ui/select.tsx`](../components/ui/select.tsx))
-behaves differently from Radix. When you need the trigger to display the selected
-label and typeahead to work, pass the option list to the `Select` root via its
-`items` prop (base-ui reads it to resolve values → labels) in addition to
-rendering `<SelectItem>`s. Because native `<form>` posting of base-ui Select is
-awkward, Servio's forms usually prefer the searchable
-[`ComboField`](#shared-composite-components) instead, which submits a plain hidden
-input.
+base-ui's `Select` behaves differently from Radix: the root needs an `items`
+prop (value → label) so the trigger can show the selected label and typeahead
+works. The shadcn `select` primitive is **not currently scaffolded** into
+`components/ui/`; if you add it with the CLI, pass `items` to the root in
+addition to rendering `<SelectItem>`s. Servio's forms and filters instead use the
+searchable [`Combobox`](#shared-composite-components) /
+[`ComboField`](#shared-composite-components) (which submits a plain hidden
+input) and `ListToolbar`, so no `items` plumbing is needed there.
 
 When documenting or debugging any base-ui-specific behaviour, verify against the
 installed version rather than memory — the API moved between betas.
@@ -227,12 +229,11 @@ caret are retinted to the `--sable` accent so the chat reads as an AI surface.
 Generated shadcn/base-ui primitives. Import via the `@/components/ui/*` alias.
 Current set:
 
-`accordion`, `alert`, `avatar`, `badge`, `breadcrumb`, `button`, `calendar`,
-`card`, `checkbox`, `collapsible`, `command`, `dialog`, `dropdown-menu`,
-`hover-card`, `input`, `input-group`, `label`, `pagination`, `popover`,
-`progress`, `radio-group`, `scroll-area`, `select`, `separator`, `sheet`,
-`sidebar`, `skeleton`, `sonner`, `switch`, `table`, `tabs`, `textarea`,
-`tooltip`, `rich-text-editor`.
+`ai-button`, `alert`, `avatar`, `breadcrumb`, `button`, `calendar`, `card`,
+`checkbox`, `collapsible`, `command`, `dialog`, `dropdown-menu`, `input`,
+`input-group`, `label`, `popover`, `rich-text-editor` (with its
+`mention-extension.ts` helper), `separator`, `sheet`, `sidebar`, `skeleton`,
+`sonner`, `switch`, `table`, `tabs`, `textarea`, `tooltip`.
 
 Notes:
 
@@ -240,6 +241,7 @@ Notes:
   `destructive`, `link`; sizes `xs`/`sm`/`default`/`lg` plus `icon`,
   `icon-xs`/`sm`/`lg`. Note `destructive` is a **tinted** style (`bg-destructive/10
   text-destructive`), not a solid red fill.
+- **`ai-button.tsx`** — `Button` (outline, `sm`) with the monochrome `--sable` tint; use it for AI affordances.
 - **`sonner.tsx`** — toast host. Mounted once in the root layout as
   `<Toaster richColors position="top-right" />`; call `toast(...)` from client code.
 - **`sidebar.tsx`** — the full shadcn sidebar system (provider, inset, trigger,
@@ -278,7 +280,8 @@ Higher-level, app-specific components live directly in `components/` (not
 | `CommandMenu` | [`components/command-menu.tsx`](../components/command-menu.tsx) | `⌘K` / `/` global search palette. Debounced server search against `/api/search`, grouped results, plus quick-actions and role-filtered nav when empty. |
 | `CreateMenu` | [`components/create-menu.tsx`](../components/create-menu.tsx) | Topbar "+" dropdown of create shortcuts. |
 | `UserMenu` / `UserAvatar` | [`components/user-menu.tsx`](../components/user-menu.tsx), [`components/user-avatar.tsx`](../components/user-avatar.tsx) | Account dropdown (profile/sign-out) and initials/image avatar. |
-| `ConfirmDialog` / `EditEntityDialog` | [`components/confirm-dialog.tsx`](../components/confirm-dialog.tsx), [`components/edit-entity-dialog.tsx`](../components/edit-entity-dialog.tsx) | Reusable destructive-confirm and inline entity-edit dialogs. |
+| `ConfirmButton` / `ConfirmDialog` | [`components/confirm-dialog.tsx`](../components/confirm-dialog.tsx) | `ConfirmButton` is a trigger button that opens a confirmation dialog before running a (destructive) server action; `ConfirmDialog` is the controlled variant for menu items. Use these, never native `window.confirm()`. |
+| `EditEntityDialog` | [`components/edit-entity-dialog.tsx`](../components/edit-entity-dialog.tsx) | Reusable inline entity-edit dialog. |
 | `charts` | [`components/charts.tsx`](../components/charts.tsx) | Dashboard chart wrappers keyed to the `--chart-1…5` tokens. |
 
 > URL-as-state: `ListToolbar`, `PaginationBar`, and the filter comboboxes all read
@@ -348,7 +351,7 @@ digits.
 ## The two shells
 
 Servio has two distinct layouts, matching its two audiences (see
-[architecture.md](./architecture.md#routing) for routing details):
+[architecture.md](./architecture.md#️-route-groups--layout-tree) for routing details):
 
 ### Agent console — sidebar + topbar
 

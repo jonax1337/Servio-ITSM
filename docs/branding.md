@@ -71,7 +71,7 @@ console routes still require authentication.
 | --- | --- |
 | `python branding/tools/build.py` | SVGs, print font instances, runtime geometry, PNG export plan |
 | `npm --prefix branding run build` | Complete authoring build: kit, PDF, icons, manifest, ZIP |
-| `pnpm brand:sync` | Selected runtime files, `lib/brand-assets.ts`, `app/brand-tokens.css` |
+| `pnpm brand:sync` | Copies selected files from `branding/exports/` into `public/brand/` and `app/`, and writes `lib/brand-assets.ts` and `app/brand-tokens.css`. Fails if `branding/exports/runtime.json` no longer matches `source/brand.json` / `source/marks.json` (rebuild the kit first) |
 | `pnpm brand:check` | Read-only validation of application copies, with a stale-file error on drift |
 | `pnpm build` | Brand validation followed by the normal Next.js build |
 

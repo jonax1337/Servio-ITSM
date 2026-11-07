@@ -14,7 +14,7 @@ clean REST API — with **Sable**, an AI agent that actually works your queue *w
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js)](https://nextjs.org)
 [![React 19](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)](https://react.dev)
 [![Prisma 6](https://img.shields.io/badge/Prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-3559e8?style=flat-square)](CONTRIBUTING.md)
 
 </div>
@@ -32,6 +32,37 @@ https://github.com/user-attachments/assets/cc246129-572c-4b97-ae7f-34e2cd2addd6
 
 ## Quick start
 
+Servio ships as prebuilt Docker images (`linux/amd64` + `linux/arm64`) — no clone, no Node
+toolchain. On a Linux host with Docker Compose:
+
+```bash
+mkdir servio && cd servio
+curl -fsSLO https://raw.githubusercontent.com/jonax1337/Servio-ITSM/main/docker-compose.release.yml
+cat > .env <<EOF
+AUTH_SECRET=$(openssl rand -base64 32)
+SETTINGS_ENCRYPTION_KEY=$(openssl rand -base64 32)
+DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+EOF
+docker compose -f docker-compose.release.yml up -d   # → http://localhost:3000
+```
+
+That starts the app (SQLite + uploads on the `servio-data` volume), Gotenberg for office
+previews, and the **updater** sidecar that lets admins install new releases from
+**Settings › Updates**. The first boot migrates the database and seeds demo data.
+Pin a version with `SERVIO_VERSION=0.3.1` in `.env` (default: `latest`). Behind a domain, also set
+`APP_URL` and `AUTH_URL` to the public origin.
+
+> **Demo login** — `admin@servio.dev` / `servio123`
+> Every seeded account uses `servio123`. Try `mara@servio.dev` (Manager), `sam@servio.dev`
+> (Agent), or `liam@servio.dev` (User → lands in the self-service portal).
+> On a real deployment, change these passwords and revoke the seeded demo API token
+> (**Settings › API Tokens**) right after the first login.
+
+Setup, Postgres, scaling and the updater's security model → [docs/deployment.md](docs/deployment.md) ·
+[docs/updates.md](docs/updates.md)
+
+### From source (development)
+
 ```bash
 pnpm install
 cp .env.example .env          # then: npx auth secret  → set AUTH_SECRET
@@ -40,14 +71,8 @@ pnpm db:seed                  # rich demo data
 pnpm dev                      # → http://localhost:3000
 ```
 
-The only value you **must** set is `AUTH_SECRET`. `DATABASE_URL` already points at a local
-SQLite file; SSO, SMTP, storage and AI are all optional.
-
-> **Demo login** — `admin@servio.dev` / `servio123`
-> Every seeded account uses `servio123`. Try `mara@servio.dev` (Manager), `sam@servio.dev`
-> (Agent), or `liam@servio.dev` (User → lands in the self-service portal).
-
-Full walkthrough → [docs/development.md](docs/development.md)
+Requires Node 24 and pnpm 11. The only value you **must** set is `AUTH_SECRET`; SSO, SMTP,
+storage and AI are all optional. Full walkthrough → [docs/development.md](docs/development.md)
 
 ---
 
@@ -130,6 +155,10 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
 - **Problem & change management** — root-cause / known-error tracking; normal/standard/emergency
   changes with a **Change Advisory Board (CAB)** approval flow (**unanimous, quorum, or percentage**
   approval rules), implementation & rollback plans, and affected CIs with automated impact/risk.
+- **Release management** — bundle changes into releases (planning → ready → deployed), with a
+  **change calendar**, **freeze windows** and reusable standard-change templates.
+- **On-call, status page & contracts** — on-call schedules, a service status page
+  (`/status` for agents, `/portal/status` for signed-in users), and contracts / software licenses with renewal reminders.
 - **CMDB / Assets** — typed configuration items with a **dependency graph**, **blast-radius impact
   analysis**, **locations**, and linked tickets.
 - **Service catalog** — requestable services with live status (operational / degraded / outage) and SLAs,
@@ -146,6 +175,9 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
   reply to tickets; and **Ask Sable**.
 - **SSO** — OIDC (Keycloak, Authentik, Azure AD, Okta, Google…) plus email/password.
 - **RBAC** — Admin / Manager / Agent / User, enforced in `proxy.ts` and every server action.
+- **Self-update & maintenance windows** — admins schedule an update to a newer release from
+  **Settings › Updates**; users get a banner and a maintenance page, the updater sidecar backs up
+  the database and rolls back automatically if the new version is unhealthy.
 - **Public REST API** — versioned `/api/v1`, Bearer-token auth with scopes, pagination, filtering, and an OpenAPI 3.1 doc.
 - **Relay + Nova Flow branding** — Navy/Cobalt themes, local Manrope display type,
   Servio/Sable vector marks, icons and share previews from the [brand kit](branding/README.md).
@@ -169,13 +201,17 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
 
 ## Enabling Sable
 
-Off by default. The privacy-safe way to switch it on is **local Ollama** — no key, nothing leaves the box:
+Off by default. Configure it in **Settings › Sable (AI assistant)** (ADMIN) or in `.env` (next to the
+compose file with Docker). The privacy-safe way to switch it on is **local Ollama** — no key, nothing leaves the box:
 
 ```dotenv
 AI_PROVIDER="ollama"
 OLLAMA_BASE_URL="http://localhost:11434/v1"
 OLLAMA_MODEL="llama3.1"
 ```
+
+With Docker, `localhost` is the container itself: point `OLLAMA_BASE_URL` at the Ollama host instead
+(e.g. `http://host.docker.internal:11434/v1`, which on Linux needs `extra_hosts: ["host.docker.internal:host-gateway"]` on `web`).
 
 Prefer a hosted model? Pick the provider, flip the privacy gate, add a key:
 
@@ -190,11 +226,12 @@ ANTHROPIC_API_KEY="sk-ant-…"  # or OPENAI_API_KEY (+ optional OPENAI_BASE_URL)
 | **Ollama** | Local, on-box | — | Fully offline. The privacy-safe default. |
 | **Anthropic** | External API | `ANTHROPIC_API_KEY` | Default `claude-sonnet-5`. Needs the external gate. |
 | **OpenAI-compatible** | External API | `OPENAI_API_KEY` | OpenAI, OpenRouter, Moonshot/Kimi, Zhipu/GLM… |
-| **Claude subscription** | Local `claude` CLI | — | Drives your logged-in Claude Pro/Max. |
+| **Claude subscription** | Claude Code CLI | `CLAUDE_CODE_OAUTH_TOKEN` | Uses a Claude Pro/Max subscription — connect it in Settings. |
 
-Every provider runs through the locally installed **Claude Code** CLI (`claude` must be on the
-server), so all models share one agent loop and the chat shows thinking and tool calls live;
-OpenAI-compatible and Ollama models are translated by a built-in localhost proxy.
+Every provider runs through the **Claude Code** CLI, which ships inside the Claude Agent SDK
+dependency (nothing extra to install, also in the Docker image), so all models share one agent loop
+and the chat shows thinking and tool calls live; OpenAI-compatible and Ollama models are translated
+by a built-in localhost proxy.
 
 Point Sable at a **vision-capable** model to read attached screenshots. Everything is also
 manageable from **Settings › Sable (AI assistant)** (ADMIN), which overrides `.env` and encrypts
@@ -259,7 +296,10 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 | [design-system.md](docs/design-system.md) | Theme, tokens, and UI primitives |
 | [branding.md](docs/branding.md) | Brand kit, shared logos, fonts and generated application assets |
 | [modules.md](docs/modules.md) | Feature-to-file map |
-| [deployment.md](docs/deployment.md) | PostgreSQL, production, persistence |
+| [deployment.md](docs/deployment.md) | Docker, PostgreSQL, production, persistence |
+| [updates.md](docs/updates.md) | Self-update, maintenance windows, the updater sidecar |
+| [releasing.md](docs/releasing.md) | CI checks, cutting a release, published images |
+| [benchmark.md](docs/benchmark.md) | The usability benchmark against GLPI, iTop and Znuny |
 
 ---
 
@@ -270,6 +310,8 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 | `pnpm dev` | Dev server (Turbopack) |
 | `pnpm build` / `pnpm start` | Production build & serve |
 | `pnpm lint` | Lint (`eslint` / `eslint-config-next`) |
+| `pnpm typecheck` | Route types + `tsc --noEmit` |
+| `pnpm test` / `pnpm test:e2e` | Vitest unit tests / Playwright link crawl |
 | `pnpm brand:check` / `pnpm brand:sync` | Validate / synchronize application assets from the canonical brand kit |
 | `pnpm db:migrate` | Prisma migrations (`prisma migrate dev`) |
 | `pnpm db:seed` | Seed demo data |
@@ -281,9 +323,11 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 
 ## Going to production
 
-Swap the datasource in `prisma/schema.prisma` to `postgresql`, point `DATABASE_URL` at your
-Postgres instance, set a strong `AUTH_SECRET`, then `pnpm setup` and `pnpm build && pnpm start`.
-See [docs/deployment.md](docs/deployment.md).
+The [Docker quick start](#quick-start) is the supported production setup: put it behind a
+TLS reverse proxy, set `APP_URL`/`AUTH_URL` to the public origin, and keep the `servio-data`
+volume backed up. The published image targets SQLite; PostgreSQL means switching the
+datasource in `prisma/schema.prisma` and building your own image. Run a single app instance
+(the background scheduler is not multi-instance safe). See [docs/deployment.md](docs/deployment.md).
 
 ---
 

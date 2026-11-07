@@ -58,13 +58,18 @@ There is one action module per domain:
 
 ```
 lib/actions/
-  account.ts      ai.ts           ai-assistant.ts approvals.ts
-  assets.ts       attachments.ts  auth.ts         automations.ts
-  catalog.ts      catalog-admin.ts categories.ts  changes.ts
-  dashboards.ts   groups.ts       knowledge.ts    locations.ts
-  notifications.ts people.ts      portal.ts       problems.ts
-  saved-views.ts  services.ts     settings.ts     sla-admin.ts
-  syncs.ts        tickets.ts      tokens.ts
+  account.ts         ai.ts              ai-assistant.ts    ai-insights.ts
+  ai-project-files.ts approvals.ts      article-links.ts   assets.ts
+  attachments.ts     audit-log.ts       auth.ts            automations.ts
+  catalog.ts         catalog-admin.ts   categories.ts      change-assets.ts
+  change-copilot.ts  change-freeze.ts   change-templates.ts changes.ts
+  contracts.ts       custom-fields.ts   dashboards.ts      email-templates.ts
+  groups.ts          knowledge.ts       locations.ts       macros.ts
+  maintenance.ts     notifications.ts   oncall.ts          people.ts
+  portal.ts          portal-status.ts   problems.ts        releases.ts
+  sable-mcp.ts       sable-skills.ts    saved-views.ts     services.ts
+  settings.ts        sla-admin.ts       status-incidents.ts survey.ts
+  syncs.ts           tickets.ts         tokens.ts          workflows.ts
 ```
 
 AI mutations are a special case: **Sable never writes directly**. Its write operations live in
@@ -103,11 +108,16 @@ The outside world talks to Servio through Route Handlers, **not** Server Actions
 | Path | Purpose |
 | --- | --- |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js sign-in/callback handlers. |
-| `app/api/v1/*` | Public, token-authenticated REST API (`tickets`, `assets`, `services`, `openapi`). |
-| `app/api/files/*` | Attachment upload/download. |
+| `app/api/v1/*` | Public, token-authenticated REST API (index `route.ts`, `tickets` incl. `[id]`, `assets`, `services`, `openapi`). |
+| `app/api/files/*` | Attachment upload (`upload`), download (`[id]`) and in-browser `preview` / `pdf` renditions; each handler authorises the live DB user (`canUploadTo` / `canViewAttachment`). |
 | `app/api/search/route.ts` | Global search. |
-| `app/api/assistant/chat/route.ts` | Sable's streaming chat turn (POST, AGENT+). |
-| `app/api/portal/assistant/route.ts` | Portal help-center bot stream (USER-scoped). |
+| `app/api/export/route.ts` | Streaming CSV export (`?type=audit` ADMIN, `?type=tickets` AGENT+). |
+| `app/api/dashboard/widget/route.ts` | On-demand widget computation for the dashboard editor preview (AGENT+, DB-truth guard). |
+| `app/api/ai/triage/route.ts` | AI triage suggestion for a ticket as a GET handler (session user, rate-limited) so it does not block server actions. |
+| `app/api/assistant/chat/route.ts` | Sable's streaming chat turn (POST, agents only). |
+| `app/api/portal/assistant/route.ts` | Portal help-center bot stream (USER-scoped, ephemeral). |
+| `app/api/portal/search/route.ts` | Portal live search. |
+| `app/api/maintenance/route.ts` | Public GET: is maintenance mode on right now (polled by the maintenance page). |
 
 Sable does **not** use a Server Action for chat: the console window and the
 `/assistant` route both post the `useChat` message array to
@@ -157,10 +167,16 @@ Three layouts define the three surfaces:
   Renders the sidebar (`AppSidebar`) + topbar shell. It also mounts **Sable** once,
   via `<SableProvider>` + `<SableMount>` — a single global assistant window (state
   machine: closed · min · max) opened from a floating action button, with the
-  `/assistant` route rendering the same window inline.
+  `/assistant` route rendering the same window inline. A `MaintenanceBanner`
+  announces upcoming maintenance windows.
 - **`app/portal/layout.tsx`** — the self-service portal. Calls `requireUser()`
-  (any authenticated user). Renders the help-center header; if the user is an
-  agent it shows a link back to the console.
+  (any authenticated user). Renders the help-center header, the portal status and
+  maintenance banners and the portal Sable widget; if the user is an agent it shows
+  a link back to the console.
+
+Two more top-level routes sit outside both groups and are public in `proxy.ts`:
+`app/maintenance` (the page non-admins see during a maintenance window) and
+`app/survey/[token]` (the CSAT rating link).
 
 The console is mounted at the **root** path (`/`), so `(console)` is a route
 group (parentheses = no URL segment). The portal is a real segment at `/portal`.
@@ -173,34 +189,45 @@ E:\DEV\servio
 │  ├─ login/                  # auth pages (public)
 │  │  ├─ page.tsx
 │  │  └─ login-form.tsx
+│  ├─ maintenance/            # maintenance page (public, shown to non-admins)
+│  ├─ survey/[token]/         # CSAT rating page (public)
 │  ├─ (console)/              # AGENT+ console, mounted at "/"
 │  │  ├─ layout.tsx           # requireRole("AGENT")
 │  │  ├─ page.tsx             # dashboard
-│  │  ├─ tickets/  problems/  changes/  approvals/
-│  │  ├─ services/  catalog/  assets/  locations/  categories/  knowledge/
+│  │  ├─ tickets/  problems/  changes/  releases/  approvals/
+│  │  ├─ oncall/  status/  insights/  assistant/
+│  │  ├─ services/  catalog/  assets/  locations/  contracts/  categories/  knowledge/
 │  │  ├─ groups/  people/
-│  │  ├─ automations/  syncs/  settings/  notifications/
+│  │  ├─ automations/  syncs/  settings/  audit/  no-access/
 │  ├─ portal/                 # self-service (any authenticated user)
 │  │  ├─ layout.tsx           # requireUser()
-│  │  ├─ page.tsx  tickets/  new/  request/  catalog/  knowledge/
+│  │  ├─ page.tsx  tickets/  new/  request/  catalog/  knowledge/  status/
 │  └─ api/
 │     ├─ auth/[...nextauth]/route.ts
 │     ├─ v1/                  # public REST API (tickets, assets, services, openapi)
-│     ├─ files/               # upload / download
+│     ├─ files/               # upload / download / preview / pdf
+│     ├─ assistant/chat/  portal/{assistant,search}/  ai/triage/
+│     ├─ dashboard/widget/  export/  maintenance/
 │     └─ search/route.ts
 ├─ auth.ts                    # NextAuth (Node runtime): Prisma adapter + providers
 ├─ auth.config.ts             # edge-safe config: session strategy + JWT callbacks
 ├─ proxy.ts                   # middleware: edge auth gate
+├─ instrumentation.ts         # boot hook: starts the in-process scheduler (Node runtime only)
 ├─ components/                # UI, one folder per domain + components/ui (base-ui/shadcn)
 ├─ lib/
 │  ├─ actions/                # Server Actions (one file per domain)
+│  ├─ ai-operations/          # Sable's RBAC-gated write proposals
+│  ├─ connectors/  ticks/     # sync connectors; scheduler feature sweeps
 │  ├─ data/                   # shared select options
-│  ├─ db.ts        session.ts constants.ts  query.ts  nav.ts  api.ts
-│  ├─ audit.ts     sla.ts     assignment.ts transitions.ts automations.ts
+│  ├─ db.ts        session.ts constants.ts  query.ts  nav.ts  api.ts  route-guard.ts
+│  ├─ audit.ts     sla.ts     assignment.ts transitions.ts automations.ts scheduler.ts
 │  └─ mail.ts      markdown.ts storage.ts    files.ts …
 ├─ prisma/
 │  ├─ schema.prisma  seed.ts  seed-extras.ts  migrations/  dev.db
-└─ next.config.ts  proxy.ts  package.json  tsconfig.json
+├─ sable/                     # Sable's agent home: AGENT.md + built-in skills/
+├─ updater/                   # self-update sidecar (standalone Node service, see updates.md)
+├─ docker/  Dockerfile  docker-compose*.yml
+└─ next.config.ts  package.json  tsconfig.json
 ```
 
 > **Routing centres on Teams/Groups.** The old "Queues"/"Board" module and the `Queue`
@@ -254,8 +281,8 @@ Roles are a plain string on `User.role`, ordered by rank:
 
 | Role | Rank | Typical access |
 | --- | --- | --- |
-| `ADMIN` | 3 | Everything, including settings/admin. |
-| `MANAGER` | 2 | Console + manager-only items (catalog, automations, syncs, settings). |
+| `ADMIN` | 3 | Everything, including the audit log, update/maintenance settings (`/settings/updates`) and creating/editing sync sources. |
+| `MANAGER` | 2 | Console + manager-only items (catalog, automations, syncs, settings, change freeze windows and templates). |
 | `AGENT` | 1 | Console: tickets, problems, changes, CMDB, etc. |
 | `USER` | 0 | Self-service portal only. |
 
@@ -270,7 +297,8 @@ Enforcement happens in three complementary places:
   (`path === p || path.startsWith(p + "/")`, so `/surveypayload` is not covered by `/survey`);
 - redirects already-logged-in users away from `/login` to `/`;
 - redirects unauthenticated users to `/login?callbackUrl=…`;
-- redirects plain `USER`s to `/portal` if they try to reach any non-portal path. Portal paths are `/portal` plus the APIs the portal calls (`/api/portal/*`, `/api/files/*`); those route handlers authorise the live DB user themselves (`isPortalPath` in `lib/route-guard.ts`).
+- redirects plain `USER`s to `/portal` if they try to reach any non-portal path. Portal paths are `/portal` plus the APIs the portal calls (`/api/portal/*`, `/api/files/*`); those route handlers authorise the live DB user themselves (`isPortalPath` in `lib/route-guard.ts`);
+- for console routes, enforces the per-prefix minimum role from `ROUTE_MIN_ROLE` in [`lib/route-guard.ts`](../lib/route-guard.ts) (longest prefix wins; default `AGENT`). Currently `MANAGER` for `/catalog`, `/automations`, `/syncs`, `/changes/freeze`, `/changes/templates`, `/settings` and `/sla`; `AGENT` for `/settings/macros`; `ADMIN` for `/settings/updates` and `/audit`. A role that is too low is redirected to `/no-access?from=…`. These values are kept in sync with `lib/nav.ts` by hand.
 
 This is a coarse first gate. Note it reads the role from the **JWT** (edge), so it
 cannot see a just-demoted user — that is what the server layer is for.
@@ -284,10 +312,12 @@ layer. Functions are wrapped in React `cache()` so each is one query per request
 | `getCurrentUser()` | Full DB user row (cached). |
 | `requireUser()` | Redirects to `/login` if unauthenticated; **re-reads the DB row** and rejects deactivated users; returns the fresh role. |
 | `requireRole(min)` | `requireUser()` + rank check; redirects to `/portal` if below `min`. |
+| `requireAgentUser()` / `requireManagerUser()` / `requireAdminUser()` | DB-truth guards for Server Actions: re-read the user row and return it, or `null` if inactive or below AGENT / MANAGER / ADMIN. |
 | `hasRole(role, min)` / `isAgent(role)` | Pure rank comparisons. |
 
 Layouts and pages call `requireRole("AGENT")` (console) or `requireUser()`
-(portal); actions call `getSessionUser()` + `isAgent(...)`.
+(portal); actions use the `require*User()` guards (some modules keep a local wrapper,
+e.g. `requireAdmin()` in `lib/actions/syncs.ts`).
 
 **3. API token scopes — [`lib/api.ts`](../lib/api.ts).** The REST API is orthogonal
 to sessions: `guard(req, "read"|"write")` authenticates a Bearer token, checks the
@@ -299,11 +329,14 @@ a token sees org-wide data or only the owner's objects. See [rest-api.md](./rest
 Servio imports **users and assets** from external systems via a pluggable connector
 layer. A source is one `SyncSource` row; a run is one `SyncRun`.
 
-- **`SyncSource`** — `type`, `direction` (`IMPORT`), `scope` (`USERS`/`ASSETS`),
-  `schedule` (cron), `config` (JSON as TEXT; per-source secrets are AES-GCM encrypted
-  via [`lib/crypto.ts`](../lib/crypto.ts)), `isActive`, `lastRunAt`, `lastStatus`.
-- **`SyncRun`** — one execution: `status`, `trigger` (`MANUAL`/`SCHEDULE`),
-  counts (`created`/`updated`/`failed`), `log`, `finishedAt`.
+- **`SyncSource`** — `type`, `direction`, `scope`, `schedule` (cron), `config` (JSON as
+  TEXT; per-source secrets are AES-GCM encrypted via [`lib/crypto.ts`](../lib/crypto.ts)),
+  `isActive`, `lastRunAt`, `lastStatus`. The schema allows `direction`
+  `IMPORT`/`EXPORT`/`BIDIRECTIONAL` and `scope` `USERS`/`ASSETS`/`TICKETS`/`ALL`, but the
+  implemented connectors only import users and assets.
+- **`SyncRun`** — one execution: `status`, `trigger` (`MANUAL`/`SCHEDULE`; `API` is
+  allowed by the executor's type but unused), counts (`created`/`updated`/`failed`),
+  `log`, `finishedAt`.
 
 The valid `type`, direction, scope, and run-status values are enumerated in
 [`lib/constants.ts`](../lib/constants.ts) (`SYNC_TYPES`, `SYNC_DIRECTIONS`,
@@ -324,14 +357,21 @@ never deletes.
 
 **Running.** `executeSyncRun` ([`lib/sync-runner.ts`](../lib/sync-runner.ts)) is
 session-less and shared by manual and scheduled runs, guarded by a per-source in-process
-lock. The in-process scheduler ([`lib/scheduler.ts`](../lib/scheduler.ts), started from
-[`instrumentation.ts`](../instrumentation.ts)) fires due sources via a cron `syncTick`
-next to the inbound-mail poll (see [deployment.md](./deployment.md)). Feature sweeps run from
-`FEATURE_TICKS` in the same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick` and `runUpdateCheckTick`
-(`lib/ticks/*`), each with its own interval setting and floor, an overlap guard, `unref()`ed timers
-and errors logged but never thrown. Every tick is session-less, checks its own enable setting first and
-uses at-most-once markers in the database (see [configuration.md](./configuration.md) and
-[data-model.md](./data-model.md)). Server Actions in
+lock.
+
+**Scheduler.** [`instrumentation.ts`](../instrumentation.ts) is Next.js's boot hook; on the Node
+runtime only it loads `lib/instrumentation-node.ts`, which calls `startScheduler()` and wires
+`stopScheduler()` to SIGTERM/SIGINT. The in-process scheduler
+([`lib/scheduler.ts`](../lib/scheduler.ts)) is single-instance by design (overlap guards and
+markers are in memory): set `SCHEDULER_ENABLED=false` on any replica that must stay passive (see
+[deployment.md](./deployment.md)). It runs three built-in loops — the inbound-mail IMAP poll
+(`IMAP_POLL_SECONDS`), the cron `syncTick` that fires due sources (`SYNC_TICK_SECONDS`) and the SLA
+escalation sweep (`SLA_ESCALATION_TICK_SECONDS`) — plus the feature sweeps in `FEATURE_TICKS` in the
+same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick` and
+`runUpdateCheckTick` (`lib/ticks/*`). Each sweep has its own interval setting and floor, an overlap
+guard, `unref()`ed timers, and errors logged but never thrown. Every tick is session-less, checks
+its own enable setting first and uses at-most-once markers in the database (see
+[configuration.md](./configuration.md) and [data-model.md](./data-model.md)). Server Actions in
 [`lib/actions/syncs.ts`](../lib/actions/syncs.ts):
 
 - `runSync(formData)` — dispatches to the connector, writes the `SyncRun` + source status,
@@ -341,7 +381,28 @@ uses at-most-once markers in the database (see [configuration.md](./configuratio
 - `toggleSyncActive(formData)` — pauses/activates a source with an audit trail.
 
 The UI lives at `app/(console)/syncs` (list + `[id]` detail + `new` + `[id]/edit`).
-List, detail and **Run now** require `MANAGER`; create/edit/delete require `ADMIN`.
+List, detail and **Run now** (`runSync`) require `MANAGER`; create, edit, delete, test and the
+active toggle require `ADMIN`.
+
+## 🛠️ Maintenance mode & self-update
+
+Planned maintenance and app updates are coordinated through a small shared **state directory**
+(`SERVIO_STATE_DIR`, default `.servio-state`; [`lib/state-dir.ts`](../lib/state-dir.ts)), which is
+the file contract between the app, `proxy.ts` and the updater sidecar. Details in
+[updates.md](./updates.md).
+
+- **`MaintenanceWindow`** rows (see [data-model.md](./data-model.md)) are scheduled in the console
+  (`lib/actions/maintenance.ts`, `/settings/updates`, ADMIN) and advanced by the `maintenance` tick.
+- While a window with `blockAccess` is `IN_PROGRESS`, the app writes `maintenance.json` into the state
+  directory. `proxy.ts` reads that file on every request (no shared module state) and, via the pure
+  `maintenanceGate` in `lib/maintenance-rules.ts`, turns non-admin traffic into the `/maintenance`
+  page (503 + `Retry-After`; JSON 503 for `/api/*`). The Prisma-free reader is
+  `lib/maintenance-flag.ts`.
+- The **`updater/`** directory is a separate Node sidecar. It exchanges `updater/request.json`
+  (written by the app), `updater/status.json` and `updater/heartbeat.json` (written by the updater)
+  under the state directory, and talks to Docker only through a filtered socket proxy
+  (`updater/README.md`). The `update-check` tick compares the running version with the latest
+  release (`lib/updates.ts`).
 
 ## 🗄️ One schema, two databases
 

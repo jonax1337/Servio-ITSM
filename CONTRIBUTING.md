@@ -2,7 +2,7 @@
 
 Thanks for contributing to **Servio**, an open-source ITSM platform (a modern GLPI alternative). This guide is the single entry point for anyone — human or AI agent — adding features to the codebase. Read it in full before your first change.
 
-Servio is built with **Next.js 16** (App Router, React 19, Turbopack), **Prisma 6**, **Auth.js v5**, **base-ui / shadcn** (Tailwind v4), and **Zod 4**. The package manager is **pnpm**.
+Servio is built with **Next.js 16** (App Router, React 19, Turbopack), **Prisma 6**, **Auth.js v5**, **base-ui / shadcn** (Tailwind v4), and **Zod 4**. The package manager is **pnpm** (pinned via `packageManager` in `package.json`) and the runtime is **Node 24** (`engines`: `>=24.22.1`; the Docker image and CI use Node 24).
 
 > New here? Skim the [docs index](docs/README.md) and [architecture overview](docs/architecture.md) first, then come back for the workflow.
 
@@ -35,8 +35,9 @@ Full setup, environment variables, and troubleshooting live in [docs/development
 ```bash
 pnpm install
 cp .env.example .env        # then fill in the values
-pnpm db:migrate             # apply migrations to the SQLite dev DB
+pnpm db:migrate             # apply migrations to the SQLite dev DB (or `pnpm setup` = migrate deploy + seed)
 pnpm db:seed                # seed demo data
+pnpm hooks:install          # optional: enable the commit-msg docs-drift hook (.githooks)
 pnpm dev                    # start Next.js (Turbopack) on http://localhost:3000
 ```
 
@@ -45,19 +46,23 @@ Useful scripts from [`package.json`](package.json):
 | Script | What it does |
 |---|---|
 | `pnpm dev` | Run the dev server (`next dev`, Turbopack) |
-| `pnpm build` | Production build — **must pass before you open a PR** |
+| `pnpm build` | Brand-asset check (`brand:check`) followed by `next build` — **must pass before you open a PR** |
+| `pnpm typecheck` | `next typegen && tsc --noEmit` — run in CI |
+| `pnpm test` / `pnpm test:watch` | Vitest unit tests (`vitest run` / watch mode) — run in CI |
 | `pnpm lint` | ESLint (`eslint-config-next`) — **must pass before you open a PR** |
 | `pnpm test:e2e` | Playwright link crawl per role against a built app on :3200 (needs `pnpm build` and a seeded DB, see [CI & releases](docs/releasing.md#-link-integrity-tests)) |
+| `pnpm docs:check` | `scripts/check-doc-drift.mjs --working` — flags code changes whose owning docs were not touched |
 | `pnpm brand:check` | Verify application logos, icons, metadata images and brand tokens |
 | `pnpm brand:sync` | Regenerate application copies after updating the canonical brand kit |
 | `pnpm db:migrate` | `prisma migrate dev` — create/apply a dev migration |
 | `pnpm db:push` | Push schema without a migration (prototyping only) |
+| `pnpm setup` | `prisma migrate deploy && prisma db seed` |
 | `pnpm db:seed` | Seed via `prisma/seed.ts` + `prisma/seed-extras.ts` |
 | `pnpm db:reset` | `prisma migrate reset --force` (drops + reseeds) |
 | `pnpm db:studio` | Open Prisma Studio |
 | `pnpm db:generate` | Regenerate the Prisma client |
 
-The dev database is SQLite (`prisma/dev.db`). Production targets Postgres — keep both in mind (see [Gotchas](#-gotchas)).
+The dev database is SQLite (`prisma/dev.db`). Production runs SQLite (the published Docker image) or PostgreSQL via a source build (see [deployment.md](docs/deployment.md)) — keep both in mind (see [Gotchas](#️-gotchas)).
 
 ---
 
@@ -221,7 +226,7 @@ If your forms/filters need dropdowns of other entities (agents, groups, categori
 
 ### 8. Documentation → `docs/**` + the drift map
 
-Docs are part of the change, not a follow-up. Add your module to [docs/modules.md](docs/modules.md) (and any other doc your code touches), then register its ownership in the `DOC_MAP` in [`scripts/check-doc-drift.mjs`](scripts/check-doc-drift.mjs) so future edits to it are gated. Run `/sync-docs` (or `pnpm run docs:check`) before committing. See [docs/maintaining-docs.md](docs/maintaining-docs.md) for how the three doc-sync layers work.
+Docs are part of the change, not a follow-up. Add your module to [docs/modules.md](docs/modules.md) (and any other doc your code touches), then register its ownership in the `DOC_MAP` in [`scripts/check-doc-drift.mjs`](scripts/check-doc-drift.mjs) so future edits to it are gated. Run `/sync-docs` (or `pnpm docs:check`) before committing; the optional `commit-msg` hook (`pnpm hooks:install`) and an advisory CI step run the same check. See [docs/maintaining-docs.md](docs/maintaining-docs.md) for how the three doc-sync layers work.
 
 See [docs/modules.md](docs/modules.md) for the full catalog of existing modules and how they fit together.
 
@@ -232,11 +237,11 @@ See [docs/modules.md](docs/modules.md) for the full catalog of existing modules 
 These trip up almost everyone (and every LLM) on their first change:
 
 - **base-ui composes with `render`, not `asChild`.** There is no `asChild` prop. For a link styled as a button use `<LinkButton href="…">`. For breadcrumb/menu/sidebar links use `render={<Link href="…" />}`. A base-ui `<Button>` rendered as a link needs `nativeButton={false}` — so prefer `LinkButton`.
-- **base-ui `Select` needs an `items` prop.** When you use the raw `Select` from `@/components/ui/select`, base-ui requires an `items` map (value → label) so the trigger can show the selected label:
+- **base-ui `Select` needs an `items` prop.** The shadcn `select` primitive is not currently scaffolded in `components/ui/`; if you add it, base-ui requires an `items` map (value → label) on the root so the trigger can show the selected label:
   ```ts
   items={{ none: "—", ...Object.fromEntries(opts.map((o) => [o.value, o.label])) }}
   ```
-  In practice, Tickets uses the higher-level `Combobox` / `ComboField` wrappers ([`components/combobox.tsx`](components/combobox.tsx), [`components/combo-field.tsx`](components/combo-field.tsx)) which handle this for you — prefer those. For **list filters**, use the shared `ListToolbar` instead of a bare Select.
+  In practice, Tickets and the other modules use the higher-level `Combobox` / `ComboField` wrappers ([`components/combobox.tsx`](components/combobox.tsx), [`components/combo-field.tsx`](components/combo-field.tsx)) which handle this for you — prefer those. For **list filters**, use the shared `ListToolbar` instead of a bare Select.
 - **Prisma 6 accessors are camelCased model names.** `db.ticket`, `db.problem`, `db.change`, `db.asset`, `db.group`, `db.user`, `db.auditLog`, … and the SLA accessor is **`db.sLA`** (capital `LA`).
 - **SQLite has no `mode: "insensitive"`.** Text search is `where: { field: { contains: q } }`. Keep queries portable to Postgres for production.
 - **"Enums" are String-backed.** Never assume a Prisma enum type — validate against the `*_STATUSES`/`*_TYPES` arrays in [`lib/constants.ts`](lib/constants.ts) (with `z.enum(...)`) and render with the matching `*_META` map.
@@ -257,15 +262,16 @@ These trip up almost everyone (and every LLM) on their first change:
 
 ## Commits & pull requests
 
-Before opening a PR, both of these **must pass locally**:
+Before opening a PR, these **must pass locally**:
 
 ```bash
 pnpm lint
+pnpm typecheck
+pnpm test
 pnpm build
 ```
 
-[CI](docs/releasing.md) runs them on every PR together with the typecheck, the unit
-tests, the migration-drift check, the `pnpm test:e2e` link crawl and a Docker build.
+[CI](docs/releasing.md) runs them on every PR together with the Prisma schema validation, the brand-asset check, the migration-drift check, an advisory docs-drift check, the `pnpm test:e2e` link crawl and a Docker build.
 
 PR expectations:
 

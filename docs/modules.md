@@ -63,15 +63,16 @@ filenames match it (`sable-*`/`Sable*`). Full write-up: [ai.md](./ai.md).
 | Proposal decisions | `lib/ai-proposal-decisions.ts` (claim / mark applied / release / dismiss, keyed per tool call; `AiProposalDecision`), `lib/ai-proposal-signature.ts` (stable args signature) |
 | Running answers | `lib/sable-active-runs.ts` (in-memory run registry: replay + live, stop) · `app/api/assistant/chat/[id]/stream/route.ts` (`GET` rejoin, `DELETE` stop) |
 | Inline badges | `lib/inline-badge.ts` — `status:OPEN`-style tokens, bare states and record refs in chat markdown (`components/markdown-text.tsx`) |
-| Global window | `components/assistant/` — `sable-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `sable-mount`, `sable-window`, `sable-fab` (floating action button restoring the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark) |
+| Global window | `components/assistant/` — `sable-provider` (state machine `closed`\|`min`\|`max`, mounted once in `app/(console)/layout.tsx`), `sable-mount`, `sable-window`, `sable-launcher` (mounts the floating action button `SableFab`, which restores the last state), `sable-chrome` (shared FAB/header chrome + Sable wordmark), `sable-canvas` / `canvas-code` (artifact canvas) |
 | Chat UI | `sable-thread` (wires `useChatRuntime(AssistantChatTransport)` to the streaming route, hydrates history, creates a conversation lazily on first send), `sable-tool-ui` (read-tool activity via `ToolFallback`; approve-first `proposal-card` for `propose_*` tools, persisted in localStorage), the left rail `sable-rail` (New chat, search, folders with @dnd-kit drag, archived) |
 | assistant-ui scaffold | `components/thread.tsx` (+ `markdown-text`, `reasoning`, `tool-fallback`, `tool-group`, `tooltip-icon-button`, `attachment`, `follow-up-suggestions`) — packages `@assistant-ui/react` + `@assistant-ui/react-ai-sdk` |
 | Provider layer | `lib/ai.ts` (config + privacy gate; every provider runs through Claude Code — `streamAiChat`/`generateAi*`), `lib/claude-cli.ts` (Claude Code harness; remote MCP; console/portal `audience`), `lib/claude-env.ts` (allowlisted CLI env), `lib/claude-agent-events.ts` (SDK events → live UI chunks), `lib/ai-models.ts` (model dropdown lists), `lib/llm-proxy/` (built-in Anthropic⇄OpenAI proxy for `openai`/`ollama`, incl. `token-cap.ts`) |
 | Skills & MCP | `lib/sable-workspace.ts` (isolated agent home, skill sync), `lib/sable-skills.ts`, `lib/actions/sable-skills.ts`; `lib/sable-mcp.ts`, `lib/sable-mcp-policy.ts`, `lib/actions/sable-mcp.ts`, `lib/ai-operations/modules/mcp.ts` (`mcp.call`) |
 | Read tools | `lib/assistant-tools.ts`, `lib/ai-tools.ts`, `lib/ai-admin-tools.ts`, `lib/ai-stats.ts` |
-| Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `modules/*` — tickets, taxonomy, org, catalog-services, cmdb, knowledge, problems-changes, config) |
+| Write operations | `lib/ai-operations/` (`registry.ts`, `types.ts`, `tools.ts`, `helpers.ts`, `modules/*` — tickets, taxonomy, org, catalog-services, cmdb, knowledge, problems-changes, config, mcp, projects, insights, change-schedule, releases, oncall, status, contracts) |
 | Settings | `app/(console)/settings/ai/page.tsx` (ADMIN) + `components/settings/{ai-settings-form,claude-connect-dialog,ai-skills-manager,ai-mcp-manager}.tsx` |
-| Data | `AiConversation` (with `folderId`), `AiFolder`, `AiMessage`, `AiSkill`, `AiMcpServer` (`prisma/schema.prisma`) |
+| Projects | Persistent workspaces with a file/folder library and shared-team access. `lib/actions/ai-assistant.ts` (`listProjects`, `getProject`, `createProject`, `renameProject`, `updateProjectInstructions`, `updateProjectBinding`, `shareProject`, `archiveProject`, `deleteProject`, `moveConversationToProject`, `getProjectLinks`), `lib/actions/ai-project-files.ts` (`listProjectFiles`, folder CRUD, `moveProjectFile(s)`, `deleteProjectFile(s)`, `retagProjectFiles`, `saveArtifactToProject`), `lib/ai-projects.ts` (pure access rules: owner or shared-team member), `lib/rag/` (`extract`, `chunk`, `retrieve`, `render` — file indexing and retrieval), Sable ops `project.search_files`, `project.list_files`, `project.file_delete` in `lib/ai-operations/modules/projects.ts`; UI `components/assistant/{project-home,project-file-browser,project-rail-section}.tsx` |
+| Data | `AiConversation` (with `folderId`/`projectId`), `AiFolder`, `AiMessage`, `AiSkill`, `AiMcpServer`, `AiProject` (`prisma/schema.prisma`) |
 
 There is ONE global window, mounted once in the console layout via `<SableProvider>` + `<SableMount>`;
 the floating action button (`SableFab`, bottom-right) restores its last state, and `/assistant`
@@ -389,8 +390,16 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | Sub-page | Route | Purpose | Actions / components |
 | --- | --- | --- | --- |
 | API tokens | `settings/api/page.tsx` | Create/revoke API tokens | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`); `components/settings/token-manager` |
-| Mail | `settings/mail/page.tsx` | SMTP status + mail queue (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
+| Mail log | `settings/mail/page.tsx` (MANAGER+) | SMTP status + mail log (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
 | SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
+| General & branding | `settings/general/page.tsx` (ADMIN) | App name/branding and base settings | `saveGeneralSettings` in `lib/actions/settings.ts`; `components/settings/settings-form` |
+| Email (SMTP) | `settings/email/page.tsx` (ADMIN) | Outbound mail settings | `saveEmailSettings`; `settings-form` |
+| Inbound mail (IMAP) | `settings/inbound/page.tsx` (ADMIN) | Inbound mailbox polling settings | `saveInboundSettings`; `settings-form` |
+| Email templates | `settings/email-templates/page.tsx` (ADMIN) | Edit/reset outgoing mail templates | `lib/actions/email-templates.ts` (`saveEmailTemplate`, `resetEmailTemplate`); `lib/email-templates.ts`; `components/settings/email-template-editor` |
+| Uploads | `settings/uploads/page.tsx` (ADMIN) | Upload limits and allowed types | `saveUploadSettings`; `settings-form` |
+| Status workflows | `settings/workflows/page.tsx` (MANAGER+) | Per-type status transition graphs | `lib/actions/workflows.ts` (`saveWorkflow`, `resetWorkflow`); `lib/workflow.ts`; `components/settings/workflow-list`, `workflow-graph` |
+| Custom fields | `settings/custom-fields/page.tsx` (MANAGER+) | Admin-defined fields on tickets, problems, changes | `lib/actions/custom-fields.ts` (`createCustomField`, `updateCustomField`, `deleteCustomField`, `moveCustomField`, `setCustomFieldValue`); `lib/custom-fields.ts`; `components/custom-fields/` |
+| Sable (AI) | `settings/ai/page.tsx` (ADMIN) | Provider, models, skills, MCP servers (see Sable above) | `lib/actions/settings.ts` (`saveAiSettings`, `testAiConnection`, `connectClaudeSubscription`, `listAiModels`) |
 | Macros | `settings/macros/page.tsx` (AGENT+ for personal macros; sharing is MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`); `components/settings/macro-manager` |
 
 **Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach. `BUMP_PRIORITY` deliberately does **not** reprice the SLA (a tighter tier measured from creation would breach at once).
@@ -422,6 +431,14 @@ Read-only viewer over the existing `AuditLog` model, ADMIN-only (also gated in `
 
 See [configuration.md](./configuration.md) for the environment/config side of Mail, SLA, and tokens.
 
+### Account settings
+Per-user preferences and signature, opened as a dialog from the user menu (no route).
+
+| | |
+| --- | --- |
+| UI | `components/account/` — `account-settings-dialog` (opened from `components/user-menu.tsx`), `account-fields` |
+| Actions | `lib/actions/account.ts` — `getMyAccount`, `updateMySettings`; sign-in/out in `lib/actions/auth.ts` (`authenticate`, `ssoSignIn`, `doSignOut`) |
+
 ### Notifications
 Per-user in-app notification feed, shown as a **popover** opened from the topbar bell (no dedicated route).
 
@@ -429,7 +446,7 @@ Per-user in-app notification feed, shown as a **popover** opened from the topbar
 | --- | --- |
 | UI | `components/notifications-menu.tsx` — base-ui `Popover` in the topbar bell; loads on open |
 | Actions | `lib/actions/notifications.ts` — `listNotifications`, `markAllRead`, `markRead` |
-| Entity links | `ENTITY_HREF` map routes `Ticket`/`Problem`/`Change` notifications to their detail pages |
+| Entity links | `ENTITY_HREF` map routes `Ticket`/`Problem`/`Change`/`Contract`/`SoftwareLicense`/`OnCallSchedule` notifications to their detail pages |
 
 ---
 

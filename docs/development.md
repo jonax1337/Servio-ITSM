@@ -37,6 +37,10 @@ corepack prepare pnpm@11.0.8 --activate
 
 ## Quickstart (first run)
 
+> **Just want to run Servio?** You don't need the source: the published Docker images
+> start with one `docker compose` command — see the [README quick start](../README.md#quick-start)
+> and [deployment.md](./deployment.md#-docker). This page is for working on the code.
+
 ```bash
 pnpm install                  # install dependencies
 cp .env.example .env          # copy the environment template
@@ -95,9 +99,14 @@ All scripts live in [`package.json`](../package.json) and are run with `pnpm <sc
 | Script | Command | What it does |
 |--------|---------|--------------|
 | `dev` | `next dev` | Start the dev server (Turbopack) on port 3000. |
-| `build` | `next build` | Production build. |
+| `build` | `brand:check && next build` | Validate brand assets, then the production build. |
 | `start` | `next start` | Serve the production build. |
 | `lint` | `eslint` | Lint with the flat ESLint config (`eslint.config.mjs`). |
+| `typecheck` | `next typegen && tsc --noEmit` | Generate route types, then type-check. |
+| `test` / `test:watch` | `vitest run` / `vitest` | Unit tests (`tests/unit`). |
+| `test:e2e` | `playwright test` | Link-crawl E2E against a production build — see [releasing.md](./releasing.md#-link-integrity-tests). |
+| `docs:check` | `node scripts/check-doc-drift.mjs --working` | Report code changes whose owning doc was not updated ([maintaining-docs.md](./maintaining-docs.md)). |
+| `brand:check` / `brand:sync` | `node scripts/sync-brand-assets.mjs [--check]` | Validate / regenerate application brand assets ([branding.md](./branding.md)). |
 | `db:generate` | `prisma generate` | Regenerate the Prisma Client after schema changes. |
 | `db:migrate` | `prisma migrate dev` | Create/apply a dev migration from `prisma/schema.prisma`. |
 | `db:push` | `prisma db push` | Push schema to the DB without a migration (prototyping). |
@@ -117,24 +126,28 @@ The seed entrypoint is configured under the `prisma.seed` key in `package.json` 
 
 There is **no `src/` directory** — application code lives at the repo root. TypeScript
 path alias `@/*` maps to the project root (see `tsconfig.json`), so imports look like
-`@/lib/db`, `@/components/ui/select`.
+`@/lib/db`, `@/components/ui/button`.
 
 ```text
 app/
   (console)/          Agent console — a route group (URL has no "(console)" segment).
                       Dashboard (page.tsx), shared layout.tsx (sidebar + topbar), and
-                      one folder per module: tickets/ problems/ changes/ assets/
-                      catalog/ services/ groups/ people/ categories/ locations/
-                      knowledge/ approvals/ automations/ syncs/ notifications/
-                      settings/
+                      one folder per module: tickets/ problems/ changes/ releases/
+                      assets/ contracts/ catalog/ services/ groups/ people/
+                      categories/ locations/ knowledge/ approvals/ automations/
+                      syncs/ oncall/ status/ insights/ audit/ assistant/ settings/
   portal/             Self-service portal for end users (USER role).
   login/              Auth pages (Credentials + optional "Continue with SSO").
+  maintenance/        Maintenance page served by proxy.ts during a blocking window.
+  survey/             Public one-time CSAT survey.
   api/
     auth/[...nextauth]/route.ts   Auth.js handler
     v1/                           Public, versioned REST API (Bearer-token auth)
       tickets/  assets/  services/  openapi/  _serializers.ts
+    assistant/  ai/  portal/      Sable (console + portal) chat and AI endpoints
     files/                        Attachment upload/download route handlers
-    search/                       Global search endpoint
+    search/  export/  dashboard/  Global search, CSV export, dashboard widget data
+    maintenance/                  Public maintenance-window status
   globals.css         Tailwind v4 + theme tokens.  layout.tsx  Root layout.
 
 components/
@@ -283,9 +296,9 @@ differences bite people coming from Radix-era shadcn:
 1. **There is no `asChild`. Use `render` instead.** base-ui composes via a `render`
    prop, so shadcn's `asChild` pattern becomes `render={<Comp />}`. There is not a
    single `asChild` in the codebase — grep confirms `render=` is what primitives like
-   `select`, `dialog`, `sheet`, and `sidebar` use. Example:
+   `dialog`, `sheet`, `dropdown-menu`, and `sidebar` use. Example (`components/ui/dialog.tsx`):
    ```tsx
-   <SelectPrimitive.Icon render={<ChevronDown />} />
+   <DialogPrimitive.Close render={<Button variant="outline" />}>Close</DialogPrimitive.Close>
    ```
 
 2. **base-ui `Select` needs its option data up front.** base-ui's `Select.Root` renders
@@ -295,8 +308,9 @@ differences bite people coming from Radix-era shadcn:
    by using the searchable [`ComboField`](../components/combo-field.tsx) /
    [`Combobox`](../components/combobox.tsx) components, which manage their own value and
    submit through a hidden `<input name=…>` so they drop straight into native
-   `<form>` + `useActionState` flows. Reach for `ComboField` for form dropdowns; use
-   the raw `Select` primitive only where you supply `items`.
+   `<form>` + `useActionState` flows. There is no `components/ui/select.tsx` today —
+   reach for `ComboField` for form dropdowns, and if you scaffold the base-ui `Select`,
+   always pass `items`.
 
 More on tokens, tones, and primitives: [design-system.md](./design-system.md).
 
@@ -320,8 +334,9 @@ Copy this structure for new modules; see [modules.md](./modules.md) for the full
 
 - **Lint:** `pnpm lint` (flat config `eslint.config.mjs`, extends
   `eslint-config-next` core-web-vitals + TypeScript rules).
-- **Types:** `strict` is on (`tsconfig.json`), `noEmit` — type-check with `pnpm build`
+- **Types:** `strict` is on (`tsconfig.json`), `noEmit` — type-check with `pnpm typecheck`
   or your editor's TS server. Path alias `@/*` → repo root.
+- **Tests:** `pnpm test` (Vitest unit tests, including the static route-link check).
 - **Prisma Client:** after any change to `schema.prisma`, run `pnpm db:generate` (and
   `pnpm db:migrate` to persist a migration) before the new types are available.
 
