@@ -8,6 +8,9 @@ import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import { mergedStatusRefusal } from "@/lib/merge-rules";
 import { serializeTicket } from "../../_serializers";
+import { setTicketChange, setTicketProblem } from "@/lib/actions/tickets";
+import { formOf } from "@/lib/api-itsm-input";
+import { asActor, refusal } from "../../_itsm";
 import { TICKET_STATUSES, PRIORITIES } from "@/lib/constants";
 import type { Role } from "@/lib/session";
 
@@ -42,6 +45,9 @@ const patchSchema = z.object({
   status: z.enum(TICKET_STATUSES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   assigneeId: z.string().nullable().optional(),
+  // Links, applied through the console's setTicketProblem / setTicketChange (null unlinks).
+  problemId: z.number().int().positive().nullable().optional(),
+  changeId: z.number().int().positive().nullable().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -75,7 +81,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
 
-  const data = { ...parsed.data } as Record<string, unknown>;
+  const { problemId, changeId, ...fields } = parsed.data;
+  const data = { ...fields } as Record<string, unknown>;
 
   // SLA recompute: a priority change on an open ticket re-stamps the deadlines
   // (same contract as the console's updateTicketField). Done BEFORE the status
@@ -101,13 +108,30 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     Object.assign(data, statusChangeData({ ...existing, ...reprice }, to, new Date(), await ticketCalendar(existing)));
   }
 
-  const ticket = await db.ticket.update({
+  let ticket = await db.ticket.update({
     where: { id: ticketId },
     data,
     include: { requester: true, assignee: true },
   });
   await withdrawPendingApprovals(ticketId, data);
   await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: "Updated via API" });
+
+  // Same permission as the console: only someone who may act on the ticket links it.
+  const linkError = await asActor(auth.principal, async () => {
+    if (problemId !== undefined) {
+      const r = await setTicketProblem(formOf({ ticketId, problemId }));
+      if (!r.ok) return r.error ?? "The problem link was refused.";
+    }
+    if (changeId !== undefined) {
+      const r = await setTicketChange(formOf({ ticketId, changeId }));
+      if (!r.ok) return r.error ?? "The change link was refused.";
+    }
+    return null;
+  });
+  if (problemId !== undefined || changeId !== undefined) {
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: { requester: true, assignee: true } });
+  }
+  if (linkError) return refusal(linkError, { ticket: serializeTicket(ticket) });
 
   return ok(serializeTicket(ticket));
 }

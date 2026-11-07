@@ -252,7 +252,15 @@ curl "http://localhost:3000/api/v1/tickets?status=open" \
 GET/POST   /api/v1/tickets          GET/PATCH  /api/v1/tickets/{id}
 GET/POST   /api/v1/assets           GET/PATCH  /api/v1/assets/{id}
 GET        /api/v1/services         GET        /api/v1/openapi   (OpenAPI 3.1)
+GET/POST   /api/v1/changes          GET/PATCH  /api/v1/changes/{id}    POST /changes/{id}/transitions
+GET/POST   /api/v1/problems         GET/PATCH  /api/v1/problems/{id}   POST /problems/{id}/transitions
+GET/POST   /api/v1/{tickets|changes|problems}/{id}/comments
+POST       /api/v1/changes/{id}/approvals/{approval_id}
+GET        /api/v1/categories       GET        /api/v1/groups          GET  /api/v1/users
 ```
+
+Changes, problems and links run the console's own actions as the token owner, so the
+workflow map, CAB, freeze windows and audit trail apply to the API exactly as in the UI.
 
 Seeded dev token (`read,write`, owned by `admin@servio.dev`): `servio_demo_pat_0123456789abcdef`.
 Full reference → [docs/rest-api.md](docs/rest-api.md)

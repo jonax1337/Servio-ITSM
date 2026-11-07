@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
+import { apiActorUserId } from "@/lib/api-actor";
 
 export type Role = "ADMIN" | "MANAGER" | "AGENT" | "USER";
 
@@ -9,6 +10,14 @@ const RANK: Record<Role, number> = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 };
 
 /** The session user (id, role, email, name, image) — or null. */
 export const getSessionUser = cache(async () => {
+  // A /api/v1 request running a console action as its token owner (lib/api-actor.ts).
+  // The row is read fresh, so role/isActive are DB truth, never a token claim.
+  const actorId = apiActorUserId();
+  if (actorId) {
+    const u = await db.user.findUnique({ where: { id: actorId }, select: { id: true, role: true, email: true, name: true, image: true, isActive: true } });
+    if (!u || !u.isActive) return null;
+    return { id: u.id, role: u.role as Role, email: u.email, name: u.name ?? u.email, image: u.image ?? null };
+  }
   const session = await auth();
   if (!session?.user?.id) return null;
   return {

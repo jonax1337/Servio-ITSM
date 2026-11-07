@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionUser, isAgent, type Role, requireAgentUser } from "@/lib/session";
+import { apiActorUserId } from "@/lib/api-actor";
 import { writeAudit, notify } from "@/lib/audit";
 import { readRichBody, readRichField } from "@/lib/markdown";
 import { canTransitionConfigured } from "@/lib/workflow";
@@ -48,7 +49,8 @@ function customFieldEntries(formData: FormData): Record<string, string> {
   return values;
 }
 
-export type ActionState = { error?: string; fieldErrors?: Record<string, string[]> } | undefined;
+// createdId: only for /api/v1 callers (they get the id instead of a redirect).
+export type ActionState = { error?: string; fieldErrors?: Record<string, string[]>; createdId?: number } | undefined;
 
 export async function createProblem(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const me = await getSessionUser();
@@ -92,6 +94,7 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   }
 
   revalidatePath("/problems");
+  if (apiActorUserId()) return { createdId: problem.id };
   redirect(`/problems/${problem.id}`);
 }
 

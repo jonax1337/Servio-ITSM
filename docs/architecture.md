@@ -308,7 +308,7 @@ layer. Functions are wrapped in React `cache()` so each is one query per request
 
 | Helper | Behaviour |
 | --- | --- |
-| `getSessionUser()` | Returns the session user (`id`, `role`, `email`, `name`, `image`) or `null`. |
+| `getSessionUser()` | Returns the session user (`id`, `role`, `email`, `name`, `image`) or `null`. Inside a REST API actor scope ([`lib/api-actor.ts`](../lib/api-actor.ts), entered only by `/api/v1` handlers after Bearer auth) it returns the token owner, read from the DB, so the console's server actions run unchanged for the API — see [rest-api.md](./rest-api.md#how-the-itsm-endpoints-enforce-the-consoles-rules). |
 | `getCurrentUser()` | Full DB user row (cached). |
 | `requireUser()` | Redirects to `/login` if unauthenticated; **re-reads the DB row** and rejects deactivated users; returns the fresh role. |
 | `requireRole(min)` | `requireUser()` + rank check; redirects to `/portal` if below `min`. |
