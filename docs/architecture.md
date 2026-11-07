@@ -272,7 +272,9 @@ every server-action agent guard shares the same DB-truth check via
   assert a **verified** email (`allowDangerousEmailAccountLinking: false`);
   unverified emails surface `OAuthAccountNotLinked` instead of taking over an
   account by email collision. `ssoEnabled` / `ssoProviderName` are exported so
-  the login page can conditionally render the SSO button. With
+  the login page can conditionally render the SSO button. The login page is
+  `force-dynamic`: prerendered at build time it would bake in the build's
+  (empty) `AUTH_OIDC_*` env and never show the button in the Docker image. With
   `AUTH_OIDC_ROLE_MAP` set, the `jwt` callback in `auth.ts` derives the role from
   the IdP's groups/roles claim ([`lib/oidc-roles.ts`](../lib/oidc-roles.ts)),
   persists it on the user row and audits the change. See

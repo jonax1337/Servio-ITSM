@@ -8,6 +8,11 @@ import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
 
+// SSO is configured by runtime env (AUTH_OIDC_*). Without this the page is
+// prerendered at build time, where those vars are unset, so the published Docker
+// image never showed the SSO button (#49).
+export const dynamic = "force-dynamic";
+
 const highlights = [
   "Tickets, Problems & Changes — full ITIL flow",
   "CMDB with asset dependency mapping",
