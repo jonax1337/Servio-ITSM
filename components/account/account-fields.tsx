@@ -6,6 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import { AUTO_LOCALE, LOCALES, LOCALE_NAMES, type Locale } from "@/lib/i18n/config";
 
 export type AccountUser = {
   name: string;
@@ -15,6 +17,8 @@ export type AccountUser = {
   department: string;
   timezone: string;
   locale: string;
+  /** The instance default the "auto" choice follows. */
+  instanceLocale: Locale;
   signature: string;
   signatureEnabled: boolean;
 };
@@ -34,12 +38,13 @@ export function Field({
   hint?: string;
   htmlFor?: string;
 }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -63,15 +68,6 @@ const TIMEZONES = [
   "Australia/Sydney",
 ];
 
-const LOCALES: ComboOption[] = [
-  { value: "en", label: "English" },
-  { value: "de", label: "Deutsch" },
-  { value: "fr", label: "Français" },
-  { value: "es", label: "Español" },
-  { value: "it", label: "Italiano" },
-  { value: "nl", label: "Nederlands" },
-];
-
 export function ProfileFields({
   user,
   fe,
@@ -79,26 +75,27 @@ export function ProfileFields({
   user: AccountUser;
   fe: FieldErrors;
 }) {
+  const t = useT("account");
   return (
     <div className="grid gap-5">
-      <Field label="Name" error={fe.name} htmlFor="acc-name">
+      <Field label={t("name")} error={fe.name} htmlFor="acc-name">
         <Input id="acc-name" name="name" defaultValue={user.name} required />
       </Field>
 
-      <Field label="Email" hint="Managed by your identity provider.">
+      <Field label={t("email")} hint={t("emailHint")}>
         <Input value={user.email} disabled readOnly />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Phone" error={fe.phone} htmlFor="acc-phone">
+        <Field label={t("phone")} error={fe.phone} htmlFor="acc-phone">
           <Input id="acc-phone" name="phone" defaultValue={user.phone} />
         </Field>
-        <Field label="Job title" error={fe.jobTitle} htmlFor="acc-job">
+        <Field label={t("jobTitle")} error={fe.jobTitle} htmlFor="acc-job">
           <Input id="acc-job" name="jobTitle" defaultValue={user.jobTitle} />
         </Field>
       </div>
 
-      <Field label="Department" error={fe.department} htmlFor="acc-dept">
+      <Field label={t("department")} error={fe.department} htmlFor="acc-dept">
         <Input id="acc-dept" name="department" defaultValue={user.department} />
       </Field>
     </div>
@@ -106,39 +103,44 @@ export function ProfileFields({
 }
 
 export function PreferencesFields({ user }: { user: AccountUser }) {
-  const tzOpts: ComboOption[] = TIMEZONES.map((t) => ({ value: t, label: t }));
+  const t = useT("account");
+  const tzOpts: ComboOption[] = TIMEZONES.map((tz) => ({ value: tz, label: tz }));
   const tzDefault = TIMEZONES.includes(user.timezone) ? user.timezone : "UTC";
-  const localeDefault = LOCALES.some((l) => l.value === user.locale)
-    ? user.locale
-    : "en";
+  // "auto" follows the instance default; anything unsupported (legacy values) is shown as auto.
+  const localeOpts: ComboOption[] = [
+    { value: AUTO_LOCALE, label: t("languageAuto", { language: LOCALE_NAMES[user.instanceLocale] }) },
+    ...LOCALES.map((l) => ({ value: l, label: LOCALE_NAMES[l] })),
+  ];
+  const localeDefault = (LOCALES as readonly string[]).includes(user.locale) ? user.locale : AUTO_LOCALE;
 
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      <Field label="Timezone">
+      <Field label={t("timezone")}>
         <ComboField name="timezone" defaultValue={tzDefault} options={tzOpts} />
       </Field>
-      <Field label="Language">
-        <ComboField name="locale" defaultValue={localeDefault} options={LOCALES} />
+      <Field label={t("language")} hint={t("languageHint")}>
+        <ComboField name="locale" defaultValue={localeDefault} options={localeOpts} />
       </Field>
     </div>
   );
 }
 
 export function SignatureFields({ user }: { user: AccountUser }) {
+  const t = useT("account");
   return (
     <div className="grid gap-4">
       <label className="flex items-center justify-between gap-4">
-        <span className="text-sm font-medium">Auto-append signature</span>
+        <span className="text-sm font-medium">{t("autoAppendSignature")}</span>
         <Switch name="signatureEnabled" defaultChecked={user.signatureEnabled} />
       </label>
       <RichTextEditor
         name="signature"
         defaultHTML={user.signature}
-        ariaLabel="Email signature"
-        placeholder="e.g. Jane Doe — IT Service Desk"
+        ariaLabel={t("signatureAria")}
+        placeholder={t("signaturePlaceholder")}
       />
       <p className="text-xs text-muted-foreground">
-        Appended to your public ticket replies and outgoing emails when enabled.
+        {t("signatureHint")}
       </p>
     </div>
   );

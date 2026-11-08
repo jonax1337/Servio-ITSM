@@ -5,15 +5,18 @@ import { getSetting } from "@/lib/settings";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { saveGeneralSettings } from "@/lib/actions/settings";
+import { LOCALES, LOCALE_NAMES } from "@/lib/i18n/config";
+import { getInstanceLocale } from "@/lib/i18n/server";
 
 export const metadata: Metadata = { title: "General settings" };
 export const dynamic = "force-dynamic";
 
 export default async function GeneralSettingsPage() {
   await requireRole("ADMIN");
-  const [appName, appUrl] = await Promise.all([
+  const [appName, appUrl, instanceLocale] = await Promise.all([
     getSetting("APP_NAME", "Servio"),
     getSetting("APP_URL", ""),
+    getInstanceLocale(),
   ]);
 
   return (
@@ -41,6 +44,14 @@ export default async function GeneralSettingsPage() {
               label: "Public URL",
               defaultValue: appUrl ?? "",
               placeholder: "https://servio.example.com",
+            },
+            {
+              type: "select",
+              name: "APP_LOCALE",
+              label: "Default language",
+              defaultValue: instanceLocale,
+              options: LOCALES.map((l) => ({ value: l, label: LOCALE_NAMES[l] })),
+              hint: "For the console, the portal and emails — unless a user picks a language in their account settings. Env: APP_LOCALE.",
             },
           ]}
         />

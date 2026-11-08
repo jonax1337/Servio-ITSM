@@ -231,7 +231,7 @@ export function SableProvider({ children }: { children: ReactNode }) {
   const insertIntoComposer = useCallback((text: string) => {
     if (typeof document === "undefined") return;
     const el = document.querySelector<HTMLTextAreaElement>(
-      'textarea[placeholder="Send a message..."]',
+      'textarea[data-sable-composer]',
     );
     if (!el) return;
     const proto = window.HTMLTextAreaElement.prototype;

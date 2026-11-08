@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { sanitizeCommentHtml } from "@/lib/markdown";
+import { AUTO_LOCALE, LOCALES, LOCALE_COOKIE, isLocale } from "@/lib/i18n/config";
+import { getInstanceLocale } from "@/lib/i18n/server";
 
 export type ActionState =
   | { error?: string; fieldErrors?: Record<string, string[]>; ok?: boolean }
@@ -17,7 +20,8 @@ const schema = z.object({
   jobTitle: z.string().trim().max(120).optional().default(""),
   department: z.string().trim().max(120).optional().default(""),
   timezone: z.string().trim().min(1).default("UTC"),
-  locale: z.string().trim().min(1).default("en"),
+  // "auto" follows the instance default (Settings › General › Default language).
+  locale: z.enum([AUTO_LOCALE, ...LOCALES]).default(AUTO_LOCALE),
   signature: z.string().optional().default(""),
 });
 
@@ -33,6 +37,7 @@ export async function getMyAccount() {
     department: me.department ?? "",
     timezone: me.timezone,
     locale: me.locale,
+    instanceLocale: await getInstanceLocale(),
     signature: me.signature ?? "",
     signatureEnabled: me.signatureEnabled,
   };
@@ -75,6 +80,14 @@ export async function updateMySettings(
       signatureEnabled,
     },
   });
+
+  // Remember an explicit language for the signed-out pages (login, survey) on this browser.
+  const jar = await cookies();
+  if (isLocale(d.locale)) {
+    jar.set(LOCALE_COOKIE, d.locale, { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
+  } else {
+    jar.delete(LOCALE_COOKIE);
+  }
 
   await writeAudit({
     userId: me.id,

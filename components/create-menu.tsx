@@ -11,9 +11,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useT } from "@/lib/i18n/client";
 
 export function CreateMenu() {
   const [open, setOpen] = useState(false);
+  const t = useT("shell");
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       {/* Split button: one cohesive pill. The halves sit perfectly flush — no gap,
@@ -21,14 +23,14 @@ export function CreateMenu() {
           can never open a hairline between them. */}
       <div data-slot="button-group" className="inline-flex items-center">
         <LinkButton href="/tickets/new" size="lg" className="rounded-r-none">
-          <Plus className="size-4" /> Create
+          <Plus className="size-4" /> {t("create")}
         </LinkButton>
         <DropdownMenuTrigger
           render={
             <Button
               size="icon-lg"
               className="-ml-px rounded-l-none"
-              aria-label="More create options"
+              aria-label={t("moreCreateOptions")}
             />
           }
         >
@@ -37,13 +39,13 @@ export function CreateMenu() {
       </div>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem render={<Link href="/tickets/new" />}>
-          <Ticket className="size-4" /> New ticket
+          <Ticket className="size-4" /> {t("newTicket")}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/problems/new" />}>
-          <AlertTriangle className="size-4" /> New problem
+          <AlertTriangle className="size-4" /> {t("newProblem")}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/changes/new" />}>
-          <GitPullRequestArrow className="size-4" /> New change
+          <GitPullRequestArrow className="size-4" /> {t("newChange")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -3,14 +3,16 @@
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/client";
 
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
+  const t = useT("shell");
   return (
     <Button
       variant="ghost"
       size="icon"
-      aria-label="Toggle theme"
+      aria-label={t("toggleTheme")}
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
       <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />

@@ -37,6 +37,14 @@ export type NavItem = {
 
 export type NavGroup = { label: string; items: NavItem[] };
 
+/**
+ * Translation keys for nav entries (messages/<locale>/nav.ts): an item by its href, a group
+ * by `group.<label>`. The English `title`/`label` stays the fallback, so an entry without a
+ * translation still renders.
+ */
+export const navItemKey = (item: Pick<NavItem, "href">) => item.href;
+export const navGroupKey = (group: Pick<NavGroup, "label">) => `group.${group.label}`;
+
 export const consoleNav: NavGroup[] = [
   {
     label: "Overview",

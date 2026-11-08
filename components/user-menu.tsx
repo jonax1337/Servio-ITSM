@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/user-avatar";
 import { ROLE_META } from "@/lib/constants";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 export function UserMenu({
   name,
@@ -31,6 +32,8 @@ export function UserMenu({
   const RANK: Record<string, number> = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 };
   const isManager = (RANK[role] ?? 0) >= RANK.MANAGER;
   const [accountOpen, setAccountOpen] = useState(false);
+  const t = useT("shell");
+  const te = useEnumT();
   return (
     <>
     <DropdownMenu>
@@ -47,19 +50,19 @@ export function UserMenu({
             </div>
           </div>
           <span className="mt-1 w-fit rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-            {ROLE_META[role as keyof typeof ROLE_META]?.label ?? role}
+            {ROLE_META[role as keyof typeof ROLE_META] ? te(ROLE_META, role) : role}
           </span>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => setAccountOpen(true)}>
-          <User className="size-4" /> Account settings
+          <User className="size-4" /> {t("accountSettings")}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/portal" />}>
-          <LifeBuoy className="size-4" /> Self-service portal
+          <LifeBuoy className="size-4" /> {t("portal")}
         </DropdownMenuItem>
         {isManager ? (
           <DropdownMenuItem render={<Link href="/settings" />}>
-            <Settings className="size-4" /> Admin settings
+            <Settings className="size-4" /> {t("adminSettings")}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
@@ -70,7 +73,7 @@ export function UserMenu({
             nativeButton
             render={<button type="submit" className="w-full" />}
           >
-            <LogOut className="size-4" /> Sign out
+            <LogOut className="size-4" /> {t("signOut")}
           </DropdownMenuItem>
         </form>
       </DropdownMenuContent>

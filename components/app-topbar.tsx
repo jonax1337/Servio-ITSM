@@ -19,12 +19,9 @@ import { NotificationsMenu } from "@/components/notifications-menu";
 import { UserMenu } from "@/components/user-menu";
 import { AI_ASSISTANT_NAME, changeRef, problemRef, releaseRef } from "@/lib/constants";
 import { requiredRoleFor, roleAtLeast } from "@/lib/route-guard";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
-const SEGMENT_LABELS: Record<string, string> = {
-  assistant: AI_ASSISTANT_NAME,
-  oncall: "On-call",
-  freeze: "Freeze windows",
-};
 
 /** Ancestor paths without a page of their own: the crumb opens the tab the detail page's back button opens. */
 const CRUMB_HREF: Record<string, string> = {
@@ -39,14 +36,17 @@ const REF_BY_PARENT: Record<string, (id: number) => string> = {
   releases: releaseRef,
 };
 
-function label(seg: string, parent?: string) {
-  if (SEGMENT_LABELS[seg]) return SEGMENT_LABELS[seg];
+type Labels = { nav: Translator<"nav">; shell: Translator<"shell"> };
+
+/** A crumb: the nav title for the path, a known segment, a ref/id, or the humanized segment. */
+function label(seg: string, path: string, parent: string | undefined, t: Labels) {
+  if (seg === "assistant") return AI_ASSISTANT_NAME;
+  if (t.nav.has(path)) return t.nav.dyn(path);
   if (/^\d+$/.test(seg)) return (parent && REF_BY_PARENT[parent]?.(Number(seg))) || `#${seg}`;
   // cuid-like ids (e.g. cmskaeker0022v6l8mv61vvni) → friendly label
-  if (/^[a-z0-9]{18,}$/i.test(seg) && /\d/.test(seg)) return "Details";
-  return seg
-    .replace(/-/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  if (/^[a-z0-9]{18,}$/i.test(seg) && /\d/.test(seg)) return t.shell("crumb.details");
+  const humanized = seg.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return t.shell.dyn(`crumb.${seg}`, undefined, humanized);
 }
 
 export function AppTopbar({
@@ -60,6 +60,7 @@ export function AppTopbar({
 }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
+  const labels: Labels = { nav: useT("nav"), shell: useT("shell") };
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -79,13 +80,13 @@ export function AppTopbar({
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
                   {last ? (
-                    <BreadcrumbPage>{label(seg, segments[i - 1])}</BreadcrumbPage>
+                    <BreadcrumbPage>{label(seg, path, segments[i - 1], labels)}</BreadcrumbPage>
                   ) : canOpen ? (
                     <BreadcrumbLink render={<Link href={href} />}>
-                      {label(seg, segments[i - 1])}
+                      {label(seg, path, segments[i - 1], labels)}
                     </BreadcrumbLink>
                   ) : (
-                    <span>{label(seg, segments[i - 1])}</span>
+                    <span>{label(seg, path, segments[i - 1], labels)}</span>
                   )}
                 </BreadcrumbItem>
               </Fragment>

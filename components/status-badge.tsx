@@ -1,6 +1,14 @@
 import { Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TONE_CLASSES, metaFor, type Meta, type Tone } from "@/lib/constants";
+import { enumOrigin } from "@/lib/i18n/enums";
+import { EnumMsg, Msg } from "@/lib/i18n/client";
+
+/** A meta label in the viewer's language (registered maps), or the label as given. */
+export function MetaLabel({ meta }: { meta: Meta }) {
+  const origin = enumOrigin(meta);
+  return origin ? <EnumMsg map={origin[0]} value={origin[1]} fallback={meta.label} /> : <>{meta.label}</>;
+}
 
 export function ToneBadge({
   meta,
@@ -27,7 +35,7 @@ export function ToneBadge({
       ) : dot ? (
         <span className="size-1.5 rounded-full bg-current opacity-80" />
       ) : null}
-      {meta.label}
+      <MetaLabel meta={meta} />
     </span>
   );
 }
@@ -46,10 +54,12 @@ export function VipBadge({
         "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-400/40 bg-gradient-to-b from-amber-300/20 to-amber-500/10 px-1.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-300",
         className,
       )}
-      title="VIP — priority handling"
     >
       <Crown className="size-3" strokeWidth={2.5} />
       {label ? "VIP" : null}
+      <span className="sr-only">
+        <Msg ns="components" k="vipHint" />
+      </span>
     </span>
   );
 }

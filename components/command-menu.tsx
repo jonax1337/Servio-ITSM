@@ -15,7 +15,8 @@ import {
 import { SableMark } from "@/components/sable-mark";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { useSable } from "@/components/assistant/sable-provider";
-import { consoleNav, filterNav } from "@/lib/nav";
+import { consoleNav, filterNav, navGroupKey, navItemKey } from "@/lib/nav";
+import { useT } from "@/lib/i18n/client";
 import { isTextEntryTarget } from "@/lib/utils";
 
 type Result = { group: string; href: string; title: string; sub: string };
@@ -33,6 +34,8 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
   const router = useRouter();
   const sable = useSable();
   const groups = filterNav(consoleNav, role);
+  const t = useT("shell");
+  const tn = useT("nav");
   const reqId = useRef(0);
 
   // Open Sable (docking it if closed), optionally starting a fresh chat and
@@ -47,7 +50,7 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
     if (!text) return;
     let tries = 0;
     const tick = () => {
-      const el = document.querySelector('textarea[placeholder="Send a message..."]');
+      const el = document.querySelector('textarea[data-sable-composer]');
       if (el) sable.insertIntoComposer(text);
       else if (tries++ < 25) setTimeout(tick, 60);
     };
@@ -103,12 +106,12 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
     <>
       <button
         type="button"
-        aria-label="Search"
+        aria-label={t("search")}
         onClick={() => setOpen(true)}
         className="flex size-9 shrink-0 items-center justify-center gap-2 rounded-lg border bg-muted/40 text-sm text-muted-foreground transition-colors hover:bg-muted sm:w-64 sm:justify-start sm:px-3"
       >
         <Search className="size-4" />
-        <span className="hidden flex-1 text-left sm:block">Search…</span>
+        <span className="hidden flex-1 text-left sm:block">{t("searchPlaceholder")}</span>
         <kbd className="pointer-events-none hidden select-none items-center gap-0.5 rounded border bg-background px-1.5 font-mono text-[10px] font-medium sm:flex">
           ⌘K
         </kbd>
@@ -118,7 +121,7 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder="Search tickets, assets, people…"
+            placeholder={t("searchInputPlaceholder")}
           />
           <CommandList>
             {query.trim() ? (
@@ -128,22 +131,22 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
                     <CommandItem value="ask-sable" onSelect={() => askSable({ fresh: true, text: query })}>
                       <SableMark className="size-4 text-sable" />
                       <span className="flex-1 truncate">
-                        Ask {AI_ASSISTANT_NAME}: <span className="text-muted-foreground">“{query.trim()}”</span>
+                        {t("askSable", { name: AI_ASSISTANT_NAME })} <span className="text-muted-foreground">“{query.trim()}”</span>
                       </span>
                     </CommandItem>
                   </CommandGroup>
                 ) : null}
                 {loading ? (
                   <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" /> Searching…
+                    <Loader2 className="size-4 animate-spin" /> {t("searching")}
                   </div>
                 ) : results.length === 0 ? (
-                  <CommandEmpty>No results for “{query}”.</CommandEmpty>
+                  <CommandEmpty>{t("noResultsFor", { query })}</CommandEmpty>
                 ) : (
                   Object.entries(grouped).map(([group, items]) => {
                     const Icon = GROUP_ICON[group] ?? Search;
                     return (
-                      <CommandGroup key={group} heading={group}>
+                      <CommandGroup key={group} heading={t.dyn(`searchGroup.${group}`, undefined, group)}>
                         {items.map((r) => (
                           <CommandItem key={r.href} value={r.href} onSelect={() => go(r.href)}>
                             <Icon className="size-4 text-muted-foreground" />
@@ -161,30 +164,30 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
                 {sableEnabled ? (
                   <CommandGroup heading={AI_ASSISTANT_NAME}>
                     <CommandItem value="open-sable" onSelect={() => askSable({})}>
-                      <SableMark className="size-4 text-sable" /> Open {AI_ASSISTANT_NAME}
+                      <SableMark className="size-4 text-sable" /> {t("openSable", { name: AI_ASSISTANT_NAME })}
                     </CommandItem>
                     <CommandItem value="new-sable-chat" onSelect={() => askSable({ fresh: true })}>
-                      <MessageSquarePlus className="size-4" /> New {AI_ASSISTANT_NAME} chat
+                      <MessageSquarePlus className="size-4" /> {t("newSableChat", { name: AI_ASSISTANT_NAME })}
                     </CommandItem>
                   </CommandGroup>
                 ) : null}
-                <CommandGroup heading="Quick actions">
+                <CommandGroup heading={t("quickActions")}>
                   <CommandItem value="new-ticket" onSelect={() => go("/tickets/new")}>
-                    <Ticket className="size-4" /> Create ticket
+                    <Ticket className="size-4" /> {t("createTicket")}
                   </CommandItem>
                   <CommandItem value="new-change" onSelect={() => go("/changes/new")}>
-                    <GitPullRequestArrow className="size-4" /> New change request
+                    <GitPullRequestArrow className="size-4" /> {t("newChangeRequest")}
                   </CommandItem>
                   <CommandItem value="new-asset" onSelect={() => go("/assets/new")}>
-                    <Server className="size-4" /> Add asset
+                    <Server className="size-4" /> {t("addAsset")}
                   </CommandItem>
                 </CommandGroup>
                 {groups.map((g) => (
-                  <CommandGroup key={g.label} heading={g.label}>
+                  <CommandGroup key={g.label} heading={tn.dyn(navGroupKey(g), undefined, g.label)}>
                     {g.items.map((i) => (
                       <CommandItem key={i.href} value={i.href} onSelect={() => go(i.href)}>
                         <i.icon className="size-4" />
-                        {i.title}
+                        {tn.dyn(navItemKey(i), undefined, i.title)}
                       </CommandItem>
                     ))}
                   </CommandGroup>

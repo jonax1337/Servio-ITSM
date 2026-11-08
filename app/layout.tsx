@@ -4,6 +4,8 @@ import localFont from "next/font/local";
 import { brandAssets } from "@/lib/brand-assets";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { I18nProvider } from "@/lib/i18n/client";
+import { getLocale } from "@/lib/i18n/server";
 import "./globals.css";
 
 const inter = Inter({
@@ -45,9 +47,10 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body
         className={`${inter.variable} ${manrope.variable} ${jetbrains.variable} font-sans antialiased`}
       >
@@ -57,8 +60,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster richColors position="top-right" />
+          <I18nProvider locale={locale}>
+            {children}
+            <Toaster richColors position="top-right" />
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

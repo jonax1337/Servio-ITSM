@@ -336,6 +336,7 @@ const Composer: FC = () => {
                           <div className="flex px-0.5 pt-0.5">{chip}</div>
                         </AuiIf>
                       ) : null}<ComposerAttachments /><ComposerPrimitive.Input
+                        data-sable-composer=""
                         placeholder="Send a message..."
                         className="aui-composer-input caret-sable placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
                         rows={1}
