@@ -152,6 +152,9 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
   breakdowns, SLA gauges, trends and aging. Per-widget filters, accent colour and value
   **thresholds** (`< 15 → red`), each drilling into the matching ticket list. Personal + shared boards.
 - **Saved views** — save any set of ticket filters as a named, searchable view (personal or team).
+- **Recurring tickets** — ticket templates on a daily / weekly / monthly / yearly schedule (DST- and
+  month-end-safe), created a set number of days before each due date through the normal pipeline,
+  exactly once per occurrence, with pause, "create now" and a REST API for importing GLPI schedules.
 - **Problem & change management** — root-cause / known-error tracking; normal/standard/emergency
   changes with a **Change Advisory Board (CAB)** approval flow (**unanimous, quorum, or percentage**
   approval rules), implementation & rollback plans, and affected CIs with automated impact/risk.

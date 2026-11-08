@@ -376,8 +376,8 @@ markers are in memory): set `SCHEDULER_ENABLED=false` on any replica that must s
 [deployment.md](./deployment.md)). It runs three built-in loops — the inbound-mail IMAP poll
 (`IMAP_POLL_SECONDS`), the cron `syncTick` that fires due sources (`SYNC_TICK_SECONDS`) and the SLA
 escalation sweep (`SLA_ESCALATION_TICK_SECONDS`) — plus the feature sweeps in `FEATURE_TICKS` in the
-same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick` and
-`runUpdateCheckTick` (`lib/ticks/*`). Each sweep has its own interval setting and floor, an overlap
+same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick`,
+`runUpdateCheckTick` and `runRecurringTicketsTick` (`lib/ticks/*`). Each sweep has its own interval setting and floor, an overlap
 guard, `unref()`ed timers, and errors logged but never thrown. Every tick is session-less, checks
 its own enable setting first and uses at-most-once markers in the database (see
 [configuration.md](./configuration.md) and [data-model.md](./data-model.md)). Server Actions in

@@ -16,8 +16,8 @@ import {
 
 describe("asset bodies", () => {
   it("accept every asset field on create, with POST's defaults", () => {
-    const b = assetCreateSchema.parse({ name: "ws01", serial: "SN1", macAddress: "aa:bb", ramGb: 16, purchaseDate: "2024-05-01", importRef: "opsi:host:ws01" });
-    expect(b).toMatchObject({ type: "SERVER", status: "IN_USE", serial: "SN1", ramGb: 16, importRef: "opsi:host:ws01" });
+    const b = assetCreateSchema.parse({ name: "pc-042", serial: "SN1", macAddress: "aa:bb", ramGb: 16, purchaseDate: "2024-05-01", importRef: "inventory:host:pc-042" });
+    expect(b).toMatchObject({ type: "SERVER", status: "IN_USE", serial: "SN1", ramGb: 16, importRef: "inventory:host:pc-042" });
   });
 
   it("treat an empty string as no value", () => {
@@ -37,7 +37,7 @@ describe("asset bodies", () => {
   });
 
   it("make the sync upsert strict, so a typo fails instead of being dropped", () => {
-    expect(assetUpsertSchema.safeParse({ name: "ws01", ram: 16 }).success).toBe(false);
+    expect(assetUpsertSchema.safeParse({ name: "pc-042", ram: 16 }).success).toBe(false);
     expect(assetUpsertSchema.safeParse({ ramGb: 16 }).success).toBe(true);
   });
 });

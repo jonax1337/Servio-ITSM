@@ -91,6 +91,9 @@ model User {
   ownedLicenses      SoftwareLicense[]       @relation("LicenseOwner")
   licenseAssignments LicenseAssignment[]
   dismissedInsights  AiInsight[]             @relation("AiInsightDismissedBy")
+  recurringRequested RecurringTicket[]       @relation("RecurringTicketRequester")
+  recurringAssigned  RecurringTicket[]       @relation("RecurringTicketAssignee")
+  recurringCreated   RecurringTicket[]       @relation("RecurringTicketCreatedBy")
   syncSource         SyncSource?             @relation(fields: [syncSourceId], references: [id])
 
   @@unique([syncSourceId, externalId])
@@ -369,21 +372,22 @@ model Group {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  manager         User?                @relation("GroupManager", fields: [managerId], references: [id])
-  members         GroupMember[]
-  tickets         Ticket[]
-  problems        Problem[]
-  changes         Change[]
-  assets          Asset[]
-  savedViews      SavedView[]
-  dashboards      Dashboard[]
-  ownedCategories Category[]           @relation("CategoryTeam")
-  ownedServices   Service[]            @relation("ServiceTeam")
-  aiProjects      AiProject[]          @relation("AiProjectGroup")
-  freezeWindows   ChangeFreezeWindow[]
-  onCallSchedules OnCallSchedule[]
-  releases        Release[]
-  changeTemplates ChangeTemplate[]
+  manager          User?                @relation("GroupManager", fields: [managerId], references: [id])
+  members          GroupMember[]
+  tickets          Ticket[]
+  problems         Problem[]
+  changes          Change[]
+  assets           Asset[]
+  savedViews       SavedView[]
+  dashboards       Dashboard[]
+  ownedCategories  Category[]           @relation("CategoryTeam")
+  ownedServices    Service[]            @relation("ServiceTeam")
+  aiProjects       AiProject[]          @relation("AiProjectGroup")
+  freezeWindows    ChangeFreezeWindow[]
+  onCallSchedules  OnCallSchedule[]
+  releases         Release[]
+  changeTemplates  ChangeTemplate[]
+  recurringTickets RecurringTicket[]
 }
 
 /// A named, saved set of list filters (per-user, optionally shared with a team).
@@ -450,16 +454,17 @@ model Category {
   groupId     String? // team that handles this category (informational; NOT auto-routing)
   archived    Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
 
-  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id])
-  children        Category[]       @relation("CategoryTree")
-  group           Group?           @relation("CategoryTeam", fields: [groupId], references: [id])
-  tickets         Ticket[]
-  problems        Problem[]
-  changes         Change[]
-  services        Service[]
-  articles        Article[]
-  catalogItems    CatalogItem[]
-  changeTemplates ChangeTemplate[]
+  parent           Category?         @relation("CategoryTree", fields: [parentId], references: [id])
+  children         Category[]        @relation("CategoryTree")
+  group            Group?            @relation("CategoryTeam", fields: [groupId], references: [id])
+  tickets          Ticket[]
+  problems         Problem[]
+  changes          Change[]
+  services         Service[]
+  articles         Article[]
+  catalogItems     CatalogItem[]
+  changeTemplates  ChangeTemplate[]
+  recurringTickets RecurringTicket[]
 
   @@unique([name, parentId])
   @@index([parentId])
@@ -557,16 +562,17 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  category        Category?               @relation(fields: [categoryId], references: [id])
-  owner           User?                   @relation("ServiceOwner", fields: [ownerId], references: [id])
-  sla             SLA?                    @relation(fields: [slaId], references: [id])
-  group           Group?                  @relation("ServiceTeam", fields: [groupId], references: [id])
-  tickets         Ticket[]
-  catalogItems    CatalogItem[]
-  assets          ServiceAsset[]
-  freezeWindows   ChangeFreezeWindow[]
-  statusIncidents StatusIncidentService[]
-  changeTemplates ChangeTemplate[]
+  category         Category?               @relation(fields: [categoryId], references: [id])
+  owner            User?                   @relation("ServiceOwner", fields: [ownerId], references: [id])
+  sla              SLA?                    @relation(fields: [slaId], references: [id])
+  group            Group?                  @relation("ServiceTeam", fields: [groupId], references: [id])
+  tickets          Ticket[]
+  catalogItems     CatalogItem[]
+  assets           ServiceAsset[]
+  freezeWindows    ChangeFreezeWindow[]
+  statusIncidents  StatusIncidentService[]
+  changeTemplates  ChangeTemplate[]
+  recurringTickets RecurringTicket[]
 }
 
 model CatalogItem {
@@ -610,7 +616,7 @@ model Ticket {
   priority        String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   impact          String  @default("MEDIUM") // LOW | MEDIUM | HIGH
   urgency         String  @default("MEDIUM") // LOW | MEDIUM | HIGH
-  source          String  @default("PORTAL") // PORTAL | SABLE | EMAIL | PHONE | API | AGENT
+  source          String  @default("PORTAL") // PORTAL | SABLE | EMAIL | PHONE | API | AGENT | RECURRING
   isMajorIncident Boolean @default(false)
   pendingReason   String? // AWAITING_CUSTOMER | AWAITING_VENDOR | AWAITING_CHANGE | AWAITING_PARTS | SCHEDULED
   pendingNote     String?
@@ -726,11 +732,13 @@ model TicketComment {
   fromEmail      String? // external sender address when it came in via email
   emailMessageId String? // link to the inbound EmailMessage that produced it
   createdAt      DateTime @default(now())
+  importRef      String? // source id of a comment written by the history import (unique per ticket; dedup on re-runs)
 
   ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   author      User         @relation(fields: [authorId], references: [id])
   attachments Attachment[]
 
+  @@unique([ticketId, importRef])
   @@index([ticketId])
 }
 
@@ -944,10 +952,12 @@ model ProblemComment {
   bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
+  importRef  String? // source id of a comment written by the history import (unique per problem; dedup on re-runs)
 
   problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
   author  User    @relation(fields: [authorId], references: [id])
 
+  @@unique([problemId, importRef])
   @@index([problemId])
 }
 
@@ -1016,10 +1026,12 @@ model ChangeComment {
   bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
+  importRef  String? // source id of a comment written by the history import (unique per change; dedup on re-runs)
 
   change Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
   author User   @relation(fields: [authorId], references: [id])
 
+  @@unique([changeId, importRef])
   @@index([changeId])
 }
 
@@ -1144,7 +1156,7 @@ model Asset {
   lastSeenAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  importRef    String?   @unique // origin key of an asset written via the API (e.g. "glpi:computer:12", "opsi:host:ws01"); PUT /api/v1/assets/ref/{ref} upserts by it
+  importRef    String?   @unique // origin key of an asset written via the API (e.g. "glpi:computer:12", "inventory:host:pc-042"); PUT /api/v1/assets/ref/{ref} upserts by it
 
   owner              User?               @relation("AssetOwner", fields: [ownerId], references: [id])
   group              Group?              @relation(fields: [groupId], references: [id])
@@ -1893,4 +1905,53 @@ model MaintenanceWindow {
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status, startsAt])
+}
+
+/// A ticket created on a schedule (GLPI "recurrent items"): a ticket template
+/// plus a recurrence. Occurrence n falls on `firstDueAt` + n x `interval`
+/// `frequency` units, keeping the wall-clock time in `timezone` (month ends clamp:
+/// Jan 31 -> Feb 28/29 -> Mar 31). Each occurrence's ticket is created
+/// `createBeforeDays` days before it is due, by lib/ticks/recurring-tickets.ts
+/// through the normal ticket pipeline (source RECURRING). `nextDueAt` is claimed
+/// with a conditional update before the ticket is created, so an occurrence is
+/// created at most once. Math in lib/recurring-ticket-rules.ts.
+model RecurringTicket {
+  id               String    @id @default(cuid())
+  name             String
+  isActive         Boolean   @default(true)
+  // ---- ticket template ----
+  title            String
+  description      String    @default("")
+  type             String    @default("REQUEST") // INCIDENT | REQUEST
+  priority         String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  impact           String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  urgency          String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  requesterId      String? // null = the schedule's creator
+  assigneeId       String?
+  groupId          String?
+  categoryId       String?
+  serviceId        String?
+  // ---- recurrence ----
+  frequency        String    @default("MONTHLY") // DAILY | WEEKLY | MONTHLY | YEARLY
+  interval         Int       @default(1) // every N frequency units
+  timezone         String    @default("UTC") // IANA zone the due time is expressed in
+  firstDueAt       DateTime // due instant of occurrence 0 (UTC)
+  createBeforeDays Int       @default(0) // lead time: the ticket is created this many days before it is due
+  nextDueAt        DateTime // due instant of the next occurrence still to create (claim marker)
+  lastCreatedFor   DateTime? // due instant of the last occurrence a ticket was created for
+  lastTicketId     Int? // the ticket created for lastCreatedFor (plain id; the ticket may be deleted)
+  lastError        String? // why the last attempt failed (cleared on success)
+  importRef        String?   @unique // origin of a schedule imported via POST /api/v1/recurring-tickets (e.g. "glpi:ticketrecurrent:7")
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  requester User?     @relation("RecurringTicketRequester", fields: [requesterId], references: [id], onDelete: SetNull)
+  assignee  User?     @relation("RecurringTicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User?     @relation("RecurringTicketCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  group     Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  service   Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, nextDueAt])
 }

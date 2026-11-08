@@ -1,4 +1,6 @@
 import { changeRef, problemRef, ticketRef } from "@/lib/constants";
+import { recurrenceOf } from "@/lib/recurring-ticket-input";
+import { creationTimeFor } from "@/lib/recurring-ticket-rules";
 
 type Userish = { id: string; name: string | null; email: string } | null;
 
@@ -285,13 +287,18 @@ export function serializeProblem(p: {
   };
 }
 
-export function serializeComment(c: { id: string; body: string; bodyHtml: string | null; isInternal: boolean; createdAt: Date; author?: Userish; channel?: string }) {
+export function serializeComment(c: {
+  id: string; body: string; bodyHtml: string | null; isInternal: boolean; createdAt: Date; author?: Userish; channel?: string;
+  importRef?: string | null;
+}) {
   return {
     id: c.id,
     body: c.body,
     body_html: c.bodyHtml,
     internal: c.isInternal,
     ...(c.channel ? { channel: c.channel } : {}),
+    // Only on comments written by the history import with a source id.
+    ...(c.importRef ? { import_ref: c.importRef } : {}),
     author: user(c.author ?? null),
     created_at: c.createdAt.toISOString(),
   };
@@ -304,6 +311,50 @@ function parseCustomFields(raw: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+export function serializeRecurringTicket(r: {
+  id: string; name: string; isActive: boolean; title: string; description: string; type: string; priority: string;
+  impact: string; urgency: string; requesterId: string | null; assigneeId: string | null; groupId: string | null;
+  categoryId: string | null; serviceId: string | null; frequency: string; interval: number; timezone: string;
+  firstDueAt: Date; createBeforeDays: number; nextDueAt: Date; lastCreatedFor: Date | null; lastTicketId: number | null;
+  lastError: string | null; importRef: string | null; createdById: string | null; createdAt: Date; updatedAt: Date;
+}, nextCreateAt: Date) {
+  return {
+    id: r.id,
+    name: r.name,
+    active: r.isActive,
+    title: r.title,
+    description: r.description,
+    type: r.type,
+    priority: r.priority,
+    impact: r.impact,
+    urgency: r.urgency,
+    requester_id: r.requesterId,
+    assignee_id: r.assigneeId,
+    group_id: r.groupId,
+    category_id: r.categoryId,
+    service_id: r.serviceId,
+    frequency: r.frequency,
+    interval: r.interval,
+    timezone: r.timezone,
+    first_due_at: r.firstDueAt.toISOString(),
+    create_before_days: r.createBeforeDays,
+    next_due_at: r.nextDueAt.toISOString(),
+    next_create_at: nextCreateAt.toISOString(),
+    last_created_for: r.lastCreatedFor?.toISOString() ?? null,
+    last_ticket_id: r.lastTicketId,
+    last_error: r.lastError,
+    import_ref: r.importRef,
+    created_by_id: r.createdById,
+    created_at: r.createdAt.toISOString(),
+    updated_at: r.updatedAt.toISOString(),
+  };
+}
+
+/** A schedule with its next creation time (`next_create_at`). */
+export function presentRecurringTicket(r: Parameters<typeof serializeRecurringTicket>[0]) {
+  return serializeRecurringTicket(r, creationTimeFor(recurrenceOf(r), r.nextDueAt));
 }
 
 /** A file on a ticket, change, problem, asset or license. Never exposes the storage key or path. */

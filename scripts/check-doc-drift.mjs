@@ -87,10 +87,11 @@ const DOC_MAP = [
     docs: ['docs/architecture.md', 'docs/configuration.md'],
   },
   {
-    label: 'Operations modules (calendar, templates, releases, on-call, status, contracts, tabs)',
+    label: 'Operations modules (calendar, templates, releases, on-call, status, contracts, recurring tickets, tabs)',
     code: [
       'lib/entity-tabs.ts', 'lib/change-schedule', 'lib/change-template', 'lib/release',
       'lib/oncall', 'lib/status-', 'lib/contract-', 'lib/ticks/contracts.ts',
+      'lib/recurring-ticket', 'lib/ticks/recurring-tickets.ts', 'components/recurring-tickets/',
       'components/entity-tabs.tsx', 'components/oncall/', 'components/status/',
       'components/releases/', 'components/contracts/', 'components/changes/calendar/',
       'components/changes/templates/', 'components/changes/tabs/', 'components/tickets/tabs/',

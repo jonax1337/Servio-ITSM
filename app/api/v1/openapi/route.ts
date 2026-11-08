@@ -10,8 +10,11 @@ import {
   problemPatchSchema,
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
-import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
+import {
+  changeImportSchema, changeReimportSchema, problemImportSchema, problemReimportSchema, ticketImportSchema, ticketReimportSchema,
+} from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
+import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
   licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
@@ -267,6 +270,20 @@ const spec = {
       get: { summary: "List services and their status", responses: { "200": { description: "OK" } } },
     },
     "/tickets/{id}/comments": commentPaths("ticket"),
+    "/recurring-tickets": {
+      get: { summary: "List recurring ticket schedules", description: agentOnly, parameters: [q("active", "true, false or all (default)"), q("q", "Name or title"), q("import_ref"), ...pageParams], responses: { "200": { description: "OK" } } },
+      post: {
+        summary: "Create a recurring ticket schedule (MANAGER+)",
+        description: "`first_due_at` is wall-clock time in `timezone` (YYYY-MM-DDTHH:mm) or an ISO time with offset. With `import_ref`, a re-run for an existing schedule changes nothing (200, meta.created false).",
+        requestBody: body(recurringTicketCreateSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Not a manager" }, ...refused },
+      },
+    },
+    "/recurring-tickets/{id}": {
+      get: { summary: "Get a recurring ticket schedule", parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: { summary: "Edit, pause or resume a schedule (MANAGER+)", parameters: [strId], requestBody: body(recurringTicketPatchSchema), responses: { "200": { description: "Updated" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, ...refused } },
+      delete: { summary: "Delete a schedule (MANAGER+); its tickets stay", parameters: [strId], responses: { "200": { description: "Deleted" }, "403": { description: "Not a manager" }, "404": { description: "Not found" } } },
+    },
     "/changes": {
       get: {
         summary: "List changes",
@@ -342,9 +359,32 @@ const spec = {
         {
           post: {
             summary: `Import a historical ${path.slice(0, -1)} with its thread`,
-            description: "Needs the `admin` scope and an ADMIN owner. Bypasses the lifecycle on purpose; `import_ref` makes re-runs idempotent (200, meta.created false).",
+            description: `Needs the \`admin\` scope and an ADMIN owner. Bypasses the lifecycle on purpose; \`import_ref\` makes re-runs idempotent (200, meta.created false). To bring an imported record up to date use PUT /import/${path}/{import_ref}.`,
             requestBody: body(schema),
             responses: { "201": { description: "Imported" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Not an admin token" }, "422": { description: "Validation failed or unknown ids" } },
+          },
+        },
+      ]),
+    ),
+    ...Object.fromEntries(
+      ([["tickets", ticketReimportSchema], ["problems", problemReimportSchema], ["changes", changeReimportSchema]] as const).map(([path, schema]) => [
+        `/import/${path}/{import_ref}`,
+        {
+          put: {
+            summary: `Create or re-import a historical ${path.slice(0, -1)} by its import_ref (update mode)`,
+            description:
+              "Needs the `admin` scope and an ADMIN owner. Same body as the POST import; `import_ref` comes from the path (in the body only if equal). " +
+              "Creates the record when the ref is new, otherwise replaces the imported fields with the given state and appends only the comments the record lacks " +
+              "(matched by comment `import_ref`, else by body + created_at). `meta.result` is created | updated | unchanged, `meta.changed` lists the fields, " +
+              "`meta.comments_added` counts new comments. Unchanged input writes nothing and no audit row. Only records carrying that importRef are matched.",
+            parameters: [{ name: "import_ref", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 200 }, description: "URL-encoded, e.g. glpi%3Achange%3A129" }],
+            requestBody: body(schema),
+            responses: {
+              "201": { description: "Created (meta.result created)" },
+              "200": { description: "Updated or unchanged (meta.result, meta.changed, meta.comments_added)" },
+              "403": { description: "Not an admin token" },
+              "422": { description: "Validation failed, unknown ids, or a body import_ref that differs from the path" },
+            },
           },
         },
       ]),

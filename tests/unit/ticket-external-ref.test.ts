@@ -14,7 +14,7 @@ import {
 
 describe("external reference format", () => {
   it("accepts the keys monitoring integrations send", () => {
-    for (const ref of ["zabbix:event:12345", "wazuh:rule:92206:host:ws01", "a", "host.intern@site_1-x"]) {
+    for (const ref of ["zabbix:event:12345", "wazuh:rule:92206:host:pc-042", "a", "host.lan@site_1-x"]) {
       expect(EXTERNAL_REF_RE.test(ref)).toBe(true);
     }
   });

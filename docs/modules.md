@@ -230,6 +230,28 @@ Incidents are drafts (`isPublic = false`) until a manager publishes them. Declar
 
 Used license seats are the number of `LicenseAssignment` rows; duplicates are rejected in the action. Notifications use the entities `Contract` and `SoftwareLicense`.
 
+### Recurring tickets
+
+Tickets created on a schedule — GLPI's "recurrent items" — for routine work such as certificate renewals, license reviews and backup restore tests.
+
+| | |
+| --- | --- |
+| Route | `app/(console)/settings/recurring-tickets/page.tsx` (MANAGER+, via the `/settings` prefix; card on the Settings hub) |
+| Actions | `lib/actions/recurring-tickets.ts` — `createRecurringTicket`, `updateRecurringTicket`, `setRecurringTicketActive` (pause / resume), `deleteRecurringTicket`, `runRecurringTicketNow` ("Create now"); all MANAGER+ (`requireManagerUser`) |
+| Rules / data | `lib/recurring-ticket-rules.ts` (pure recurrence math: `occurrenceAt`, `creationTimeFor`, `initialNextDue`, `nextToCreate`, `leadTimeError`), `lib/recurring-ticket-input.ts` (Zod for the form and the REST bodies, API → form translation), `lib/recurring-tickets.ts` (`fireRecurringTicket`: claim + `createTicketCore`) |
+| Components | `components/recurring-tickets/recurring-ticket-manager.tsx` (list, create/edit dialog with a preview of the next occurrences, pause switch, "Create now", delete) |
+| Tick | `lib/ticks/recurring-tickets.ts` — `runRecurringTicketsTick` (every `RECURRING_TICKETS_TICK_SECONDS`, default 300 s; gated by `RECURRING_TICKETS_ENABLED`) |
+| REST | `GET/POST /api/v1/recurring-tickets`, `GET/PATCH/DELETE /api/v1/recurring-tickets/{id}` (see [rest-api.md](./rest-api.md#recurring-tickets)) |
+
+A schedule is a ticket template (title, description, type, priority, impact, urgency, requester, assignee, group, category, service) plus a recurrence: `DAILY` / `WEEKLY` / `MONTHLY` / `YEARLY` every `interval` units from `firstDueAt`, on the same wall-clock time in its `timezone`. Monthly dates past a month's end clamp to the last day without drifting (Jan 31 → Feb 28/29 → Mar 31). The ticket of an occurrence is created `createBeforeDays` local days before it is due; the lead time must be shorter than one step, so at most one upcoming occurrence is open at a time. No requester means the schedule's creator.
+
+- **Exactly once.** The tick (and "Create now") claims an occurrence by moving `nextDueAt` with a conditional update on the value it read, then creates the ticket through `createTicketCore` — SLA, VIP repricing, requester/assignee mail, `TICKET_CREATED` automations and auto-assign — with `source = RECURRING`, the occurrence's due time as `dueDate`, and the Automation user as the actor (the manager for "Create now"). A second tick, a restart or a concurrent edit finds the marker moved and creates nothing. A creation that fails after the claim is not retried by itself: `lastError` is shown in the list, the creator gets a `RECURRING_TICKET_FAILED` notification, and "Create now" re-runs it.
+- **Catch-up once, no flood.** After a downtime only the latest missed occurrence is created, then the one whose window is open now, if any; older missed occurrences are skipped (the audit row counts them).
+- **Pause / edit.** Paused schedules create nothing. Resuming, or changing the recurrence, recomputes `nextDueAt` as the first occurrence that is not due yet (and after `lastCreatedFor`), so occurrences that fell due meanwhile are not created retroactively. Editing only the template keeps `nextDueAt`.
+- **Create now** creates the next occurrence that is not due yet right away (also for a paused schedule); the schedule then moves on to the one after it.
+- **Audit.** `CREATE` / `UPDATE` / `DELETE` rows on entity `RecurringTicket`; each generated ticket writes an `AUTOMATION` row on the schedule (with the ticket id, due time, trigger `SCHEDULE` / `MANUAL` and skipped occurrences) next to the ticket's own `CREATE` row.
+- Template fields are the ticket's built-in fields only; required custom fields make the creation fail (shown as `lastError`).
+
 ### Insights (Sable pattern detection)
 
 | | |
@@ -400,6 +422,7 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | Status workflows | `settings/workflows/page.tsx` (MANAGER+) | Per-type status transition graphs | `lib/actions/workflows.ts` (`saveWorkflow`, `resetWorkflow`); `lib/workflow.ts`; `components/settings/workflow-list`, `workflow-graph` |
 | Custom fields | `settings/custom-fields/page.tsx` (MANAGER+) | Admin-defined fields on tickets, problems, changes | `lib/actions/custom-fields.ts` (`createCustomField`, `updateCustomField`, `deleteCustomField`, `moveCustomField`, `setCustomFieldValue`); `lib/custom-fields.ts`; `components/custom-fields/` |
 | Sable (AI) | `settings/ai/page.tsx` (ADMIN) | Provider, models, skills, MCP servers (see Sable above) | `lib/actions/settings.ts` (`saveAiSettings`, `testAiConnection`, `connectClaudeSubscription`, `listAiModels`) |
+| Recurring tickets | `settings/recurring-tickets/page.tsx` (MANAGER+) | Tickets created on a schedule (see [Recurring tickets](#recurring-tickets)) | `lib/actions/recurring-tickets.ts`; `components/recurring-tickets/recurring-ticket-manager` |
 | Macros | `settings/macros/page.tsx` (AGENT+ for personal macros; sharing is MANAGER+) | Manage canned-response macros (ordered ticket actions) | `lib/actions/macros.ts` (`createMacro`, `updateMacro`, `deleteMacro`, `applyMacro`); `components/settings/macro-manager` |
 
 **Business-hours SLA & escalation:** when an `SLA` references a `BusinessCalendar`, deadlines are computed in working time (`lib/business-hours.ts` `elapsedBusinessMs`/`addBusinessMs`, wired through `lib/sla.ts`; wall-clock when no calendar is set). `lib/sla-escalation.ts` (`runSlaEscalation`, swept by the scheduler) fires each `EscalationStep` (`NOTIFY`/`REASSIGN`/`BUMP_PRIORITY`) at its `thresholdPercent`, durably at-most-once, and handles first-response breach. `BUMP_PRIORITY` deliberately does **not** reprice the SLA (a tighter tier measured from creation would breach at once).

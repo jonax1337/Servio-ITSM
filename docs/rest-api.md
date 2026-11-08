@@ -226,6 +226,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `read` / `write` |
 | `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `write` |
 | `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `write` |
+| `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `read` / `write` |
+| `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `read` / `write` |
 | `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
 | `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
 | `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
@@ -250,9 +252,11 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
 | `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
 | `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
+| `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `admin` + ADMIN owner |
 
 There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
-records (only for relations, license seats and attachments).
+records except recurring ticket schedules (only for relations, license seats and
+attachments otherwise).
 
 ### Tickets
 
@@ -349,7 +353,7 @@ ticket carries `problem_id` and `change_id`. Changing `status`:
 
 Monitoring integrations (Zabbix, Wazuh, …) call the API per alert. With an
 `external_ref` — the alert's stable key, e.g. `zabbix:event:12345` or
-`wazuh:rule:92206:host:ws01` — repeated alerts land in **one open ticket**:
+`wazuh:rule:92206:host:pc-042` — repeated alerts land in **one open ticket**:
 
 | Request | Answer |
 | --- | --- |
@@ -396,7 +400,7 @@ Asset `id` is a cuid string. Serialized shape ([`serializeAsset`](../app/api/v1/
   "ip_address": "10.0.0.7", "mac_address": "aa:bb:cc:dd:ee:01", "os": "Ubuntu 24.04",
   "cpu": "i5-12400T", "ram_gb": 16, "storage_gb": 512, "cost": 899, "purchase_date": "2024-05-01", "warranty_end": "2027-05-01",
   "notes": "…", "owner": { "id": "…", "name": "…", "email": "…" }, "group": { "id": "…", "name": "IT" },
-  "external_id": null, "import_ref": "opsi:host:ws01", "last_seen_at": "…",
+  "external_id": null, "import_ref": "inventory:host:pc-042", "last_seen_at": "…",
   "created_at": "…", "updated_at": "…"
 }
 ```
@@ -421,7 +425,7 @@ already uses is a `409`.
 #### Upsert by origin reference (for syncs)
 
 `PUT /assets/ref/{ref}` is the entry point for an inventory sync. `{ref}` is the
-asset's origin key, chosen by the caller, e.g. `opsi:host:ws01.intern` or
+asset's origin key, chosen by the caller, e.g. `inventory:host:pc-042` or
 `glpi:computer:12` (1–200 characters: letters, digits and `. _ : @ -`; no `/`).
 It is stored as `importRef` (unique).
 
@@ -469,6 +473,52 @@ the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and s
   are allowed and show as `over_allocated`. `DELETE
   /licenses/{id}/assignments/{assignment_id}` releases one.
 
+### Recurring tickets
+
+Schedules that create a ticket per occurrence (GLPI "recurrent items"; see the
+Recurring tickets module in [modules.md](./modules.md)). Agent tokens only; writes
+need a token owned by a **MANAGER or above** (else `403`) and run the console's
+actions in `lib/actions/recurring-tickets.ts` as the token owner, so validation,
+audit rows and `next_due_at` recomputation are the console's. Bodies are
+snake_case and strict ([`lib/recurring-ticket-input.ts`](../lib/recurring-ticket-input.ts)).
+
+- `GET /recurring-tickets` (`active` = `true` / `false`, `q` on name and title,
+  `import_ref`), ordered by `next_due_at`.
+- `POST /recurring-tickets` `{ name, title, frequency (DAILY | WEEKLY | MONTHLY |
+  YEARLY), first_due_at, description?, type? (default REQUEST), priority?, impact?,
+  urgency? (default MEDIUM), requester_id? (default: the token owner), assignee_id?,
+  group_id?, category_id?, service_id?, interval? (default 1), timezone? (IANA,
+  default UTC), create_before_days? (default 0), active? (default true),
+  import_ref?, last_created_for? }` → `201`.
+  - `first_due_at` is the due time of the first occurrence: wall-clock time in
+    `timezone` (`2027-01-31T09:00`) or an ISO time with offset. Later occurrences
+    keep that wall-clock time across DST; monthly/yearly dates past a month's end
+    clamp to its last day (Jan 31 → Feb 28/29 → Mar 31).
+  - `create_before_days` is `0`–`365`. It may be longer than one step (a weekly
+    check created 30 days ahead): every occurrence whose window is open gets its
+    own ticket. At most 31 occurrences may be open at once, so short steps are
+    capped (every day: `30`; every week: `216`); else `422` on `create_before_days`.
+  - **History import:** `import_ref` (e.g. `glpi:ticketrecurrent:7`, unique) makes
+    re-runs idempotent: an existing ref answers `200` with `meta.created: false`
+    and changes nothing. `last_created_for` (ISO with offset) is the due time of the
+    last occurrence the source system already created, so it is not created again.
+  - The first `next_due_at` is the first occurrence that is not due yet (and after
+    `last_created_for`); occurrences in the past are never created retroactively.
+- `GET /recurring-tickets/{id}`; `PATCH /recurring-tickets/{id}` (any field above
+  except `import_ref` / `last_created_for`; left-out fields keep their value, `null`
+  clears an id, `requester_id: null` = the schedule's creator). A changed recurrence
+  (`frequency`, `interval`, `timezone`, `first_due_at`, `create_before_days`) or
+  `active: true` after a pause recomputes `next_due_at`; `active: false` pauses.
+  When only `timezone` changes, `first_due_at` keeps its wall-clock time.
+- `DELETE /recurring-tickets/{id}` → `{ id, deleted: true }`; tickets the schedule
+  already created stay.
+
+A schedule serializes its template and recurrence plus `next_due_at` (next
+occurrence still to create), `next_create_at` (when its ticket will be created),
+`last_created_for`, `last_ticket_id`, `last_error` (why the last attempt failed),
+`import_ref`, `created_by_id`. Generated tickets have `source = RECURRING` and the
+occurrence's due time as their due date.
+
 ### Services
 
 `GET /services` returns all services (no pagination), each with its SLA and category:
@@ -493,7 +543,7 @@ the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and s
 
 ### How the ITSM endpoints enforce the console's rules
 
-Changes, problems and ticket links do not re-implement their business rules.
+Changes, problems, ticket links and recurring tickets do not re-implement their business rules.
 The handlers run the console's own server actions (`lib/actions/changes.ts`,
 `lib/actions/problems.ts`, `lib/actions/tickets.ts`) **as the token's owner**:
 [`lib/api-actor.ts`](../lib/api-actor.ts) puts the owner's id in an
@@ -707,15 +757,65 @@ so it needs a token with the **`admin` scope whose owner is an `ADMIN`** (else
   `change_id`, `resolution_code`, `resolution_note`, `first_response_at`,
   `resolved_at`, `closed_at`; imported tickets have `source = API`, no SLA and no
   breach flags.
-- **`comments`** (up to 1000): `{ body, internal (default true), author_id
-  (default: the token owner), created_at }`.
+- **`comments`** (up to 1000): `{ import_ref (optional), body, internal
+  (default true), author_id (default: the token owner), created_at }`. The
+  comment `import_ref` (≤ 200 chars, e.g. `glpi:followup:812`) is the source id
+  of the comment, unique within its record (sending one twice in a body is a
+  `422`); the comment endpoints return it as `import_ref`.
 - Every referenced id (users incl. comment authors, group, category, service,
   problem, change) is checked first; unknown ids are a `422`, never a `500`.
 - One audit row per record (`CREATE`, "Imported from <ref> via API").
 
 Import problems first, then changes and tickets that point at them via
 `problem_id` (look ids up with `GET /problems?import_ref=…`). Once imported, a
-record is an ordinary one: e.g. a `CLOSED` change is locked like any other.
+record is an ordinary one: e.g. a `CLOSED` change is locked like any other —
+for the console and the regular API. Only the update mode below rewrites it.
+
+#### Update mode for re-runs
+
+`PUT /import/{tickets|problems|changes}/{import_ref}` brings an imported record
+up to the source system's current state, e.g. at cut-over, when a change that
+was `DRAFT` at the first import has been closed since and got another comment.
+Same token rules (`admin` scope + `ADMIN` owner) and the same strict body as
+the `POST` import; `import_ref` comes from the path (URL-encoded, e.g.
+`glpi%3Achange%3A129`) and may be repeated in the body only with the same
+value (else `422`). The same checks apply (timeline, unknown ids → `422`).
+
+- **New ref:** the record is created exactly like the `POST` import → `201`,
+  `meta.result: "created"`.
+- **Existing ref:** the payload is the record's **full current state**. Every
+  field the import writes is replaced with the payload's value; an omitted
+  optional field falls back to the import default (`risk` `MEDIUM`, `outcome`
+  `null`, …), exactly as on a first import. Not touched: the ticket `prefix`
+  (the ref stays stable when `type` changes) and `source`; `created_by_id` /
+  `requester_id` (they default to the token owner) and `custom_fields` unless
+  sent (`{}` clears them); everything outside the import (SLA fields,
+  approvals, affected CIs, links, attachments). Lifecycle rules do not apply,
+  so a closed or locked record is updated too.
+- **Comments are only ever appended**, never edited or removed (comments added
+  in Servio after the import stay). A payload comment counts as present when
+  the record has a comment with the same `import_ref`, or else — without a
+  ref, or with a ref not stored yet (a thread first imported without refs) —
+  a ref-less comment with the same `body` and the same `created_at` (to the
+  millisecond). Each stored comment matches once, so two identical source
+  comments stay two. Sending comment refs makes the dedup robust against
+  edited bodies.
+- **`created_at`** is part of the source state and replaced when it differs,
+  but may not move past the record's earliest comment (`422`).
+- **`updated_at`** follows the import rules (the sent value, else the latest
+  timestamp in the payload). It is written with any change; on its own it only
+  counts as a change when it was sent and differs, so a derived value never
+  turns an otherwise identical run into an update.
+- **Response:** the record, plus `meta.result` (`created` | `updated` |
+  `unchanged`), `meta.changed` (API field names whose value changed, e.g.
+  `["status", "outcome", "closure_notes", "actual_end"]`; on `created` every
+  field written, defaults included) and `meta.comments_added`. `updated` writes the fields and the
+  new comments in one statement and one audit row (`UPDATE`, "Re-imported from
+  <ref> via API", meta with `changed` and `commentsAdded`); `unchanged`
+  (`200`) writes nothing and no audit row.
+- Only records that carry this `importRef` are found: a natively created record
+  (no `importRef`) can never be addressed. The `POST` import is unchanged (an
+  existing ref is still returned as is).
 
 ### Lookups
 
@@ -779,7 +879,7 @@ curl -s -X POST "$BASE/tickets" \
 curl -s -X POST "$BASE/tickets" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Disk full on ws01","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
+  -d '{"title":"Disk full on pc-042","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
 
 # Monitoring recovery: resolve the open ticket for the key
 curl -s -X POST "$BASE/tickets/ref/zabbix:event:12345/resolve" \

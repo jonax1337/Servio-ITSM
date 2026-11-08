@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   SlidersHorizontal,
   ArrowUpCircle,
+  Repeat,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -112,6 +113,13 @@ const CARDS: SettingCard[] = [
     title: "Custom Fields",
     description: "Add admin-defined fields to tickets, problems and changes with conditional visibility.",
     icon: SlidersHorizontal,
+    minRole: "MANAGER",
+  },
+  {
+    href: "/settings/recurring-tickets",
+    title: "Recurring Tickets",
+    description: "Create tickets on a schedule for routine work like renewals, reviews and restore tests.",
+    icon: Repeat,
     minRole: "MANAGER",
   },
   {

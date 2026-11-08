@@ -90,7 +90,7 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`, `parentId` (self-relation `parent`/`children` for sub-tickets, `SetNull` when the parent is deleted); `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; `customFields` (JSON values keyed by `CustomFieldDef.key`); `approvalState` (nullable, `APPROVAL_STATUSES`); **SLA clock** fields (see below); relations to comments, watchers, participants, notified contacts, emails, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT); `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`); `externalRef` (nullable, indexed) + `openExternalRef` (unique, nullable): monitoring dedup key, see below. |
-| `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `channel` (`WEB`/`EMAIL`/`FORWARD`: how the reply arrived), `fromEmail` (external sender), `emailMessageId` (inbound mail that produced it), `authorId`; has attachments |
+| `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `channel` (`WEB`/`EMAIL`/`FORWARD`: how the reply arrived), `fromEmail` (external sender), `emailMessageId` (inbound mail that produced it), `authorId`, `importRef` (nullable, unique per ticket: source id of a comment written by the history import); has attachments |
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
 | `TicketMerge` | One merge of a source ticket into a target, with what is needed to undo it | `sourceId`, `targetId` (both cascade), `mergedById`; the source's pre-merge `previousStatus`/`previousClosedAt`/`previousApprovalState`; JSON lists of what the merge added to the target so `unmergeTicket` removes exactly that: `copiedCommentIds`, `copiedWatcherIds`, `copiedAssetIds`, `copiedLinkIds`, `movedAttachments` (`{id, commentId}` — files are re-pointed, not copied), `movedChildIds` (re-parented children), `withdrawnApprovalIds` (pending approvals cancelled on the source); `adoptedProblemId`/`adoptedChangeId` (taken over because the target had none); `undoneAt`/`undoneById` once reverted |
@@ -128,14 +128,14 @@ releases a claim held by a ticket that is no longer open the next time the key i
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Problem` | Root-cause record; groups related incidents | `id` (Int → `PRB-`), `status` (`NEW`/`INVESTIGATING`/`KNOWN_ERROR`/`RESOLVED`/`CLOSED`), `priority`, `impact`, `description` + `descriptionHtml`, `rootCause`, `workaround`, `customFields`, `assigneeId`, `groupId`, `categoryId`, `resolvedAt`; has tickets, changes, comments; `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
-| `ProblemComment` | Comment on a problem | `body`/`bodyHtml`, `isInternal`, `authorId` |
+| `ProblemComment` | Comment on a problem | `body`/`bodyHtml`, `isInternal`, `authorId`, `importRef` (nullable, unique per problem: source id from the history import) |
 
 ### Changes
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle incl. terminal `CANCELLED`), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `outcome` (`SUCCESSFUL`/`SUCCESSFUL_WITH_ISSUES`/`FAILED`/`ROLLED_BACK`), `closureNotes` (post-implementation review / lessons learned), `cancelReason`, `approvalRule` (`UNANIMOUS`/`QUORUM`/`PERCENT` — how CAB approvals resolve) + `approvalThreshold` (N for `QUORUM`, percent for `PERCENT`), `customFields`, `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `assigneeId`, `createdById`, `groupId`, `categoryId`, `problemId`, `releaseId`, `templateId`; has approvals, affected assets (CIs), tickets, comments; `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
-| `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId` |
+| `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId`, `importRef` (nullable, unique per change: source id from the history import) |
 | `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status` (`PENDING`/`APPROVED`/`REJECTED`, or `CANCELLED` when the seat is withdrawn because the board settled or the change was cancelled), `comment`, `decidedAt` |
 
 ### Custom fields, workflow & ad-hoc approvals
@@ -269,6 +269,7 @@ Added by migration `20261107000000_itsm_ops_sable` (the history also has `202611
 | `LicenseAssignment` | A used seat | `licenseId` (`Cascade`), `userId` and/or `assetId` (`Cascade`), `assignedAt`. At least one target must be set and duplicates are rejected in the action (NULLs defeat a DB unique); used seats = number of rows |
 | `AiInsight` | A pattern Sable detected | `kind` (`AI_INSIGHT_KINDS`), `status` (`AI_INSIGHT_STATUSES`), `dedupeKey` (**unique**, at-most-once creation), `title`, `summary`, `payload` (JSON as TEXT), `problemId`/`articleId` (`SetNull`: what was created from it), `dismissedById`/`dismissedAt` |
 | `AiInsightTicket` | Tickets behind an insight | composite id `(insightId, ticketId)`, both `Cascade` |
+| `RecurringTicket` | A ticket created on a schedule (GLPI "recurrent items"; migration `20261112000000_recurring_tickets`) | `name`, `isActive`; **template** `title`, `description`, `type`, `priority`, `impact`, `urgency`, `requesterId` (null = `createdById`), `assigneeId`, `groupId`, `categoryId`, `serviceId` (all `SetNull`); **recurrence** `frequency` (`RECURRENCE_FREQUENCIES`), `interval` (every N units), `timezone` (IANA), `firstDueAt` (occurrence 0, UTC), `createBeforeDays` (lead time, 0–365 days; may span several steps, at most 31 occurrences open at once); **state** `nextDueAt` (next occurrence still to create, the claim marker), `lastCreatedFor` (due time of the last created occurrence), `lastTicketId` (plain Int, the ticket may be deleted), `lastError`; `importRef` (unique, history import), `createdById` (`SetNull`). Indexed `(isActive, nextDueAt)` |
 
 New columns on existing models: `Ticket.slaNudgedAt` (at-most-once SLA nudge marker), `Change.releaseId`
 (`SetNull`), `Change.templateId` (`SetNull`) and an index on `Change(plannedStart, plannedEnd)` for calendar and
@@ -277,7 +278,15 @@ the current on-call of the ticket's team). A change has no service column; its s
 (`ChangeAsset` → `ServiceAsset`).
 
 At-most-once markers in this group: `Ticket.slaNudgedAt`, `Contract.renewalNotifiedFor`,
-`SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`.
+`SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`,
+`RecurringTicket.nextDueAt` (compare-and-set before the occurrence's ticket is created).
+
+Recurring-ticket occurrences are computed from the anchor, never stepped from the previous one
+([`lib/recurring-ticket-rules.ts`](../lib/recurring-ticket-rules.ts)): occurrence n is `firstDueAt` + n ×
+`interval` units on the same wall-clock time in `timezone` (DST-correct; a time inside a spring-forward gap
+moves forward by the gap), and monthly/yearly dates past a month's end clamp to its last day without drifting
+(Jan 31 → Feb 28/29 → Mar 31). The ticket of an occurrence is created `createBeforeDays` local days before it is
+due and carries the due time as `Ticket.dueDate` and `source = RECURRING`.
 
 ### Maintenance windows
 
@@ -325,7 +334,7 @@ See [i18n.md](./i18n.md#enum-labels-_meta).
 | `RESOLUTION_CODES` | `Ticket.resolutionCode` | `FIXED`, `WORKAROUND`, `NOT_REPRODUCIBLE`, `DUPLICATE`, `NO_ACTION` |
 | `PRIORITIES` | `*.priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `IMPACT_URGENCY` | `*.impact`, `*.urgency` | `LOW`, `MEDIUM`, `HIGH` |
-| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT` |
+| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT`, `RECURRING` |
 | `PROBLEM_STATUSES` | `Problem.status` | `NEW`, `INVESTIGATING`, `KNOWN_ERROR`, `RESOLVED`, `CLOSED` |
 | `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
 | `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED`, `CANCELLED` |
@@ -361,6 +370,7 @@ See [i18n.md](./i18n.md#enum-labels-_meta).
 | `CONTRACT_TYPES` | `Contract.type` | `SUPPORT`, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`, `WARRANTY`, `SERVICE`, `OTHER` |
 | `CONTRACT_STATUSES` | `Contract.status` | `DRAFT`, `ACTIVE`, `EXPIRED`, `TERMINATED` |
 | `LICENSE_TYPES` | `SoftwareLicense.licenseType` | `PER_USER`, `PER_DEVICE`, `SITE`, `CONCURRENT`, `SUBSCRIPTION` |
+| `RECURRENCE_FREQUENCIES` | `RecurringTicket.frequency` | `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` |
 | `AI_SCOPES` | `AiConversation.scope` | `GENERAL`, `ADMIN` |
 | `AI_MCP_TRANSPORTS` | `AiMcpServer.transport` | `http`, `sse` |
 | `AI_MCP_MODES` | `AiMcpServer.mode` | `READ_ONLY`, `APPROVAL`, `TRUSTED` |
@@ -429,6 +439,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261107000000_itsm_ops_sable` | the Operations & planning models (freeze windows, on-call, status page, releases, change templates, vendors/contracts/licenses, Sable insights) |
 | `20261108000000_maintenance_windows` | `MaintenanceWindow` |
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
+| `20261112000000_recurring_tickets` | `RecurringTicket` |
 | `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
 | `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
 

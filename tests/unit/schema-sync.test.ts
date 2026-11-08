@@ -22,6 +22,8 @@ import {
   AI_INSIGHT_STATUSES,
   MAINTENANCE_KINDS,
   MAINTENANCE_STATUSES,
+  RECURRENCE_FREQUENCIES,
+  TICKET_SOURCES,
 } from "@/lib/constants";
 
 /**
@@ -102,6 +104,10 @@ describe("ITSM ops / Sable enum comments stay in sync with lib/constants", () =>
     ["AiInsight", "status", AI_INSIGHT_STATUSES],
     ["MaintenanceWindow", "kind", MAINTENANCE_KINDS],
     ["MaintenanceWindow", "status", MAINTENANCE_STATUSES],
+    ["Ticket", "source", TICKET_SOURCES],
+    ["RecurringTicket", "frequency", RECURRENCE_FREQUENCIES],
+    ["RecurringTicket", "type", TICKET_TYPES],
+    ["RecurringTicket", "priority", PRIORITIES],
   ];
 
   it.each(cases)("%s.%s documents every allowed value", (model, field, values) => {
