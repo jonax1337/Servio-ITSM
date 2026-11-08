@@ -16,6 +16,7 @@ import { LicenseDialog } from "@/components/contracts/license-dialog";
 import { LicenseExpiryBadge, LicenseComplianceBadge, SeatMeter } from "@/components/contracts/contract-badges";
 import { LicenseSeatsTab } from "@/components/contracts/detail-tabs";
 import { DetailShell, DetailTitle, DetailTopBar, MetaRow, Notice, NotesBlock, RailCard } from "@/components/contracts/detail-bits";
+import { RecordAttachments } from "@/components/attachments/record-attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,7 @@ export default async function LicenseDetailPage({
             <MetaRow label="Expires">{license.expiresAt ? formatDay(license.expiresAt) : "Never"}</MetaRow>
             <MetaRow label="Cost">{license.cost != null ? formatCost(license.cost) : "—"}</MetaRow>
           </RailCard>
+          <RecordAttachments target={{ licenseId: license.id }} role={me?.role ?? "USER"} />
         </>
       }
     >
