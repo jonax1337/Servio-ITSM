@@ -6,7 +6,8 @@ import { getTicketAutoCloseDays } from "@/lib/settings";
 import { mailBrand } from "@/lib/mail";
 import { signatureHtml, textToHtmlParagraphs } from "@/lib/mail-template";
 import {
-  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, autoCloseNoticeHtml, previewTemplate, type TemplateKey,
+  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, approvalStageText, autoCloseNoticeHtml, previewTemplate, quotedTextHtml,
+  type TemplateKey,
 } from "@/lib/email-templates";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmailTemplateEditor } from "@/components/settings/email-template-editor";
@@ -25,6 +26,9 @@ const PLACEHOLDER_VARS = {
   survey: "{{survey}}",
   autoCloseDays: "{{autoCloseDays}}",
   autoCloseNotice: "{{autoCloseNotice}}",
+  details: "{{details}}",
+  stage: "{{stage}}",
+  comment: "{{comment}}",
 };
 
 export default async function EmailTemplatesPage() {
@@ -45,6 +49,11 @@ export default async function EmailTemplatesPage() {
     // The preview follows Settings › Tickets: empty while automatic closing is off.
     autoCloseDays: autoCloseDays > 0 ? String(autoCloseDays) : "",
     autoCloseNotice: autoCloseNoticeHtml(autoCloseDays, brand.locale),
+    itemName: t("emailTemplates.sampleItem"),
+    approverName: "Alex Admin",
+    stage: approvalStageText(0, 2, brand.locale),
+    details: quotedTextHtml(t("emailTemplates.sampleDetails")),
+    comment: quotedTextHtml(t("emailTemplates.sampleComment")),
   };
   const ctx = { brand, vars: sampleVars };
 

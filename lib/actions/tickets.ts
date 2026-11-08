@@ -20,6 +20,7 @@ import {
 } from "@/lib/mail";
 import { renderTicketResolvedEmail } from "@/lib/email-templates";
 import { getTicketAutoCloseDays } from "@/lib/settings";
+import { sendTicketClosedMail } from "@/lib/ticket-closed-mail";
 import { ensureSurvey, surveyUrl } from "@/lib/csat-survey";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { format } from "date-fns";
@@ -224,6 +225,7 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `Updated ${field}` });
 
   if (field === "status" && value === "RESOLVED") await sendResolvedMail(ticket, me.email, null);
+  if (field === "status" && value === "CLOSED") await sendTicketClosedMail(ticket.id, me.email);
   if (field === "assigneeId" && ticket.assignee?.email && ticket.assigneeId !== me.id) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand(ticket.assignee))) });
@@ -1215,6 +1217,7 @@ async function applyResolution(
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: `${verb} ticket` });
 
   if (status === "RESOLVED") await sendResolvedMail(ticket, me.email, noteInternal ? null : note);
+  if (status === "CLOSED") await sendTicketClosedMail(id, me.email);
   await runAutomations("TICKET_UPDATED", id);
   revalidatePath(`/tickets/${id}`);
   revalidatePath("/tickets");

@@ -3,8 +3,9 @@ import "server-only";
 import { db } from "@/lib/db";
 import { isAgent, type Role } from "@/lib/session";
 import { notify } from "@/lib/audit";
-import { sendMail } from "@/lib/mail";
-import { effectiveApprovalStages, type ApprovalStage } from "@/lib/service-forms";
+import { mailBrand, sendMail } from "@/lib/mail";
+import { renderApprovalRequestEmail } from "@/lib/email-templates";
+import { answersToText, effectiveApprovalStages, parseFormSchema, type ApprovalStage } from "@/lib/service-forms";
 import { ticketRef } from "@/lib/constants";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -35,14 +36,28 @@ export async function resolveStageApprover(stage: ApprovalStage): Promise<string
   return null;
 }
 
+/** The request's answers as text for the approver (the free-text box of a schema-less item included). */
+function requestDetails(ticket: { formSchema: string | null; formData: string | null }): string {
+  let values: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(ticket.formData ?? "{}");
+    if (parsed && typeof parsed === "object") values = parsed;
+  } catch {
+    // unreadable answers: the approver still gets the request without them
+  }
+  const fields = parseFormSchema(ticket.formSchema);
+  return fields.length > 0 ? answersToText(fields, values) : String(values.details ?? "");
+}
+
 /**
  * Seat the PENDING approval for a given stage index on a catalog request. Used
  * both to seat stage 0 at submit time and to advance to stage+1 on approval.
  * Returns true if a stage was seated, false when there is no such stage (the
  * flow has run out of stages and the request should be released) or no eligible
- * approver. `details` (the request's answers) goes into the approver's email.
+ * approver. The approver gets the "approval_request" email (lib/email-templates.ts)
+ * in their language, with the request's answers.
  */
-export async function seatCatalogStage(ticketId: number, stageIndex: number, opts: { details?: string } = {}): Promise<boolean> {
+export async function seatCatalogStage(ticketId: number, stageIndex: number): Promise<boolean> {
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
     include: { requester: { select: { id: true, name: true } }, catalogItem: true },
@@ -55,22 +70,33 @@ export async function seatCatalogStage(ticketId: number, stageIndex: number, opt
   const approverId = await resolveStageApprover(stage);
   if (!approverId) return false;
 
+  const ref = ticketRef(ticket.id, ticket.prefix || ticket.type);
   const approval = await db.ticketApproval.create({
     data: { ticketId, approverId, stage: stageIndex },
   });
   await notify(approverId, {
     type: "APPROVAL",
     title: "Approval needed",
-    body: `${ticket.requester?.name ?? "A user"} requested ${ticket.catalogItem.name} (${ticketRef(ticket.id, "REQUEST")})${stages.length > 1 ? ` — stage ${stageIndex + 1} of ${stages.length}` : ""}`,
+    body: `${ticket.requester?.name ?? "A user"} requested ${ticket.catalogItem.name} (${ref})${stages.length > 1 ? ` — stage ${stageIndex + 1} of ${stages.length}` : ""}`,
     entity: "Ticket",
     entityId: String(ticket.id),
   });
-  const approver = await db.user.findUnique({ where: { id: approverId }, select: { email: true, name: true } });
+  const approver = await db.user.findUnique({ where: { id: approverId }, select: { email: true, name: true, locale: true } });
   if (approver?.email) {
+    // No ticketId: the approver's mail must not join the requester's mail thread.
     await sendMail({
-      to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id, template: "approval_request",
-      subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${ticket.catalogItem.name}`,
-      body: `Hi ${approver.name ?? "there"},\n\n${ticket.requester?.name ?? "A user"} has requested "${ticket.catalogItem.name}", which needs your approval${stages.length > 1 ? ` (stage ${stageIndex + 1} of ${stages.length})` : ""}.${opts.details ? `\n\n${opts.details}` : ""}\n\nReview it in Servio under Approvals.\n\n— Servio Service Desk`,
+      to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id,
+      ...(await renderApprovalRequestEmail({
+        brand: await mailBrand(approver),
+        ref,
+        title: ticket.title,
+        itemName: ticket.catalogItem.name,
+        requesterName: ticket.requester?.name ?? "",
+        approverName: approver.name ?? "",
+        stageIndex,
+        stageCount: stages.length,
+        details: requestDetails(ticket),
+      })),
     });
   }
   return !!approval;

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
-import { CHANGE_SELF_APPROVAL_SETTING, setSetting } from "@/lib/settings";
+import { CHANGE_SELF_APPROVAL_SETTING, TICKET_CLOSED_EMAIL_SETTING, setSetting } from "@/lib/settings";
 import { CHANGE_SELF_APPROVAL_MODES } from "@/lib/approval-rules";
 import { TICKET_AUTO_CLOSE_DAYS_SETTING, parseAutoCloseDaysInput } from "@/lib/auto-close-rules";
 import { encryptionAvailable } from "@/lib/crypto";
@@ -271,11 +271,15 @@ export async function saveTicketSettings(
   if (!me) return { error: "Not authorised" };
   const parsed = parseAutoCloseDaysInput(str(fd, TICKET_AUTO_CLOSE_DAYS_SETTING));
   if ("error" in parsed) return { error: parsed.error };
+  const closedEmail = bool(fd, TICKET_CLOSED_EMAIL_SETTING);
   // 0 is stored, not dropped: an empty row would let an environment value switch it back on.
   return persist(
     me.id,
-    [{ key: TICKET_AUTO_CLOSE_DAYS_SETTING, value: String(parsed.days) }],
-    `Updated ticket settings (auto-close after ${parsed.days} days)`,
+    [
+      { key: TICKET_AUTO_CLOSE_DAYS_SETTING, value: String(parsed.days) },
+      { key: TICKET_CLOSED_EMAIL_SETTING, value: closedEmail },
+    ],
+    `Updated ticket settings (auto-close after ${parsed.days} days, closed email ${closedEmail === "true" ? "on" : "off"})`,
     "/settings/tickets",
   );
 }

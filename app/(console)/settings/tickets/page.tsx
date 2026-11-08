@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Ticket } from "lucide-react";
 import { requireRole } from "@/lib/session";
-import { getTicketAutoCloseDays } from "@/lib/settings";
+import { TICKET_CLOSED_EMAIL_SETTING, getTicketAutoCloseDays, getTicketClosedEmailEnabled } from "@/lib/settings";
 import { TICKET_AUTO_CLOSE_DAYS_SETTING } from "@/lib/auto-close-rules";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { SettingsForm } from "@/components/settings/settings-form";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TicketSettingsPage() {
   await requireRole("ADMIN");
-  const [t, autoCloseDays] = await Promise.all([getT("settings"), getTicketAutoCloseDays()]);
+  const [t, autoCloseDays, closedEmail] = await Promise.all([getT("settings"), getTicketAutoCloseDays(), getTicketClosedEmailEnabled()]);
 
   return (
     <>
@@ -32,6 +32,13 @@ export default async function TicketSettingsPage() {
               defaultValue: String(autoCloseDays),
               placeholder: "0",
               hint: t("tickets.autoCloseDaysHint", { autoCloseDays: "{{autoCloseDays}}", autoCloseNotice: "{{autoCloseNotice}}" }),
+            },
+            {
+              type: "switch",
+              name: TICKET_CLOSED_EMAIL_SETTING,
+              label: t("tickets.closedEmail"),
+              defaultChecked: closedEmail,
+              hint: t("tickets.closedEmailHint"),
             },
           ]}
         />

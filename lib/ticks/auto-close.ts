@@ -1,7 +1,8 @@
 /**
  * Scheduler tick that closes resolved tickets automatically: a ticket that has been
  * RESOLVED for TICKET_AUTO_CLOSE_DAYS days (Settings › Tickets; 0 = off, the default)
- * moves to CLOSED, with an internal note and an audit entry by the Automation account.
+ * moves to CLOSED, with an internal note and an audit entry by the Automation account,
+ * and the requester gets the "Ticket closed" email when that is switched on.
  * Run by lib/scheduler.ts with an overlap guard and error isolation.
  *
  * A requester reply before the deadline reopens the ticket as before
@@ -16,6 +17,7 @@ import { getTicketAutoCloseDays } from "@/lib/settings";
 import { getAutomationUserId } from "@/lib/system-user";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { runAutomations } from "@/lib/automations";
+import { sendTicketClosedMail } from "@/lib/ticket-closed-mail";
 import { autoCloseAuditSummary, autoCloseCutoff } from "@/lib/auto-close-rules";
 
 /** Most tickets one tick closes, oldest resolution first; the rest wait for the next tick. */
@@ -60,6 +62,7 @@ export async function runAutoCloseTick(): Promise<void> {
         meta: { autoClose: true, days, from: "RESOLVED", to: "CLOSED" },
       });
       await runAutomations("TICKET_UPDATED", ticket.id);
+      await sendTicketClosedMail(ticket.id);
       closed++;
     } catch (error) {
       console.error(`[servio:auto-close] ticket ${ticket.id} failed:`, error);

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
 import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
 import type { Locale } from "@/lib/i18n/config";
-import { autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
+import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
 
 /**
  * Admin-editable email templates. Each is a SUBJECT + a BODY (HTML) with
@@ -11,7 +11,9 @@ import { autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } from "@/messages/ema
  * plain — these read like normal emails, not branded notifications.
  *
  * Placeholders — text (auto-escaped): appName, ref, title, requesterName,
- * agentName. HTML (inserted raw, already sanitized): message, signature.
+ * agentName, approverName, itemName, stage, autoCloseDays. HTML (inserted raw,
+ * already sanitized): message, signature, quote, resolution, survey,
+ * autoCloseNotice, details, comment.
  */
 
 export const TEMPLATE_KEYS = [
@@ -20,6 +22,10 @@ export const TEMPLATE_KEYS = [
   "ticket_resolved",
   "ticket_participant",
   "ticket_assigned",
+  "ticket_closed",
+  "approval_request",
+  "request_approved",
+  "request_rejected",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 
@@ -29,6 +35,10 @@ export const TEMPLATE_META: Record<TemplateKey, { label: string; description: st
   ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with the public resolution note ({{resolution}}), an optional CSAT survey link ({{survey}}) and, when resolved tickets close automatically, the delay ({{autoCloseDays}}) or a ready sentence about it ({{autoCloseNotice}}).", vars: ["ref", "title", "requesterName", "resolution", "autoCloseDays", "autoCloseNotice", "survey"] },
   ticket_participant: { label: "Added as participant", description: "When someone is added as a participant / CC'd.", vars: ["ref", "title", "requesterName", "agentName", "message"] },
   ticket_assigned: { label: "Ticket assigned", description: "Internal notice to the assigned agent.", vars: ["ref", "title", "agentName"] },
+  ticket_closed: { label: "Ticket closed", description: "Note to the requester that the ticket was closed (by an agent or automatically). Only sent when it is switched on under Settings › Tickets.", vars: ["appName", "ref", "title", "requesterName"] },
+  approval_request: { label: "Approval needed", description: "To the approver of a catalog request stage, with the request's answers ({{details}}) and, for multi-stage approvals, the stage ({{stage}}).", vars: ["appName", "ref", "title", "itemName", "requesterName", "approverName", "stage", "details"] },
+  request_approved: { label: "Request approved", description: "To the requester when the last approval stage approved their catalog request, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
+  request_rejected: { label: "Request declined", description: "To the requester when their catalog request was declined, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
 };
 
 export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml: string }> = {
@@ -67,6 +77,35 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
       `<p>Hi {{agentName}},</p>` +
       `<p>ticket <strong>{{ref}}</strong> — "{{title}}" — has been assigned to you. Please take a look and take the next step.</p>`,
   },
+  ticket_closed: {
+    subject: "[{{ref}}] Closed: {{title}}",
+    bodyHtml:
+      `<p>Hi {{requesterName}},</p>` +
+      `<p>your request <strong>{{ref}}</strong> — "{{title}}" — is now <strong>closed</strong>. If you need anything else, just reply to this email or open a new request.</p>`,
+  },
+  approval_request: {
+    subject: "[{{ref}}] Approval needed: {{itemName}}",
+    bodyHtml:
+      `<p>Hi {{approverName}},</p>` +
+      `<p>{{requesterName}} has requested <strong>{{itemName}}</strong> ({{ref}}), which needs your approval{{stage}}.</p>` +
+      `{{details}}` +
+      `<p>Please approve or decline it in {{appName}} under Approvals.</p>`,
+  },
+  request_approved: {
+    subject: "[{{ref}}] Your request was approved",
+    bodyHtml:
+      `<p>Hi {{requesterName}},</p>` +
+      `<p>your request <strong>{{itemName}}</strong> ({{ref}}) has been approved and is now being worked on.</p>` +
+      `{{comment}}`,
+  },
+  request_rejected: {
+    subject: "[{{ref}}] Your request was declined",
+    bodyHtml:
+      `<p>Hi {{requesterName}},</p>` +
+      `<p>unfortunately your request <strong>{{itemName}}</strong> ({{ref}}) has been declined.</p>` +
+      `{{comment}}` +
+      `<p>If you still need it, you can submit a new request from the portal.</p>`,
+  },
 };
 
 /**
@@ -89,7 +128,18 @@ const AUTO_CLOSE_NOTICE: Record<Locale, (days: number) => string> = {
   de: autoCloseNoticeDe,
 };
 
-const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey", "autoCloseNotice"]);
+const APPROVAL_STAGE: Record<Locale, (stage: number, of: number) => string> = {
+  en: (stage, of) => ` (stage ${stage} of ${of})`,
+  de: approvalStageDe,
+};
+
+/** The {{stage}} text of the approval email: empty for a single-stage approval. */
+export function approvalStageText(stageIndex: number, stageCount: number, locale: Locale = "en"): string {
+  if (stageCount <= 1) return "";
+  return (APPROVAL_STAGE[locale] ?? APPROVAL_STAGE.en)(stageIndex + 1, stageCount);
+}
+
+const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey", "autoCloseNotice", "details", "comment"]);
 
 /** The {{autoCloseNotice}} paragraph of the resolved email (empty when automatic closing is off). */
 export function autoCloseNoticeHtml(days: number, locale: Locale = "en"): string {
@@ -174,6 +224,65 @@ export function renderTicketResolvedEmail(ctx: {
       autoCloseNotice: autoCloseNoticeHtml(autoCloseDays, ctx.brand?.locale),
       survey: surveyCtaHtml(ctx.surveyUrl, ctx.brand?.locale),
     },
+  });
+}
+
+/** A free-text block (request answers, approver comment) as quoted HTML paragraphs; empty stays empty. */
+export function quotedTextHtml(text?: string | null): string {
+  const clean = (text ?? "").trim();
+  return clean ? quoteHtml(textToHtmlParagraphs(clean)) : "";
+}
+
+/** The "Approval needed" email to the approver of a catalog request stage. */
+export function renderApprovalRequestEmail(ctx: {
+  brand?: MailBrand;
+  ref: string;
+  title: string;
+  itemName: string;
+  requesterName: string;
+  approverName: string;
+  stageIndex: number;
+  stageCount: number;
+  details?: string | null;
+}) {
+  return renderTicketEmail("approval_request", {
+    brand: ctx.brand,
+    vars: {
+      appName: ctx.brand?.appName ?? "Servio",
+      ref: ctx.ref,
+      title: ctx.title,
+      itemName: ctx.itemName,
+      requesterName: ctx.requesterName,
+      approverName: ctx.approverName,
+      stage: approvalStageText(ctx.stageIndex, ctx.stageCount, ctx.brand?.locale),
+      details: quotedTextHtml(ctx.details),
+    },
+  });
+}
+
+/** The decision email to the requester of a catalog request ("approved" or "declined"). */
+export function renderRequestDecisionEmail(
+  key: "request_approved" | "request_rejected",
+  ctx: { brand?: MailBrand; ref: string; title: string; itemName: string; requesterName: string; comment?: string | null },
+) {
+  return renderTicketEmail(key, {
+    brand: ctx.brand,
+    vars: {
+      appName: ctx.brand?.appName ?? "Servio",
+      ref: ctx.ref,
+      title: ctx.title,
+      itemName: ctx.itemName,
+      requesterName: ctx.requesterName,
+      comment: quotedTextHtml(ctx.comment),
+    },
+  });
+}
+
+/** The "Ticket closed" email to the requester. */
+export function renderTicketClosedEmail(ctx: { brand?: MailBrand; ref: string; title: string; requesterName: string }) {
+  return renderTicketEmail("ticket_closed", {
+    brand: ctx.brand,
+    vars: { appName: ctx.brand?.appName ?? "Servio", ref: ctx.ref, title: ctx.title, requesterName: ctx.requesterName },
   });
 }
 
