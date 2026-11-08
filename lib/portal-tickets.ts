@@ -1,11 +1,15 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-import { sendMail, tplTicketReceived, mailBrand, quoteHtml, textToHtmlParagraphs } from "@/lib/mail";
+import { sendMail, tplTicketReceived, tplTicketParticipant, mailBrand, quoteHtml, textToHtmlParagraphs } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { slaCreateData } from "@/lib/sla";
-import { parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN, catalogApprovalPlan, effectiveApprovalStages } from "@/lib/service-forms";
+import {
+  parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN, catalogApprovalPlan, effectiveApprovalStages,
+  catalogTicketType, formUrgency, renderCatalogTitle,
+} from "@/lib/service-forms";
+import { resolveCatalogFormLinks } from "@/lib/catalog-form-links";
 import { resolveStageApprover, seatCatalogStage } from "@/lib/approval-seating";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
@@ -147,6 +151,26 @@ export async function createPortalTicketFor(
   return ticket;
 }
 
+/** Link the devices and add the colleagues a catalog form named; the colleagues get the "added as participant" email. */
+async function linkCatalogFormRecords(
+  ticket: { id: number; title: string; type: string; prefix: string | null; status: string },
+  me: { id: string; name?: string | null; email?: string | null },
+  links: { assetIds: string[]; participantIds: string[] },
+) {
+  if (links.assetIds.length > 0) {
+    await db.ticketAsset.createMany({ data: links.assetIds.map((assetId) => ({ ticketId: ticket.id, assetId })) });
+  }
+  for (const userId of links.participantIds) {
+    await db.ticketParticipant.create({ data: { ticketId: ticket.id, userId, addedById: me.id } });
+    const user = await db.user.findUnique({ where: { id: userId }, select: { email: true, name: true, locale: true } });
+    if (!user?.email) continue;
+    await sendMail({
+      to: user.email, toName: user.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id,
+      ...(await tplTicketParticipant(ticket, user.name ?? "", me.name ?? me.email ?? "", "", await mailBrand(user))),
+    });
+  }
+}
+
 export type CatalogRequestResult =
   | { ok: true; ticket: Awaited<ReturnType<typeof db.ticket.create>> }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
@@ -156,6 +180,11 @@ export type CatalogRequestResult =
  * form). Used by the catalog request form action and by the portal Sable assistant
  * so a Sable-filled request routes exactly like a hand-filled one (triage team,
  * category from the item, approval flow, automations, auto-assign).
+ *
+ * The item decides the ticket type (request or incident) and the title (template
+ * with answer placeholders); an "urgency" question sets urgency and priority, an
+ * "asset" question links one of the requester's devices, a "people" question adds
+ * colleagues as participants.
  *
  * `rawAnswers` is keyed by field key WITHOUT the `f_` prefix.
  */
@@ -184,6 +213,10 @@ export async function createCatalogRequestFor(
   if (Object.keys(errors).length > 0) {
     return { ok: false, error: "Please complete the required fields.", fieldErrors: errors };
   }
+  const links = await resolveCatalogFormLinks(me.id, fields, values);
+  if (Object.keys(links.errors).length > 0) {
+    return { ok: false, error: "Please complete the required fields.", fieldErrors: links.errors };
+  }
 
   const summary = answersToText(fields, values);
   // Empty-schema items (the default) render a single free-text box submitted as
@@ -198,17 +231,21 @@ export async function createCatalogRequestFor(
   // Pre-route: the service's team, else the category's team, else the triage team.
   const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? (await triageGroupId());
   const needsApproval = plan.stages.length > 0;
-  const sla = await slaCreateData({ serviceId: item.serviceId, priority: "MEDIUM" });
+  const type = catalogTicketType(item.ticketType);
+  const urgency = formUrgency(fields, values);
+  const priority = urgency ?? "MEDIUM";
+  const sla = await slaCreateData({ serviceId: item.serviceId, priority });
 
   const ticket = await db.ticket.create({
     data: {
-      title: `${item.name} request`,
+      title: renderCatalogTitle(item.titleTemplate, { itemName: item.name, requesterName: me.name ?? me.email ?? "", fields, values }),
       description,
-      type: "REQUEST",
-      prefix: "REQ",
+      type,
+      prefix: prefixForType(type),
       status: needsApproval ? "PENDING" : "NEW",
       source,
-      priority: "MEDIUM",
+      priority,
+      ...(urgency ? { urgency } : {}),
       requesterId: me.id,
       catalogItemId: item.id,
       categoryId: item.categoryId,
@@ -223,6 +260,7 @@ export async function createCatalogRequestFor(
   });
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${item.name}" from the catalog` });
+  await linkCatalogFormRecords(ticket, me, links);
 
   // Seat the first stage: its named approver, or the group's lead / first active agent.
   if (needsApproval && !(await seatCatalogStage(ticket.id, 0))) {

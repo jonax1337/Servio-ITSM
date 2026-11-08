@@ -1,7 +1,8 @@
 import { ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { parseFormSchema } from "@/lib/service-forms";
-import { getT } from "@/lib/i18n/server";
+import { parseFormSchema, type ServiceField } from "@/lib/service-forms";
+import { LEVEL_META } from "@/lib/constants";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
 function humanize(key: string) {
   const s = key.replace(/[_-]+/g, " ").trim();
@@ -35,17 +36,22 @@ export async function FormAnswers({
     return null;
   }
 
-  const [t, tc] = await Promise.all([getT("tickets"), getT("common")]);
+  const [t, tc, te, f] = await Promise.all([getT("tickets"), getT("common"), getEnumT(), getFormatter()]);
   const yesNo = (v: unknown) => (v ? tc("yes") : tc("no"));
+  const shown = (field: ServiceField, v: unknown) => {
+    if (field.type === "checkbox") return yesNo(v);
+    if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+    if (v == null || v === "") return "—";
+    if (field.type === "urgency") return te(LEVEL_META, String(v));
+    if (field.type === "datetime") return f.date(String(v), "dateTime");
+    return String(v);
+  };
   const fields = parseFormSchema(formSchema);
   // Fallback: no schema (item deleted / legacy ticket) → show raw key/value pairs
   // rather than silently dropping the answers.
   const rows =
     fields.length > 0
-      ? fields.map((f) => {
-          const v = values[f.key];
-          return { label: f.label, value: f.type === "checkbox" ? yesNo(v) : v == null || v === "" ? "—" : String(v) };
-        })
+      ? fields.map((field) => ({ label: field.label, value: shown(field, values[field.key]) }))
       : Object.entries(values).map(([k, v]) => ({ label: humanize(k), value: typeof v === "boolean" ? yesNo(v) : v == null || v === "" ? "—" : String(v) }));
 
   if (rows.length === 0) return null;

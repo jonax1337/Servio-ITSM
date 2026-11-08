@@ -13,6 +13,12 @@ const messages: ServerMessages = {
     "Sie laden zu schnell hoch. Bitte warten Sie einen Moment und versuchen Sie es erneut.",
   "Please complete the required fields.": "Bitte füllen Sie die Pflichtfelder aus.",
   "This item can't be requested.": "Dieser Eintrag kann nicht angefordert werden.",
+  "Enter a date and time": "Geben Sie Datum und Uhrzeit ein",
+  "Enter email addresses separated by commas": "Geben Sie E-Mail-Adressen durch Kommas getrennt ein",
+  "Add at most 10 people": "Fügen Sie höchstens 10 Personen hinzu",
+  "Choose one of your own devices.": "Wählen Sie eines Ihrer eigenen Geräte.",
+  "Not everyone was found. Use the email address of a colleague who can sign in.":
+    "Nicht alle Personen wurden gefunden. Verwenden Sie die E-Mail-Adresse einer Kollegin oder eines Kollegen mit Zugang.",
   "This item requires approval but has no approver configured. Please contact IT.":
     "Für diesen Eintrag ist eine Genehmigung nötig, aber keine genehmigende Person hinterlegt. Bitte wenden Sie sich an die IT.",
   "This item requires approval but its approver is no longer available. Please contact IT.":

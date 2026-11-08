@@ -88,7 +88,7 @@ const listCategoriesTool = tool({
 
 const getServiceFormTool = tool({
   description:
-    "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form.",
+    "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form. Answer formats by type: multiselect = options separated by commas; datetime = YYYY-MM-DDTHH:mm; urgency = LOW, MEDIUM or HIGH; asset = the asset tag or name of one of the user's own devices; people = colleagues' email addresses separated by commas.",
   inputSchema: z.object({ itemId: z.string().describe("the catalog item id from search_catalog") }),
   execute: async ({ itemId }) => {
     const item = await db.catalogItem.findUnique({ where: { id: itemId }, select: { name: true, formSchema: true, isPublished: true } });

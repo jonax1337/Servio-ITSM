@@ -1,5 +1,7 @@
 /** The self-service portal (app/portal, components/portal). */
 const portal = {
+  noOwnDevices: "No devices are registered to you. Describe the device in the request instead.",
+  peoplePlaceholder: "Email addresses, separated by commas",
   // Frame
   agentConsole: "Agent console",
   footerPrompt: "Can't find what you're looking for?",

@@ -2,6 +2,8 @@ import type en from "../en/portal";
 import type { Translations } from "../types";
 
 const portal: Translations<typeof en> = {
+  noOwnDevices: "Ihnen sind keine Geräte zugeordnet. Beschreiben Sie das Gerät stattdessen in der Anfrage.",
+  peoplePlaceholder: "E-Mail-Adressen, durch Kommas getrennt",
   agentConsole: "Agenten-Konsole",
   footerPrompt: "Nicht gefunden, was Sie suchen?",
   contactServiceDesk: "Service Desk kontaktieren",

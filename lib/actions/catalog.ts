@@ -54,7 +54,7 @@ export async function reRequestCatalogItem(formData: FormData): Promise<void> {
     const parsed = JSON.parse(source.formData ?? "{}");
     if (parsed && typeof parsed === "object") {
       for (const [k, v] of Object.entries(parsed)) {
-        answers[k] = typeof v === "boolean" ? (v ? "on" : "") : String(v ?? "");
+        answers[k] = typeof v === "boolean" ? (v ? "on" : "") : Array.isArray(v) ? JSON.stringify(v) : String(v ?? "");
       }
     }
   } catch {

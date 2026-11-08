@@ -95,6 +95,7 @@ export default async function CatalogAdminPage() {
                       icon: it.icon, categoryId: it.categoryId, serviceId: it.serviceId, estimatedDays: it.estimatedDays,
                       isPublished: it.isPublished, requiresApproval: it.requiresApproval, approverId: it.approverId,
                       fields: parseFormSchema(it.formSchema),
+                      ticketType: it.ticketType, titleTemplate: it.titleTemplate,
                     }}
                   />
                   <ConfirmButton

@@ -314,6 +314,18 @@ The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-s
 
 Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`). The requester-facing catalog lives in the portal (below); `lib/actions/catalog.ts` (`createCatalogRequest`) is the request-submission action shared with the portal.
 
+**What a request becomes** (`createCatalogRequestFor` in `lib/portal-tickets.ts`): the item's *Creates a* setting (`CatalogItem.ticketType`, `REQUEST` default or `INCIDENT`) decides the ticket type and prefix; *Ticket title* (`CatalogItem.titleTemplate`) is rendered by `renderCatalogTitle` with `{{item}}`, `{{requester}}` and `{{<question key>}}` (unknown or empty placeholders drop out, at most 200 characters; empty = "`<Item> request`").
+
+**Question types** (`FIELD_TYPES`): text, textarea, select, **multiple choice** (`multiselect`, stored as an array; the portal posts JSON, the assistant a comma list — `parseMultiValue`), number, date, **date and time** (`datetime`, `YYYY-MM-DDTHH:mm`), checkbox, and three that act on the ticket:
+
+| Type | Effect |
+| --- | --- |
+| `urgency` | Low / Medium / High; the first one sets the ticket's urgency **and** priority (`formUrgency`), so the SLA is priced from it (default MEDIUM) |
+| `asset` | One of the requester's own devices (`Asset.ownerId`, not retired or disposed — `listOwnAssets` in `lib/catalog-form-links.ts`); linked as `TicketAsset`, stored as "tag · name". Matched by id, tag, name or label, so assistant answers and re-requests work |
+| `people` | Colleagues' email addresses (at most 10); each must be an active account, becomes a `TicketParticipant` and gets the *Added as participant* email |
+
+Conditional questions (show a question only for certain answers) are not supported yet.
+
 ### Assets (CMDB)
 
 | | |

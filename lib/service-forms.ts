@@ -4,9 +4,15 @@ export const FIELD_TYPES = [
   "text",
   "textarea",
   "select",
+  "multiselect",
   "number",
   "date",
+  "datetime",
   "checkbox",
+  // Mapped onto the ticket, not only stored as an answer:
+  "urgency", // the ticket's urgency and priority (LOW / MEDIUM / HIGH)
+  "asset", // one of the requester's own assets, linked to the ticket
+  "people", // colleagues (by email) added to the ticket as participants
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -15,10 +21,44 @@ export type ServiceField = {
   label: string;
   type: FieldType;
   required?: boolean;
-  options?: string[]; // for select
+  options?: string[]; // for select / multiselect
   placeholder?: string;
   help?: string;
 };
+
+/** What a catalog request becomes: a service request (the default) or an incident. */
+export const CATALOG_TICKET_TYPES = ["REQUEST", "INCIDENT"] as const;
+export type CatalogTicketType = (typeof CATALOG_TICKET_TYPES)[number];
+
+export function catalogTicketType(value: string | null | undefined): CatalogTicketType {
+  return value === "INCIDENT" ? "INCIDENT" : "REQUEST";
+}
+
+/** Levels of an "urgency" question; the ticket gets the same urgency and priority. */
+export const FORM_URGENCY_LEVELS = ["LOW", "MEDIUM", "HIGH"] as const;
+export type FormUrgency = (typeof FORM_URGENCY_LEVELS)[number];
+const URGENCY_LABEL: Record<FormUrgency, string> = { LOW: "Low", MEDIUM: "Medium", HIGH: "High" };
+
+/** Most colleagues one "people" question may add. */
+export const MAX_FORM_PEOPLE = 10;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/** A multi-value answer: a JSON array (the portal form) or a comma / line separated list (the assistant). */
+export function parseMultiValue(raw: string | null | undefined): string[] {
+  const text = (raw ?? "").trim();
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const arr = JSON.parse(text);
+      if (Array.isArray(arr)) return [...new Set(arr.map((v) => String(v).trim()).filter(Boolean))];
+    } catch {
+      // not JSON after all: fall through to the list form
+    }
+  }
+  return [...new Set(text.split(/[,;\n]/).map((v) => v.trim()).filter(Boolean))];
+}
 
 export function parseFormSchema(json: string | null | undefined): ServiceField[] {
   if (!json) return [];
@@ -159,18 +199,85 @@ export function validateAnswers(
       errors[f.key] = "Invalid selection";
       continue;
     }
+    if (f.type === "multiselect") {
+      const picked = parseMultiValue(v);
+      if (f.required && picked.length === 0) errors[f.key] = "This field is required";
+      else if (picked.some((o) => !(f.options ?? []).includes(o))) errors[f.key] = "Invalid selection";
+      else values[f.key] = picked;
+      continue;
+    }
+    if (f.type === "datetime" && v && (!DATETIME_RE.test(v) || Number.isNaN(new Date(v).getTime()))) {
+      errors[f.key] = "Enter a date and time";
+      continue;
+    }
+    if (f.type === "urgency" && v && !(FORM_URGENCY_LEVELS as readonly string[]).includes(v)) {
+      errors[f.key] = "Invalid selection";
+      continue;
+    }
+    if (f.type === "people") {
+      // Resolved to user accounts by createCatalogRequestFor; here only the shape is checked.
+      const emails = parseMultiValue(v).map((e) => e.toLowerCase());
+      if (emails.some((e) => !EMAIL_RE.test(e))) errors[f.key] = "Enter email addresses separated by commas";
+      else if (emails.length > MAX_FORM_PEOPLE) errors[f.key] = `Add at most ${MAX_FORM_PEOPLE} people`;
+      else values[f.key] = emails;
+      continue;
+    }
     values[f.key] = v;
   }
   return { values, errors };
+}
+
+/** The answer of the first "urgency" question, if any. */
+export function formUrgency(fields: ServiceField[], values: Record<string, unknown>): FormUrgency | null {
+  const field = fields.find((f) => f.type === "urgency");
+  const v = field ? values[field.key] : null;
+  return typeof v === "string" && (FORM_URGENCY_LEVELS as readonly string[]).includes(v) ? (v as FormUrgency) : null;
+}
+
+/** One answer as plain text (stored English, like every generated description). */
+export function answerText(f: ServiceField, v: unknown): string {
+  if (f.type === "checkbox") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (v == null || v === "") return "—";
+  if (f.type === "urgency") return URGENCY_LABEL[v as FormUrgency] ?? String(v);
+  if (f.type === "datetime") return String(v).replace("T", " ");
+  return String(v);
+}
+
+/** Longest ticket title a title template may produce. */
+export const MAX_TITLE_LEN = 200;
+
+/**
+ * The ticket title from an item's title template: {{item}}, {{requester}} and
+ * {{<question key>}} are replaced (unknown placeholders become empty). Falls back to
+ * "<Item> request" when there is no template or it renders empty.
+ */
+export function renderCatalogTitle(
+  template: string | null | undefined,
+  ctx: { itemName: string; requesterName: string; fields: ServiceField[]; values: Record<string, unknown> },
+): string {
+  const fallback = `${ctx.itemName} request`;
+  if (!template?.trim()) return fallback;
+  const byKey = new Map(ctx.fields.map((f) => [f.key, f]));
+  const rendered = template
+    .replace(/\{\{\s*([\w-]+)\s*\}\}/g, (_, key: string) => {
+      if (key === "item") return ctx.itemName;
+      if (key === "requester") return ctx.requesterName;
+      const field = byKey.get(key);
+      if (!field) return "";
+      const text = answerText(field, ctx.values[key]);
+      return text === "—" ? "" : text;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  return (rendered || fallback).slice(0, MAX_TITLE_LEN);
 }
 
 /** Render answers as a readable text block (for ticket description / email). */
 export function answersToText(fields: ServiceField[], values: Record<string, unknown>) {
   return fields
     .map((f) => {
-      const v = values[f.key];
-      const shown = f.type === "checkbox" ? (v ? "Yes" : "No") : String(v ?? "—");
-      return `• ${f.label}: ${shown}`;
+      return `• ${f.label}: ${answerText(f, values[f.key])}`;
     })
     .join("\n");
 }
