@@ -10,14 +10,18 @@
  * that does not exist on a DST spring-forward day moves forward by the gap.
  *
  * The ticket for an occurrence is created `createBeforeDays` local calendar days
- * before it is due (same wall-clock time). The lead time must be shorter than
- * one recurrence step, so at most one upcoming occurrence is ever "open".
+ * before it is due (same wall-clock time). The lead time may be longer than one
+ * recurrence step (a weekly check created a month ahead): several upcoming
+ * occurrences are then open at once and each gets its own ticket, oldest first.
+ * It is capped so that at most MAX_OPEN_OCCURRENCES are open at a time.
  */
 import { RECURRENCE_FREQUENCY_META, type RecurrenceFrequency } from "@/lib/constants";
 import { isValidTimeZone } from "@/lib/oncall-rules";
 
 export const MAX_RECURRENCE_INTERVAL = 365;
 export const MAX_CREATE_BEFORE_DAYS = 365;
+/** Upcoming occurrences whose ticket may exist at the same time (bounds the lead time of short steps). */
+export const MAX_OPEN_OCCURRENCES = 31;
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -214,13 +218,21 @@ export function shortestStepDays(frequency: RecurrenceFrequency, interval: numbe
   return interval * { DAILY: 1, WEEKLY: 7, MONTHLY: 28, YEARLY: 365 }[frequency];
 }
 
+/** The longest lead time a recurrence allows: MAX_CREATE_BEFORE_DAYS, or less where it would open more than MAX_OPEN_OCCURRENCES at once. */
+export function maxLeadTimeDays(frequency: RecurrenceFrequency, interval: number): number {
+  return Math.min(MAX_CREATE_BEFORE_DAYS, MAX_OPEN_OCCURRENCES * shortestStepDays(frequency, interval) - 1);
+}
+
+/** How many occurrences can have an open ticket at the same time with this lead time (1 = never more than one). */
+export function openOccurrencesAtOnce(frequency: RecurrenceFrequency, interval: number, createBeforeDays: number): number {
+  return Math.floor(Math.max(0, createBeforeDays) / shortestStepDays(frequency, interval)) + 1;
+}
+
 /** Why a lead time does not fit the recurrence, or null when it does. */
 export function leadTimeError(frequency: RecurrenceFrequency, interval: number, createBeforeDays: number): string | null {
-  const max = shortestStepDays(frequency, interval) - 1;
+  const max = maxLeadTimeDays(frequency, interval);
   if (createBeforeDays <= max) return null;
-  return max === 0
-    ? `A ticket that recurs ${describeRecurrence(frequency, interval).toLowerCase()} can't be created ahead of time (use 0 days).`
-    : `Create the ticket at most ${max} day${max === 1 ? "" : "s"} ahead for ${describeRecurrence(frequency, interval).toLowerCase()}.`;
+  return `Create the ticket at most ${max} day${max === 1 ? "" : "s"} ahead for ${describeRecurrence(frequency, interval).toLowerCase()} (at most ${MAX_OPEN_OCCURRENCES} open at once).`;
 }
 
 /** "Every day", "Every 3 months". */

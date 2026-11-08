@@ -30,6 +30,7 @@ import {
   initialNextDue,
   leadTimeError,
   occurrenceAt,
+  openOccurrencesAtOnce,
   indexOnOrAfter,
   type Recurrence,
 } from "@/lib/recurring-ticket-rules";
@@ -176,6 +177,7 @@ function RecurringTicketDialog({
   const leadNum = Number(leadDays);
   const validNumbers = Number.isInteger(intervalNum) && intervalNum >= 1 && Number.isInteger(leadNum) && leadNum >= 0;
   const leadHint = validNumbers ? leadTimeError(frequency, intervalNum, leadNum) : null;
+  const openAtOnce = validNumbers && !leadHint ? openOccurrencesAtOnce(frequency, intervalNum, leadNum) : 1;
   const firstDueAt = isValidTimeZone(timezone) ? parseZonedDateTime(`${firstDueDate}T${dueTime}`, timezone) : new Date(Number.NaN);
   const rule: Recurrence | null =
     validNumbers && !leadHint && !Number.isNaN(firstDueAt.getTime())
@@ -309,7 +311,11 @@ function RecurringTicketDialog({
               label="Create the ticket … days before it is due"
               htmlFor="rt-lead"
               error={fe.createBeforeDays ?? (leadHint ? [leadHint] : undefined)}
-              hint="0 = on the due date itself. Monthly dates past the 28th move to the month's last day when a month is shorter."
+              hint={
+                openAtOnce > 1
+                  ? `Longer than one step: up to ${openAtOnce} upcoming tickets exist at the same time, each created ${leadNum} days before its due date.`
+                  : "0 = on the due date itself. Monthly dates past the 28th move to the month's last day when a month is shorter."
+              }
             >
               <Input id="rt-lead" name="createBeforeDays" type="number" min={0} max={365} required value={leadDays} onChange={(e) => setLeadDays(e.target.value)} />
             </Field>

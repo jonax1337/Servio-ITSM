@@ -5,6 +5,8 @@ import {
   indexOnOrAfter,
   initialNextDue,
   leadTimeError,
+  maxLeadTimeDays,
+  openOccurrencesAtOnce,
   localDateTimeParts,
   nextToCreate,
   occurrenceAt,
@@ -204,18 +206,43 @@ describe("nextToCreate", () => {
   });
 });
 
+describe("nextToCreate — lead time longer than one step", () => {
+  it("opens every occurrence inside the window, one per call, oldest first", () => {
+    // Weekly on Mondays 09:00 Berlin (CET), created 20 days ahead: three occurrences are open on 1 Feb.
+    const r = rule({ frequency: "WEEKLY", firstDueAt: at("2027-02-01T08:00:00Z"), createBeforeDays: 20 });
+    const now = at("2027-01-31T12:00:00Z");
+    let next = initialNextDue(r, now, null);
+    const created: string[] = [];
+    for (let plan = nextToCreate(r, next, now); plan; plan = nextToCreate(r, next, now)) {
+      created.push(iso(plan.dueAt));
+      expect(plan.skipped).toBe(0);
+      next = plan.nextDueAt;
+    }
+    expect(created).toEqual(["2027-02-01T08:00:00.000Z", "2027-02-08T08:00:00.000Z", "2027-02-15T08:00:00.000Z"]);
+    expect(iso(next)).toBe("2027-02-22T08:00:00.000Z");
+    // The next one opens 20 days before 22 Feb.
+    expect(nextToCreate(r, next, at("2027-02-02T07:59:00Z"))).toBeNull();
+    expect(iso(nextToCreate(r, next, at("2027-02-02T08:00:00Z"))!.dueAt)).toBe("2027-02-22T08:00:00.000Z");
+  });
+});
+
 describe("leadTimeError", () => {
-  it("allows lead times shorter than one step", () => {
+  it("allows lead times up to a year, also longer than one step", () => {
     expect(leadTimeError("DAILY", 1, 0)).toBeNull();
+    expect(leadTimeError("DAILY", 1, 30)).toBeNull();
     expect(leadTimeError("WEEKLY", 2, 13)).toBeNull();
+    expect(leadTimeError("WEEKLY", 1, 30)).toBeNull();
     expect(leadTimeError("MONTHLY", 1, 27)).toBeNull();
-    expect(leadTimeError("YEARLY", 1, 364)).toBeNull();
+    expect(leadTimeError("MONTHLY", 1, 60)).toBeNull();
+    expect(leadTimeError("YEARLY", 1, 365)).toBeNull();
   });
 
-  it("refuses lead times that would open two occurrences at once", () => {
-    expect(leadTimeError("DAILY", 1, 1)).toMatch(/can't be created ahead/);
-    expect(leadTimeError("MONTHLY", 1, 28)).toBe("Create the ticket at most 27 days ahead for every month.");
-    expect(leadTimeError("WEEKLY", 1, 7)).toMatch(/at most 6 days/);
+  it("refuses lead times that would open more than 31 occurrences at once", () => {
+    expect(leadTimeError("DAILY", 1, 31)).toBe("Create the ticket at most 30 days ahead for every day (at most 31 open at once).");
+    expect(leadTimeError("WEEKLY", 1, 217)).toMatch(/at most 216 days/);
+    expect(maxLeadTimeDays("MONTHLY", 1)).toBe(365);
+    expect(openOccurrencesAtOnce("WEEKLY", 1, 6)).toBe(1);
+    expect(openOccurrencesAtOnce("WEEKLY", 1, 30)).toBe(5);
   });
 });
 

@@ -7,17 +7,18 @@
  * Decisions live in lib/recurring-ticket-rules.ts, the claim + ticket creation
  * in lib/recurring-tickets.ts; this file only selects candidates. After a
  * downtime a schedule creates at most one missed occurrence (the latest), then
- * the one whose window is open now, if any — never a backlog.
+ * every occurrence whose window is open now (several when the lead time spans
+ * more than one step) — never a backlog of past ones.
  */
 import { db } from "@/lib/db";
 import { getBoolSetting } from "@/lib/settings";
 import { getAutomationUserId } from "@/lib/system-user";
 import { fireRecurringTicket } from "@/lib/recurring-tickets";
-import { MAX_CREATE_BEFORE_DAYS } from "@/lib/recurring-ticket-rules";
+import { MAX_CREATE_BEFORE_DAYS, MAX_OPEN_OCCURRENCES } from "@/lib/recurring-ticket-rules";
 
 const DAY_MS = 86_400_000;
-/** Catch-up + the open occurrence; a guard against a runaway loop on bad data. */
-const MAX_FIRES_PER_SCHEDULE = 3;
+/** Catch-up + every open occurrence (a lead time can span several steps); a guard against a runaway loop on bad data. */
+const MAX_FIRES_PER_SCHEDULE = MAX_OPEN_OCCURRENCES + 2;
 
 export async function runRecurringTicketsTick(): Promise<void> {
   if (!(await getBoolSetting("RECURRING_TICKETS_ENABLED", true))) return;

@@ -69,12 +69,13 @@ describe("parseRecurringTicketForm", () => {
     expect(Object.keys(res.fieldErrors).sort()).toEqual(["frequency", "interval", "title"]);
   });
 
-  it("refuses an unknown zone, a bad due time and a lead time longer than one step", () => {
+  it("refuses an unknown zone, a bad due time and a lead time that opens too many occurrences", () => {
     expect(parseRecurringTicketForm(form({ ...valid, timezone: "Mars/Olympus" })).success).toBe(false);
     const bad = parseRecurringTicketForm(form({ ...valid, firstDueAt: "2027-02-30T09:00" }));
     expect(!bad.success && bad.fieldErrors.firstDueAt).toBeTruthy();
-    const lead = parseRecurringTicketForm(form({ ...valid, frequency: "WEEKLY", createBeforeDays: "7" }));
-    expect(!lead.success && lead.fieldErrors.createBeforeDays?.[0]).toMatch(/at most 6 days/);
+    const lead = parseRecurringTicketForm(form({ ...valid, frequency: "DAILY", createBeforeDays: "31" }));
+    expect(!lead.success && lead.fieldErrors.createBeforeDays?.[0]).toMatch(/at most 30 days/);
+    expect(parseRecurringTicketForm(form({ ...valid, frequency: "WEEKLY", createBeforeDays: "30" })).success).toBe(true);
   });
 
   it("treats a missing isActive as active and 'false' as paused", () => {

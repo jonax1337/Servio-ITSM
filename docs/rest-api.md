@@ -442,9 +442,10 @@ snake_case and strict ([`lib/recurring-ticket-input.ts`](../lib/recurring-ticket
     `timezone` (`2027-01-31T09:00`) or an ISO time with offset. Later occurrences
     keep that wall-clock time across DST; monthly/yearly dates past a month's end
     clamp to its last day (Jan 31 → Feb 28/29 → Mar 31).
-  - `create_before_days` must be shorter than the shortest step (1 / 7 / 28 / 365
-    days × `interval`; so `0` for every day, at most `27` for every month); else
-    `422` on `create_before_days`.
+  - `create_before_days` is `0`–`365`. It may be longer than one step (a weekly
+    check created 30 days ahead): every occurrence whose window is open gets its
+    own ticket. At most 31 occurrences may be open at once, so short steps are
+    capped (every day: `30`; every week: `216`); else `422` on `create_before_days`.
   - **History import:** `import_ref` (e.g. `glpi:ticketrecurrent:7`, unique) makes
     re-runs idempotent: an existing ref answers `200` with `meta.created: false`
     and changes nothing. `last_created_for` (ISO with offset) is the due time of the
