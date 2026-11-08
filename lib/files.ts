@@ -207,3 +207,36 @@ export function validateUpload(
 
   return { ok: true, mime, safeName };
 }
+
+/** HTTP status for each upload refusal (shared by the console upload route and the REST API). */
+export const UPLOAD_ERROR_STATUS: Record<Extract<ValidationResult, { ok: false }>["code"], 413 | 415 | 422> = {
+  TOO_LARGE: 413,
+  EMPTY: 422,
+  MIME_NOT_ALLOWED: 415,
+  EXT_MISMATCH: 415,
+  MAGIC_MISMATCH: 415,
+};
+
+/** RFC 5987 `attr-char`: everything else in an ext-value must be percent-encoded. */
+const ATTR_CHAR = /[A-Za-z0-9!#$&+\-.^_`|~]/;
+
+function rfc5987(value: string): string {
+  let out = "";
+  for (const byte of Buffer.from(value, "utf8")) {
+    const ch = String.fromCharCode(byte);
+    out += byte < 0x80 && ATTR_CHAR.test(ch) ? ch : `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+  }
+  return out;
+}
+
+/**
+ * A `Content-Disposition` header that is safe for any stored filename: the
+ * quoted ASCII fallback keeps only printable ASCII (no quote, backslash or
+ * path separator, so it can neither break out of the quoted-string nor name a
+ * directory), and `filename*` carries the exact name per RFC 5987/6266.
+ */
+export function contentDisposition(filename: string, disposition: "attachment" | "inline" = "attachment"): string {
+  const base = stripControl((filename ?? "").replace(/\\/g, "/")).split("/").pop() || "file";
+  const ascii = base.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_") || "file";
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${rfc5987(base)}`;
+}

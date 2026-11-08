@@ -481,7 +481,7 @@ Reused across every module, worth knowing before building UI:
 | `components/list-toolbar.tsx`, `pagination-bar.tsx` | List filtering + pagination |
 | `components/status-badge.tsx` | `StatusBadge` / `ToneBadge` (driven by `lib/constants.ts` metadata) |
 | `components/comments/` | `comment-thread`, `composer-attachments` (shared comment UI) |
-| `components/attachments/` | `attachment-list`, `attachments-card`, `file-upload` (paired with `lib/actions/attachments.ts` → `deleteAttachment`) |
+| `components/attachments/` | `attachment-list`, `attachments-card`, `file-upload` (paired with `lib/actions/attachments.ts` → `deleteAttachment`), `record-attachments` (the Attachments card in the rail of change, problem, asset and license detail pages: agents read, any agent uploads/removes, licenses MANAGER+; the same files the REST API serves under `/api/v1/{entity}/{id}/attachments`). The rules are `lib/attachments.ts` (DB checks) and `lib/attachment-rules.ts` (pure) |
 | `components/history/entity-history.tsx` | Audit/history timeline |
 | `components/edit-entity-dialog.tsx`, `confirm-dialog.tsx`, `empty-state.tsx`, `stat-card.tsx`, `combobox.tsx`, `combo-field.tsx` | Generic primitives |
 | `components/ui/` | shadcn/base-ui design-system primitives — see [design-system.md](./design-system.md) |
