@@ -714,13 +714,20 @@ cannot see, is a `404`.
   `UPLOAD_RATE_LIMIT` per window, shared with the portal; `Retry-After` is set).
   The body is capped while it streams, so an oversized upload is refused without
   being buffered. Next.js passes request bodies through `proxy.ts` only up to
-  `proxyClientMaxBodySize` (10 MB by default); a body cut short there is reported
-  as `413` when the client declared its `Content-Length`.
+  `PROXY_MAX_BODY_MB` (build time, 32 MB in the published image); a body cut short
+  there is reported as `413` when the client declared its `Content-Length`.
 - **History import:** a token with the **`admin` scope owned by an `ADMIN`** (the
   rule of [History import](#history-import), else `403`) may also send
   `created_at` (ISO with offset, not in the future) and `uploaded_by_id` (an
   existing user, else `422`), and may add files to a closed ticket, e.g. the
-  documents of a GLPI record or the opsi license file of a license.
+  documents of a record from another ITSM tool or the key file of a license.
+  - `import_ref` (at most 200 characters, unique across all attachments, e.g.
+    `glpi:document:42`) makes re-runs idempotent: when this record already has a
+    file with that ref, the upload answers `200` with it and `meta.created: false`,
+    stores nothing and writes no audit row. A new ref answers `201` with
+    `meta.created: true`. A ref already used on **another** record is a `409`: a
+    source file linked to several records needs one ref per record
+    (`glpi:document:42:change:129`). Listed files carry `import_ref`.
 - **`DELETE /{entity}/{id}/attachments/{attachment_id}`** removes the row and the
   stored blob; responds `{ "data": { "id": "…", "deleted": true } }`.
 

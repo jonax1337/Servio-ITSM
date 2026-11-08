@@ -1259,6 +1259,7 @@ model Attachment {
   assetId      String?
   licenseId    String?
   uploadedById String?
+  importRef    String?  @unique // source id of a file written by a history import (e.g. "glpi:document:42"); a re-upload with the same ref returns the stored file
   createdAt    DateTime @default(now())
 
   ticket        Ticket?          @relation(fields: [ticketId], references: [id], onDelete: Cascade)

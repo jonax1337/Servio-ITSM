@@ -359,7 +359,7 @@ export function presentRecurringTicket(r: Parameters<typeof serializeRecurringTi
 
 /** A file on a ticket, change, problem, asset or license. Never exposes the storage key or path. */
 export function serializeAttachment(
-  a: { id: string; filename: string; mime: string; size: number; createdAt: Date; commentId: string | null; uploadedBy?: Userish },
+  a: { id: string; filename: string; mime: string; size: number; createdAt: Date; commentId: string | null; importRef?: string | null; uploadedBy?: Userish },
   downloadUrl: string,
 ) {
   return {
@@ -368,6 +368,7 @@ export function serializeAttachment(
     content_type: a.mime,
     size: a.size,
     comment_id: a.commentId,
+    import_ref: a.importRef ?? null,
     uploaded_by: user(a.uploadedBy ?? null),
     created_at: a.createdAt.toISOString(),
     download_url: downloadUrl,

@@ -104,6 +104,7 @@ export async function readUploadFile(file: FormDataEntryValue | null, maxBytes: 
 export type AttachmentRowData = {
   uploadedById: string;
   createdAt?: Date;
+  importRef?: string;
   ticketId?: number;
   commentId?: string;
   articleId?: string;

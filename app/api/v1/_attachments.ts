@@ -67,6 +67,7 @@ const SELECT = {
   size: true,
   createdAt: true,
   commentId: true,
+  importRef: true,
   storageKey: true,
   uploadedById: true,
   uploadedBy: { select: { id: true, name: true, email: true } },
@@ -194,11 +195,16 @@ export function attachmentCollectionHandlers(entity: AttachmentEntity) {
     if ("status" in parsed) return apiError(parsed.status, parsed.message);
     const fields = parseUploadFields(parsed.form.entries(), entity);
     if ("errors" in fields) return apiError(422, "Validation failed", fields.errors);
-    const { commentId, createdAt, uploadedById, isImport } = fields.data;
+    const { commentId, createdAt, uploadedById, importRef, isImport } = fields.data;
 
     // History fields follow the /import/* rule: admin scope AND an ADMIN owner.
     if (isImport && !mayImportHistory(principal)) {
-      return apiError(403, "created_at and uploaded_by_id need a token with the 'admin' scope, owned by an ADMIN.");
+      return apiError(403, "created_at, uploaded_by_id and import_ref need a token with the 'admin' scope, owned by an ADMIN.");
+    }
+    // Re-import: a file already stored under this ref comes back as is (no second copy, no audit row).
+    if (importRef) {
+      const known = await existingImport(parent, importRef);
+      if (known) return known;
     }
     if (uploadedById && !(await db.user.findUnique({ where: { id: uploadedById }, select: { id: true } }))) {
       return apiError(422, "Validation failed", { uploaded_by_id: [`Unknown user: ${uploadedById}`] });
@@ -221,8 +227,17 @@ export function attachmentCollectionHandlers(entity: AttachmentEntity) {
     const file = await readUploadFile(parsed.form.get("file"), maxBytes);
     if ("status" in file) return apiError(file.status, file.message);
 
-    const stored = await storeAttachment(file, { uploadedById: uploadedById ?? principal.userId, ...(createdAt ? { createdAt } : {}), ...fk });
-    if ("status" in stored) return apiError(stored.status, stored.message);
+    const stored = await storeAttachment(file, {
+      uploadedById: uploadedById ?? principal.userId,
+      ...(createdAt ? { createdAt } : {}),
+      ...(importRef ? { importRef } : {}),
+      ...fk,
+    });
+    if ("status" in stored) {
+      // A concurrent upload with the same ref won the unique index: answer with its file.
+      const known = importRef ? await existingImport(parent, importRef) : null;
+      return known ?? apiError(stored.status, stored.message);
+    }
 
     await writeAudit({
       userId: principal.userId,
@@ -230,12 +245,33 @@ export function attachmentCollectionHandlers(entity: AttachmentEntity) {
       entity: "Attachment",
       entityId: stored.row.id,
       summary: `${isImport ? "Imported" : "Uploaded"} "${file.safeName}" to ${parent.label} via API`,
-      meta: { parent: parent.entity, parentId: parent.id, ...(commentId ? { commentId } : {}), ...(isImport ? { import: true } : {}) },
+      meta: {
+        parent: parent.entity,
+        parentId: parent.id,
+        ...(commentId ? { commentId } : {}),
+        ...(isImport ? { import: true } : {}),
+        ...(importRef ? { importRef } : {}),
+      },
     });
     for (const p of parent.paths) revalidatePath(p);
 
     const row = await db.attachment.findUniqueOrThrow({ where: { id: stored.row.id }, select: SELECT });
-    return ok(serializeAttachment(row, downloadUrl(parent, row.id)), { status: 201 });
+    return ok(serializeAttachment(row, downloadUrl(parent, row.id)), { status: 201, ...(importRef ? { meta: { created: true } } : {}) });
+  }
+
+  /**
+   * The response for an upload whose `import_ref` is already stored: `200` with
+   * that file and `meta.created: false` when it belongs to this parent, `409`
+   * when the ref is taken by a file elsewhere, null when the ref is new.
+   */
+  async function existingImport(parent: Parent, importRef: string): Promise<NextResponse | null> {
+    const here = await db.attachment.findFirst({ where: { AND: [{ importRef }, parent.where] }, select: SELECT });
+    if (here) return ok(serializeAttachment(here, downloadUrl(parent, here.id)), { status: 200, meta: { created: false } });
+    const elsewhere = await db.attachment.findUnique({ where: { importRef }, select: { id: true } });
+    if (elsewhere) {
+      return apiError(409, "This import_ref already belongs to a file on another record. For a file linked to several records, use one ref per record.");
+    }
+    return null;
   }
 
   return { GET, POST };
