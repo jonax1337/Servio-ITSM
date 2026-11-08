@@ -3,19 +3,13 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { unstable_rethrow } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
-import { getSetting } from "@/lib/settings";
-import { LOCALE_COOKIE, normalizeLocale, pickLocale, type Locale, FALLBACK_LOCALE } from "@/lib/i18n/config";
+import { LOCALE_COOKIE, pickLocale, type Locale } from "@/lib/i18n/config";
+import { getInstanceLocale, localeForUser } from "@/lib/i18n/instance";
 import { createTranslator, translateServerMessage, type Namespace, type Translator } from "@/lib/i18n/translate";
 import { createEnumTranslator, type EnumTranslator } from "@/lib/i18n/enums";
 import { createFormatter, type Formatter } from "@/lib/i18n/format";
 
-/**
- * The instance default language: Settings › General › Default language (AppSetting
- * `APP_LOCALE`), else env `APP_LOCALE`, else English.
- */
-export async function getInstanceLocale(): Promise<Locale> {
-  return normalizeLocale(await getSetting("APP_LOCALE")) ?? FALLBACK_LOCALE;
-}
+export { getInstanceLocale, localeForUser };
 
 /**
  * The locale of the current request (cached per request): the signed-in user's choice
@@ -42,8 +36,7 @@ export const getLocale = cache(async (): Promise<Locale> => {
       cookie = null;
     }
   }
-  const instance = await getSetting("APP_LOCALE").catch(() => null);
-  return pickLocale({ user: user ?? undefined, cookie, instance });
+  return pickLocale({ user: user ?? undefined, cookie, instance: await getInstanceLocale() });
 });
 
 /** A translator for one namespace in the request's locale: `const t = await getT("tickets")`. */
@@ -72,6 +65,5 @@ export async function getTForUser<N extends Namespace>(
   user: { locale?: string | null } | null | undefined,
   ns: N,
 ): Promise<Translator<N>> {
-  const locale = normalizeLocale(user?.locale) ?? (await getInstanceLocale());
-  return createTranslator(locale, ns);
+  return createTranslator(await localeForUser(user), ns);
 }
