@@ -20,7 +20,7 @@ async function refOf(ctx: { params: Promise<{ ref: string }> }) {
   return REF_RE.test(ref) ? ref : null;
 }
 
-/** The asset with this origin reference (e.g. `opsi:host:ws01.intern`), or 404. */
+/** The asset with this origin reference (e.g. `inventory:host:pc-042`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
   const auth = await guard(req, "read");
   if ("response" in auth) return auth.response;

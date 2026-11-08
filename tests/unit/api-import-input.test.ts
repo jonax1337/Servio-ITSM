@@ -23,7 +23,7 @@ import {
 } from "@/lib/api-import-input";
 
 const change = (extra: Record<string, unknown> = {}) =>
-  changeImportSchema.parse({ import_ref: "glpi:change:129", title: "Servio pilot", status: "CLOSED", created_at: "2026-11-07T17:00:00+01:00", ...extra });
+  changeImportSchema.parse({ import_ref: "glpi:change:129", title: "Example change", status: "CLOSED", created_at: "2026-11-07T17:00:00+01:00", ...extra });
 
 describe("import schemas", () => {
   it("need import_ref, status and created_at", () => {
