@@ -24,6 +24,8 @@ export function GET() {
       license_assignments: "/api/v1/licenses/{id}/assignments",
       services: "/api/v1/services",
       ticket_comments: "/api/v1/tickets/{id}/comments",
+      recurring_tickets: "/api/v1/recurring-tickets",
+      recurring_ticket: "/api/v1/recurring-tickets/{id}",
       changes: "/api/v1/changes",
       change: "/api/v1/changes/{id}",
       change_transitions: "/api/v1/changes/{id}/transitions",

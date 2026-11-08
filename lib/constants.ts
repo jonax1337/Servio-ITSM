@@ -10,7 +10,7 @@ import {
   TriangleAlert, CircleSlash, Crown, Undo2,
   MapPin, Building2, Layers, DoorClosed, Server, Rows3,
   Lock, Globe,
-  Target, Eye, Rocket, Boxes, BookOpen, CalendarX2, PhoneCall,
+  Target, Eye, Rocket, Boxes, BookOpen, CalendarX2, PhoneCall, Repeat,
 } from "lucide-react";
 
 export type Tone =
@@ -181,6 +181,7 @@ export const TICKET_SOURCES = [
   "PHONE",
   "API",
   "AGENT",
+  "RECURRING",
 ] as const;
 export const SOURCE_META: Record<string, Meta> = {
   PORTAL: { label: "Portal", tone: "info" },
@@ -189,6 +190,7 @@ export const SOURCE_META: Record<string, Meta> = {
   PHONE: { label: "Phone", tone: "indigo" },
   API: { label: "API", tone: "neutral" },
   AGENT: { label: "Agent", tone: "neutral" },
+  RECURRING: { label: "Recurring", tone: "indigo", icon: Repeat },
 };
 
 // ---- Problem --------------------------------------------------------------
@@ -531,6 +533,17 @@ export const ONCALL_ROTATION_META: Record<OnCallRotationType, Meta & { hours: nu
   DAILY: { label: "Daily", tone: "info", hours: 24 },
   WEEKLY: { label: "Weekly", tone: "indigo", hours: 168 },
   CUSTOM: { label: "Custom", tone: "purple", hours: null },
+};
+
+// ---- Recurring tickets ----------------------------------------------------
+export const RECURRENCE_FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const;
+export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
+/** `unit` names one step in the "Every 3 months" summary. */
+export const RECURRENCE_FREQUENCY_META: Record<RecurrenceFrequency, Meta & { unit: string }> = {
+  DAILY: { label: "Daily", tone: "info", unit: "day" },
+  WEEKLY: { label: "Weekly", tone: "indigo", unit: "week" },
+  MONTHLY: { label: "Monthly", tone: "purple", unit: "month" },
+  YEARLY: { label: "Yearly", tone: "success", unit: "year" },
 };
 
 // ---- Status page ----------------------------------------------------------
