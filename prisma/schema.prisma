@@ -655,6 +655,11 @@ model Ticket {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   importRef           String?   @unique // origin of a record imported via POST /api/v1/import/tickets (e.g. "glpi:ticket:42")
+  // Integration key of a monitoring alert (e.g. "zabbix:event:12345"), set via POST /api/v1/tickets. Kept for
+  // good as history; `openExternalRef` mirrors it only while the ticket is open, so the unique index allows one
+  // OPEN ticket per key (Prisma cannot express a partial unique index). lib/db.ts clears it on RESOLVED/CLOSED/CANCELLED.
+  externalRef         String?
+  openExternalRef     String?   @unique
 
   requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
   requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
@@ -707,6 +712,7 @@ model Ticket {
   @@index([problemId])
   @@index([changeId])
   @@index([mergedIntoId])
+  @@index([externalRef])
 }
 
 model TicketComment {
