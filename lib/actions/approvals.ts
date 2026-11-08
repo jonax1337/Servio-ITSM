@@ -6,7 +6,8 @@ import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { seatCatalogStage } from "@/lib/approval-seating";
 import { writeAudit, notify } from "@/lib/audit";
-import { sendMail } from "@/lib/mail";
+import { mailBrand, sendMail, ticketThreadHeaders } from "@/lib/mail";
+import { renderRequestDecisionEmail } from "@/lib/email-templates";
 import { resumeData, ticketCalendar } from "@/lib/sla";
 import { autoAssignTicket } from "@/lib/assignment";
 import { runAutomations } from "@/lib/automations";
@@ -128,13 +129,7 @@ export async function decideApproval(formData: FormData): Promise<ActionResult> 
       entity: "Ticket",
       entityId: String(t.id),
     });
-    if (t.requester?.email) {
-      await sendMail({
-        to: t.requester.email, toName: t.requester.name, entity: "Ticket", entityId: t.id, template: "request_rejected",
-        subject: `[${ticketRef(t.id, t.type)}] Your request was declined`,
-        body: `Hello,\n\nYour request "${t.title}" has been declined${comment ? `:\n\n${comment}` : "."}\n\nYou can submit a new request from the portal if needed.\n\n— Servio Service Desk`,
-      });
-    }
+    await sendRequestDecisionMail("request_rejected", t, comment);
   } else if (!(await releaseApprovedRequest(t, me.id, comment))) {
     return refuse(ALREADY_DECIDED_ERROR);
   }
@@ -149,7 +144,7 @@ export async function decideApproval(formData: FormData): Promise<ActionResult> 
  *  auto-assign it, run creation automations, and notify the requester.
  *  Returns false when a concurrent cancel or decision got there first. */
 async function releaseApprovedRequest(
-  t: { id: number; pendingSince: Date | null; responseDueAt: Date | null; resolveDueAt: Date | null; dueAt: Date | null; pausedMs: number; type: string; title: string; requesterId: string; requester?: { email: string | null; name: string | null } | null; catalogItem?: { name: string } | null; service?: { name: string } | null; sla?: { businessCalendarId: string | null } | null },
+  t: { id: number; pendingSince: Date | null; responseDueAt: Date | null; resolveDueAt: Date | null; dueAt: Date | null; pausedMs: number; type: string; prefix?: string | null; title: string; requesterId: string; requester?: { email: string | null; name: string | null; locale?: string | null } | null; catalogItem?: { name: string } | null; service?: { name: string } | null; sla?: { businessCalendarId: string | null } | null },
   actorId: string,
   comment: string | null,
 ): Promise<boolean> {
@@ -172,14 +167,31 @@ async function releaseApprovedRequest(
     entity: "Ticket",
     entityId: String(t.id),
   });
-  if (t.requester?.email) {
-    await sendMail({
-      to: t.requester.email, toName: t.requester.name, entity: "Ticket", entityId: t.id, template: "request_approved",
-      subject: `[${ticketRef(t.id, t.type)}] Your request was approved`,
-      body: `Hello,\n\nYour request "${t.title}" has been approved and is now being actioned${comment ? `:\n\n${comment}` : "."}\n\n— Servio Service Desk`,
-    });
-  }
+  await sendRequestDecisionMail("request_approved", t, comment);
   return true;
+}
+
+type DecisionMailTicket = {
+  id: number; type: string; prefix?: string | null; title: string;
+  requester?: { email: string | null; name: string | null; locale?: string | null } | null;
+  catalogItem?: { name: string } | null; service?: { name: string } | null;
+};
+
+/** The "approved" / "declined" email to the requester, in their language and on the ticket's mail thread. */
+async function sendRequestDecisionMail(key: "request_approved" | "request_rejected", t: DecisionMailTicket, comment: string | null) {
+  if (!t.requester?.email) return;
+  await sendMail({
+    to: t.requester.email, toName: t.requester.name, entity: "Ticket", entityId: t.id, ticketId: t.id,
+    ...(await ticketThreadHeaders(t.id)),
+    ...(await renderRequestDecisionEmail(key, {
+      brand: await mailBrand(t.requester),
+      ref: ticketRef(t.id, t.prefix || t.type),
+      title: t.title,
+      itemName: t.catalogItem?.name ?? t.service?.name ?? t.title,
+      requesterName: t.requester.name ?? "",
+      comment,
+    })),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

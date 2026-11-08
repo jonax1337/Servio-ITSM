@@ -38,7 +38,39 @@ export const emailTemplatesDe = {
       `<p>Hallo {{agentName}},</p>` +
       `<p>das Ticket <strong>{{ref}}</strong> — „{{title}}“ — wurde Ihnen zugewiesen. Bitte sehen Sie es sich an und übernehmen Sie den nächsten Schritt.</p>`,
   },
+  ticket_closed: {
+    subject: "[{{ref}}] Geschlossen: {{title}}",
+    bodyHtml:
+      `<p>Hallo {{requesterName}},</p>` +
+      `<p>Ihre Anfrage <strong>{{ref}}</strong> — „{{title}}“ — ist jetzt <strong>geschlossen</strong>. Wenn Sie noch etwas brauchen, antworten Sie einfach auf diese E-Mail oder stellen Sie eine neue Anfrage.</p>`,
+  },
+  approval_request: {
+    subject: "[{{ref}}] Genehmigung erforderlich: {{itemName}}",
+    bodyHtml:
+      `<p>Hallo {{approverName}},</p>` +
+      `<p>{{requesterName}} hat <strong>{{itemName}}</strong> ({{ref}}) angefordert. Die Anfrage braucht Ihre Genehmigung{{stage}}.</p>` +
+      `{{details}}` +
+      `<p>Bitte genehmigen oder lehnen Sie sie in {{appName}} unter „Genehmigungen“ ab.</p>`,
+  },
+  request_approved: {
+    subject: "[{{ref}}] Ihre Anfrage wurde genehmigt",
+    bodyHtml:
+      `<p>Hallo {{requesterName}},</p>` +
+      `<p>Ihre Anfrage <strong>{{itemName}}</strong> ({{ref}}) wurde genehmigt und wird jetzt bearbeitet.</p>` +
+      `{{comment}}`,
+  },
+  request_rejected: {
+    subject: "[{{ref}}] Ihre Anfrage wurde abgelehnt",
+    bodyHtml:
+      `<p>Hallo {{requesterName}},</p>` +
+      `<p>Ihre Anfrage <strong>{{itemName}}</strong> ({{ref}}) wurde leider abgelehnt.</p>` +
+      `{{comment}}` +
+      `<p>Wenn Sie sie weiterhin benötigen, können Sie im Portal eine neue Anfrage stellen.</p>`,
+  },
 } as const;
+
+/** The {{stage}} text of the approval email (multi-stage approvals only). */
+export const approvalStageDe = (stage: number, of: number) => ` (Stufe ${stage} von ${of})`;
 
 /** The {{autoCloseNotice}} sentence of the resolved email. */
 export const autoCloseNoticeDe = (days: number) =>

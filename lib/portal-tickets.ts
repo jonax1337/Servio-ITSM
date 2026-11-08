@@ -211,7 +211,7 @@ export async function createCatalogRequestFor(
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${item.name}" from the catalog` });
 
   // Seat the first stage: its named approver, or the group's lead / first active agent.
-  if (needsApproval && !(await seatCatalogStage(ticket.id, 0, { details: summary }))) {
+  if (needsApproval && !(await seatCatalogStage(ticket.id, 0))) {
     // The approver went away between the check and the seat: leave a trail; the
     // request stays PENDING until an admin fixes the item or it is re-requested.
     await db.ticketComment.create({

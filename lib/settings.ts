@@ -80,6 +80,13 @@ export async function getChangeSelfApprovalMode(): Promise<ChangeSelfApprovalMod
   return parseSelfApprovalMode(await getSetting(CHANGE_SELF_APPROVAL_SETTING));
 }
 
+export const TICKET_CLOSED_EMAIL_SETTING = "TICKET_CLOSED_EMAIL_ENABLED";
+
+/** Whether the requester gets the "Ticket closed" email (Settings › Tickets; default off). */
+export async function getTicketClosedEmailEnabled(): Promise<boolean> {
+  return getBoolSetting(TICKET_CLOSED_EMAIL_SETTING, false);
+}
+
 /** Days a ticket stays RESOLVED before it is closed automatically (Settings › Tickets; 0 = off, the default). */
 export async function getTicketAutoCloseDays(): Promise<number> {
   return normalizeAutoCloseDays(await getNumberSetting(TICKET_AUTO_CLOSE_DAYS_SETTING, 0));
