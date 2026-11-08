@@ -20,6 +20,7 @@ import {
   ArrowUpCircle,
   Repeat,
   GitPullRequestArrow,
+  Ticket,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -86,6 +87,13 @@ const CARDS: SettingCard[] = [
     title: "Uploads",
     description: "File attachment size limits for tickets, comments and articles.",
     icon: UploadCloud,
+    minRole: "ADMIN",
+  },
+  {
+    href: "/settings/tickets",
+    title: "Tickets",
+    description: "Close resolved tickets automatically after a number of days.",
+    icon: Ticket,
     minRole: "ADMIN",
   },
   {

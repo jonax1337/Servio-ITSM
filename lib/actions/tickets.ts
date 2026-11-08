@@ -19,6 +19,7 @@ import {
   textToHtmlParagraphs, renderEmailHtml, renderThreadHistory,
 } from "@/lib/mail";
 import { renderTicketResolvedEmail } from "@/lib/email-templates";
+import { getTicketAutoCloseDays } from "@/lib/settings";
 import { ensureSurvey, surveyUrl } from "@/lib/csat-survey";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { format } from "date-fns";
@@ -469,6 +470,7 @@ async function sendResolvedMail(ticket: ResolvedMailTicket, actorEmail: string, 
       requesterName: ticket.requester.name ?? "",
       surveyUrl: surveyToken ? await surveyUrl(surveyToken) : null,
       resolutionNote,
+      autoCloseDays: await getTicketAutoCloseDays(),
     })),
   });
 }

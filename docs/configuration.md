@@ -29,7 +29,7 @@ See also: [development.md](development.md) for the local dev loop, and
 > table: **General** (`APP_NAME`, `APP_URL`, `APP_LOCALE`), **Email** (`SMTP_*`), **Inbound**
 > (`IMAP_*`, `MAIL_PLUS_ADDRESSING`), **Sable (AI assistant)** (provider, model, keys,
 > web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`),
-> **Change management** (`CHANGE_SELF_APPROVAL`) and
+> **Tickets** (`TICKET_AUTO_CLOSE_DAYS`), **Change management** (`CHANGE_SELF_APPROVAL`) and
 > **Updates** (`UPDATE_*`). Precedence for every key is **DB row (non-empty) →
 > `process.env` (non-empty) → built-in default**, so an empty table falls back to
 > `.env` and nothing breaks until an admin overrides a value; saving an empty
@@ -125,7 +125,7 @@ file. The sample file is a starting point, not the full list.
 | `LOGIN_BASE_BACKOFF_MS` | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
 | `LOGIN_MAX_BACKOFF_MS` | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |
 | `LOGIN_DECAY_MS` | No | `900000` | Idle window (ms, 15 min) after which a login's failure count decays/resets. |
-| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs, and the insights, SLA-nudge, contracts, maintenance, update-check and recurring-tickets ticks), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Only a case-insensitive `false` disables it. Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
+| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs, and the insights, SLA-nudge, contracts, maintenance, update-check, recurring-tickets and auto-close ticks), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Only a case-insensitive `false` disables it. Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
 | `SYNC_TICK_SECONDS` _(not in `.env.example`)_ | No | `60` | How often the scheduler looks for due scheduled syncs (floor 30). |
 | `SLA_ESCALATION_TICK_SECONDS` _(not in `.env.example`)_ | No | `180` | Interval of the SLA escalation sweep (floor 60). |
 | `INSIGHTS_ENABLED` _(not in `.env.example`)_ | No | `true` | Master switch for Sable's insight detection tick ([`../lib/ticks/ai-insights.ts`](../lib/ticks/ai-insights.ts)). Similarity is local lexical TF-IDF and needs no AI provider. |
@@ -142,6 +142,8 @@ file. The sample file is a starting point, not the full list.
 | `CONTRACTS_TICK_SECONDS` | No | `3600` | Interval of the contracts tick (floor 600). |
 | `RECURRING_TICKETS_ENABLED` _(not in `.env.example`)_ | No | `true` | Create the tickets of recurring ticket schedules when their creation window opens ([`../lib/ticks/recurring-tickets.ts`](../lib/ticks/recurring-tickets.ts)). Off = schedules keep their state and catch up once (the latest missed occurrence) when it is turned back on. |
 | `RECURRING_TICKETS_TICK_SECONDS` _(not in `.env.example`)_ | No | `300` | Interval of the recurring-tickets tick (floor 60): how late after its creation time a ticket may appear. |
+| `TICKET_AUTO_CLOSE_DAYS` _(not in `.env.example`)_ | No | `0` (off) | Close a ticket automatically once it has been RESOLVED for this many whole days (0..3650; 0 = off). The auto-close tick ([`../lib/ticks/auto-close.ts`](../lib/ticks/auto-close.ts)) moves it to CLOSED with an internal note and an audit entry by the Automation account, and does nothing while the status workflow forbids RESOLVED → CLOSED. A requester reply before then reopens the ticket as usual. The "Ticket resolved" email offers `{{autoCloseDays}}` and `{{autoCloseNotice}}`. Edited at Settings › Tickets (`/settings/tickets`, ADMIN), which stores `0` explicitly so an environment value cannot switch it back on. |
+| `AUTO_CLOSE_TICK_SECONDS` _(not in `.env.example`)_ | No | `3600` | Interval of the auto-close tick (floor 300). |
 | `CHANGE_CONFLICT_SAME_SERVICE` | No | `true` | Also flag changes whose windows overlap and that share a service (through their affected CIs), not only a CI. |
 | `CHANGE_SELF_APPROVAL` _(not in `.env.example`)_ | No | `OFF` | Whether the requester or owner of a change may approve it, for teams too small for a four-eyes review: `OFF`, `WHEN_NO_OTHER_APPROVER` (seated only when no one else is eligible) or `ALWAYS` (seated next to the board; their justified decision settles it). Any other value counts as `OFF`. Role/risk eligibility and a written justification apply in every mode. Edited at Settings › Change management (`/settings/changes`, ADMIN), which stores `OFF` explicitly so an environment value cannot switch it back on. Details: [modules.md](modules.md#approvals). |
 | `SERVIO_STATE_DIR` | No | `/data/state` in the Docker image, `./.servio-state` otherwise | Directory shared with the updater sidecar and read by `proxy.ts`: `maintenance.json` and `updater/*.json` ([`../lib/state-dir.ts`](../lib/state-dir.ts)). See [updates.md](./updates.md). |

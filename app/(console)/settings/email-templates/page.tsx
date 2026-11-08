@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { MailCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
+import { getTicketAutoCloseDays } from "@/lib/settings";
 import { mailBrand } from "@/lib/mail";
 import { signatureHtml, textToHtmlParagraphs } from "@/lib/mail-template";
 import {
-  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, previewTemplate, type TemplateKey,
+  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, autoCloseNoticeHtml, previewTemplate, type TemplateKey,
 } from "@/lib/email-templates";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmailTemplateEditor } from "@/components/settings/email-template-editor";
@@ -18,12 +19,18 @@ export async function generateMetadata(): Promise<Metadata> {
 export const dynamic = "force-dynamic";
 
 /** Template placeholders named in descriptions, passed through literally. */
-const PLACEHOLDER_VARS = { quote: "{{quote}}", resolution: "{{resolution}}", survey: "{{survey}}" };
+const PLACEHOLDER_VARS = {
+  quote: "{{quote}}",
+  resolution: "{{resolution}}",
+  survey: "{{survey}}",
+  autoCloseDays: "{{autoCloseDays}}",
+  autoCloseNotice: "{{autoCloseNotice}}",
+};
 
 export default async function EmailTemplatesPage() {
   await requireRole("ADMIN");
   const t = await getT("settings");
-  const [rows, brand] = await Promise.all([db.emailTemplate.findMany(), mailBrand()]);
+  const [rows, brand, autoCloseDays] = await Promise.all([db.emailTemplate.findMany(), mailBrand(), getTicketAutoCloseDays()]);
   const byKey = new Map(rows.map((r) => [r.key, r]));
 
   // Sample data used to render the live previews.
@@ -35,6 +42,9 @@ export default async function EmailTemplatesPage() {
     agentName: "Alex Admin",
     message: textToHtmlParagraphs(t("emailTemplates.sampleMessage")),
     signature: signatureHtml(textToHtmlParagraphs("Alex Admin\nService Desk")),
+    // The preview follows Settings › Tickets: empty while automatic closing is off.
+    autoCloseDays: autoCloseDays > 0 ? String(autoCloseDays) : "",
+    autoCloseNotice: autoCloseNoticeHtml(autoCloseDays, brand.locale),
   };
   const ctx = { brand, vars: sampleVars };
 

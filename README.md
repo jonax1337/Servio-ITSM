@@ -144,6 +144,8 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
   requester, and custom fields; export the ticket list (or, for admins, the audit log) to CSV.
 - **CSAT surveys** — a public, one-time satisfaction rating minted on resolution and linked from the
   resolution email, with an average-score dashboard widget.
+- **Automatic closing** — resolved tickets close on their own after a configurable number of days
+  (off by default); a reply from the requester before then reopens them as usual.
 - **Admin audit log** — an ADMIN-only viewer over every recorded action, with user/entity/action/date
   filters and CSV export.
 - **Automations** — condition→action rules on ticket create/update and on SLA at-risk/breach

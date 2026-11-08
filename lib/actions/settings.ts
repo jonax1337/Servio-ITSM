@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { CHANGE_SELF_APPROVAL_SETTING, setSetting } from "@/lib/settings";
 import { CHANGE_SELF_APPROVAL_MODES } from "@/lib/approval-rules";
+import { TICKET_AUTO_CLOSE_DAYS_SETTING, parseAutoCloseDaysInput } from "@/lib/auto-close-rules";
 import { encryptionAvailable } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
 import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
@@ -259,6 +260,23 @@ export async function saveChangeSettings(
     [{ key: CHANGE_SELF_APPROVAL_SETTING, value: mode }],
     `Updated change management settings (self-approval: ${mode})`,
     "/settings/changes",
+  );
+}
+
+export async function saveTicketSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const parsed = parseAutoCloseDaysInput(str(fd, TICKET_AUTO_CLOSE_DAYS_SETTING));
+  if ("error" in parsed) return { error: parsed.error };
+  // 0 is stored, not dropped: an empty row would let an environment value switch it back on.
+  return persist(
+    me.id,
+    [{ key: TICKET_AUTO_CLOSE_DAYS_SETTING, value: String(parsed.days) }],
+    `Updated ticket settings (auto-close after ${parsed.days} days)`,
+    "/settings/tickets",
   );
 }
 
