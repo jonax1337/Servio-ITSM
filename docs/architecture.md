@@ -272,10 +272,13 @@ every server-action agent guard shares the same DB-truth check via
   `LOGIN_*` knobs in [configuration.md](./configuration.md)), and every
   successful/failed login writes a `LOGIN`/`LOGIN_FAILED` audit row (with IP).
 - **OIDC / SSO** — registered **only** when `AUTH_OIDC_ID` and `AUTH_OIDC_ISSUER`
-  are set. Auto-linking an SSO identity to a local account requires the IdP to
-  assert a **verified** email (`allowDangerousEmailAccountLinking: false`);
-  unverified emails surface `OAuthAccountNotLinked` instead of taking over an
-  account by email collision. `ssoEnabled` / `ssoProviderName` are exported so
+  are set. Auth.js never links an SSO identity to an existing account by a bare
+  email match (`allowDangerousEmailAccountLinking: false`); such a sign-in
+  surfaces `OAuthAccountNotLinked` instead of taking over an account by email
+  collision. Opt-in, the `signIn` callback links a first SSO sign-in to a
+  pre-created account (verified email or directory external id, no password, no
+  identity yet — [`lib/oidc-link.ts`](../lib/oidc-link.ts), see
+  [configuration.md](./configuration.md#linking-pre-created-accounts)). `ssoEnabled` / `ssoProviderName` are exported so
   the login page can conditionally render the SSO button. The login page is
   `force-dynamic`: prerendered at build time it would bake in the build's
   (empty) `AUTH_OIDC_*` env and never show the button in the Docker image. With
