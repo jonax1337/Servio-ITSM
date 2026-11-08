@@ -22,6 +22,7 @@ export const emailTemplatesDe = {
       `<p>Hallo {{requesterName}},</p>` +
       `<p>gute Nachrichten — Ihre Anfrage <strong>{{ref}}</strong> wurde als <strong>gelöst</strong> markiert. Falls noch etwas offen ist, antworten Sie einfach auf diese E-Mail.</p>` +
       `{{resolution}}` +
+      `{{autoCloseNotice}}` +
       `{{survey}}`,
   },
   ticket_participant: {
@@ -38,6 +39,10 @@ export const emailTemplatesDe = {
       `<p>das Ticket <strong>{{ref}}</strong> — „{{title}}“ — wurde Ihnen zugewiesen. Bitte sehen Sie es sich an und übernehmen Sie den nächsten Schritt.</p>`,
   },
 } as const;
+
+/** The {{autoCloseNotice}} sentence of the resolved email. */
+export const autoCloseNoticeDe = (days: number) =>
+  `Wenn wir nichts mehr von Ihnen hören, wird das Ticket in ${days} ${days === 1 ? "Tag" : "Tagen"} automatisch geschlossen.`;
 
 /** The CSAT call to action under the resolved email. */
 export const surveyCtaDe = { question: "Wie zufrieden waren Sie?", link: "Support bewerten" };

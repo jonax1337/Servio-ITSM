@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
 import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
 import type { Locale } from "@/lib/i18n/config";
-import { emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
+import { autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
 
 /**
  * Admin-editable email templates. Each is a SUBJECT + a BODY (HTML) with
@@ -26,7 +26,7 @@ export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export const TEMPLATE_META: Record<TemplateKey, { label: string; description: string; vars: string[] }> = {
   ticket_received: { label: "Request received", description: "Short confirmation to the requester when a new ticket is created.", vars: ["appName", "ref", "requesterName"] },
   ticket_reply: { label: "Reply to requester", description: "Agent reply: message + signature + quoted trail ({{quote}}).", vars: ["ref", "title", "requesterName", "message", "signature", "quote"] },
-  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with the public resolution note ({{resolution}}) and an optional CSAT survey link ({{survey}}).", vars: ["ref", "title", "requesterName", "resolution", "survey"] },
+  ticket_resolved: { label: "Ticket resolved", description: "Short note that the ticket was resolved, with the public resolution note ({{resolution}}), an optional CSAT survey link ({{survey}}) and, when resolved tickets close automatically, the delay ({{autoCloseDays}}) or a ready sentence about it ({{autoCloseNotice}}).", vars: ["ref", "title", "requesterName", "resolution", "autoCloseDays", "autoCloseNotice", "survey"] },
   ticket_participant: { label: "Added as participant", description: "When someone is added as a participant / CC'd.", vars: ["ref", "title", "requesterName", "agentName", "message"] },
   ticket_assigned: { label: "Ticket assigned", description: "Internal notice to the assigned agent.", vars: ["ref", "title", "agentName"] },
 };
@@ -51,6 +51,7 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
       `<p>Hi {{requesterName}},</p>` +
       `<p>good news — your request <strong>{{ref}}</strong> has been marked as <strong>resolved</strong>. If anything is still open, just reply to this email.</p>` +
       `{{resolution}}` +
+      `{{autoCloseNotice}}` +
       `{{survey}}`,
   },
   ticket_participant: {
@@ -83,7 +84,19 @@ const SURVEY_CTA: Record<Locale, { question: string; link: string }> = {
   de: surveyCtaDe,
 };
 
-const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey"]);
+const AUTO_CLOSE_NOTICE: Record<Locale, (days: number) => string> = {
+  en: (days) => `If we don't hear from you, the ticket will be closed automatically in ${days} ${days === 1 ? "day" : "days"}.`,
+  de: autoCloseNoticeDe,
+};
+
+const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey", "autoCloseNotice"]);
+
+/** The {{autoCloseNotice}} paragraph of the resolved email (empty when automatic closing is off). */
+export function autoCloseNoticeHtml(days: number, locale: Locale = "en"): string {
+  if (days <= 0) return "";
+  const sentence = (AUTO_CLOSE_NOTICE[locale] ?? AUTO_CLOSE_NOTICE.en)(days);
+  return `<p>${escapeHtml(sentence)}</p>`;
+}
 
 /** A small "Rate our support" CTA block for the resolved email (empty string if no link). */
 export function surveyCtaHtml(url?: string | null, locale: Locale = "en"): string {
@@ -145,7 +158,10 @@ export function renderTicketResolvedEmail(ctx: {
   surveyUrl?: string | null;
   /** Public resolution note shown to the requester; omit for an internal note. */
   resolutionNote?: string | null;
+  /** Days until the ticket closes automatically (Settings › Tickets); 0 or omitted = off. */
+  autoCloseDays?: number;
 }) {
+  const autoCloseDays = ctx.autoCloseDays ?? 0;
   return renderTicketEmail("ticket_resolved", {
     brand: ctx.brand,
     vars: {
@@ -154,6 +170,8 @@ export function renderTicketResolvedEmail(ctx: {
       title: ctx.title,
       requesterName: ctx.requesterName ?? "",
       resolution: ctx.resolutionNote ? quoteHtml(textToHtmlParagraphs(ctx.resolutionNote)) : "",
+      autoCloseDays: autoCloseDays > 0 ? String(autoCloseDays) : "",
+      autoCloseNotice: autoCloseNoticeHtml(autoCloseDays, ctx.brand?.locale),
       survey: surveyCtaHtml(ctx.surveyUrl, ctx.brand?.locale),
     },
   });

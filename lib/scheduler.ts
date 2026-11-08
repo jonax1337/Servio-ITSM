@@ -11,6 +11,7 @@ import { runContractsTick } from "@/lib/ticks/contracts";
 import { runMaintenanceTick } from "@/lib/ticks/maintenance";
 import { runUpdateCheckTick } from "@/lib/ticks/update-check";
 import { runRecurringTicketsTick } from "@/lib/ticks/recurring-tickets";
+import { runAutoCloseTick } from "@/lib/ticks/auto-close";
 import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
@@ -179,6 +180,8 @@ const FEATURE_TICKS: FeatureTick[] = [
   { name: "update-check", settingKey: "UPDATE_CHECK_TICK_SECONDS", defaultSeconds: 21600, minSeconds: 3600, run: runUpdateCheckTick },
   // Creation windows open on a wall-clock minute; a ticket a few minutes late is fine.
   { name: "recurring-tickets", settingKey: "RECURRING_TICKETS_TICK_SECONDS", defaultSeconds: 300, minSeconds: 60, run: runRecurringTicketsTick },
+  // The auto-close delay is counted in days; a ticket closed within the hour is fine.
+  { name: "auto-close", settingKey: "AUTO_CLOSE_TICK_SECONDS", defaultSeconds: 3600, minSeconds: 300, run: runAutoCloseTick },
 ];
 
 function guardedRunner(tick: FeatureTick): () => Promise<void> {

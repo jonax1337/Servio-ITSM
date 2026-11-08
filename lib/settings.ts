@@ -2,6 +2,7 @@ import { cache } from "react";
 import { db } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { parseSelfApprovalMode, type ChangeSelfApprovalMode } from "@/lib/approval-rules";
+import { TICKET_AUTO_CLOSE_DAYS_SETTING, normalizeAutoCloseDays } from "@/lib/auto-close-rules";
 
 /**
  * Central runtime-config service. Precedence for every key:
@@ -77,6 +78,11 @@ export const CHANGE_SELF_APPROVAL_SETTING = "CHANGE_SELF_APPROVAL";
 /** Whether (and when) a change's requester or owner may approve it (Settings › Change management; default OFF). */
 export async function getChangeSelfApprovalMode(): Promise<ChangeSelfApprovalMode> {
   return parseSelfApprovalMode(await getSetting(CHANGE_SELF_APPROVAL_SETTING));
+}
+
+/** Days a ticket stays RESOLVED before it is closed automatically (Settings › Tickets; 0 = off, the default). */
+export async function getTicketAutoCloseDays(): Promise<number> {
+  return normalizeAutoCloseDays(await getNumberSetting(TICKET_AUTO_CLOSE_DAYS_SETTING, 0));
 }
 
 /**
