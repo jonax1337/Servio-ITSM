@@ -15,6 +15,8 @@ export function GET() {
     resources: {
       tickets: "/api/v1/tickets",
       ticket: "/api/v1/tickets/{id}",
+      ticket_by_ref: "/api/v1/tickets/ref/{ref}",
+      ticket_resolve_by_ref: "/api/v1/tickets/ref/{ref}/resolve",
       assets: "/api/v1/assets",
       asset: "/api/v1/assets/{id}",
       asset_by_ref: "/api/v1/assets/ref/{ref}",

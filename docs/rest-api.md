@@ -190,7 +190,7 @@ Pagination applies to every list endpoint except `GET /services`, `/categories`,
 
 | Endpoint | Filters |
 | --- | --- |
-| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`) |
+| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved) |
 | `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
 
 **Sorting is fixed** (not client-configurable): tickets by `updatedAt` descending,
@@ -211,6 +211,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
 | `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `write` |
+| `GET` | `/tickets/ref/{ref}` | The ticket carrying an external reference: the open one, else the most recent (see [Monitoring dedup](#monitoring-dedup-external-reference)). | `read` |
+| `POST` | `/tickets/ref/{ref}/resolve` | Resolve the open ticket carrying an external reference (monitoring recovery). Agent tokens only. | `write` |
 | `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
 | `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
@@ -283,6 +285,11 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "assignee": null,
   "category_id": null,
   "service_id": null,
+  "problem_id": null,
+  "change_id": null,
+  "import_ref": null,
+  "external_ref": null,
+  "external_ref_open": false,
   "due_at": null,
   "resolved_at": null,
   "created_at": "2026-08-09T10:00:00.000Z",
@@ -304,6 +311,8 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `status` | ticket status enum — **open statuses only** | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
+| `externalRef` | string, 1–200 of `A-Z a-z 0-9 . _ : @ -`, starting with a letter or digit | — | **agents only** (a non-agent token gets `403`); monitoring dedup key, see below |
+| `onDuplicate` | `return` \| `comment` | `return` | what a repeat with an open `externalRef` does |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
 `urgency` are honored; all other fields fall back to defaults (an unknown
@@ -333,6 +342,43 @@ ticket carries `problem_id` and `change_id`. Changing `status`:
   ticket's creation plus its banked pause time (the clock never restarts), via the
   shared `slaRepricePatch` (same contract as the console's `updateTicketField`).
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
+- `RESOLVED`, `CLOSED` and `CANCELLED` release the ticket's external reference
+  (see below), so the next alert with that key opens a new ticket.
+
+#### Monitoring dedup (external reference)
+
+Monitoring integrations (Zabbix, Wazuh, …) call the API per alert. With an
+`external_ref` — the alert's stable key, e.g. `zabbix:event:12345` or
+`wazuh:rule:92206:host:ws01` — repeated alerts land in **one open ticket**:
+
+| Request | Answer |
+| --- | --- |
+| `POST /tickets` with an `external_ref` no open ticket carries | `201`, the new ticket, `meta.deduplicated: false` |
+| `POST /tickets` with the `external_ref` of an open ticket | `200`, **that** ticket, `meta.deduplicated: true`; nothing else in the body is applied |
+| … with `on_duplicate: "comment"` | the same, and the request's `description` (its `title` when empty) is added to the open ticket as an **internal** note through the same path as `POST /tickets/{id}/comments` (`meta.comment`); when the token's owner may not write to that ticket the answer is that endpoint's `403`, with the ticket in `error.details.ticket` |
+| `POST /tickets/ref/{ref}/resolve` | resolves the open ticket (`200`); `404` when none is open |
+| `GET /tickets/ref/{ref}` | the open ticket, else the most recent one that carried the key; `404` if none |
+| `GET /tickets?external_ref=…` | every ticket that ever carried the key |
+
+The key is unique among **open** tickets (`NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`,
+`ON_HOLD`). Concurrent POSTs with the same new key (Wazuh fires integrations in
+parallel) end in one ticket: the database's unique index picks the single
+winner and the others answer `200` with it. Once the ticket reaches `RESOLVED`,
+`CLOSED` or `CANCELLED` — through this endpoint, `PATCH`, the console, a macro,
+an automation or a merge — the key is released and the next POST opens a new
+ticket; the old one keeps `external_ref` as history (`external_ref_open: false`).
+Reopening a resolved ticket does **not** reclaim the key (a newer ticket may
+hold it by then): a reopened alert ticket is handled as a human ticket.
+
+The resolve body is optional: `resolution_note`, `resolution_code`
+(`RESOLUTION_CODES`), `internal` (default `true`: the note is an internal
+comment; `false` makes it the public resolution reply). It runs the console's
+resolution action as the token's owner (see [How the ITSM endpoints enforce the
+console's rules](#how-the-itsm-endpoints-enforce-the-consoles-rules)): the
+configured workflow map and role gates (a refused move is `409`), the merge and
+approval rules, SLA stamping (`resolvedAt`, `resolveBreached`, a paused clock is
+resumed first), the resolution comment and mail, and automations. Only someone
+who may act on the ticket can resolve it (`403`).
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,
 `CLOSED`, `CANCELLED`. Open statuses (matched by `?status=open`): `NEW`, `OPEN`,
@@ -728,6 +774,18 @@ curl -s -X POST "$BASE/tickets" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"VPN is down","type":"INCIDENT","priority":"HIGH"}'
+
+# Monitoring alert: one open ticket per key (repeat = 200 + internal note)
+curl -s -X POST "$BASE/tickets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Disk full on ws01","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
+
+# Monitoring recovery: resolve the open ticket for the key
+curl -s -X POST "$BASE/tickets/ref/zabbix:event:12345/resolve" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resolution_note":"Recovered: 60% on /var","resolution_code":"FIXED"}'
 
 # Transition a ticket (agent token)
 curl -s -X PATCH "$BASE/tickets/1" \

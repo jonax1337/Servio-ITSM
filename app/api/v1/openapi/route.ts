@@ -11,6 +11,7 @@ import {
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
 import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
+import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
   licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
@@ -139,6 +140,8 @@ const spec = {
           type: { type: "string", enum: ["INCIDENT", "REQUEST"] },
           status: { type: "string" },
           priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          external_ref: { type: ["string", "null"], description: "Integration key (monitoring dedup); kept after resolution" },
+          external_ref_open: { type: "boolean", description: "This is the open ticket new POSTs with the key land in" },
         },
       },
       Asset: {
@@ -174,20 +177,40 @@ const spec = {
           { name: "priority", in: "query", schema: { type: "string" } },
           { name: "type", in: "query", schema: { type: "string" } },
           { name: "q", in: "query", schema: { type: "string" } },
+          q("import_ref"),
+          q("external_ref", "Every ticket that carried this key, open or resolved"),
           { name: "page", in: "query", schema: { type: "integer" } },
           { name: "per_page", in: "query", schema: { type: "integer" } },
         ],
         responses: { "200": { description: "A paginated list of tickets" } },
       },
       post: {
-        summary: "Create a ticket",
-        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/Ticket" } } } },
-        responses: { "201": { description: "Created" }, "422": { description: "Validation failed" } },
+        summary: "Create a ticket (or land in the open one carrying `external_ref`)",
+        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one.",
+        requestBody: body(ticketCreateSchema),
+        responses: {
+          "201": { description: "Created" },
+          "200": { description: "Deduplicated: the open ticket with this external_ref (meta.deduplicated, meta.comment)" },
+          "403": { description: "external_ref on a non-agent token, or the dedup comment was refused (ticket in details)" },
+          "422": { description: "Validation failed" },
+        },
       },
     },
     "/tickets/{id}": {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: { summary: "Update a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Updated" } } },
+    },
+    "/tickets/ref/{ref}": {
+      get: { summary: "Get the ticket carrying an external reference (the open one, else the most recent)", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+    },
+    "/tickets/ref/{ref}/resolve": {
+      post: {
+        summary: "Resolve the open ticket carrying an external reference (monitoring recovery)",
+        description: `${agentOnly} Runs the console's resolution action: workflow map, SLA stamping, resolution comment and mail. Body optional; the note is internal unless \`internal: false\`.`,
+        parameters: [refParam],
+        requestBody: { ...body(ticketResolveSchema), required: false },
+        responses: { "200": { description: "Resolved" }, "403": { description: "Not an agent token, or may not act on the ticket" }, "404": { description: "No open ticket carries the ref" }, ...refused },
+      },
     },
     "/assets": {
       get: {

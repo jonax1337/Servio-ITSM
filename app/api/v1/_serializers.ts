@@ -24,6 +24,8 @@ export function serializeTicket(t: {
   problemId?: number | null;
   changeId?: number | null;
   importRef?: string | null;
+  externalRef?: string | null;
+  openExternalRef?: string | null;
   dueAt: Date | null;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -47,6 +49,9 @@ export function serializeTicket(t: {
     problem_id: t.problemId ?? null,
     change_id: t.changeId ?? null,
     import_ref: t.importRef ?? null,
+    // Monitoring dedup key; `external_ref_open` = this is the open ticket that new alerts with the key land in.
+    external_ref: t.externalRef ?? null,
+    external_ref_open: !!t.openExternalRef,
     due_at: t.dueAt?.toISOString() ?? null,
     resolved_at: t.resolvedAt?.toISOString() ?? null,
     created_at: t.createdAt.toISOString(),
