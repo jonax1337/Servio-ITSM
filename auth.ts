@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import type { Account } from "next-auth";
 import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -9,6 +10,14 @@ import { authConfig } from "@/auth.config";
 import { loginRetryAfter, recordLoginFailure, recordLoginSuccess } from "@/lib/rate-limit";
 import { writeAudit } from "@/lib/audit";
 import { oidcRoleConfig, resolveOidcRole, shouldSyncRole, type OidcRoleConfig } from "@/lib/oidc-roles";
+import {
+  decideOidcLink,
+  externalIdFromProfile,
+  isEmailVerified,
+  oidcLinkConfig,
+  type LinkMatch,
+  type OidcLinkConfig,
+} from "@/lib/oidc-link";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -105,11 +114,9 @@ if (process.env.AUTH_OIDC_ID && process.env.AUTH_OIDC_ISSUER) {
     issuer: process.env.AUTH_OIDC_ISSUER,
     clientId: process.env.AUTH_OIDC_ID,
     clientSecret: process.env.AUTH_OIDC_SECRET,
-    // Auto-linking an SSO identity to a local account requires the IdP to assert
-    // a VERIFIED email (next-auth's default). The previous opt-in to dangerous
-    // linking let an unverified IdP email take over any local account by email
-    // collision. Users hitting OAuthAccountNotLinked should verify their IdP
-    // email (or an admin links the account manually).
+    // Never let Auth.js link by a bare email match: an unverified IdP email could
+    // take over any local account by collision. Pre-created accounts are linked
+    // by linkPrecreatedAccount() below, opt-in and only under its checks.
     allowDangerousEmailAccountLinking: false,
   });
 }
@@ -151,12 +158,115 @@ async function syncOidcRole(userId: string, currentRole: string | undefined, pro
   return role;
 }
 
+// Optional linking of a first SSO sign-in to a pre-created account. Like the role
+// map, a broken setting is logged and switches linking off.
+let linkConfig: OidcLinkConfig | null = null;
+try {
+  linkConfig = ssoEnabled ? oidcLinkConfig() : null;
+} catch (err) {
+  console.error(`[auth] OIDC account linking disabled: ${(err as Error).message}`);
+}
+
+const linkCandidateSelect = {
+  id: true,
+  email: true,
+  role: true,
+  passwordHash: true,
+  isActive: true,
+  lastLoginAt: true,
+  syncSourceId: true,
+  _count: { select: { accounts: true } },
+} as const;
+
+/** The account a new SSO identity belongs to: by external id first, then by email. */
+async function findLinkCandidate(config: OidcLinkConfig, profile: Record<string, unknown>) {
+  if (config.externalIdClaim) {
+    const externalId = externalIdFromProfile(profile, config.externalIdClaim);
+    if (externalId) {
+      // externalId is unique per sync source only; two sources claiming it is ambiguous.
+      const users = await db.user.findMany({ where: { externalId }, select: linkCandidateSelect, take: 2 });
+      if (users.length === 1) return { user: users[0], match: "externalId" as LinkMatch };
+      if (users.length > 1) console.warn(`[auth] OIDC external id "${externalId}" matches several accounts; not linking`);
+    }
+  }
+  const email = typeof profile.email === "string" ? profile.email.trim().toLowerCase() : "";
+  if (config.byVerifiedEmail && email) {
+    const user = await db.user.findUnique({ where: { email }, select: linkCandidateSelect });
+    if (user) return { user, match: "email" as LinkMatch };
+  }
+  return null;
+}
+
+/**
+ * Link a first SSO sign-in to an account created before its owner ever signed in
+ * (directory sync, agent, mail contact). Runs in the signIn callback, before
+ * Auth.js resolves the user, so the new link is what it finds. When nothing is
+ * linked, Auth.js proceeds as before (new user, or OAuthAccountNotLinked).
+ */
+async function linkPrecreatedAccount(account: Account, profile: Record<string, unknown>) {
+  if (!linkConfig) return;
+  const known = await db.account.findUnique({
+    where: { provider_providerAccountId: { provider: account.provider, providerAccountId: account.providerAccountId } },
+    select: { id: true },
+  });
+  if (known) return;
+  const found = await findLinkCandidate(linkConfig, profile);
+  if (!found) return;
+  const { user, match } = found;
+  const decision = decideOidcLink(
+    { ...user, identityCount: user._count.accounts },
+    match,
+    isEmailVerified(profile),
+  );
+  if (!decision.link) {
+    await writeAudit({
+      userId: user.id,
+      action: "LOGIN_FAILED",
+      entity: "User",
+      entityId: user.id,
+      summary: `SSO identity not linked to ${user.email} (matched by ${match}): ${decision.reason}`,
+    });
+    return;
+  }
+  await db.$transaction([
+    db.account.create({
+      data: {
+        userId: user.id,
+        type: account.type,
+        provider: account.provider,
+        providerAccountId: account.providerAccountId,
+        access_token: account.access_token,
+        id_token: account.id_token,
+        refresh_token: account.refresh_token,
+        expires_at: account.expires_at,
+        scope: account.scope,
+        token_type: account.token_type,
+        session_state: typeof account.session_state === "string" ? account.session_state : null,
+      },
+    }),
+    ...(decision.activate ? [db.user.update({ where: { id: user.id }, data: { isActive: true } })] : []),
+  ]);
+  await writeAudit({
+    userId: user.id,
+    action: "UPDATE",
+    entity: "User",
+    entityId: user.id,
+    summary: `Linked SSO identity to ${user.email} (matched by ${match})${decision.activate ? "; account activated" : ""}`,
+  });
+  // The first SSO sign-in of this account: apply the role map even with AUTH_OIDC_ROLE_SYNC=signup.
+  await syncOidcRole(user.id, user.role, profile, true);
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),
   providers,
   callbacks: {
     ...authConfig.callbacks,
+    async signIn({ account, profile }) {
+      if (account?.provider === "oidc" && profile) await linkPrecreatedAccount(account, profile);
+      return true;
+    },
     async jwt(params) {
       const token = authConfig.callbacks.jwt(params);
       const { account, user, profile, isNewUser } = params;

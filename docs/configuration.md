@@ -72,6 +72,8 @@ file. The sample file is a starting point, not the full list.
 | `AUTH_OIDC_ROLES_CLAIM` | No | `groups` | Claim holding the groups/roles; dot paths allowed (`realm_access.roles`). |
 | `AUTH_OIDC_DEFAULT_ROLE` | No | `USER` | Role when the claim is present but no entry matches. |
 | `AUTH_OIDC_ROLE_SYNC` | No | `login` | `login` = re-apply the mapping on every SSO sign-in (IdP is the source of truth); `signup` = only on the first sign-in. |
+| `AUTH_OIDC_LINK_EXISTING` | No | `off` | `email_verified` = link a first SSO sign-in to an existing account with the same email when the IdP asserts `email_verified`. `off` = never link by email. See [Linking pre-created accounts](#linking-pre-created-accounts). |
+| `AUTH_OIDC_LINK_CLAIM` | No | — | Claim (dot path allowed) whose value is matched against the account's `externalId` from the directory sync; a match links without an email check. Works with or without `AUTH_OIDC_LINK_EXISTING`. |
 | `APP_NAME` | No | `Servio` | Application display name used in outgoing mail and in Sable's context. Overridable in Settings › General. |
 | `APP_URL` | No | _empty_ | Public origin for absolute mail/CSAT links and build-time social image URLs. Overridable in Settings › General, which wins for runtime mail/survey links; static share metadata uses the build environment and requires a rebuild when the origin changes. `docker-compose.yml` forwards this value as a build argument (the Dockerfile `APP_URL` arg defaults to `http://localhost:3000`). |
 | `APP_LOCALE` | No | `en` | Default UI language of the instance (`en` or `de`) for the console, the portal and the sign-in page. Users on the default **Instance default** (`User.locale = "auto"`) follow it; a user who picks a language in *Account settings* keeps theirs. Overridable in Settings › General › Default language. See [i18n.md](i18n.md). |
@@ -254,10 +256,10 @@ Notes:
 - Only `AUTH_OIDC_ID` **and** `AUTH_OIDC_ISSUER` gate SSO. `AUTH_OIDC_SECRET` is
   passed to the provider but is **not** part of the enable check (public/PKCE
   clients can leave it empty).
-- `allowDangerousEmailAccountLinking: false`: an OIDC identity is only linked to an
-  existing local account with the same email when the IdP asserts a **verified**
-  email (Auth.js' default behaviour). A user who hits `OAuthAccountNotLinked` must
-  verify the email at the IdP, or an admin links the account manually.
+- `allowDangerousEmailAccountLinking: false`: Auth.js never links an OIDC identity
+  to an existing account just because the email matches. Without
+  [account linking](#linking-pre-created-accounts) such a sign-in fails with
+  `OAuthAccountNotLinked`.
 - Session role/id come from the JWT callbacks in
   [`../auth.config.ts`](../auth.config.ts); a first-time OIDC user gets the
   default `USER` role via the Prisma adapter — unless role mapping is configured.
@@ -287,6 +289,43 @@ Keycloak example: add a **Group Membership** mapper to the client (token claim
 name `groups`, "Add to ID token" on), then
 `AUTH_OIDC_ROLE_MAP="it-admins=ADMIN,service-desk=AGENT"`. For realm/client
 roles instead of groups use `AUTH_OIDC_ROLES_CLAIM=realm_access.roles`.
+
+### Linking pre-created accounts
+
+Accounts often exist before their owner first signs in: created by a
+[directory sync](./modules.md), by an agent, or as an inactive contact from the
+mail inbox. They have no SSO identity, so the first SSO sign-in fails with
+`OAuthAccountNotLinked`. Two opt-in settings let Servio link that sign-in to the
+existing account instead (logic in [`../lib/oidc-link.ts`](../lib/oidc-link.ts),
+run by the `signIn` callback in [`../auth.ts`](../auth.ts)):
+
+| Setting | Finds the account by | Extra condition |
+| --- | --- | --- |
+| `AUTH_OIDC_LINK_CLAIM=<claim>` | `User.externalId` equal to the claim's value (checked first) | the claim has exactly one value, and exactly one account carries it |
+| `AUTH_OIDC_LINK_EXISTING=email_verified` | `User.email` equal to the IdP email (case-insensitive) | the IdP sends `email_verified: true` |
+
+The account is linked only when all of these hold; otherwise the sign-in behaves
+as before and the refusal is written to the audit log (`LOGIN_FAILED`, with the
+reason):
+
+- it has **no password** (a password account's owner can sign in already),
+- it has **no SSO identity** yet (otherwise it belongs to someone else),
+- it is **active**, or an **unused contact**: inactive, never signed in and not
+  owned by a directory sync. Such a contact is activated by the sign-in. An
+  account deactivated by an admin or by the sync stays deactivated.
+
+A successful link is audited (`User`, "Linked SSO identity … (matched by email
+| externalId)"). The role map then applies as on a first sign-in — also with
+`AUTH_OIDC_ROLE_SYNC=signup`.
+
+Use the claim when the IdP federates the same directory the sync reads, and map
+the attribute the connector uses as external id into the token (Keycloak: a
+**User Attribute** mapper). The value must match the stored `externalId`
+exactly. The LDAP connector stores binary attributes such as `objectGUID` as
+hex of the raw bytes, which is not the UUID form IdPs usually emit; with such a
+directory pick a text attribute as external id (e.g. `userPrincipalName`) or
+link by email. Turn on `email_verified` only for an IdP that verifies
+email addresses itself, such as one backed by your own directory.
 
 ### Worked example (generic OIDC provider)
 
