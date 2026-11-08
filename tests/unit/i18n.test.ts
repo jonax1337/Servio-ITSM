@@ -5,7 +5,8 @@ import { formatMessage, messageArguments, messageTags } from "@/lib/i18n/format-
 import { createTranslator, translateServerMessage, translateFieldErrors } from "@/lib/i18n/translate";
 import { createEnumTranslator } from "@/lib/i18n/enums";
 import { createFormatter } from "@/lib/i18n/format";
-import { TICKET_STATUS_META, PRIORITY_META, CRITICALITY_META, AI_MCP_MODE_META, metaFor } from "@/lib/constants";
+import { TICKET_STATUS_META, PRIORITY_META, CRITICALITY_META, AI_MCP_MODE_META, RECURRENCE_FREQUENCIES, metaFor } from "@/lib/constants";
+import { MAX_CREATE_BEFORE_DAYS, describeRecurrence, leadTimeError } from "@/lib/recurring-ticket-rules";
 
 describe("locale resolution", () => {
   it("normalizes stored and configured values", () => {
@@ -143,5 +144,29 @@ describe("server message patterns", () => {
     expect(translateServerMessage("de", 'The MCP server "Docs" is no longer available.')).toBe(
       "Der MCP-Server „Docs“ ist nicht mehr verfügbar.",
     );
+  });
+
+  it("translates the recurring-ticket lead-time error of every frequency, for one and several steps", () => {
+    for (const frequency of RECURRENCE_FREQUENCIES) {
+      for (const interval of [1, 2]) {
+        const english = leadTimeError(frequency, interval, MAX_CREATE_BEFORE_DAYS + 1);
+        expect(english).not.toBeNull();
+        expect(translateServerMessage("de", english)).toMatch(/^Bei .+ höchstens \d+ Tage im Voraus anlegen \(maximal \d+ gleichzeitig offen\)\.$/);
+      }
+    }
+    expect(translateServerMessage("de", leadTimeError("WEEKLY", 2, MAX_CREATE_BEFORE_DAYS + 1))).toBe(
+      "Bei Wiederholung alle 2 Wochen das Ticket höchstens 365 Tage im Voraus anlegen (maximal 31 gleichzeitig offen).",
+    );
+  });
+});
+
+describe("recurring-ticket labels", () => {
+  it("names the recurrence per frequency and interval", () => {
+    const de = createTranslator("de", "settings");
+    const en = createTranslator("en", "settings");
+    expect(de("recurring.everyDAILY", { count: 1 })).toBe("Jeden Tag");
+    expect(de("recurring.everyMONTHLY", { count: 3 })).toBe("Alle 3 Monate");
+    expect(en("recurring.everyMONTHLY", { count: 3 })).toBe(describeRecurrence("MONTHLY", 3));
+    expect(en("recurring.everyYEARLY", { count: 1 })).toBe(describeRecurrence("YEARLY", 1));
   });
 });

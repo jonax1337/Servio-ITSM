@@ -7,18 +7,23 @@ import { ticketRef } from "@/lib/constants";
 import { frequencyOf, recurrenceOf } from "@/lib/recurring-ticket-input";
 import { creationTimeFor, localDateTimeParts } from "@/lib/recurring-ticket-rules";
 import { PageHeader, PageBody } from "@/components/page-header";
+import { getT } from "@/lib/i18n/server";
+import { INTL_LOCALE } from "@/lib/i18n/config";
 import {
   RecurringTicketManager,
   type RecurringTicketListRow,
 } from "@/components/recurring-tickets/recurring-ticket-manager";
 
-export const metadata: Metadata = { title: "Recurring tickets" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("recurring.title") };
+}
 export const dynamic = "force-dynamic";
 
-/** "10 Dec 2026, 09:00" on the schedule's own wall clock. */
-function formatIn(instant: Date, timezone: string): string {
+/** "10 Dec 2026, 09:00" on the schedule's own wall clock; en-GB keeps the day-first English form. */
+function formatIn(instant: Date, timezone: string, intlLocale: string): string {
   try {
-    return new Intl.DateTimeFormat("en-GB", { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }).format(instant);
+    return new Intl.DateTimeFormat(intlLocale === "en-US" ? "en-GB" : intlLocale, { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }).format(instant);
   } catch {
     return instant.toISOString();
   }
@@ -26,6 +31,8 @@ function formatIn(instant: Date, timezone: string): string {
 
 export default async function RecurringTicketsSettingsPage() {
   const me = await requireRole("MANAGER");
+  const t = await getT("settings");
+  const intlLocale = INTL_LOCALE[t.locale];
 
   const [rows, options, requesters] = await Promise.all([
     db.recurringTicket.findMany({
@@ -66,9 +73,9 @@ export default async function RecurringTicketsSettingsPage() {
       firstDueDate: local.date,
       dueTime: local.time,
       createBeforeDays: r.createBeforeDays,
-      nextDueLabel: formatIn(r.nextDueAt, r.timezone),
-      nextCreateLabel: formatIn(creationTimeFor(recurrenceOf(r), r.nextDueAt), r.timezone),
-      lastCreatedLabel: r.lastCreatedFor ? formatIn(r.lastCreatedFor, r.timezone) : null,
+      nextDueLabel: formatIn(r.nextDueAt, r.timezone, intlLocale),
+      nextCreateLabel: formatIn(creationTimeFor(recurrenceOf(r), r.nextDueAt), r.timezone, intlLocale),
+      lastCreatedLabel: r.lastCreatedFor ? formatIn(r.lastCreatedFor, r.timezone, intlLocale) : null,
       lastTicketId: r.lastTicketId && refOf.has(r.lastTicketId) ? r.lastTicketId : null,
       lastTicketRef: r.lastTicketId ? refOf.get(r.lastTicketId) ?? null : null,
       lastError: r.lastError,
@@ -79,8 +86,8 @@ export default async function RecurringTicketsSettingsPage() {
     <>
       <PageHeader
         icon={Repeat}
-        title="Recurring tickets"
-        description="Create tickets on a schedule for routine work — certificate renewals, licence reviews, backup restore tests. Each occurrence opens one ticket through the normal pipeline (SLA, automations, notifications), a set number of days before it is due."
+        title={t("recurring.title")}
+        description={t("recurring.description")}
       />
       <PageBody>
         <RecurringTicketManager

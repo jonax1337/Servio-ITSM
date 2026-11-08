@@ -53,6 +53,7 @@ const shell = {
   "crumb.email-templates": "Email templates",
   "crumb.inbound": "Inbound mail",
   "crumb.mail": "Mail",
+  "crumb.recurring-tickets": "Recurring tickets",
   "crumb.sla": "SLA",
   "crumb.updates": "Updates",
   "crumb.uploads": "Uploads",

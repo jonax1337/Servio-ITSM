@@ -37,7 +37,7 @@ export const enumsDe = {
   },
   PRIORITY_META: { LOW: "Niedrig", MEDIUM: "Mittel", HIGH: "Hoch", CRITICAL: "Kritisch" },
   LEVEL_META: { LOW: "Niedrig", MEDIUM: "Mittel", HIGH: "Hoch" },
-  SOURCE_META: { PORTAL: "Portal", SABLE: "Sable", EMAIL: "E-Mail", PHONE: "Telefon", API: "API", AGENT: "Agent" },
+  SOURCE_META: { PORTAL: "Portal", SABLE: "Sable", EMAIL: "E-Mail", PHONE: "Telefon", API: "API", AGENT: "Agent", RECURRING: "Wiederkehrend" },
   PROBLEM_STATUS_META: {
     NEW: "Neu",
     INVESTIGATING: "In Analyse",
@@ -155,6 +155,7 @@ export const enumsDe = {
     RACK: "Rack",
   },
   ONCALL_ROTATION_META: { DAILY: "Täglich", WEEKLY: "Wöchentlich", CUSTOM: "Benutzerdefiniert" },
+  RECURRENCE_FREQUENCY_META: { DAILY: "Täglich", WEEKLY: "Wöchentlich", MONTHLY: "Monatlich", YEARLY: "Jährlich" },
   STATUS_INCIDENT_STATE_META: {
     INVESTIGATING: "In Analyse",
     IDENTIFIED: "Ursache erkannt",

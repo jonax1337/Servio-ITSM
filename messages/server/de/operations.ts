@@ -1,7 +1,8 @@
 import type { ServerMessages } from "../../types";
 
 // English server message (exact text) → German. See docs/i18n.md#server-messages.
-// Knowledge, services, catalog, status page, on-call, maintenance, automations, insights.
+// Knowledge, services, catalog, status page, on-call, maintenance, automations, insights,
+// recurring tickets.
 const messages: ServerMessages = {
   // Knowledge
   "Article body cannot be empty": "Der Artikelinhalt darf nicht leer sein",
@@ -78,6 +79,37 @@ const messages: ServerMessages = {
   "An action refers to a group that no longer exists.": "Eine Aktion verweist auf eine Gruppe, die nicht mehr existiert.",
   // Insights
   "Missing insight.": "Erkenntnis fehlt.",
+  // Recurring tickets (lib/actions/recurring-tickets.ts, lib/recurring-ticket-input.ts, lib/recurring-tickets.ts)
+  "Not authorised: only managers can manage recurring tickets.": "Nicht berechtigt: Nur Manager können wiederkehrende Tickets verwalten.",
+  "Recurring ticket not found.": "Wiederkehrendes Ticket nicht gefunden.",
+  "The requester isn't valid: choose an active user.": "Der Anfragende ist ungültig: Bitte einen aktiven Benutzer wählen.",
+  "The assignee isn't valid: choose an active agent.": "Der Bearbeiter ist ungültig: Bitte einen aktiven Agent wählen.",
+  "The group isn't valid: it no longer exists.": "Die Gruppe ist ungültig: Sie existiert nicht mehr.",
+  "The category isn't valid: it no longer exists.": "Die Kategorie ist ungültig: Sie existiert nicht mehr.",
+  "The service isn't valid: it no longer exists.": "Der Service ist ungültig: Er existiert nicht mehr.",
+  "A recurring ticket with that import reference already exists.": "Ein wiederkehrendes Ticket mit dieser Importreferenz existiert bereits.",
+  "The schedule changed in the meantime. Reload and try again.": "Der Zeitplan wurde inzwischen geändert. Bitte neu laden und erneut versuchen.",
+  "The schedule has no requester (its creator was deleted). Edit it and choose one.":
+    "Der Zeitplan hat keinen Anfragenden (sein Ersteller wurde gelöscht). Bitte bearbeiten und einen auswählen.",
+  "The ticket could not be created: The schedule has no requester (its creator was deleted). Edit it and choose one.":
+    "Das Ticket konnte nicht angelegt werden: Der Zeitplan hat keinen Anfragenden (sein Ersteller wurde gelöscht). Bitte bearbeiten und einen auswählen.",
+  "Name must be at most 120 characters": "Der Name darf höchstens 120 Zeichen lang sein",
+  "Title must be at most 250 characters": "Der Titel darf höchstens 250 Zeichen lang sein",
+  "Description is too long": "Die Beschreibung ist zu lang",
+  "Choose a ticket type": "Bitte einen Tickettyp wählen",
+  "Choose a priority": "Bitte eine Priorität wählen",
+  "Choose an impact": "Bitte eine Auswirkung wählen",
+  "Choose an urgency": "Bitte eine Dringlichkeit wählen",
+  "Choose how often it recurs": "Bitte wählen, wie oft es sich wiederholt",
+  "Interval must be a number": "Das Intervall muss eine Zahl sein",
+  "Interval must be a whole number": "Das Intervall muss eine ganze Zahl sein",
+  "Lead time must be a number": "Die Vorlaufzeit muss eine Zahl sein",
+  "Lead time must be a whole number": "Die Vorlaufzeit muss eine ganze Zahl sein",
+  "Unknown time zone (use an IANA name like Europe/Berlin)": "Unbekannte Zeitzone (IANA-Namen wie Europe/Berlin verwenden)",
+  "Choose the first due date": "Bitte die erste Fälligkeit wählen",
+  "Enter the first due date and time": "Bitte Datum und Uhrzeit der ersten Fälligkeit angeben",
+  "Not a valid date and time": "Kein gültiges Datum mit Uhrzeit",
+  "At most 200 characters": "Höchstens 200 Zeichen",
 };
 
 export default messages;

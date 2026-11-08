@@ -51,6 +51,7 @@ const shell: Translations<typeof en> = {
   "crumb.email-templates": "E-Mail-Vorlagen",
   "crumb.inbound": "Eingehende E-Mails",
   "crumb.mail": "Mail",
+  "crumb.recurring-tickets": "Wiederkehrende Tickets",
   "crumb.sla": "SLA",
   "crumb.updates": "Updates",
   "crumb.uploads": "Uploads",
