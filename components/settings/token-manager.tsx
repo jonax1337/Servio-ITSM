@@ -13,8 +13,8 @@ import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
-
-export function TokenManager() {
+/** `owners`: accounts a token can be issued to; the issuing admin (`currentUserId`) is the default. */
+export function TokenManager({ owners, currentUserId }: { owners: ComboOption[]; currentUserId: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     createApiToken,
     undefined,
@@ -74,6 +74,14 @@ export function TokenManager() {
             <Label>{t("token.scopes")}</Label>
             <ComboField name="scopes" options={scopeOptions} defaultValue="read" />
           </div>
+          <div className="grid min-w-56 gap-1.5">
+            <Label>{t("token.owner")}</Label>
+            <ComboField name="userId" options={owners} defaultValue={currentUserId} />
+          </div>
+          <div className="grid min-w-40 gap-1.5">
+            <Label htmlFor="token-expires">{t("token.expiresOn")}</Label>
+            <Input id="token-expires" name="expiresOn" type="date" />
+          </div>
           <Button type="submit" disabled={pending}>
             {pending ? (
               <Loader2 className="size-4 animate-spin" />
@@ -83,9 +91,12 @@ export function TokenManager() {
             {t("token.generate")}
           </Button>
         </div>
-        {fe.name ? (
-          <p className="text-xs text-destructive">{fe.name[0]}</p>
-        ) : null}
+        {[fe.name, fe.userId, fe.expiresOn].map((errors, i) =>
+          errors?.[0] ? (
+            <p key={i} className="text-xs text-destructive">{errors[0]}</p>
+          ) : null,
+        )}
+        <p className="text-xs text-muted-foreground">{t("token.ownerHint")}</p>
       </form>
     </div>
   );

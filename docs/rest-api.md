@@ -29,7 +29,8 @@ Tokens are **personal access tokens** (PATs) tied to a user. Create them in the 
 1. Sign in as an admin and open **Settings › API Tokens** (route
    `app/(console)/settings/api/page.tsx`,
    URL `/settings/api`). The page is gated by `requireRole("ADMIN")`.
-2. Enter a name, choose a scope set, and click **Generate token**.
+2. Enter a name, choose a scope set, the **owner** (default: you) and optionally
+   an **expiry date**, then click **Generate token**.
 3. **Copy the token immediately** — the full value is shown exactly once. Only a
    short prefix and a bcrypt hash are stored, so it cannot be recovered later.
 
@@ -40,8 +41,17 @@ Under the hood ([`createApiToken`](../lib/actions/tokens.ts)):
 | Raw token format | `servio_pat_` + `nanoid(32)` |
 | Stored `prefix` | first **18** chars of the raw token (`raw.slice(0, 18)`) |
 | Stored `tokenHash` | `bcrypt.hash(raw, 10)` — the raw token is never persisted |
-| Owner | the creating user (`userId`) |
-| Scopes | one of the sets below, stored as a comma-separated string |
+| Owner | the account picked as owner (`userId`), default the creating admin; must be active |
+| Scopes | one of the sets below, stored as a comma-separated string; `admin` only for an ADMIN owner |
+| Expiry | optional date: valid through the end of that day (UTC), at most 3650 days ahead; empty = never expires |
+
+**Tokens for service accounts.** A token acts as its owner, with the owner's
+role, so an integration should get its own account (e.g. an AGENT user for a
+monitoring integration) and a token issued to it by an admin, instead of a token
+of a person. The table lists every token with its owner and expiry; an expired
+token is marked and refused like a revoked one. Creating a token for someone
+else is audited with the owner and the expiry (`ApiToken`, "Created API token …
+for …"). The rules are in [`lib/token-rules.ts`](../lib/token-rules.ts).
 
 ### How verification works
 
@@ -100,8 +110,9 @@ an invalid assignee returns `422`, not a `500`.
 ### Revoking a token
 
 Revoke from the same **Settings › API Tokens** page. [`revokeApiToken`](../lib/actions/tokens.ts)
-sets `revoked = true`. Non-admins may only revoke their own tokens; admins may
-revoke any. Revoked tokens are excluded from authentication immediately.
+sets `revoked = true`. Only admins manage tokens, and they may revoke any, also
+one issued to a service account. Revoked tokens are excluded from authentication
+immediately.
 
 ---
 

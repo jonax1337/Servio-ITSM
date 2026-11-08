@@ -4,6 +4,12 @@ import type { ServerMessages } from "../../types";
 const messages: ServerMessages = {
   "Label is required": "Bezeichnung ist erforderlich",
   "Pick a self-approval mode.": "Wählen Sie einen Modus für die Selbstgenehmigung.",
+  "Enter the expiry as a date.": "Geben Sie das Ablaufdatum als Datum ein.",
+  "The expiry date must be in the future.": "Das Ablaufdatum muss in der Zukunft liegen.",
+  "A token can expire at most 3650 days from now.": "Ein Token kann höchstens 3650 Tage ab heute gültig sein.",
+  "Pick an existing account as the token's owner.": "Wählen Sie ein vorhandenes Konto als Inhaber des Tokens.",
+  "The token's owner is deactivated.": "Der Inhaber des Tokens ist deaktiviert.",
+  "Only an ADMIN account can hold the admin scope.": "Nur ein ADMIN-Konto kann die Berechtigung „admin“ erhalten.",
   "Enter a whole number of days between 0 and 3650 (0 turns automatic closing off).": "Geben Sie eine ganze Zahl von Tagen zwischen 0 und 3650 ein (0 schaltet das automatische Schließen aus).",
   "Pick an existing group as the triage team.": "Wählen Sie eine vorhandene Gruppe als Triage-Team.",
   "Invalid field": "Ungültiges Feld",
