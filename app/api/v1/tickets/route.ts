@@ -1,15 +1,15 @@
 import type { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent, validateTicketAssignee } from "@/lib/api";
+import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent, validateTicketAssignee, type ApiPrincipal } from "@/lib/api";
 import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
 import { slaCreateData } from "@/lib/sla";
-import { serializeTicket } from "../_serializers";
-import {
-  TICKET_TYPES, TICKET_STATUSES, PRIORITIES, IMPACT_URGENCY, OPEN_TICKET_STATUSES,
-  prefixForType,
-} from "@/lib/constants";
+import { duplicateCommentText, ticketCreateSchema, type TicketCreate } from "@/lib/api-ticket-input";
+import { isOpenExternalRefConflict } from "@/lib/ticket-external-ref";
+import { serializeComment, serializeTicket } from "../_serializers";
+import { authorizeTicketComment, writeTicketComment } from "../_ticket-comments";
+import { openTicketByRef } from "../_ticket-ref";
+import { OPEN_TICKET_STATUSES, prefixForType } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +40,9 @@ export async function GET(req: Request) {
   if (q) where.title = { contains: q };
   const importRef = url.searchParams.get("import_ref");
   if (importRef) where.importRef = importRef;
+  // Every ticket that ever carried this key (open and resolved); see /tickets/ref/{ref} for "the" one.
+  const externalRef = url.searchParams.get("external_ref");
+  if (externalRef) where.externalRef = externalRef;
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
@@ -55,19 +58,8 @@ export async function GET(req: Request) {
   return ok(tickets.map(serializeTicket), { meta: pageMeta(page, perPage, total) });
 }
 
-const createSchema = z.object({
-  title: z.string().min(3),
-  description: z.string().optional().default(""),
-  type: z.enum(TICKET_TYPES).optional().default("INCIDENT"),
-  priority: z.enum(PRIORITIES).optional().default("MEDIUM"),
-  impact: z.enum(IMPACT_URGENCY).optional().default("MEDIUM"),
-  urgency: z.enum(IMPACT_URGENCY).optional().default("MEDIUM"),
-  status: z.enum(TICKET_STATUSES).optional().default("NEW"),
-  requesterId: z.string().optional(),
-  assigneeId: z.string().optional(),
-  categoryId: z.string().optional(),
-  serviceId: z.string().optional(),
-});
+/** Attempts at "create, or find the winner" before a racing writer is given up on (each one lost a race). */
+const DEDUP_ATTEMPTS = 3;
 
 export async function POST(req: Request) {
   const auth = await guard(req, "write");
@@ -82,52 +74,83 @@ export async function POST(req: Request) {
   // snake_case keys are accepted too (lib/api-case.ts).
   const normalized = camelizeBody(body);
   if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
-  const parsed = createSchema.safeParse(normalized.body);
+  const parsed = ticketCreateSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
+  const { externalRef, onDuplicate, ...fields } = parsed.data;
 
   const isAgentPrincipal = principalIsAgent(auth.principal);
+  // The dedup key is for integrations (monitoring), which run on agent tokens; a
+  // USER token must not be able to attach its tickets to — or probe — an alert.
+  if (externalRef && !isAgentPrincipal) {
+    return apiError(403, "external_ref needs a token owned by an agent (AGENT, MANAGER or ADMIN).");
+  }
   // Only agents may set assigneeId; validate it up front so a bad id is a 422,
   // not a 500 on the FK, and never assigns a non-agent (no group on create).
-  if (isAgentPrincipal && parsed.data.assigneeId) {
-    const reason = await validateTicketAssignee(parsed.data.assigneeId, null);
+  if (isAgentPrincipal && fields.assigneeId) {
+    const reason = await validateTicketAssignee(fields.assigneeId, null);
     if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
   // FK existence up front — a bogus requester/category/service id is a 422, not
   // a 500 on the Prisma FK constraint (matches the assigneeId contract).
-  if (parsed.data.requesterId && !(await db.user.findUnique({ where: { id: parsed.data.requesterId }, select: { id: true } }))) {
-    return apiError(422, "Validation failed", { requesterId: [`Unknown requester: ${parsed.data.requesterId}`] });
+  if (fields.requesterId && !(await db.user.findUnique({ where: { id: fields.requesterId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { requesterId: [`Unknown requester: ${fields.requesterId}`] });
   }
-  if (parsed.data.categoryId && !(await db.category.findUnique({ where: { id: parsed.data.categoryId }, select: { id: true } }))) {
-    return apiError(422, "Validation failed", { categoryId: [`Unknown category: ${parsed.data.categoryId}`] });
+  if (fields.categoryId && !(await db.category.findUnique({ where: { id: fields.categoryId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { categoryId: [`Unknown category: ${fields.categoryId}`] });
   }
-  if (parsed.data.serviceId && !(await db.service.findUnique({ where: { id: parsed.data.serviceId }, select: { id: true } }))) {
-    return apiError(422, "Validation failed", { serviceId: [`Unknown service: ${parsed.data.serviceId}`] });
+  if (fields.serviceId && !(await db.service.findUnique({ where: { id: fields.serviceId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { serviceId: [`Unknown service: ${fields.serviceId}`] });
   }
+  if (isAgentPrincipal && fields.status && !OPEN_TICKET_STATUSES.includes(fields.status as (typeof OPEN_TICKET_STATUSES)[number])) {
+    return apiError(422, "Validation failed", { status: ["Tickets can only be created in an open status (NEW, OPEN, IN_PROGRESS, PENDING, ON_HOLD); transition after creation instead."] });
+  }
+
+  if (!externalRef) return createTicket(auth.principal, fields, isAgentPrincipal);
+
+  // One OPEN ticket per external reference. The unique index on openExternalRef
+  // is the arbiter: of concurrent creators exactly one insert wins, the others
+  // hit P2002 and answer with the winner. Re-checked per attempt, because the
+  // open ticket can be resolved between our lookup and our insert.
+  for (let attempt = 0; attempt < DEDUP_ATTEMPTS; attempt++) {
+    const open = await openTicketByRef(externalRef);
+    if (open) return deduplicated(auth.principal, open.id, onDuplicate, fields);
+    try {
+      return await createTicket(auth.principal, fields, true, externalRef);
+    } catch (err) {
+      if (!isOpenExternalRefConflict(err)) throw err;
+    }
+  }
+  return apiError(409, "Another request kept claiming this external_ref; retry.");
+}
+
+/** Insert the ticket (201). With `externalRef`, it also claims the key while open. */
+async function createTicket(principal: ApiPrincipal, fields: Omit<TicketCreate, "externalRef" | "onDuplicate">, isAgentPrincipal: boolean, externalRef?: string) {
   // Non-agents can only file tickets as themselves; agents may set requesterId.
-  const requesterId = isAgentPrincipal
-    ? parsed.data.requesterId ?? auth.principal.userId
-    : auth.principal.userId;
+  const requesterId = isAgentPrincipal ? fields.requesterId ?? principal.userId : principal.userId;
   // Resolve SLA + deadlines from the service/priority at creation time.
-  const sla = await slaCreateData({ serviceId: parsed.data.serviceId, priority: parsed.data.priority });
+  const sla = await slaCreateData({ serviceId: fields.serviceId, priority: fields.priority });
   // Non-agents may not set server-controlled fields (status/assignee/queue/etc.)
   // — those fall back to schema defaults. Prevents self-assign / pre-resolved
   // tickets that would skew SLA and metrics. Agents may pick a starting status,
-  // but it must be an OPEN one: a ticket can't be born RESOLVED/CLOSED (that
-  // would skip breach stamping, automations and the survey pipeline).
-  const agentData = { ...parsed.data, prefix: prefixForType(parsed.data.type), ...sla, requesterId, source: "API" as const };
-  if (isAgentPrincipal && parsed.data.status && !OPEN_TICKET_STATUSES.includes(parsed.data.status as (typeof OPEN_TICKET_STATUSES)[number])) {
-    return apiError(422, "Validation failed", { status: ["Tickets can only be created in an open status (NEW, OPEN, IN_PROGRESS, PENDING, ON_HOLD); transition after creation instead."] });
-  }
+  // but it must be an OPEN one (checked by the caller): a ticket can't be born
+  // RESOLVED/CLOSED (that would skip breach stamping, automations and the survey pipeline).
   const data = isAgentPrincipal
-    ? agentData
+    ? {
+        ...fields,
+        prefix: prefixForType(fields.type),
+        ...sla,
+        requesterId,
+        source: "API" as const,
+        ...(externalRef && { externalRef, openExternalRef: externalRef }),
+      }
     : {
-        title: parsed.data.title,
-        description: parsed.data.description,
-        type: parsed.data.type,
-        prefix: prefixForType(parsed.data.type),
-        priority: parsed.data.priority,
-        impact: parsed.data.impact,
-        urgency: parsed.data.urgency,
+        title: fields.title,
+        description: fields.description,
+        type: fields.type,
+        prefix: prefixForType(fields.type),
+        priority: fields.priority,
+        impact: fields.impact,
+        urgency: fields.urgency,
         ...sla,
         requesterId,
         source: "API" as const,
@@ -136,7 +159,34 @@ export async function POST(req: Request) {
     data,
     include: { requester: true, assignee: true },
   });
-  await writeAudit({ userId: auth.principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: "Created via API" });
+  await writeAudit({
+    userId: principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id,
+    summary: externalRef ? `Created via API (${externalRef})` : "Created via API",
+  });
 
-  return ok(serializeTicket(ticket), { status: 201 });
+  return ok(serializeTicket(ticket), { status: 201, ...(externalRef && { meta: { deduplicated: false } }) });
+}
+
+/**
+ * The answer to a repeated alert: the open ticket (200, `meta.deduplicated`).
+ * With `on_duplicate: "comment"` the alert's description is added to it as an
+ * internal note through the same path as POST /tickets/{id}/comments; when the
+ * token's owner may not write to that ticket the answer is that endpoint's 403,
+ * with the ticket in `details`.
+ */
+async function deduplicated(principal: ApiPrincipal, ticketId: number, onDuplicate: TicketCreate["onDuplicate"], fields: { title: string; description?: string }) {
+  const include = { requester: true, assignee: true } as const;
+  if (onDuplicate !== "comment") {
+    const ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include });
+    return ok(serializeTicket(ticket), { meta: { deduplicated: true, comment: null } });
+  }
+  const target = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { assigneeId: true, groupId: true } });
+  const allowed = await authorizeTicketComment(principal, target);
+  if ("refused" in allowed) {
+    const ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include });
+    return apiError(allowed.refused.status, allowed.refused.message, { deduplicated: true, ticket: serializeTicket(ticket) });
+  }
+  const comment = await writeTicketComment(allowed.author, ticketId, duplicateCommentText(fields), true);
+  const ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include });
+  return ok(serializeTicket(ticket), { meta: { deduplicated: true, comment: serializeComment(comment) } });
 }

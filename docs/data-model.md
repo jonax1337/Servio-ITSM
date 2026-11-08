@@ -89,7 +89,7 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`, `parentId` (self-relation `parent`/`children` for sub-tickets, `SetNull` when the parent is deleted); `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; `customFields` (JSON values keyed by `CustomFieldDef.key`); `approvalState` (nullable, `APPROVAL_STATUSES`); **SLA clock** fields (see below); relations to comments, watchers, participants, notified contacts, emails, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT); `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
+| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`, `parentId` (self-relation `parent`/`children` for sub-tickets, `SetNull` when the parent is deleted); `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; `customFields` (JSON values keyed by `CustomFieldDef.key`); `approvalState` (nullable, `APPROVAL_STATUSES`); **SLA clock** fields (see below); relations to comments, watchers, participants, notified contacts, emails, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT); `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`); `externalRef` (nullable, indexed) + `openExternalRef` (unique, nullable): monitoring dedup key, see below. |
 | `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `channel` (`WEB`/`EMAIL`/`FORWARD`: how the reply arrived), `fromEmail` (external sender), `emailMessageId` (inbound mail that produced it), `authorId`; has attachments |
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
@@ -111,6 +111,17 @@ SLA carries a `businessCalendar`, deadlines are computed in business time; other
 The derived clock state
 (`ON_TRACK`, `AT_RISK`, `BREACHED`, `MET`, `PAUSED`, `NONE`) is computed in app code from these columns — see
 `SLA_STATES` in [`lib/constants.ts`](../lib/constants.ts).
+
+**External reference (monitoring dedup) on `Ticket`:** `externalRef` is the key an integration sends with
+every alert (`POST /api/v1/tickets`, e.g. `zabbix:event:12345`); it is set at creation and kept for good.
+`openExternalRef` holds the same value only while the ticket is open and is `@unique`, which makes the key
+unique among **open** tickets — Prisma cannot express a partial unique index, and a hand-written one would
+fail the migration-drift check. The Prisma client in [`lib/db.ts`](../lib/db.ts) carries a query extension
+that adds `openExternalRef: null` to every ticket `create`/`update`/`updateMany`/`upsert` whose data moves the
+status to `RESOLVED`, `CLOSED` or `CANCELLED` ([`lib/ticket-external-ref.ts`](../lib/ticket-external-ref.ts)),
+so every write path (console, API, macros, automations, merges, approvals) releases the key without knowing
+about it. Reopening does not reclaim it. Writes that bypass the client (raw SQL) are healed lazily: the API
+releases a claim held by a ticket that is no longer open the next time the key is looked up.
 
 ### Problems
 
@@ -412,6 +423,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261107000000_itsm_ops_sable` | the Operations & planning models (freeze windows, on-call, status page, releases, change templates, vendors/contracts/licenses, Sable insights) |
 | `20261108000000_maintenance_windows` | `MaintenanceWindow` |
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
+| `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

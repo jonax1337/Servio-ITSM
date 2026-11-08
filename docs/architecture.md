@@ -425,7 +425,11 @@ portable across both databases while giving the UI a single, typed source of enu
 metadata. Full model reference in [data-model.md](./data-model.md).
 
 The Prisma client is a lazily-created singleton in [`lib/db.ts`](../lib/db.ts),
-cached on `globalThis` in non-production to survive Turbopack/HMR reloads.
+cached on `globalThis` in non-production to survive Turbopack/HMR reloads. It
+carries one query extension: a ticket write into a terminal status also clears
+`openExternalRef`, the monitoring dedup key (see [data-model.md](./data-model.md)).
+The extended client keeps the plain `PrismaClient` type, since a query extension
+changes no signatures.
 
 ---
 
