@@ -6,10 +6,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { getCurrentUser, hasRole, type Role, requireAgentUser } from "@/lib/session";
-import { writeAudit, notify } from "@/lib/audit";
+import { writeAudit } from "@/lib/audit";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
 import { canMoveArticle, statusAfterEdit } from "@/lib/article-rules";
 import { canActOnTicket } from "@/lib/authz";
+import { insertArticle, notifyReviewers, reviseArticle } from "@/lib/articles";
 import type { ActionResult } from "@/lib/action-result";
 
 export type ArticleState = {
@@ -27,29 +28,6 @@ const articleSchema = z.object({
 async function requireAgent() {
   // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
   return requireAgentUser();
-}
-
-function slugify(s: string) {
-  return (
-    s
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80) || "article"
-  );
-}
-
-async function uniqueSlug(base: string, excludeId?: string) {
-  let slug = base;
-  let n = 1;
-  // Loop until we find a free slug (or the collision is the article itself).
-  while (true) {
-    const existing = await db.article.findUnique({ where: { slug }, select: { id: true } });
-    if (!existing || existing.id === excludeId) return slug;
-    n += 1;
-    slug = `${base}-${n}`;
-  }
 }
 
 type ParsedArticle =
@@ -79,31 +57,7 @@ function parse(formData: FormData): ParsedArticle {
   return { success: true, data: parsed.data, body };
 }
 
-/** Tell the managers (except `actorId`) that an article is waiting for their review. */
-async function notifyReviewers(article: { id: string; title: string }, actorId: string) {
-  const managers = await db.user.findMany({
-    where: { role: { in: ["MANAGER", "ADMIN"] }, isActive: true, id: { not: actorId } },
-    select: { id: true },
-  });
-  await Promise.all(
-    managers.map((m) =>
-      notify(m.id, {
-        type: "INFO",
-        title: "Article awaiting review",
-        body: article.title,
-        entity: "Article",
-        entityId: article.id,
-      }),
-    ),
-  );
-}
-
 const cleanCategory = (v: string) => (v && v !== "none" ? v : null);
-
-/** Prisma unique-constraint violation (e.g. slug or (articleId, version)). */
-function isUniqueSablelation(e: unknown) {
-  return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
-}
 
 /** The ticket an article is written from (`linkTicketId`), once the actor may change it; null when the article stands alone. */
 async function sourceTicketOf(formData: FormData, actor: { id: string; role: string }): Promise<{ id: number } | { error: string } | null> {
@@ -129,37 +83,22 @@ export async function createArticle(_prev: ArticleState, formData: FormData): Pr
   if (sourceTicket && "error" in sourceTicket) return { error: sourceTicket.error };
   const { title, excerpt, categoryId, visibility } = parsed.data;
   const body = parsed.body;
-  const base = slugify(title);
 
-  // Retry on the rare slug collision (concurrent create with the same title).
-  let article: { id: string; slug: string } | null = null;
-  for (let attempt = 0; attempt < 5 && !article; attempt++) {
-    const slug = await uniqueSlug(base);
-    try {
-      article = await db.article.create({
-        data: {
-          title,
-          slug,
-          excerpt: excerpt || null,
-          body,
-          bodyFormat: "html",
-          status: "DRAFT",
-          visibility,
-          published: false,
-          categoryId: cleanCategory(categoryId),
-          authorId: me.id,
-          revisions: {
-            create: { version: 1, title, excerpt: excerpt || null, body, editorId: me.id, note: "Created" },
-          },
-          ...(sourceTicket ? { links: { create: { entityType: "TICKET", entityId: sourceTicket.id, createdById: me.id } } } : {}),
-        },
-        select: { id: true, slug: true },
-      });
-    } catch (e) {
-      if (isUniqueSablelation(e)) continue;
-      throw e;
-    }
-  }
+  const article = await insertArticle(
+    {
+      title,
+      excerpt: excerpt || null,
+      body,
+      bodyFormat: "html",
+      status: "DRAFT",
+      visibility,
+      published: false,
+      categoryId: cleanCategory(categoryId),
+      authorId: me.id,
+      ...(sourceTicket ? { links: { create: { entityType: "TICKET", entityId: sourceTicket.id, createdById: me.id } } } : {}),
+    },
+    me.id,
+  );
   if (!article) return { error: "Could not save the article, please try again." };
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Article", entityId: article.id, summary: `Created article "${title}"` });
@@ -191,40 +130,20 @@ export async function updateArticle(_prev: ArticleState, formData: FormData): Pr
   const nextStatus = statusAfterEdit(article.status, hasRole(me.role, "MANAGER"));
   const sentBackToReview = nextStatus !== article.status;
 
-  // Recompute the next revision number each attempt; retry if a concurrent edit
-  // grabbed the same version (violates @@unique([articleId, version])).
-  let saved = false;
-  for (let attempt = 0; attempt < 5 && !saved; attempt++) {
-    const revisionCount = await db.articleRevision.count({ where: { articleId: id } });
-    try {
-      await db.article.update({
-        where: { id },
-        data: {
-          title,
-          excerpt: excerpt || null,
-          body,
-          bodyFormat: "html",
-          visibility,
-          categoryId: cleanCategory(categoryId),
-          ...(sentBackToReview ? { status: nextStatus, published: false } : {}),
-          revisions: {
-            create: {
-              version: revisionCount + 1,
-              title,
-              excerpt: excerpt || null,
-              body,
-              editorId: me.id,
-              note: sentBackToReview ? "Edited (sent back to review)" : "Edited",
-            },
-          },
-        },
-      });
-      saved = true;
-    } catch (e) {
-      if (isUniqueSablelation(e)) continue;
-      throw e;
-    }
-  }
+  const saved = await reviseArticle(
+    id,
+    {
+      title,
+      excerpt: excerpt || null,
+      body,
+      bodyFormat: "html",
+      visibility,
+      categoryId: cleanCategory(categoryId),
+      ...(sentBackToReview ? { status: nextStatus, published: false } : {}),
+    },
+    me.id,
+    sentBackToReview ? "Edited (sent back to review)" : "Edited",
+  );
   if (!saved) return { error: "Save conflicted with a concurrent edit, please retry." };
 
   await writeAudit({
@@ -321,36 +240,12 @@ export async function restoreArticleRevision(formData: FormData) {
   const revision = await db.articleRevision.findUnique({ where: { id: revisionId } });
   if (!revision || revision.articleId !== articleId) throw new Error("Revision not found.");
 
-  // Same revision-number race handling as updateArticle above.
-  let saved = false;
-  for (let attempt = 0; attempt < 5 && !saved; attempt++) {
-    const revisionCount = await db.articleRevision.count({ where: { articleId } });
-    try {
-      await db.article.update({
-        where: { id: articleId },
-        data: {
-          title: revision.title,
-          excerpt: revision.excerpt,
-          body: revision.body,
-          bodyFormat: "html",
-          revisions: {
-            create: {
-              version: revisionCount + 1,
-              title: revision.title,
-              excerpt: revision.excerpt,
-              body: revision.body,
-              editorId: me.id,
-              note: `Restored from v${revision.version}`,
-            },
-          },
-        },
-      });
-      saved = true;
-    } catch (e) {
-      if (isUniqueSablelation(e)) continue;
-      throw e;
-    }
-  }
+  const saved = await reviseArticle(
+    articleId,
+    { title: revision.title, excerpt: revision.excerpt, body: revision.body, bodyFormat: "html" },
+    me.id,
+    `Restored from v${revision.version}`,
+  );
   if (!saved) throw new Error("Restore conflicted with a concurrent edit, please retry.");
 
   await writeAudit({

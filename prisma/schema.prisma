@@ -1462,6 +1462,7 @@ model Article {
   authorId     String?
   approvedById String?
   views        Int       @default(0)
+  importRef    String?   @unique // origin key of an article maintained through the API (e.g. "faq:vpn-setup"); PUT /api/v1/articles/ref/{ref} upserts by it
   publishedAt  DateTime?
   approvedAt   DateTime?
   createdAt    DateTime  @default(now())

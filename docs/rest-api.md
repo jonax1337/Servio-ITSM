@@ -229,6 +229,10 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `read` / `write` |
 | `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `read` / `write` |
 | `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
+| `GET` / `POST` | `/articles` | List (paginated, no bodies) / create knowledge articles. Agent tokens only. | `read` / `write` |
+| `GET` / `PATCH` / `DELETE` | `/articles/{id}` | Get / edit / delete an article. | `read` / `write` |
+| `POST` | `/articles/{id}/transitions` | Move an article along its lifecycle (publishing: MANAGER+, not the author). | `write` |
+| `GET` / `PUT` | `/articles/ref/{ref}` | Get / upsert the article with this origin reference (setting `status`: `admin` scope + ADMIN). | `read` / `write` |
 | `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
 | `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
 | `GET` | `/changes` | List changes (paginated, filterable, full-text `q`). Agent tokens only. | `read` |
@@ -530,6 +534,51 @@ occurrence still to create), `next_create_at` (when its ticket will be created),
 `last_created_for`, `last_ticket_id`, `last_error` (why the last attempt failed),
 `import_ref`, `created_by_id`. Generated tickets have `source = RECURRING` and the
 occurrence's due time as their due date.
+
+### Knowledge articles
+
+Agent tokens only. Bodies are sent as Markdown (default) or HTML
+(`body_format: "html"`) and stored as sanitised HTML, like articles written in the
+console; responses carry the stored form (`body_format` is `html`). A body with no
+readable text left after sanitising is a `422`.
+
+An article: `id`, `slug`, `title`, `excerpt`, `body`, `body_format`, `status`
+(`DRAFT`/`REVIEW`/`PUBLISHED`/`RETIRED`), `visibility` (`INTERNAL` = agents only,
+`PUBLIC` = also the portal), `category_id`, `author_id`, `approved_by_id`,
+`import_ref`, `views`, `published_at`, `approved_at`, `created_at`, `updated_at`.
+Lists leave out `body` and `body_format`.
+
+- **`GET /articles`** — newest change first, paginated. Filters: `status`,
+  `visibility`, `category_id`, `import_ref`, `updated_since` (ISO time), `q` (title
+  or excerpt).
+- **`POST /articles`** — `title` (3–160), `body`, optional `body_format`, `excerpt`
+  (≤ 300), `visibility` (default `INTERNAL`), `category_id`, `import_ref`. Always a
+  `DRAFT` authored by the token's owner. An `import_ref` already in use is a `409`
+  with the article's `id`.
+- **`PATCH /articles/{id}`** — any of the fields above except `import_ref`; only
+  the fields sent change, `null` clears `excerpt`/`category_id`. Every edit is a new
+  revision; a `PUBLISHED` article edited by a token below MANAGER goes back to
+  `REVIEW` (and the managers are notified), as in the console.
+- **`DELETE /articles/{id}`** — removes the article with its revisions and links.
+- **`POST /articles/{id}/transitions`** `{ "to": "REVIEW" }` — runs the console's
+  status action: the moves of the article page (`409` otherwise), and publishing
+  needs a MANAGER+ owner who is not the author (`403`).
+
+**Keeping an FAQ in step with a source — `PUT /articles/ref/{ref}`.** `ref` has
+the charset of `external_ref` (e.g. `faq:vpn-setup`). The body is the article's
+full desired content: `title`, `body` (required), `body_format`, `excerpt`,
+`visibility`, `category_id`, `status`. A new ref creates the article (`201`,
+`DRAFT` unless `status` says otherwise); an existing one gets the fields that
+differ as one new revision (`200`). Sending the same content again writes nothing
+— no revision, no audit row; `meta.changed` lists what changed (empty when
+nothing did), `meta.created` says whether it was new. Fields left out keep their
+value.
+
+Setting `status` publishes (or retires) without the review, so it needs the
+`admin` scope and a token owned by an ADMIN (else `403`); a publish stamps the
+token's owner as approver. Without `status`, an existing article keeps its status,
+except that a `PUBLISHED` one changed by a token below MANAGER goes back to
+`REVIEW`.
 
 ### Services
 
