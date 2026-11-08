@@ -23,6 +23,7 @@ export function serializeTicket(t: {
   assignee?: Userish;
   categoryId: string | null;
   serviceId: string | null;
+  groupId?: string | null;
   problemId?: number | null;
   changeId?: number | null;
   importRef?: string | null;
@@ -48,6 +49,7 @@ export function serializeTicket(t: {
     assignee: user(t.assignee ?? null),
     category_id: t.categoryId,
     service_id: t.serviceId,
+    group_id: t.groupId ?? null,
     problem_id: t.problemId ?? null,
     change_id: t.changeId ?? null,
     import_ref: t.importRef ?? null,

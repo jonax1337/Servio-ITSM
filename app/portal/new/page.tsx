@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import { PORTAL_CATEGORY_WHERE } from "@/lib/categories";
 import { requireUser } from "@/lib/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { RequestForm } from "@/components/portal/request-form";
@@ -28,6 +29,7 @@ export default async function PortalNewPage({
   const [activeIncidents, categories, services] = await Promise.all([
     listPublicIncidents(user.id, "active", 5),
     db.category.findMany({
+      where: PORTAL_CATEGORY_WHERE,
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

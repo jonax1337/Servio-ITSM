@@ -245,6 +245,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/problems/{id}/transitions` | Move along the lifecycle. | `write` |
 | `GET`/`POST` | `/problems/{id}/comments` | List / add comments. | `read` / `write` |
 | `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `read` |
+| `POST` | `/categories` | Create a category (MANAGER+). | `write` |
+| `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `read` / `write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `read` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `read` |
 | `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `read` / `write` |
@@ -289,6 +291,7 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "assignee": null,
   "category_id": null,
   "service_id": null,
+  "group_id": null,
   "problem_id": null,
   "change_id": null,
   "import_ref": null,
@@ -315,6 +318,7 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `status` | ticket status enum — **open statuses only** | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
+| `groupId` | string | the category's team | **agents only**; unknown ids return `422`. Without it, a category with a team (`group_id`) routes the ticket there |
 | `externalRef` | string, 1–200 of `A-Z a-z 0-9 . _ : @ -`, starting with a letter or digit | — | **agents only** (a non-agent token gets `403`); monitoring dedup key, see below |
 | `onDuplicate` | `return` \| `comment` | `return` | what a repeat with an open `externalRef` does |
 
@@ -327,11 +331,19 @@ pick a starting status, but only an **open** one (`NEW`, `OPEN`, `IN_PROGRESS`,
 `PENDING`, `ON_HOLD`) — a ticket can't be born `RESOLVED`/`CLOSED`/`CANCELLED`,
 which would skip breach stamping, automations and the survey pipeline (else `422`).
 
+Routing on create: the ticket's group is `groupId`, else its category's team. An
+`assigneeId` must be a member of that group (else `422`); without an assignee the
+group's auto-assign strategy picks one, as for a ticket routed in the console.
+
 **`PATCH /tickets/{id}` body** (agents only): `title` (min 3), `description`, `status`,
-`priority`, `assigneeId` (nullable), `problemId` / `changeId` (integer, `null`
+`priority`, `assigneeId` (nullable), `groupId` (nullable; unknown ids `422`),
+`problemId` / `changeId` (integer, `null`
 unlinks; applied through the console's `setTicketProblem` / `setTicketChange`, so
 only someone who may act on the ticket can link it, else `403`). The serialized
-ticket carries `problem_id` and `change_id`. Changing `status`:
+ticket carries `group_id`, `problem_id` and `change_id`. Changing `groupId` works as
+re-routing in the console: an assignee who is not a member of the new group is
+cleared (unless the same request sets `assigneeId`, which must then be a member),
+and the group's auto-assign strategy picks a new one. Changing `status`:
 
 - The transition is validated against the **admin-configured workflow**
   ([`lib/workflow.ts`](../lib/workflow.ts): built-in map + admin overrides + role
@@ -832,11 +844,32 @@ value (else `422`). The same checks apply (timeline, unknown ids → `422`).
 
 ### Lookups
 
-`GET /categories` (`id`, `name`, `description`, `parent_id`, `group_id`,
-`archived`; archived hidden unless `include_archived=true`), `GET /groups` (`id`,
+`GET /categories` (`id`, `name`, `description`, `icon`, `color`, `parent_id`,
+`group_id`, `archived`, `portal_hidden`; archived hidden unless
+`include_archived=true`; `GET /categories/{id}` returns one), `GET /groups` (`id`,
 `name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
 `GET /users` (`id`, `name`, `email`, `role`, `active`; `q` matches name or email,
 `role`, `active=true|false|all`, paginated).
+
+### Managing categories
+
+`POST /categories` and `PATCH /categories/{id}` need a token whose owner is a
+**MANAGER or ADMIN** (else `403`), like the console's category admin. Keys are
+snake_case; unknown keys are a `422`.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string, 2–120 | required on create |
+| `description`, `icon` | string \| null | `icon` is a lucide icon name |
+| `color` | `#rrggbb` | default `#64748b` |
+| `parent_id` | string \| null | `null` = top level; a parent that would put the category under itself is a `422` |
+| `group_id` | string \| null | the team that handles it, and the default group of tickets created through the API |
+| `portal_hidden` | boolean | staff-only (monitoring, security alerts): the portal does not offer it, and catalog items filed under it are not listed there |
+| `archived` | boolean | hidden from pickers and the portal; existing records keep it |
+
+A name already used under the same parent is a `409` with the existing category's
+`id` in `details`, so a script can create-or-find its categories. `PATCH` changes
+only the fields sent. Both write an audit row.
 
 ---
 

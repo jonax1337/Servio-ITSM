@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ShoppingBag } from "lucide-react";
 import { db } from "@/lib/db";
+import { PORTAL_CATALOG_ITEM_WHERE } from "@/lib/categories";
 import { LinkButton } from "@/components/link-button";
 import { CatalogBrowser, type CatalogCard } from "@/components/catalog/catalog-browser";
 import { EmptyCatalogArt } from "@/components/portal/illustrations";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PortalCatalog() {
   const items = await db.catalogItem.findMany({
-    where: { isPublished: true },
+    where: PORTAL_CATALOG_ITEM_WHERE,
     orderBy: [{ order: "asc" }, { name: "asc" }],
     include: { category: true },
   });

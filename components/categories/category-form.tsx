@@ -7,6 +7,7 @@ import { createCategory, updateCategory, type ActionState } from "@/lib/actions/
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboField } from "@/components/combo-field";
 import { IconPicker } from "@/components/icon-picker";
@@ -23,6 +24,7 @@ export type CategoryData = {
   icon: string | null;
   parentId: string | null;
   groupId: string | null;
+  portalHidden: boolean;
 };
 
 function Field({
@@ -107,6 +109,14 @@ export function CategoryForm({
       >
         <ComboField name="groupId" options={teamOpts} defaultValue={category?.groupId ?? undefined} includeNone noneLabel={t("form.noGroup")} />
       </Field>
+
+      <div className="grid gap-1.5">
+        <label className="flex items-center justify-between gap-4">
+          <span className="text-sm font-medium">{t("form.portalHidden")}</span>
+          <Switch name="portalHidden" defaultChecked={category?.portalHidden ?? false} />
+        </label>
+        <p className="text-xs text-muted-foreground">{t("form.portalHiddenHint")}</p>
+      </div>
 
       <Field label={tc("description")} error={fe.description}>
         <Textarea

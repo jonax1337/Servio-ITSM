@@ -25,10 +25,13 @@ const categories: Translations<typeof en> = {
   "form.colorHint": "Hex-Farbe für den Kategoriepunkt.",
   "form.icon": "Symbol",
   "form.team": "Zuständig (Team)",
-  "form.teamHint": "Optional. Damit weiß Sable, wem diese Kategorie gehört – Tickets werden dadurch nicht automatisch zugewiesen.",
+  "form.teamHint": "Optional. Per API angelegte Tickets ohne Gruppe landen in diesem Team; Sable erkennt daran außerdem, wem die Kategorie gehört.",
   "form.noGroup": "— Keine Gruppe —",
   "form.descriptionPlaceholder": "Optionaler Hinweis, wann diese Kategorie verwendet wird…",
   "form.create": "Kategorie anlegen",
+  "form.portalHidden": "Im Portal ausblenden",
+  "form.portalHiddenHint": "Nur für das Team, z. B. für Monitoring- oder Security-Alarme: Endbenutzer können sie nicht wählen, und Katalogeinträge darin erscheinen nicht im Portal.",
+  portalHidden: "Nur intern",
 };
 
 export default categories;

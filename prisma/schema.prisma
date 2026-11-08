@@ -445,14 +445,15 @@ model GroupMember {
 // ---------------------------------------------------------------------------
 
 model Category {
-  id          String  @id @default(cuid())
-  name        String
-  description String?
-  icon        String?
-  color       String  @default("#64748b")
-  parentId    String?
-  groupId     String? // team that handles this category (informational; NOT auto-routing)
-  archived    Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
+  id           String  @id @default(cuid())
+  name         String
+  description  String?
+  icon         String?
+  color        String  @default("#64748b")
+  parentId     String?
+  groupId      String? // team that handles this category; default group of API-created tickets
+  archived     Boolean @default(false) // hidden from pickers/portal; existing tickets keep it
+  portalHidden Boolean @default(false) // staff-only (e.g. monitoring): not offered in the self-service portal
 
   parent           Category?         @relation("CategoryTree", fields: [parentId], references: [id])
   children         Category[]        @relation("CategoryTree")

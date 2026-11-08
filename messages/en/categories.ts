@@ -23,10 +23,13 @@ const categories = {
   "form.colorHint": "Hex color for the category dot.",
   "form.icon": "Icon",
   "form.team": "Handled by (team)",
-  "form.teamHint": "Optional. Recorded so Sable knows who owns this category — it does not auto-route tickets.",
+  "form.teamHint": "Optional. Tickets created through the API without a group land in this team; Sable also uses it to tell who owns the category.",
   "form.noGroup": "— No group —",
   "form.descriptionPlaceholder": "Optional context describing when to use this category…",
   "form.create": "Create category",
+  "form.portalHidden": "Hide in the portal",
+  "form.portalHiddenHint": "Staff-only, e.g. for monitoring or security alerts: end users cannot pick it, and catalog items filed under it are not listed in the portal.",
+  portalHidden: "Staff only",
 };
 
 export default categories;

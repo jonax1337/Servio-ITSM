@@ -5,6 +5,7 @@ const messages: ServerMessages = {
   "Label is required": "Bezeichnung ist erforderlich",
   "Pick a self-approval mode.": "Wählen Sie einen Modus für die Selbstgenehmigung.",
   "Enter a whole number of days between 0 and 3650 (0 turns automatic closing off).": "Geben Sie eine ganze Zahl von Tagen zwischen 0 und 3650 ein (0 schaltet das automatische Schließen aus).",
+  "Pick an existing group as the triage team.": "Wählen Sie eine vorhandene Gruppe als Triage-Team.",
   "Invalid field": "Ungültiges Feld",
   "1–1000%": "1–1000 %",
   "Add at least one action": "Mindestens eine Aktion hinzufügen",

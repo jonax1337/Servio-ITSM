@@ -696,10 +696,11 @@ limiter.
   flattened to text; the built-in proxy forwards them as `image_url` parts to OpenAI-compatible models.
 
 The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
-**service team → category team → Service Desk triage**, runs automations, then auto-assigns; free-form
-tickets default to Service Desk triage. Team ownership on `Service` / `Category` (`groupId`) is
-informational (surfaced to Sable) and only *pre-routes* catalog requests — it never auto-routes
-free-form tickets.
+**service team → category team → triage team**, runs automations, then auto-assigns; free-form
+tickets default to the triage team (*Settings › General › Triage team*, else the group named
+“Service Desk”). Team ownership on `Service` / `Category` (`groupId`) is surfaced to Sable and
+*pre-routes* catalog requests — it never routes free-form portal tickets. Categories marked
+`portalHidden` are left out of `list_categories` and of the catalog search.
 
 ---
 

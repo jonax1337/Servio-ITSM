@@ -21,6 +21,8 @@ export const ticketCreateSchema = z.object({
   status: z.enum(TICKET_STATUSES).optional().default("NEW"),
   requesterId: z.string().optional(),
   assigneeId: z.string().optional(),
+  /** Agent tokens only. Without it, the category's team (if any) becomes the group. */
+  groupId: z.string().optional(),
   categoryId: z.string().optional(),
   serviceId: z.string().optional(),
   /** Integration key (e.g. "zabbix:event:12345"): at most one OPEN ticket carries it. Agent tokens only. */

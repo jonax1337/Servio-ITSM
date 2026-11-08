@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
+import { PORTAL_CATALOG_ITEM_WHERE } from "@/lib/categories";
 import { getSessionUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
@@ -23,7 +24,7 @@ export default async function PortalHome() {
       orderBy: { updatedAt: "desc" },
       take: 4,
     }),
-    db.catalogItem.findMany({ where: { isPublished: true }, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
+    db.catalogItem.findMany({ where: PORTAL_CATALOG_ITEM_WHERE, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
     // Only published, public-facing articles ever surface in the portal.
     db.article.findMany({ where: { status: "PUBLISHED", visibility: "PUBLIC" }, orderBy: { views: "desc" }, take: 5 }),
   ]);
