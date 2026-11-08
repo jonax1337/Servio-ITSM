@@ -207,7 +207,7 @@ The business-time math lives in [`lib/business-hours.ts`](../lib/business-hours.
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size` (bytes, `Float`), nullable FKs to `ticket`/`comment`/`article`/`change`/`problem`/`asset`/`license` (all `Cascade`; a file has at most one parent, a comment file carries only `commentId`), plus `uploadedBy`; `createdAt` may be set by a history import (REST API); `url` kept for legacy/external only; also the blob behind an `AiProjectFile` |
+| `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size` (bytes, `Float`), nullable FKs to `ticket`/`comment`/`article`/`change`/`problem`/`asset`/`license` (all `Cascade`; a file has at most one parent, a comment file carries only `commentId`), plus `uploadedBy`; `createdAt` may be set by a history import (REST API); `importRef` (nullable, unique: source id of an imported file, re-uploads return the stored file); `url` kept for legacy/external only; also the blob behind an `AiProjectFile` |
 | `AuditLog` | Immutable activity record | `action`, `entity` + `entityId`, `summary`, `meta` (JSON as TEXT), `ip`, optional `userId` |
 | `Notification` | Per-user in-app notification | `type`, `title`, `body`, `entity`/`entityId`, `read`; indexed `(userId, read)` |
 | `EmailMessage` | Email record / queue (outbound + inbound) and the anchor of a mail thread | `direction` (`OUTBOUND`/`INBOUND`), `toEmail`/`toName`, `fromEmail`/`fromName`, `cc`/`bcc` (JSON arrays), `replyTo`, `subject`, `body` + `bodyHtml`, `template`, `status` (`QUEUED`/`SENT`/`SIMULATED`/`FAILED`/`RECEIVED`), `error`, RFC 2822 threading (`messageId` unique, `inReplyTo`, `references`, `headers`), `entity`/`entityId`, `ticketId` (direct FK, `SetNull`), `commentId`, `sentAt` |
@@ -441,6 +441,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
 | `20261112000000_recurring_tickets` | `RecurringTicket` |
 | `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
+| `20261112400000_attachment_import_ref` | `Attachment.importRef` (unique, nullable): source id of an imported file |
 | `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`

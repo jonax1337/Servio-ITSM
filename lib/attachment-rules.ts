@@ -42,13 +42,14 @@ export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number];
 /** Tolerance for a `created_at` slightly ahead of the server clock. */
 const CLOCK_SKEW_MS = 5 * 60_000;
 
-const UPLOAD_FIELDS = ["file", "comment_id", "created_at", "uploaded_by_id"] as const;
+const UPLOAD_FIELDS = ["file", "comment_id", "created_at", "uploaded_by_id", "import_ref"] as const;
 
 const uploadFieldsSchema = z
   .object({
     comment_id: z.string().trim().min(1).max(64).optional(),
     created_at: z.iso.datetime({ offset: true }).optional(),
     uploaded_by_id: z.string().trim().min(1).max(64).optional(),
+    import_ref: z.string().trim().min(1).max(200).optional(),
   })
   .strict();
 
@@ -56,7 +57,9 @@ export type UploadFields = {
   commentId?: string;
   createdAt?: Date;
   uploadedById?: string;
-  /** True when the request carries history fields (`created_at` / `uploaded_by_id`): needs an import-capable token. */
+  /** Source id of the file (history import): a second upload with the same ref returns the stored file instead of a copy. */
+  importRef?: string;
+  /** True when the request carries history fields (`created_at` / `uploaded_by_id` / `import_ref`): needs an import-capable token. */
   isImport: boolean;
 };
 
@@ -111,7 +114,8 @@ export function parseUploadFields(
       commentId: d.comment_id,
       createdAt: d.created_at ? new Date(d.created_at) : undefined,
       uploadedById: d.uploaded_by_id,
-      isImport: d.created_at !== undefined || d.uploaded_by_id !== undefined,
+      importRef: d.import_ref,
+      isImport: d.created_at !== undefined || d.uploaded_by_id !== undefined || d.import_ref !== undefined,
     },
   };
 }

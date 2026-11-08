@@ -40,6 +40,13 @@ describe("parseUploadFields", () => {
     expect(parse([["file", file], ["uploaded_by_id", "u1"]])).toMatchObject({ data: { isImport: true } });
   });
 
+  it("takes an import_ref as a history field, trimmed and at most 200 characters", () => {
+    expect(parse([["file", file], ["import_ref", " glpi:document:42 "]], "changes")).toEqual({ data: { importRef: "glpi:document:42", isImport: true } });
+    expect(parse([["file", file], ["import_ref", "x".repeat(201)]])).toHaveProperty("errors.import_ref");
+    expect(parse([["file", file], ["import_ref", "  "]])).toHaveProperty("errors.import_ref");
+    expect(parse([["file", file], ["import_ref", "a"], ["import_ref", "b"]])).toEqual({ errors: { import_ref: ["Send this field once."] } });
+  });
+
   it("refuses a created_at without offset or in the future", () => {
     expect(parse([["file", file], ["created_at", "2024-03-01T09:30:00"]])).toHaveProperty("errors.created_at");
     expect(parse([["file", file], ["created_at", "2026-11-09T12:00:00Z"]])).toEqual({ errors: { created_at: ["Must not be in the future."] } });
