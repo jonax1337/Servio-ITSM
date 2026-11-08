@@ -2,7 +2,9 @@ import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
 import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
 import type { Locale } from "@/lib/i18n/config";
-import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
+import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, noticeLinkDe, noticeTextDe, surveyCtaDe } from "@/messages/emails/de";
+import { createFormatter } from "@/lib/i18n/format";
+import { noticeTextEn, type EmailNotice, type NoticeTextFn, type NoticeTicket } from "@/lib/notification-email-rules";
 
 /**
  * Admin-editable email templates. Each is a SUBJECT + a BODY (HTML) with
@@ -13,7 +15,7 @@ import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, surveyCtaDe } fro
  * Placeholders — text (auto-escaped): appName, ref, title, requesterName,
  * agentName, approverName, itemName, stage, autoCloseDays. HTML (inserted raw,
  * already sanitized): message, signature, quote, resolution, survey,
- * autoCloseNotice, details, comment.
+ * autoCloseNotice, details, comment, link.
  */
 
 export const TEMPLATE_KEYS = [
@@ -26,6 +28,7 @@ export const TEMPLATE_KEYS = [
   "approval_request",
   "request_approved",
   "request_rejected",
+  "notification",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 
@@ -38,6 +41,7 @@ export const TEMPLATE_META: Record<TemplateKey, { label: string; description: st
   ticket_closed: { label: "Ticket closed", description: "Note to the requester that the ticket was closed (by an agent or automatically). Only sent when it is switched on under Settings › Tickets.", vars: ["appName", "ref", "title", "requesterName"] },
   approval_request: { label: "Approval needed", description: "To the approver of a catalog request stage, with the request's answers ({{details}}) and, for multi-stage approvals, the stage ({{stage}}).", vars: ["appName", "ref", "title", "itemName", "requesterName", "approverName", "stage", "details"] },
   request_approved: { label: "Request approved", description: "To the requester when the last approval stage approved their catalog request, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
+  notification: { label: "Notification", description: "Email copy of an in-app notification (new unassigned ticket, requester reply, SLA, contracts and licenses, recurring tickets) for people who switched it on in their account settings. {{subject}}, {{message}} and {{details}} are written in the recipient's language; {{link}} opens the record.", vars: ["appName", "recipientName", "subject", "message", "details", "link"] },
   request_rejected: { label: "Request declined", description: "To the requester when their catalog request was declined, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
 };
 
@@ -98,6 +102,15 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
       `<p>your request <strong>{{itemName}}</strong> ({{ref}}) has been approved and is now being worked on.</p>` +
       `{{comment}}`,
   },
+  notification: {
+    subject: "{{subject}}",
+    bodyHtml:
+      `<p>Hi {{recipientName}},</p>` +
+      `<p>{{message}}</p>` +
+      `{{details}}` +
+      `{{link}}` +
+      `<p>You get this email because of your notification settings in {{appName}} (Account settings › Notifications).</p>`,
+  },
   request_rejected: {
     subject: "[{{ref}}] Your request was declined",
     bodyHtml:
@@ -139,7 +152,13 @@ export function approvalStageText(stageIndex: number, stageCount: number, locale
   return (APPROVAL_STAGE[locale] ?? APPROVAL_STAGE.en)(stageIndex + 1, stageCount);
 }
 
-const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey", "autoCloseNotice", "details", "comment"]);
+const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey", "autoCloseNotice", "details", "comment", "link"]);
+
+const NOTICE_TEXT: Record<Locale, NoticeTextFn> = { en: noticeTextEn, de: noticeTextDe };
+const NOTICE_LINK: Record<Locale, (appName: string) => string> = {
+  en: (appName) => `Open in ${appName}`,
+  de: noticeLinkDe,
+};
 
 /** The {{autoCloseNotice}} paragraph of the resolved email (empty when automatic closing is off). */
 export function autoCloseNoticeHtml(days: number, locale: Locale = "en"): string {
@@ -283,6 +302,39 @@ export function renderTicketClosedEmail(ctx: { brand?: MailBrand; ref: string; t
   return renderTicketEmail("ticket_closed", {
     brand: ctx.brand,
     vars: { appName: ctx.brand?.appName ?? "Servio", ref: ctx.ref, title: ctx.title, requesterName: ctx.requesterName },
+  });
+}
+
+/**
+ * The "notification" email: an in-app notification's email copy, worded in the
+ * recipient's language (`brand.locale`). `message` is text (escaped like every text
+ * variable, even though the template treats it as HTML), `details` a quoted block.
+ */
+export function renderNotificationEmail(ctx: {
+  brand?: MailBrand;
+  recipientName: string;
+  notice: EmailNotice;
+  ticket?: NoticeTicket;
+  /** Absolute link to the record; omitted when no public URL is configured. */
+  url?: string | null;
+}) {
+  const locale = ctx.brand?.locale ?? "en";
+  const appName = ctx.brand?.appName ?? "Servio";
+  const f = createFormatter(locale);
+  const text = (NOTICE_TEXT[locale] ?? NOTICE_TEXT.en)(ctx.notice, ctx.ticket ?? {}, (d) => f.date(d));
+  const link = ctx.url
+    ? `<p><a href="${escapeHtml(ctx.url)}" style="color:#3559E8;text-decoration:underline;">${escapeHtml((NOTICE_LINK[locale] ?? NOTICE_LINK.en)(appName))}</a></p>`
+    : "";
+  return renderTicketEmail("notification", {
+    brand: ctx.brand,
+    vars: {
+      appName,
+      recipientName: ctx.recipientName,
+      subject: text.subject,
+      message: escapeHtml(text.message),
+      details: quotedTextHtml(text.details),
+      link,
+    },
   });
 }
 

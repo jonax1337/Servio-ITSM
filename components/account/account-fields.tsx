@@ -8,6 +8,7 @@ import type { ComboOption } from "@/components/combobox";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 import { AUTO_LOCALE, LOCALES, LOCALE_NAMES, type Locale } from "@/lib/i18n/config";
+import { EMAIL_NOTIFICATION_CATEGORIES, type EmailNotificationPrefs } from "@/lib/notification-email-rules";
 
 export type AccountUser = {
   name: string;
@@ -21,6 +22,9 @@ export type AccountUser = {
   instanceLocale: Locale;
   signature: string;
   signatureEnabled: boolean;
+  /** Staff (agent and above) see the Notifications section. */
+  isStaff: boolean;
+  emailNotifications: EmailNotificationPrefs;
 };
 
 export type FieldErrors = Record<string, string[] | undefined>;
@@ -121,6 +125,24 @@ export function PreferencesFields({ user }: { user: AccountUser }) {
       <Field label={t("language")} hint={t("languageHint")}>
         <ComboField name="locale" defaultValue={localeDefault} options={localeOpts} />
       </Field>
+    </div>
+  );
+}
+
+export function NotificationFields({ user }: { user: AccountUser }) {
+  const t = useT("account");
+  return (
+    <div className="grid gap-4">
+      <input type="hidden" name="emailNotificationsForm" value="1" />
+      {EMAIL_NOTIFICATION_CATEGORIES.map((category) => (
+        <label key={category} className="flex items-start justify-between gap-4">
+          <span className="grid gap-0.5">
+            <span className="text-sm font-medium">{t(`notify.${category}.label`)}</span>
+            <span className="text-xs text-muted-foreground">{t(`notify.${category}.hint`)}</span>
+          </span>
+          <Switch name={`emailNotify.${category}`} defaultChecked={user.emailNotifications[category]} />
+        </label>
+      ))}
     </div>
   );
 }

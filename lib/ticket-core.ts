@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { format } from "date-fns";
 import { db } from "@/lib/db";
-import { writeAudit, notify } from "@/lib/audit";
+import { writeAudit, notify, type NotificationContent } from "@/lib/audit";
 import {
   sendMail, ticketThreadHeaders, mailBrand,
   tplTicketReceived, tplTicketAssigned, tplTicketReply,
@@ -174,7 +174,7 @@ function parseEmails(v: FormDataEntryValue | null): string[] {
 export async function notifyWatchers(
   ticketId: number,
   exclude: string | null,
-  n: { type?: string; title: string; body?: string; entity?: string; entityId?: string },
+  n: NotificationContent,
 ) {
   const watchers = await db.ticketWatcher.findMany({ where: { ticketId }, select: { userId: true } });
   await Promise.all(
@@ -186,7 +186,7 @@ export async function notifyWatchers(
 export async function notifyAssigneeAndWatchers(
   ticketId: number,
   exclude: string,
-  n: { type?: string; title: string; body?: string; entity?: string; entityId?: string },
+  n: NotificationContent,
 ) {
   const [ticket, watchers] = await Promise.all([
     db.ticket.findUnique({ where: { id: ticketId }, select: { assigneeId: true } }),

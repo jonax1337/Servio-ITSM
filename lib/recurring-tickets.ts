@@ -103,6 +103,7 @@ export async function fireRecurringTicket(
         body: error,
         entity: "RecurringTicket",
         entityId: row.id,
+        email: { kind: "RECURRING_FAILED", name: row.name, error },
       });
     }
     return { status: "FAILED", error, dueAt: plan.dueAt };

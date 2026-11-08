@@ -57,7 +57,7 @@ Standard [`@auth/prisma-adapter`](https://authjs.dev) models plus a credentials 
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `User` | Person (agent or end-user); credentials + OAuth account holder | `email` (unique), `passwordHash` (bcrypt, for credentials login), `role`, `isVip`, `jobTitle`, `phone`, `department`, `timezone`, `locale` (UI language: `auto` = instance default, the default for new users, or `en`/`de` — see [i18n.md](./i18n.md)), `signature` (sanitized HTML) + `signatureEnabled` (appended to replies/emails), `isActive`, `syncSourceId`/`externalId` (link to import source, unique together), `lastLoginAt`; the hub of most relations |
+| `User` | Person (agent or end-user); credentials + OAuth account holder | `email` (unique), `passwordHash` (bcrypt, for credentials login), `role`, `isVip`, `jobTitle`, `phone`, `department`, `timezone`, `locale` (UI language: `auto` = instance default, the default for new users, or `en`/`de` — see [i18n.md](./i18n.md)), `emailNotifications` (JSON of the categories emailed to this person, null = the defaults in `lib/notification-email-rules.ts`), `signature` (sanitized HTML) + `signatureEnabled` (appended to replies/emails), `isActive`, `syncSourceId`/`externalId` (link to import source, unique together), `lastLoginAt`; the hub of most relations |
 | `Account` | OAuth provider account linked to a user | `provider` + `providerAccountId` (unique), tokens; `onDelete: Cascade` |
 | `Session` | Database session token | `sessionToken` (unique), `expires` |
 | `VerificationToken` | Email verification / magic-link tokens | `identifier` + `token` |

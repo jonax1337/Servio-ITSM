@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, isAgent, type Role } from "@/lib/session";
+import { emailNotificationPrefsFromForm, parseEmailNotificationPrefs } from "@/lib/notification-email-rules";
 import { writeAudit } from "@/lib/audit";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { AUTO_LOCALE, LOCALES, LOCALE_COOKIE, isLocale } from "@/lib/i18n/config";
@@ -40,6 +41,9 @@ export async function getMyAccount() {
     instanceLocale: await getInstanceLocale(),
     signature: me.signature ?? "",
     signatureEnabled: me.signatureEnabled,
+    // Email copies of notifications concern staff work only; portal users don't see the section.
+    isStaff: isAgent(me.role as Role),
+    emailNotifications: parseEmailNotificationPrefs(me.emailNotifications),
   };
 }
 
@@ -66,6 +70,11 @@ export async function updateMySettings(
   const signature = d.signature.trim()
     ? sanitizeCommentHtml(d.signature)
     : null;
+  // Only when the Notifications section was on the form (staff): its switches send nothing when off.
+  const emailNotifications =
+    formData.get("emailNotificationsForm") === "1" && isAgent(me.role as Role)
+      ? JSON.stringify(emailNotificationPrefsFromForm((name) => formData.get(name)))
+      : undefined;
 
   await db.user.update({
     where: { id: me.id },
@@ -78,6 +87,7 @@ export async function updateMySettings(
       locale: d.locale,
       signature,
       signatureEnabled,
+      emailNotifications,
     },
   });
 

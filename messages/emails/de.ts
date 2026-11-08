@@ -1,3 +1,5 @@
+import type { NoticeTextFn } from "@/lib/notification-email-rules";
+
 /**
  * German built-in defaults for the ticket emails (lib/email-templates.ts). Used when the
  * recipient's language is German and the admin has not overridden the template in
@@ -59,6 +61,15 @@ export const emailTemplatesDe = {
       `<p>Ihre Anfrage <strong>{{itemName}}</strong> ({{ref}}) wurde genehmigt und wird jetzt bearbeitet.</p>` +
       `{{comment}}`,
   },
+  notification: {
+    subject: "{{subject}}",
+    bodyHtml:
+      `<p>Hallo {{recipientName}},</p>` +
+      `<p>{{message}}</p>` +
+      `{{details}}` +
+      `{{link}}` +
+      `<p>Sie erhalten diese E-Mail aufgrund Ihrer Benachrichtigungseinstellungen in {{appName}} (Kontoeinstellungen › Benachrichtigungen).</p>`,
+  },
   request_rejected: {
     subject: "[{{ref}}] Ihre Anfrage wurde abgelehnt",
     bodyHtml:
@@ -68,6 +79,58 @@ export const emailTemplatesDe = {
       `<p>Wenn Sie sie weiterhin benötigen, können Sie im Portal eine neue Anfrage stellen.</p>`,
   },
 } as const;
+
+/** The link label of the notification email. */
+export const noticeLinkDe = (appName: string) => `In ${appName} öffnen`;
+
+/** German wording of the notification emails (English: lib/notification-email-rules.ts). */
+export const noticeTextDe: NoticeTextFn = (notice, { ref = "", title = "" }, formatDate) => {
+  switch (notice.kind) {
+    case "TICKET_UNASSIGNED":
+      return {
+        subject: `[${ref}] Neues Ticket ohne Bearbeiter in ${notice.groupName}: ${title}`,
+        message: `Das Ticket ${ref} — „${title}“ — liegt in ${notice.groupName}, und noch niemand bearbeitet es.`,
+      };
+    case "REQUESTER_REPLY":
+      return {
+        subject: `[${ref}] ${notice.authorName} hat geantwortet: ${title}`,
+        message: `${notice.authorName} hat auf das Ticket ${ref} — „${title}“ — geantwortet:`,
+        details: notice.snippet,
+      };
+    case "SLA_ESCALATION":
+      return {
+        subject: `[${ref}] SLA-Eskalation: ${notice.percent} % verstrichen`,
+        message: `Das Ticket ${ref} — „${title}“ — hat ${notice.percent} % seines SLA verbraucht.`,
+      };
+    case "SLA_NUDGE":
+      return notice.percent >= 100
+        ? { subject: `[${ref}] SLA überschritten: ${title}`, message: `Die Lösungsfrist Ihres Tickets ${ref} — „${title}“ — ist abgelaufen.` }
+        : {
+            subject: `[${ref}] SLA-Zeit wird knapp: ${title}`,
+            message: `Ihr Ticket ${ref} — „${title}“ — hat ${notice.percent} % seiner Lösungszeit verbraucht.`,
+          };
+    case "CONTRACT_RENEWAL":
+      return {
+        subject: `Vertrag „${notice.name}“ endet am ${formatDate(notice.endDate)}`,
+        message: `Der Vertrag „${notice.name}“, für den Sie verantwortlich sind, endet am ${formatDate(notice.endDate)}. ${
+          notice.autoRenew
+            ? "Er verlängert sich automatisch, wenn Sie ihn nicht rechtzeitig kündigen."
+            : "Er läuft aus, wenn Sie ihn nicht verlängern."
+        }`,
+      };
+    case "LICENSE_OVER_ALLOCATED":
+      return {
+        subject: `Lizenz „${notice.name}“ ist überbelegt`,
+        message: `Für die Lizenz „${notice.name}“, für die Sie verantwortlich sind, sind ${notice.used} Plätze zugewiesen, aber nur ${notice.seats} gekauft.`,
+      };
+    case "RECURRING_FAILED":
+      return {
+        subject: `Wiederkehrendes Ticket „${notice.name}“ konnte sein Ticket nicht anlegen`,
+        message: `Das von Ihnen angelegte wiederkehrende Ticket „${notice.name}“ konnte sein Ticket nicht anlegen:`,
+        details: notice.error,
+      };
+  }
+};
 
 /** The {{stage}} text of the approval email (multi-stage approvals only). */
 export const approvalStageDe = (stage: number, of: number) => ` (Stufe ${stage} von ${of})`;

@@ -92,6 +92,7 @@ export async function addPortalComment(formData: FormData): Promise<PortalCommen
     body: snippet,
     entity: "Ticket",
     entityId: String(id),
+    email: { kind: "REQUESTER_REPLY", authorName: me.name ?? me.email ?? "", snippet },
   });
   revalidatePath(`/portal/tickets/${id}`);
 }

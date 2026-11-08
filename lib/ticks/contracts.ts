@@ -50,6 +50,7 @@ async function sendRenewalReminders(now: Date): Promise<number> {
       ...renewalReminderMessage({ name: contract.name, endDate: contract.endDate, autoRenew: contract.autoRenew }, now),
       entity: "Contract",
       entityId: contract.id,
+      email: { kind: "CONTRACT_RENEWAL", name: contract.name, endDate: contract.endDate, autoRenew: contract.autoRenew },
     });
     sent++;
   }
@@ -85,6 +86,7 @@ async function sendOverAllocationAlerts(): Promise<number> {
         ...overAllocationMessage(license, compliance),
         entity: "SoftwareLicense",
         entityId: license.id,
+        email: { kind: "LICENSE_OVER_ALLOCATED", name: license.name, used: compliance.used, seats: compliance.seats },
       });
       alerted++;
     }

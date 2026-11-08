@@ -172,7 +172,8 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
   surfaced in the console, the portal, and Sable's search.
 - **Mail engine** — a real two-way email bridge: outbound SMTP notifications and **inbound IMAP**
   polling that turns replies into ticket comments, with RFC-2822 threading (message-id / references),
-  HTML + CC. No SMTP configured? It runs in outbox mode.
+  HTML + CC. No SMTP configured? It runs in outbox mode. Every outgoing mail is an editable,
+  translated template, and each agent chooses which notifications they also get by email.
 - **Infrastructure Syncs** — pluggable connectors importing **users & assets** on a cron schedule
   or on demand, with run history: Active Directory / LDAP, Azure AD / Entra, CSV, and generic REST (e.g. NetBox).
 - **Self-Service Portal** — a redesigned help center: one **live search** across KB, catalog and

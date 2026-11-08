@@ -83,21 +83,28 @@ async function markStepFired(ticketId: number, stepId: string, summary: string) 
 }
 
 /** A notification decided while planning a step; sent only after the step's marker is written. */
-type EscalationNotice = { userId: string; title: string; body: string };
+type EscalationNotice = { userId: string; title: string; body: string; percent: number };
 
 async function sendNotices(ticketId: number, notices: EscalationNotice[]) {
-  for (const { userId, title, body } of notices) {
-    await notify(userId, { type: "SLA_ESCALATION", title, body, entity: "Ticket", entityId: String(ticketId) });
+  for (const { userId, title, body, percent } of notices) {
+    await notify(userId, {
+      type: "SLA_ESCALATION",
+      title,
+      body,
+      entity: "Ticket",
+      entityId: String(ticketId),
+      email: { kind: "SLA_ESCALATION", percent },
+    });
   }
 }
 
 /** The notices that tell every active agent in a group. */
-async function groupNotices(groupId: string, title: string, body: string): Promise<EscalationNotice[]> {
+async function groupNotices(groupId: string, title: string, body: string, percent: number): Promise<EscalationNotice[]> {
   const members = await db.groupMember.findMany({
     where: { groupId, user: { isActive: true } },
     select: { userId: true },
   });
-  return members.map((m) => ({ userId: m.userId, title, body }));
+  return members.map((m) => ({ userId: m.userId, title, body, percent }));
 }
 
 const onCallNames = (users: OnCallUser[]) => users.map((u) => u.name ?? u.email).join(", ");
@@ -114,7 +121,7 @@ async function planOnCallNotice(
   if (onCall.length > 0) {
     return {
       summary: `${prefix}: notified on-call (${onCallNames(onCall)}).`,
-      notices: onCall.map((u) => ({ userId: u.userId, title: "SLA escalation (you are on call)", body })),
+      notices: onCall.map((u) => ({ userId: u.userId, title: "SLA escalation (you are on call)", body, percent: thresholdPercent })),
     };
   }
   if (!groupId) {
@@ -122,7 +129,7 @@ async function planOnCallNotice(
   }
   return {
     summary: `${prefix}: nobody on call, notified the group instead.`,
-    notices: await groupNotices(groupId, "SLA escalation", body),
+    notices: await groupNotices(groupId, "SLA escalation", body, thresholdPercent),
   };
 }
 
@@ -194,8 +201,8 @@ async function runEscalationPolicy(
       case "NOTIFY": {
         summary = `SLA escalation (${step.thresholdPercent}% elapsed): notified.`;
         const body = `Ticket #${ticket.id} reached ${step.thresholdPercent}% of its SLA.`;
-        if (step.targetUserId) notices.push({ userId: step.targetUserId, title: "SLA escalation", body });
-        if (step.targetGroupId) notices.push(...(await groupNotices(step.targetGroupId, "SLA escalation", body)));
+        if (step.targetUserId) notices.push({ userId: step.targetUserId, title: "SLA escalation", body, percent: step.thresholdPercent });
+        if (step.targetGroupId) notices.push(...(await groupNotices(step.targetGroupId, "SLA escalation", body, step.thresholdPercent)));
         break;
       }
       case "REASSIGN": {

@@ -433,7 +433,7 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | General & branding | `settings/general/page.tsx` (ADMIN) | App name/branding, base settings and the instance **Default language** (`APP_LOCALE`) | `saveGeneralSettings` in `lib/actions/settings.ts`; `components/settings/settings-form` |
 | Email (SMTP) | `settings/email/page.tsx` (ADMIN) | Outbound mail settings | `saveEmailSettings`; `settings-form` |
 | Inbound mail (IMAP) | `settings/inbound/page.tsx` (ADMIN) | Inbound mailbox polling settings | `saveInboundSettings`; `settings-form` |
-| Email templates | `settings/email-templates/page.tsx` (ADMIN) | Edit/reset outgoing mail templates: request received, reply, resolved, participant, assigned, ticket closed, and the catalog approval mails (approval needed, request approved, request declined) | `lib/actions/email-templates.ts` (`saveEmailTemplate`, `resetEmailTemplate`); `lib/email-templates.ts`; `components/settings/email-template-editor` |
+| Email templates | `settings/email-templates/page.tsx` (ADMIN) | Edit/reset outgoing mail templates: request received, reply, resolved, participant, assigned, ticket closed, the catalog approval mails (approval needed, request approved, request declined) and the email copy of notifications | `lib/actions/email-templates.ts` (`saveEmailTemplate`, `resetEmailTemplate`); `lib/email-templates.ts`; `components/settings/email-template-editor` |
 | Uploads | `settings/uploads/page.tsx` (ADMIN) | Upload limits and allowed types | `saveUploadSettings`; `settings-form` |
 | Tickets | `settings/tickets/page.tsx` (ADMIN) | Close resolved tickets automatically after N days (`TICKET_AUTO_CLOSE_DAYS`, 0 = off); email the requester when a ticket is closed (`TICKET_CLOSED_EMAIL_ENABLED`, default off) | `saveTicketSettings`; `settings-form` |
 | Change management | `settings/changes/page.tsx` (ADMIN) | Self-approval mode for changes (see [Approvals](#approvals)) | `saveChangeSettings`; `settings-form` |
@@ -480,6 +480,7 @@ Per-user preferences and signature, opened as a dialog from the user menu (no ro
 | UI | `components/account/` — `account-settings-dialog` (opened from `components/user-menu.tsx`), `account-fields` |
 | Actions | `lib/actions/account.ts` — `getMyAccount`, `updateMySettings` (also sets/clears the `servio-locale` cookie for the chosen language); sign-in/out in `lib/actions/auth.ts` (`authenticate`, `ssoSignIn`, `doSignOut`) |
 | Language | *Preferences › Language*: **Instance default** (`User.locale = "auto"`, the default) or an explicit `en`/`de`; applied on save. See [i18n.md](./i18n.md). |
+| Notifications | *Notifications* (staff only, AGENT+): which notifications are also emailed — see [Notifications](#notifications). Stored as JSON in `User.emailNotifications` (null = defaults); the section posts a marker field, so portal users' settings are never touched. |
 
 ### Notifications
 Per-user in-app notification feed, shown as a **popover** opened from the topbar bell (no dedicated route).
@@ -489,6 +490,17 @@ Per-user in-app notification feed, shown as a **popover** opened from the topbar
 | UI | `components/notifications-menu.tsx` — base-ui `Popover` in the topbar bell; loads on open |
 | Actions | `lib/actions/notifications.ts` — `listNotifications`, `markAllRead`, `markRead` |
 | Entity links | `ENTITY_HREF` map routes `Ticket`/`Problem`/`Change`/`Contract`/`SoftwareLicense`/`OnCallSchedule` notifications to their detail pages |
+| Email copies | `notify()` (`lib/audit.ts`) takes an optional `email` notice; `deliverNotificationEmail` (`lib/notification-mail.ts`, loaded on demand) sends it when the recipient has its category on. Categories, defaults, wording: `lib/notification-email-rules.ts` (German in `messages/emails/de.ts`) |
+
+**Email copies of notifications:** each person picks under Account settings › Notifications which notifications also arrive by email. The mail uses the editable `notification` template (Settings › Email templates) with `{{subject}}`, `{{message}}` and `{{details}}` worded in the recipient's language and `{{link}}` to the record (needs `APP_URL`); it is internal mail and never threaded onto the ticket. A failed send is logged and never breaks the action that notified.
+
+| Category | Sent for | Default |
+| --- | --- | --- |
+| `NEW_UNASSIGNED` | A ticket reaches one of my groups and `autoAssignTicket` assigns nobody (strategy off, no eligible agent) — re-checked first; **email only**, no in-app row | off |
+| `REQUESTER_REPLY` | A requester-side reply via the portal (form or Sable) or by email (not a vendor's internal reply) on a ticket I am assigned to or watch | on |
+| `SLA` | SLA nudge (`SLA_NUDGE`) and SLA escalation steps that notify me (`SLA_ESCALATION`) | on |
+| `CONTRACTS` | Contract renewal reminder and over-allocated license, to the owner | on |
+| `RECURRING` | A recurring ticket I created could not create its ticket | on |
 
 ---
 

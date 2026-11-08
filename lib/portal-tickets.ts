@@ -65,13 +65,18 @@ export async function addPortalReply(userId: string, ticketId: number, body: str
 
   await db.ticketComment.create({ data: { ticketId, authorId: userId, body: clean, isInternal: false } });
   await reopenOnCustomerReply(ticketId, userId, clean);
-  const ticketMeta = await db.ticket.findUnique({ where: { id: ticketId }, select: { prefix: true, type: true } });
+  const ticketMeta = await db.ticket.findUnique({
+    where: { id: ticketId },
+    select: { prefix: true, type: true, requester: { select: { name: true, email: true } } },
+  });
+  const snippet = clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
   await notifyAssigneeAndWatchers(ticketId, userId, {
     type: "COMMENT",
     title: `Portal reply on ${ticketRef(ticketId, ticketMeta?.prefix || ticketMeta?.type)}`,
-    body: clean.length > 160 ? `${clean.slice(0, 157)}…` : clean,
+    body: snippet,
     entity: "Ticket",
     entityId: String(ticketId),
+    email: { kind: "REQUESTER_REPLY", authorName: ticketMeta?.requester?.name ?? ticketMeta?.requester?.email ?? "", snippet },
   });
   revalidatePath(`/portal/tickets/${ticketId}`);
   revalidatePath(`/tickets/${ticketId}`);

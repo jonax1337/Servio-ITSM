@@ -130,6 +130,8 @@ const settings: Translations<typeof en> = {
   "template.request_approved.description": "An den Anfragenden, wenn die letzte Genehmigungsstufe seine Katalog-Anfrage genehmigt hat, mit dem Kommentar der genehmigenden Person ({comment}).",
   "template.request_rejected.label": "Anfrage abgelehnt",
   "template.request_rejected.description": "An den Anfragenden, wenn seine Katalog-Anfrage abgelehnt wurde, mit dem Kommentar der genehmigenden Person ({comment}).",
+  "template.notification.label": "Benachrichtigung",
+  "template.notification.description": "E-Mail-Kopie einer Benachrichtigung in der Anwendung (neues Ticket ohne Bearbeiter, Antwort von Anfragenden, SLA, Verträge und Lizenzen, wiederkehrende Tickets) für alle, die sie in ihren Kontoeinstellungen eingeschaltet haben. {subject}, {message} und {details} stehen in der Sprache der Empfangenden; {link} öffnet den Datensatz.",
   "emailTemplates.sampleItem": "Neuer Laptop",
   "emailTemplates.sampleDetails": "• Modell: 14-Zoll-Business-Laptop\n• Benötigt bis: nächsten Montag",
   "emailTemplates.sampleComment": "Im Rahmen des Hardware-Budgets genehmigt.",

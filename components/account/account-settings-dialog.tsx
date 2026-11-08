@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { useRouter } from "next/navigation";
-import { User, SlidersHorizontal, PenLine, Loader2, Save, Check } from "lucide-react";
+import { User, SlidersHorizontal, PenLine, Bell, Loader2, Save, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { updateMySettings, getMyAccount, type ActionState } from "@/lib/actions/account";
 import { cn } from "@/lib/utils";
@@ -12,16 +12,18 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   ProfileFields,
   PreferencesFields,
+  NotificationFields,
   SignatureFields,
   type AccountUser,
 } from "@/components/account/account-fields";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
-type SectionId = "profile" | "preferences" | "signature";
+type SectionId = "profile" | "preferences" | "notifications" | "signature";
 
-const SECTIONS: { id: SectionId; label: "profile" | "preferences" | "signature"; icon: LucideIcon }[] = [
+const SECTIONS: { id: SectionId; label: SectionId; icon: LucideIcon; staffOnly?: boolean }[] = [
   { id: "profile", label: "profile", icon: User },
   { id: "preferences", label: "preferences", icon: SlidersHorizontal },
+  { id: "notifications", label: "notifications", icon: Bell, staffOnly: true },
   { id: "signature", label: "signature", icon: PenLine },
 ];
 
@@ -102,7 +104,7 @@ export function AccountSettingsDialog({
               <div className="hidden px-2 pb-1 pt-1 text-xs font-semibold text-muted-foreground sm:block">
                 {t("dialogTitle")}
               </div>
-              {SECTIONS.map((s) => (
+              {SECTIONS.filter((s) => !s.staffOnly || user.isStaff).map((s) => (
                 <button
                   key={s.id}
                   type="button"
@@ -144,6 +146,16 @@ export function AccountSettingsDialog({
                   />
                   <PreferencesFields user={user} />
                 </div>
+
+                {user.isStaff ? (
+                  <div className={cn(section !== "notifications" && "hidden")}>
+                    <SectionHeader
+                      title={t("notificationsTitle")}
+                      description={t("notificationsDescription")}
+                    />
+                    <NotificationFields user={user} />
+                  </div>
+                ) : null}
 
                 <div className={cn(section !== "signature" && "hidden")}>
                   <SectionHeader

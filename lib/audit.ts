@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { headers } from "next/headers";
+import type { EmailNotice } from "@/lib/notification-email-rules";
 
 /**
  * Best-effort client IP from the request headers. Returns null outside a request
@@ -42,7 +43,15 @@ export async function writeAudit(input: {
   }
 }
 
-type NotificationContent = { type?: string; title: string; body?: string; entity?: string; entityId?: string };
+export type NotificationContent = {
+  type?: string;
+  title: string;
+  body?: string;
+  entity?: string;
+  entityId?: string;
+  /** Also email it, when the recipient has this notice's category switched on (lib/notification-mail.ts). */
+  email?: EmailNotice;
+};
 
 /** Notify every active admin. */
 export async function notifyAdmins(n: NotificationContent) {
@@ -64,5 +73,14 @@ export async function notify(userId: string, n: NotificationContent) {
     });
   } catch {
     /* noop */
+  }
+  if (!n.email) return;
+  try {
+    // Loaded on demand: most notify() callers never send mail, and the mail stack is heavy.
+    const { deliverNotificationEmail } = await import("@/lib/notification-mail");
+    await deliverNotificationEmail(userId, { email: n.email, entity: n.entity, entityId: n.entityId });
+  } catch (error) {
+    // A mail failure must never break the action that notified.
+    console.error("[servio:notify] email copy failed:", error instanceof Error ? error.message : error);
   }
 }
