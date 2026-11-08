@@ -45,7 +45,11 @@ export const UPLOAD_ACCEPT = [
 export type AttachmentTarget =
   | { ticketId: number }
   | { commentId: string }
-  | { articleId: string };
+  | { articleId: string }
+  | { changeId: number }
+  | { problemId: number }
+  | { assetId: string }
+  | { licenseId: string };
 
 export type AttachmentRow = {
   id: string;

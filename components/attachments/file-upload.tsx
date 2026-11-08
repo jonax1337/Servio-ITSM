@@ -6,10 +6,10 @@ import { Paperclip, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
 
+/** The single form field naming the upload's parent (see app/api/files/upload). */
 function targetField(target: AttachmentTarget): [string, string] {
-  if ("ticketId" in target) return ["ticketId", String(target.ticketId)];
-  if ("commentId" in target) return ["commentId", target.commentId];
-  return ["articleId", target.articleId];
+  const [field, value] = Object.entries(target)[0];
+  return [field, String(value)];
 }
 
 export function FileUpload({

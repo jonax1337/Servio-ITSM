@@ -109,7 +109,7 @@ The outside world talks to Servio through Route Handlers, **not** Server Actions
 | --- | --- |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js sign-in/callback handlers. |
 | `app/api/v1/*` | Public, token-authenticated REST API (index `route.ts`, `tickets` incl. `[id]`, `assets`, `services`, `openapi`). |
-| `app/api/files/*` | Attachment upload (`upload`), download (`[id]`) and in-browser `preview` / `pdf` renditions; each handler authorises the live DB user (`canUploadTo` / `canViewAttachment`). |
+| `app/api/files/*` | Attachment upload (`upload`), download (`[id]`) and in-browser `preview` / `pdf` renditions; each handler authorises the live DB user (`canUploadTo` / `canViewAttachment`). The multipart intake (stream-capped parse, allow-list validation, blob + row write) lives in `lib/attachment-upload.ts` and is shared with the REST API's `/{entity}/{id}/attachments`. |
 | `app/api/search/route.ts` | Global search. |
 | `app/api/export/route.ts` | Streaming CSV export (`?type=audit` ADMIN, `?type=tickets` AGENT+). |
 | `app/api/dashboard/widget/route.ts` | On-demand widget computation for the dashboard editor preview (AGENT+, DB-truth guard). |

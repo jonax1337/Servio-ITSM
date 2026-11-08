@@ -2,19 +2,14 @@ import { Readable } from "node:stream";
 import { db } from "@/lib/db";
 import { getCurrentUser, type Role } from "@/lib/session";
 import { storage } from "@/lib/storage";
-import { canViewAttachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCESS_SELECT, canViewAttachment } from "@/lib/attachments";
+import { contentDisposition } from "@/lib/files";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Never render these inline, even if somehow stored — force a safe download type.
 const UNSAFE_INLINE = /^(text\/html|image\/svg|application\/(xhtml\+xml|xml|javascript|ecmascript))/i;
-
-function contentDisposition(filename: string, disposition: "attachment" | "inline"): string {
-  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/"/g, "'");
-  const utf8 = encodeURIComponent(filename);
-  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${utf8}`;
-}
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -25,7 +20,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const att = await db.attachment.findUnique({
     where: { id },
-    select: { storageKey: true, filename: true, mime: true, size: true, ticketId: true, commentId: true, articleId: true },
+    select: { storageKey: true, filename: true, mime: true, size: true, ...ATTACHMENT_ACCESS_SELECT },
   });
   if (!att) return new Response("Not found", { status: 404 });
 

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { getCurrentUser, type Role } from "@/lib/session";
 import { storage } from "@/lib/storage";
-import { canViewAttachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCESS_SELECT, canViewAttachment } from "@/lib/attachments";
 import { convertOfficeToPdf, isPdfConvertible } from "@/lib/office-convert";
 
 export const runtime = "nodejs";
@@ -28,9 +28,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       filename: true,
       mime: true,
       size: true,
-      ticketId: true,
-      commentId: true,
-      articleId: true,
+      ...ATTACHMENT_ACCESS_SELECT,
     },
   });
   if (!att) return new Response("Not found", { status: 404 });
