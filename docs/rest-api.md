@@ -190,7 +190,7 @@ Pagination applies to every list endpoint except `GET /services`, `/categories`,
 
 | Endpoint | Filters |
 | --- | --- |
-| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`) |
+| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved) |
 | `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
 
 **Sorting is fixed** (not client-configurable): tickets by `updatedAt` descending,
@@ -211,6 +211,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
 | `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `write` |
+| `GET` | `/tickets/ref/{ref}` | The ticket carrying an external reference: the open one, else the most recent (see [Monitoring dedup](#monitoring-dedup-external-reference)). | `read` |
+| `POST` | `/tickets/ref/{ref}/resolve` | Resolve the open ticket carrying an external reference (monitoring recovery). Agent tokens only. | `write` |
 | `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
 | `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
@@ -250,6 +252,7 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
 | `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
 | `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
+| `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `admin` + ADMIN owner |
 
 There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
 records except recurring ticket schedules (only for relations, license seats and
@@ -286,6 +289,11 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "assignee": null,
   "category_id": null,
   "service_id": null,
+  "problem_id": null,
+  "change_id": null,
+  "import_ref": null,
+  "external_ref": null,
+  "external_ref_open": false,
   "due_at": null,
   "resolved_at": null,
   "created_at": "2026-08-09T10:00:00.000Z",
@@ -307,6 +315,8 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `status` | ticket status enum — **open statuses only** | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
+| `externalRef` | string, 1–200 of `A-Z a-z 0-9 . _ : @ -`, starting with a letter or digit | — | **agents only** (a non-agent token gets `403`); monitoring dedup key, see below |
+| `onDuplicate` | `return` \| `comment` | `return` | what a repeat with an open `externalRef` does |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
 `urgency` are honored; all other fields fall back to defaults (an unknown
@@ -336,6 +346,43 @@ ticket carries `problem_id` and `change_id`. Changing `status`:
   ticket's creation plus its banked pause time (the clock never restarts), via the
   shared `slaRepricePatch` (same contract as the console's `updateTicketField`).
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
+- `RESOLVED`, `CLOSED` and `CANCELLED` release the ticket's external reference
+  (see below), so the next alert with that key opens a new ticket.
+
+#### Monitoring dedup (external reference)
+
+Monitoring integrations (Zabbix, Wazuh, …) call the API per alert. With an
+`external_ref` — the alert's stable key, e.g. `zabbix:event:12345` or
+`wazuh:rule:92206:host:ws01` — repeated alerts land in **one open ticket**:
+
+| Request | Answer |
+| --- | --- |
+| `POST /tickets` with an `external_ref` no open ticket carries | `201`, the new ticket, `meta.deduplicated: false` |
+| `POST /tickets` with the `external_ref` of an open ticket | `200`, **that** ticket, `meta.deduplicated: true`; nothing else in the body is applied |
+| … with `on_duplicate: "comment"` | the same, and the request's `description` (its `title` when empty) is added to the open ticket as an **internal** note through the same path as `POST /tickets/{id}/comments` (`meta.comment`); when the token's owner may not write to that ticket the answer is that endpoint's `403`, with the ticket in `error.details.ticket` |
+| `POST /tickets/ref/{ref}/resolve` | resolves the open ticket (`200`); `404` when none is open |
+| `GET /tickets/ref/{ref}` | the open ticket, else the most recent one that carried the key; `404` if none |
+| `GET /tickets?external_ref=…` | every ticket that ever carried the key |
+
+The key is unique among **open** tickets (`NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`,
+`ON_HOLD`). Concurrent POSTs with the same new key (Wazuh fires integrations in
+parallel) end in one ticket: the database's unique index picks the single
+winner and the others answer `200` with it. Once the ticket reaches `RESOLVED`,
+`CLOSED` or `CANCELLED` — through this endpoint, `PATCH`, the console, a macro,
+an automation or a merge — the key is released and the next POST opens a new
+ticket; the old one keeps `external_ref` as history (`external_ref_open: false`).
+Reopening a resolved ticket does **not** reclaim the key (a newer ticket may
+hold it by then): a reopened alert ticket is handled as a human ticket.
+
+The resolve body is optional: `resolution_note`, `resolution_code`
+(`RESOLUTION_CODES`), `internal` (default `true`: the note is an internal
+comment; `false` makes it the public resolution reply). It runs the console's
+resolution action as the token's owner (see [How the ITSM endpoints enforce the
+console's rules](#how-the-itsm-endpoints-enforce-the-consoles-rules)): the
+configured workflow map and role gates (a refused move is `409`), the merge and
+approval rules, SLA stamping (`resolvedAt`, `resolveBreached`, a paused clock is
+resumed first), the resolution comment and mail, and automations. Only someone
+who may act on the ticket can resolve it (`403`).
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,
 `CLOSED`, `CANCELLED`. Open statuses (matched by `?status=open`): `NEW`, `OPEN`,
@@ -710,15 +757,65 @@ so it needs a token with the **`admin` scope whose owner is an `ADMIN`** (else
   `change_id`, `resolution_code`, `resolution_note`, `first_response_at`,
   `resolved_at`, `closed_at`; imported tickets have `source = API`, no SLA and no
   breach flags.
-- **`comments`** (up to 1000): `{ body, internal (default true), author_id
-  (default: the token owner), created_at }`.
+- **`comments`** (up to 1000): `{ import_ref (optional), body, internal
+  (default true), author_id (default: the token owner), created_at }`. The
+  comment `import_ref` (≤ 200 chars, e.g. `glpi:followup:812`) is the source id
+  of the comment, unique within its record (sending one twice in a body is a
+  `422`); the comment endpoints return it as `import_ref`.
 - Every referenced id (users incl. comment authors, group, category, service,
   problem, change) is checked first; unknown ids are a `422`, never a `500`.
 - One audit row per record (`CREATE`, "Imported from <ref> via API").
 
 Import problems first, then changes and tickets that point at them via
 `problem_id` (look ids up with `GET /problems?import_ref=…`). Once imported, a
-record is an ordinary one: e.g. a `CLOSED` change is locked like any other.
+record is an ordinary one: e.g. a `CLOSED` change is locked like any other —
+for the console and the regular API. Only the update mode below rewrites it.
+
+#### Update mode for re-runs
+
+`PUT /import/{tickets|problems|changes}/{import_ref}` brings an imported record
+up to the source system's current state, e.g. at cut-over, when a change that
+was `DRAFT` at the first import has been closed since and got another comment.
+Same token rules (`admin` scope + `ADMIN` owner) and the same strict body as
+the `POST` import; `import_ref` comes from the path (URL-encoded, e.g.
+`glpi%3Achange%3A129`) and may be repeated in the body only with the same
+value (else `422`). The same checks apply (timeline, unknown ids → `422`).
+
+- **New ref:** the record is created exactly like the `POST` import → `201`,
+  `meta.result: "created"`.
+- **Existing ref:** the payload is the record's **full current state**. Every
+  field the import writes is replaced with the payload's value; an omitted
+  optional field falls back to the import default (`risk` `MEDIUM`, `outcome`
+  `null`, …), exactly as on a first import. Not touched: the ticket `prefix`
+  (the ref stays stable when `type` changes) and `source`; `created_by_id` /
+  `requester_id` (they default to the token owner) and `custom_fields` unless
+  sent (`{}` clears them); everything outside the import (SLA fields,
+  approvals, affected CIs, links, attachments). Lifecycle rules do not apply,
+  so a closed or locked record is updated too.
+- **Comments are only ever appended**, never edited or removed (comments added
+  in Servio after the import stay). A payload comment counts as present when
+  the record has a comment with the same `import_ref`, or else — without a
+  ref, or with a ref not stored yet (a thread first imported without refs) —
+  a ref-less comment with the same `body` and the same `created_at` (to the
+  millisecond). Each stored comment matches once, so two identical source
+  comments stay two. Sending comment refs makes the dedup robust against
+  edited bodies.
+- **`created_at`** is part of the source state and replaced when it differs,
+  but may not move past the record's earliest comment (`422`).
+- **`updated_at`** follows the import rules (the sent value, else the latest
+  timestamp in the payload). It is written with any change; on its own it only
+  counts as a change when it was sent and differs, so a derived value never
+  turns an otherwise identical run into an update.
+- **Response:** the record, plus `meta.result` (`created` | `updated` |
+  `unchanged`), `meta.changed` (API field names whose value changed, e.g.
+  `["status", "outcome", "closure_notes", "actual_end"]`; on `created` every
+  field written, defaults included) and `meta.comments_added`. `updated` writes the fields and the
+  new comments in one statement and one audit row (`UPDATE`, "Re-imported from
+  <ref> via API", meta with `changed` and `commentsAdded`); `unchanged`
+  (`200`) writes nothing and no audit row.
+- Only records that carry this `importRef` are found: a natively created record
+  (no `importRef`) can never be addressed. The `POST` import is unchanged (an
+  existing ref is still returned as is).
 
 ### Lookups
 
@@ -777,6 +874,18 @@ curl -s -X POST "$BASE/tickets" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"VPN is down","type":"INCIDENT","priority":"HIGH"}'
+
+# Monitoring alert: one open ticket per key (repeat = 200 + internal note)
+curl -s -X POST "$BASE/tickets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Disk full on ws01","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
+
+# Monitoring recovery: resolve the open ticket for the key
+curl -s -X POST "$BASE/tickets/ref/zabbix:event:12345/resolve" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resolution_note":"Recovered: 60% on /var","resolution_code":"FIXED"}'
 
 # Transition a ticket (agent token)
 curl -s -X PATCH "$BASE/tickets/1" \

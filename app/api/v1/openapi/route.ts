@@ -10,7 +10,10 @@ import {
   problemPatchSchema,
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
-import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
+import {
+  changeImportSchema, changeReimportSchema, problemImportSchema, problemReimportSchema, ticketImportSchema, ticketReimportSchema,
+} from "@/lib/api-import-input";
+import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
@@ -140,6 +143,8 @@ const spec = {
           type: { type: "string", enum: ["INCIDENT", "REQUEST"] },
           status: { type: "string" },
           priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          external_ref: { type: ["string", "null"], description: "Integration key (monitoring dedup); kept after resolution" },
+          external_ref_open: { type: "boolean", description: "This is the open ticket new POSTs with the key land in" },
         },
       },
       Asset: {
@@ -175,20 +180,40 @@ const spec = {
           { name: "priority", in: "query", schema: { type: "string" } },
           { name: "type", in: "query", schema: { type: "string" } },
           { name: "q", in: "query", schema: { type: "string" } },
+          q("import_ref"),
+          q("external_ref", "Every ticket that carried this key, open or resolved"),
           { name: "page", in: "query", schema: { type: "integer" } },
           { name: "per_page", in: "query", schema: { type: "integer" } },
         ],
         responses: { "200": { description: "A paginated list of tickets" } },
       },
       post: {
-        summary: "Create a ticket",
-        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/Ticket" } } } },
-        responses: { "201": { description: "Created" }, "422": { description: "Validation failed" } },
+        summary: "Create a ticket (or land in the open one carrying `external_ref`)",
+        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one.",
+        requestBody: body(ticketCreateSchema),
+        responses: {
+          "201": { description: "Created" },
+          "200": { description: "Deduplicated: the open ticket with this external_ref (meta.deduplicated, meta.comment)" },
+          "403": { description: "external_ref on a non-agent token, or the dedup comment was refused (ticket in details)" },
+          "422": { description: "Validation failed" },
+        },
       },
     },
     "/tickets/{id}": {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: { summary: "Update a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Updated" } } },
+    },
+    "/tickets/ref/{ref}": {
+      get: { summary: "Get the ticket carrying an external reference (the open one, else the most recent)", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+    },
+    "/tickets/ref/{ref}/resolve": {
+      post: {
+        summary: "Resolve the open ticket carrying an external reference (monitoring recovery)",
+        description: `${agentOnly} Runs the console's resolution action: workflow map, SLA stamping, resolution comment and mail. Body optional; the note is internal unless \`internal: false\`.`,
+        parameters: [refParam],
+        requestBody: { ...body(ticketResolveSchema), required: false },
+        responses: { "200": { description: "Resolved" }, "403": { description: "Not an agent token, or may not act on the ticket" }, "404": { description: "No open ticket carries the ref" }, ...refused },
+      },
     },
     "/assets": {
       get: {
@@ -334,9 +359,32 @@ const spec = {
         {
           post: {
             summary: `Import a historical ${path.slice(0, -1)} with its thread`,
-            description: "Needs the `admin` scope and an ADMIN owner. Bypasses the lifecycle on purpose; `import_ref` makes re-runs idempotent (200, meta.created false).",
+            description: `Needs the \`admin\` scope and an ADMIN owner. Bypasses the lifecycle on purpose; \`import_ref\` makes re-runs idempotent (200, meta.created false). To bring an imported record up to date use PUT /import/${path}/{import_ref}.`,
             requestBody: body(schema),
             responses: { "201": { description: "Imported" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Not an admin token" }, "422": { description: "Validation failed or unknown ids" } },
+          },
+        },
+      ]),
+    ),
+    ...Object.fromEntries(
+      ([["tickets", ticketReimportSchema], ["problems", problemReimportSchema], ["changes", changeReimportSchema]] as const).map(([path, schema]) => [
+        `/import/${path}/{import_ref}`,
+        {
+          put: {
+            summary: `Create or re-import a historical ${path.slice(0, -1)} by its import_ref (update mode)`,
+            description:
+              "Needs the `admin` scope and an ADMIN owner. Same body as the POST import; `import_ref` comes from the path (in the body only if equal). " +
+              "Creates the record when the ref is new, otherwise replaces the imported fields with the given state and appends only the comments the record lacks " +
+              "(matched by comment `import_ref`, else by body + created_at). `meta.result` is created | updated | unchanged, `meta.changed` lists the fields, " +
+              "`meta.comments_added` counts new comments. Unchanged input writes nothing and no audit row. Only records carrying that importRef are matched.",
+            parameters: [{ name: "import_ref", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 200 }, description: "URL-encoded, e.g. glpi%3Achange%3A129" }],
+            requestBody: body(schema),
+            responses: {
+              "201": { description: "Created (meta.result created)" },
+              "200": { description: "Updated or unchanged (meta.result, meta.changed, meta.comments_added)" },
+              "403": { description: "Not an admin token" },
+              "422": { description: "Validation failed, unknown ids, or a body import_ref that differs from the path" },
+            },
           },
         },
       ]),

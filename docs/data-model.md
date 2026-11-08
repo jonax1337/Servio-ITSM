@@ -89,8 +89,8 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`, `parentId` (self-relation `parent`/`children` for sub-tickets, `SetNull` when the parent is deleted); `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; `customFields` (JSON values keyed by `CustomFieldDef.key`); `approvalState` (nullable, `APPROVAL_STATUSES`); **SLA clock** fields (see below); relations to comments, watchers, participants, notified contacts, emails, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT); `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
-| `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `channel` (`WEB`/`EMAIL`/`FORWARD`: how the reply arrived), `fromEmail` (external sender), `emailMessageId` (inbound mail that produced it), `authorId`; has attachments |
+| `Ticket` | An incident or service request | `id` (Int, autoincrement); `prefix` (stored `INC`/`REQ`, fixed at creation so the ref stays stable when `type` is switched); `type`, `status`, `priority`, `impact`, `urgency`, `source`, `isMajorIncident`, `pendingReason`/`pendingNote`, `resolutionCode`/`resolutionNote`, `mergedIntoId`, `parentId` (self-relation `parent`/`children` for sub-tickets, `SetNull` when the parent is deleted); `description` (plaintext twin) + `descriptionHtml` (sanitized rich text); routing FKs `requesterId`, `requestedByUserId` (nullable — who raised it *on behalf of* the requester), `assigneeId`, `groupId`, `categoryId`, `serviceId`, `catalogItemId`, `slaId`, `problemId`, `changeId`; catalog `formData`/`formSchema` snapshot; `customFields` (JSON values keyed by `CustomFieldDef.key`); `approvalState` (nullable, `APPROVAL_STATUSES`); **SLA clock** fields (see below); relations to comments, watchers, participants, notified contacts, emails, attachments, assets, tasks, worklogs, approvals, links, merges, and a one-to-one `survey` (CSAT); `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`); `externalRef` (nullable, indexed) + `openExternalRef` (unique, nullable): monitoring dedup key, see below. |
+| `TicketComment` | Reply or internal note on a ticket | `body` (plaintext) + `bodyHtml`, `isInternal`, `channel` (`WEB`/`EMAIL`/`FORWARD`: how the reply arrived), `fromEmail` (external sender), `emailMessageId` (inbound mail that produced it), `authorId`, `importRef` (nullable, unique per ticket: source id of a comment written by the history import); has attachments |
 | `Task` | Checklist item / subtask on a ticket | `title`, `done`, `order`, `assigneeId` |
 | `WorkLog` | Time logged against a ticket (effort reporting) | `minutes`, `note`, `billable`, `loggedAt`, `userId` |
 | `TicketMerge` | One merge of a source ticket into a target, with what is needed to undo it | `sourceId`, `targetId` (both cascade), `mergedById`; the source's pre-merge `previousStatus`/`previousClosedAt`/`previousApprovalState`; JSON lists of what the merge added to the target so `unmergeTicket` removes exactly that: `copiedCommentIds`, `copiedWatcherIds`, `copiedAssetIds`, `copiedLinkIds`, `movedAttachments` (`{id, commentId}` — files are re-pointed, not copied), `movedChildIds` (re-parented children), `withdrawnApprovalIds` (pending approvals cancelled on the source); `adoptedProblemId`/`adoptedChangeId` (taken over because the target had none); `undoneAt`/`undoneById` once reverted |
@@ -112,19 +112,30 @@ The derived clock state
 (`ON_TRACK`, `AT_RISK`, `BREACHED`, `MET`, `PAUSED`, `NONE`) is computed in app code from these columns — see
 `SLA_STATES` in [`lib/constants.ts`](../lib/constants.ts).
 
+**External reference (monitoring dedup) on `Ticket`:** `externalRef` is the key an integration sends with
+every alert (`POST /api/v1/tickets`, e.g. `zabbix:event:12345`); it is set at creation and kept for good.
+`openExternalRef` holds the same value only while the ticket is open and is `@unique`, which makes the key
+unique among **open** tickets — Prisma cannot express a partial unique index, and a hand-written one would
+fail the migration-drift check. The Prisma client in [`lib/db.ts`](../lib/db.ts) carries a query extension
+that adds `openExternalRef: null` to every ticket `create`/`update`/`updateMany`/`upsert` whose data moves the
+status to `RESOLVED`, `CLOSED` or `CANCELLED` ([`lib/ticket-external-ref.ts`](../lib/ticket-external-ref.ts)),
+so every write path (console, API, macros, automations, merges, approvals) releases the key without knowing
+about it. Reopening does not reclaim it. Writes that bypass the client (raw SQL) are healed lazily: the API
+releases a claim held by a ticket that is no longer open the next time the key is looked up.
+
 ### Problems
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Problem` | Root-cause record; groups related incidents | `id` (Int → `PRB-`), `status` (`NEW`/`INVESTIGATING`/`KNOWN_ERROR`/`RESOLVED`/`CLOSED`), `priority`, `impact`, `description` + `descriptionHtml`, `rootCause`, `workaround`, `customFields`, `assigneeId`, `groupId`, `categoryId`, `resolvedAt`; has tickets, changes, comments; `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
-| `ProblemComment` | Comment on a problem | `body`/`bodyHtml`, `isInternal`, `authorId` |
+| `ProblemComment` | Comment on a problem | `body`/`bodyHtml`, `isInternal`, `authorId`, `importRef` (nullable, unique per problem: source id from the history import) |
 
 ### Changes
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `Change` | Change request with a workflow lifecycle | `id` (Int → `CHG-`), `type` (`STANDARD`/`NORMAL`/`EMERGENCY`), `status` (10-state lifecycle incl. terminal `CANCELLED`), `risk`, `priority`, `impact`, `reason`, `implementationPlan`, `rollbackPlan`, `outcome` (`SUCCESSFUL`/`SUCCESSFUL_WITH_ISSUES`/`FAILED`/`ROLLED_BACK`), `closureNotes` (post-implementation review / lessons learned), `cancelReason`, `approvalRule` (`UNANIMOUS`/`QUORUM`/`PERCENT` — how CAB approvals resolve) + `approvalThreshold` (N for `QUORUM`, percent for `PERCENT`), `customFields`, `plannedStart`/`plannedEnd`/`actualStart`/`actualEnd`, `assigneeId`, `createdById`, `groupId`, `categoryId`, `problemId`, `releaseId`, `templateId`; has approvals, affected assets (CIs), tickets, comments; `importRef` (unique, nullable): origin of a record created by the history import (`/api/v1/import/*`). |
-| `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId` |
+| `ChangeComment` | Comment on a change | `body`/`bodyHtml`, `isInternal`, `authorId`, `importRef` (nullable, unique per change: source id from the history import) |
 | `ChangeApproval` | Per-approver decision on a change | `(changeId, approverId)` unique; `status` (`PENDING`/`APPROVED`/`REJECTED`, or `CANCELLED` when the seat is withdrawn because the board settled or the change was cancelled), `comment`, `decidedAt` |
 
 ### Custom fields, workflow & ad-hoc approvals
@@ -424,6 +435,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
 | `20261112000000_recurring_tickets` | `RecurringTicket` |
 | `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
+| `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

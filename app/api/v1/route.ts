@@ -15,6 +15,8 @@ export function GET() {
     resources: {
       tickets: "/api/v1/tickets",
       ticket: "/api/v1/tickets/{id}",
+      ticket_by_ref: "/api/v1/tickets/ref/{ref}",
+      ticket_resolve_by_ref: "/api/v1/tickets/ref/{ref}/resolve",
       assets: "/api/v1/assets",
       asset: "/api/v1/assets/{id}",
       asset_by_ref: "/api/v1/assets/ref/{ref}",
@@ -39,6 +41,7 @@ export function GET() {
       groups: "/api/v1/groups",
       users: "/api/v1/users",
       import: "/api/v1/import/{tickets|problems|changes}",
+      import_update: "/api/v1/import/{tickets|problems|changes}/{import_ref}",
       attachments: "/api/v1/{tickets|changes|problems|assets|licenses}/{id}/attachments",
       attachment: "/api/v1/{tickets|changes|problems|assets|licenses}/{id}/attachments/{attachment_id}",
     },
