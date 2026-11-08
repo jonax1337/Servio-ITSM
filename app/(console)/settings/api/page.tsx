@@ -2,6 +2,7 @@ import { KeyRound, Ban } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
+import { tokenExpired } from "@/lib/token-rules";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { LinkButton } from "@/components/link-button";
@@ -26,12 +27,20 @@ export async function generateMetadata(): Promise<Metadata> {
 export const dynamic = "force-dynamic";
 
 export default async function ApiTokensPage() {
-  await requireRole("ADMIN");
+  const me = await requireRole("ADMIN");
   const [t, f] = await Promise.all([getT("settings"), getFormatter()]);
 
-  const tokens = await db.apiToken.findMany({
-    orderBy: [{ createdAt: "desc" }],
-  });
+  const [tokens, owners] = await Promise.all([
+    db.apiToken.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      include: { user: { select: { name: true, email: true } } },
+    }),
+    db.user.findMany({
+      where: { isActive: true },
+      orderBy: [{ name: "asc" }, { email: "asc" }],
+      select: { id: true, name: true, email: true, role: true },
+    }),
+  ]);
 
   return (
     <>
@@ -51,7 +60,10 @@ export default async function ApiTokensPage() {
           <p className="mb-4 text-xs text-muted-foreground">
             {t("api.generateHint")}
           </p>
-          <TokenManager />
+          <TokenManager
+            currentUserId={me.id}
+            owners={owners.map((u) => ({ value: u.id, label: `${u.name ?? u.email} · ${u.role}` }))}
+          />
         </div>
 
         {tokens.length === 0 ? (
@@ -68,6 +80,8 @@ export default async function ApiTokensPage() {
                   <TableHead>{t("api.colName")}</TableHead>
                   <TableHead>{t("api.colPrefix")}</TableHead>
                   <TableHead>{t("api.colScopes")}</TableHead>
+                  <TableHead>{t("api.colOwner")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("api.colExpires")}</TableHead>
                   <TableHead className="hidden md:table-cell">
                     {t("api.colLastUsed")}
                   </TableHead>
@@ -85,6 +99,8 @@ export default async function ApiTokensPage() {
                           <ToneBadge
                             meta={{ label: t("api.revoked"), tone: "danger" }}
                           />
+                        ) : tokenExpired(tok.expiresAt) ? (
+                          <ToneBadge meta={{ label: t("api.expired"), tone: "warning" }} />
                         ) : null}
                       </div>
                     </TableCell>
@@ -100,6 +116,12 @@ export default async function ApiTokensPage() {
                           />
                         ))}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {tok.user.name ?? tok.user.email}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                      {tok.expiresAt ? f.date(tok.expiresAt) : t("api.noExpiry")}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
                       {tok.lastUsedAt ? f.relative(tok.lastUsedAt) : t("api.never")}

@@ -7,12 +7,15 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-
-const SCOPE_VALUES = ["read", "read,write", "read,write,admin"] as const;
+import { TOKEN_SCOPE_VALUES, tokenExpiry, tokenOwnerRefusal } from "@/lib/token-rules";
 
 const createSchema = z.object({
   name: z.string().min(1, "Name is required").max(60),
-  scopes: z.enum(SCOPE_VALUES).default("read"),
+  scopes: z.enum(TOKEN_SCOPE_VALUES).default("read"),
+  /** Owner of the token (e.g. a service account); defaults to the admin issuing it. */
+  userId: z.string().optional(),
+  /** YYYY-MM-DD, valid through the end of that day (UTC); empty = never expires. */
+  expiresOn: z.string().optional().default(""),
 });
 
 export type ActionState =
@@ -31,6 +34,8 @@ export async function createApiToken(
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
     scopes: formData.get("scopes") ?? "read",
+    userId: formData.get("userId") || undefined,
+    expiresOn: formData.get("expiresOn") ?? "",
   });
   if (!parsed.success) {
     return {
@@ -38,6 +43,14 @@ export async function createApiToken(
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
+  const expiresAt = tokenExpiry(parsed.data.expiresOn);
+  if (expiresAt && "error" in expiresAt) return { error: "Please fix the errors below.", fieldErrors: { expiresOn: [expiresAt.error] } };
+  const owner = await db.user.findUnique({
+    where: { id: parsed.data.userId ?? me.id },
+    select: { id: true, email: true, isActive: true, role: true },
+  });
+  const refusal = tokenOwnerRefusal(owner, parsed.data.scopes);
+  if (refusal || !owner) return { error: "Please fix the errors below.", fieldErrors: { userId: [refusal ?? ""] } };
 
   const raw = "servio_pat_" + nanoid(32);
   const prefix = raw.slice(0, 18);
@@ -49,7 +62,8 @@ export async function createApiToken(
       prefix,
       tokenHash,
       scopes: parsed.data.scopes,
-      userId: me.id,
+      userId: owner.id,
+      expiresAt,
     },
   });
 
@@ -58,7 +72,8 @@ export async function createApiToken(
     action: "CREATE",
     entity: "ApiToken",
     entityId: token.id,
-    summary: `Created API token "${token.name}"`,
+    summary: `Created API token "${token.name}"${owner.id === me.id ? "" : ` for ${owner.email}`}${expiresAt ? `, expires ${expiresAt.toISOString().slice(0, 10)}` : ""}`,
+    meta: { ownerId: owner.id, scopes: parsed.data.scopes, expiresAt: expiresAt?.toISOString() ?? null },
   });
 
   revalidatePath("/settings/api");
