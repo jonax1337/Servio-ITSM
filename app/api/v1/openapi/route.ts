@@ -15,6 +15,7 @@ import {
 } from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-input";
+import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, articleUpsertSchema } from "@/lib/api-article-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
@@ -278,6 +279,49 @@ const spec = {
     },
     "/licenses/{id}/assignments/{assignment_id}": {
       delete: { summary: "Release a seat (MANAGER+)", parameters: [strId, { name: "assignment_id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Released" }, "404": { description: "Not an assignment of this license" } } },
+    },
+    "/articles": {
+      get: {
+        summary: "List knowledge articles (without bodies)",
+        description: agentOnly,
+        parameters: [q("status"), q("visibility"), q("category_id"), q("import_ref"), q("updated_since", "ISO date/time"), q("q", "Title or excerpt"), ...pageParams],
+        responses: { "200": { description: "OK" } },
+      },
+      post: {
+        summary: "Create an article (always DRAFT)",
+        description: `${agentOnly} \`body\` is Markdown unless \`body_format: "html"\`; stored as sanitised HTML.`,
+        requestBody: body(articleCreateSchema),
+        responses: { "201": { description: "Created" }, "409": { description: "import_ref already in use (id in details)" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/articles/{id}": {
+      get: { summary: "Get an article", parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Edit an article (new revision; a published article edited below MANAGER goes back to review)",
+        parameters: [strId],
+        requestBody: body(articlePatchSchema),
+        responses: { "200": { description: "Updated" }, "404": { description: "Not found" }, "409": { description: "Concurrent edit, retry" }, "422": { description: "Validation failed" } },
+      },
+      delete: { summary: "Delete an article", parameters: [strId], responses: { "200": { description: "Deleted" }, "404": { description: "Not found" } } },
+    },
+    "/articles/{id}/transitions": {
+      post: {
+        summary: "Move an article along its lifecycle",
+        description: "Publishing needs a MANAGER+ token owner who is not the author.",
+        parameters: [strId],
+        requestBody: body(articleTransitionSchema),
+        responses: { "200": { description: "Moved" }, "403": { description: "Publishing not allowed for this token owner" }, "404": { description: "Not found" }, ...refused },
+      },
+    },
+    "/articles/ref/{ref}": {
+      get: { summary: "Get the article with this origin reference", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Upsert an article by origin reference (idempotent)",
+        description: "Creates the article (201) or writes the fields that differ as one revision (200); the same content again changes nothing (`meta.changed` empty). `status` skips the review and needs the admin scope and an ADMIN owner.",
+        parameters: [refParam],
+        requestBody: body(articleUpsertSchema),
+        responses: { "200": { description: "Updated or unchanged" }, "201": { description: "Created" }, "403": { description: "status without admin scope/ADMIN owner" }, "422": { description: "Validation failed" } },
+      },
     },
     "/services": {
       get: { summary: "List services and their status", responses: { "200": { description: "OK" } } },

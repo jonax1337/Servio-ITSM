@@ -253,7 +253,7 @@ export function problemEditSteps(b: ProblemPatch): EditStep[] {
  */
 export function refusalStatus(message: string): 403 | 404 | 409 | 422 {
   if (/not found/i.test(message)) return 404;
-  if (/not authori[sz]ed|not signed in|only managers|only the assigned|cannot change the approval board|own or created|cannot self-approve|can't change this ticket/i.test(message)) return 403;
+  if (/not authori[sz]ed|not signed in|only managers|only the assigned|cannot change the approval board|own or created|cannot self-approve|can't change this ticket|requires manager approval|different reviewer than its author/i.test(message)) return 403;
   if (/invalid request|isn't valid|must be at least|must come after|must be a member|needs a comment/i.test(message)) return 422;
   return 409;
 }
