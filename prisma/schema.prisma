@@ -1150,7 +1150,7 @@ model Asset {
   lastSeenAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
-  importRef    String?   @unique // origin key of an asset written via the API (e.g. "glpi:computer:12", "opsi:host:ws01"); PUT /api/v1/assets/ref/{ref} upserts by it
+  importRef    String?   @unique // origin key of an asset written via the API (e.g. "glpi:computer:12", "inventory:host:pc-042"); PUT /api/v1/assets/ref/{ref} upserts by it
 
   owner              User?               @relation("AssetOwner", fields: [ownerId], references: [id])
   group              Group?              @relation(fields: [groupId], references: [id])

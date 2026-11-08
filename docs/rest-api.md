@@ -350,7 +350,7 @@ ticket carries `problem_id` and `change_id`. Changing `status`:
 
 Monitoring integrations (Zabbix, Wazuh, …) call the API per alert. With an
 `external_ref` — the alert's stable key, e.g. `zabbix:event:12345` or
-`wazuh:rule:92206:host:ws01` — repeated alerts land in **one open ticket**:
+`wazuh:rule:92206:host:pc-042` — repeated alerts land in **one open ticket**:
 
 | Request | Answer |
 | --- | --- |
@@ -397,7 +397,7 @@ Asset `id` is a cuid string. Serialized shape ([`serializeAsset`](../app/api/v1/
   "ip_address": "10.0.0.7", "mac_address": "aa:bb:cc:dd:ee:01", "os": "Ubuntu 24.04",
   "cpu": "i5-12400T", "ram_gb": 16, "storage_gb": 512, "cost": 899, "purchase_date": "2024-05-01", "warranty_end": "2027-05-01",
   "notes": "…", "owner": { "id": "…", "name": "…", "email": "…" }, "group": { "id": "…", "name": "IT" },
-  "external_id": null, "import_ref": "opsi:host:ws01", "last_seen_at": "…",
+  "external_id": null, "import_ref": "inventory:host:pc-042", "last_seen_at": "…",
   "created_at": "…", "updated_at": "…"
 }
 ```
@@ -422,7 +422,7 @@ already uses is a `409`.
 #### Upsert by origin reference (for syncs)
 
 `PUT /assets/ref/{ref}` is the entry point for an inventory sync. `{ref}` is the
-asset's origin key, chosen by the caller, e.g. `opsi:host:ws01.intern` or
+asset's origin key, chosen by the caller, e.g. `inventory:host:pc-042` or
 `glpi:computer:12` (1–200 characters: letters, digits and `. _ : @ -`; no `/`).
 It is stored as `importRef` (unique).
 
@@ -830,7 +830,7 @@ curl -s -X POST "$BASE/tickets" \
 curl -s -X POST "$BASE/tickets" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Disk full on ws01","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
+  -d '{"title":"Disk full on pc-042","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
 
 # Monitoring recovery: resolve the open ticket for the key
 curl -s -X POST "$BASE/tickets/ref/zabbix:event:12345/resolve" \
