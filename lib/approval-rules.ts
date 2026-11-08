@@ -6,16 +6,70 @@ import type { EntityTab } from "@/lib/entity-tabs";
 
 export const CHANGE_SELF_APPROVAL_ERROR =
   "You can't approve a change you requested or own. Another approver has to decide it.";
+export const SELF_APPROVAL_ROLE_ERROR =
+  "Your role cannot self-approve a change of this risk. Another approver has to decide it.";
+export const SELF_APPROVAL_COMMENT_ERROR =
+  "A self-approval needs a comment that justifies deciding your own change.";
+
+/**
+ * Admin setting (Settings › Change management) for small teams that cannot staff a four-eyes review:
+ * - OFF: the requester and owner never decide their own change (default).
+ * - WHEN_NO_OTHER_APPROVER: they are seated only when nobody else is eligible for the board.
+ * - ALWAYS: they are seated next to the board, and their own decision settles it on its own.
+ */
+export const CHANGE_SELF_APPROVAL_MODES = ["OFF", "WHEN_NO_OTHER_APPROVER", "ALWAYS"] as const;
+export type ChangeSelfApprovalMode = (typeof CHANGE_SELF_APPROVAL_MODES)[number];
+
+/** A stored mode, falling back to OFF for anything unknown so a typo never weakens the rule. */
+export function parseSelfApprovalMode(value: string | null | undefined): ChangeSelfApprovalMode {
+  return (CHANGE_SELF_APPROVAL_MODES as readonly string[]).includes(value ?? "")
+    ? (value as ChangeSelfApprovalMode)
+    : "OFF";
+}
+
+type ChangeParties = { createdById: string | null; assigneeId: string | null };
+
+/** Deciding a change you requested (created) or own (are assigned to) is a self-approval. */
+export function isChangeSelfApproval(change: ChangeParties, userId: string): boolean {
+  return change.createdById === userId || change.assigneeId === userId;
+}
+
+/** What decides whether a self-approval may go ahead: the setting, whose seat it is, and the decider's role. */
+export type SelfApprovalScope = {
+  mode: ChangeSelfApprovalMode;
+  /** The seat being decided: a self-approval is only ever on one's own seat. */
+  approverId: string;
+  role: string;
+  /** Roles that may approve the change's risk (`approverRolesForRisk`). */
+  eligibleRoles: readonly string[];
+};
 
 /**
  * Why `userId` may not decide an approval on this change, or null when nothing speaks against it.
- * The person who raised or owns a change never approves it — not even as an admin.
+ * The person who raised or owns a change never approves it — not even as an admin — unless an
+ * admin allowed self-approval; even then only on their own seat (the admin override never
+ * decides another approver's seat on one's own change) and only with a role the risk accepts.
  */
 export function changeSelfApprovalError(
-  change: { createdById: string | null; assigneeId: string | null },
+  change: ChangeParties,
   userId: string,
+  selfApproval?: SelfApprovalScope,
 ): string | null {
-  return change.createdById === userId || change.assigneeId === userId ? CHANGE_SELF_APPROVAL_ERROR : null;
+  if (!isChangeSelfApproval(change, userId)) return null;
+  if (!selfApproval || selfApproval.mode === "OFF" || selfApproval.approverId !== userId) {
+    return CHANGE_SELF_APPROVAL_ERROR;
+  }
+  return selfApproval.eligibleRoles.includes(selfApproval.role) ? null : SELF_APPROVAL_ROLE_ERROR;
+}
+
+/** A self-approval is only recorded with a written justification. */
+export function selfApprovalCommentError(comment: string | null | undefined): string | null {
+  return comment && comment.trim() !== "" ? null : SELF_APPROVAL_COMMENT_ERROR;
+}
+
+/** In ALWAYS mode a self-decision settles the board by itself, whatever its approval rule. */
+export function selfDecisionSettlesBoard(mode: ChangeSelfApprovalMode): boolean {
+  return mode === "ALWAYS";
 }
 
 // ── Approvals inbox tabs ─────────────────────────────────────────────────────

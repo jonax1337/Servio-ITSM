@@ -63,6 +63,8 @@ const fixed: ServerMessages = {
   "Title must be at least 3 characters.": "Der Titel muss mindestens 3 Zeichen lang sein.",
   "You are not signed in as an agent.": "Sie sind nicht als Agent angemeldet.",
   "You can't approve a change you requested or own. Another approver has to decide it.": "Sie können keinen Change genehmigen, den Sie beantragt haben oder verantworten. Eine andere genehmigende Person muss entscheiden.",
+  "Your role cannot self-approve a change of this risk. Another approver has to decide it.": "Ihre Rolle darf einen Change mit diesem Risiko nicht selbst genehmigen. Eine andere genehmigende Person muss entscheiden.",
+  "A self-approval needs a comment that justifies deciding your own change.": "Eine Selbstgenehmigung braucht einen Kommentar, der begründet, warum Sie über Ihren eigenen Change entscheiden.",
   "You can't approve a request you raised yourself. Another approver has to decide it.": "Sie können keine Anfrage genehmigen, die Sie selbst gestellt haben. Eine andere genehmigende Person muss entscheiden.",
   "You cannot change the approval board of a change you own or created.": "Sie können das Genehmigungsgremium eines Changes, den Sie verantworten oder angelegt haben, nicht ändern.",
   "You cannot set the approval rule on a change you own or created.": "Sie können die Genehmigungsregel eines Changes, den Sie verantworten oder angelegt haben, nicht festlegen.",

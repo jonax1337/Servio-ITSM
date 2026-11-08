@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   ArrowUpCircle,
   Repeat,
+  GitPullRequestArrow,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -85,6 +86,13 @@ const CARDS: SettingCard[] = [
     title: "Uploads",
     description: "File attachment size limits for tickets, comments and articles.",
     icon: UploadCloud,
+    minRole: "ADMIN",
+  },
+  {
+    href: "/settings/changes",
+    title: "Change Management",
+    description: "Whether the requester or owner of a change may approve it in teams too small for a four-eyes review.",
+    icon: GitPullRequestArrow,
     minRole: "ADMIN",
   },
   {

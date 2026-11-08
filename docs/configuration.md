@@ -28,7 +28,8 @@ See also: [development.md](development.md) for the local dev loop, and
 > from the UI under **Settings** (ADMIN only) and is stored in the `AppSetting`
 > table: **General** (`APP_NAME`, `APP_URL`, `APP_LOCALE`), **Email** (`SMTP_*`), **Inbound**
 > (`IMAP_*`, `MAIL_PLUS_ADDRESSING`), **Sable (AI assistant)** (provider, model, keys,
-> web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`) and
+> web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`),
+> **Change management** (`CHANGE_SELF_APPROVAL`) and
 > **Updates** (`UPDATE_*`). Precedence for every key is **DB row (non-empty) →
 > `process.env` (non-empty) → built-in default**, so an empty table falls back to
 > `.env` and nothing breaks until an admin overrides a value; saving an empty
@@ -142,6 +143,7 @@ file. The sample file is a starting point, not the full list.
 | `RECURRING_TICKETS_ENABLED` _(not in `.env.example`)_ | No | `true` | Create the tickets of recurring ticket schedules when their creation window opens ([`../lib/ticks/recurring-tickets.ts`](../lib/ticks/recurring-tickets.ts)). Off = schedules keep their state and catch up once (the latest missed occurrence) when it is turned back on. |
 | `RECURRING_TICKETS_TICK_SECONDS` _(not in `.env.example`)_ | No | `300` | Interval of the recurring-tickets tick (floor 60): how late after its creation time a ticket may appear. |
 | `CHANGE_CONFLICT_SAME_SERVICE` | No | `true` | Also flag changes whose windows overlap and that share a service (through their affected CIs), not only a CI. |
+| `CHANGE_SELF_APPROVAL` _(not in `.env.example`)_ | No | `OFF` | Whether the requester or owner of a change may approve it, for teams too small for a four-eyes review: `OFF`, `WHEN_NO_OTHER_APPROVER` (seated only when no one else is eligible) or `ALWAYS` (seated next to the board; their justified decision settles it). Any other value counts as `OFF`. Role/risk eligibility and a written justification apply in every mode. Edited at Settings › Change management (`/settings/changes`, ADMIN), which stores `OFF` explicitly so an environment value cannot switch it back on. Details: [modules.md](modules.md#approvals). |
 | `SERVIO_STATE_DIR` | No | `/data/state` in the Docker image, `./.servio-state` otherwise | Directory shared with the updater sidecar and read by `proxy.ts`: `maintenance.json` and `updater/*.json` ([`../lib/state-dir.ts`](../lib/state-dir.ts)). See [updates.md](./updates.md). |
 | `UPDATE_CHECK_ENABLED` _(not in `.env.example`)_ | No | `true` | Check GitHub Releases for new versions and notify the admins ([`../lib/ticks/update-check.ts`](../lib/ticks/update-check.ts)). Also editable at Settings › Updates. |
 | `UPDATE_REPOSITORY` | No | `jonax1337/Servio-ITSM` | GitHub `owner/name` whose releases are offered. |

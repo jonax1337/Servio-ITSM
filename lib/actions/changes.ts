@@ -11,11 +11,17 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
-import { changeSelfApprovalError } from "@/lib/approval-rules";
+import {
+  changeSelfApprovalError,
+  isChangeSelfApproval,
+  selfApprovalCommentError,
+  selfDecisionSettlesBoard,
+  type ChangeSelfApprovalMode,
+} from "@/lib/approval-rules";
+import { getChangeSelfApprovalMode } from "@/lib/settings";
 import { distinctIds } from "@/lib/utils";
 import { AFFECTED_CI_SEARCH_LIMIT, affectedCiSearchWhere, attachableCiSearchWhere } from "@/lib/affected-ci-search";
 import {
-  approversToSeat,
   boardSizeLimit,
   canSeatApprovers,
   cancelReasonError,
@@ -36,6 +42,8 @@ import {
   requiresRescheduleReason,
   rescheduleComment,
   rescheduleError,
+  seatBoard,
+  type SelfSeatCandidate,
   settlesApprovalBoard,
   shouldStampActualEnd,
   standardDemotion,
@@ -446,19 +454,36 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
   if (!existing) return refuse("Approval request not found.");
   if (existing.status !== "PENDING") return refuse("This approval request has already been decided or withdrawn.");
   if (existing.approverId !== me.id && me.role !== "ADMIN") return refuse("Only the assigned approver can decide this request.");
-  // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN.
+  // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN, unless an
+  // admin allowed self-approval (and then only on your own seat, with a role the risk accepts).
   const { changeId } = existing;
   const ownerChange = await db.change.findUnique({
     where: { id: changeId },
-    select: { status: true, assigneeId: true, createdById: true },
+    select: { status: true, assigneeId: true, createdById: true, risk: true },
   });
-  const selfApproval = ownerChange && changeSelfApprovalError(ownerChange, me.id);
-  if (selfApproval) return refuse(selfApproval);
+  const selfDecision = !!ownerChange && isChangeSelfApproval(ownerChange, me.id);
+  const selfMode: ChangeSelfApprovalMode = selfDecision ? await getChangeSelfApprovalMode() : "OFF";
+  if (ownerChange && selfDecision) {
+    const selfApproval = changeSelfApprovalError(ownerChange, me.id, {
+      mode: selfMode,
+      approverId: existing.approverId,
+      role: me.role,
+      eligibleRoles: approverRolesForRisk(ownerChange.risk),
+    });
+    if (selfApproval) return refuse(selfApproval);
+  }
   // Approvers may be seated while the change is still a draft; they only decide once it is submitted.
   if (ownerChange?.status !== "APPROVAL") return refuse("This change is not awaiting approval yet.");
+  const missingJustification = selfDecision ? selfApprovalCommentError(comment) : null;
+  if (missingJustification) return refuse(missingJustification);
+  const settlesAlone = selfDecision && selfDecisionSettlesBoard(selfMode);
 
   await db.$transaction(async (tx) => {
     await tx.changeApproval.update({ where: { id: approvalId }, data: { status: decision, comment, decidedAt: new Date() } });
+    if (settlesAlone) {
+      await settleBoard(tx, changeId, decision);
+      return;
+    }
     const tally = await approveIfSatisfied(tx, changeId);
     // A rejection ends the review only when the remaining pending seats can no
     // longer reach the required approval count (i.e. the rule is now unreachable).
@@ -472,7 +497,10 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
     action: "UPDATE",
     entity: "Change",
     entityId: changeId,
-    summary: `Approval ${decision.toLowerCase()} on ${changeRef(changeId)}`,
+    summary: selfDecision
+      ? `Self-approval: ${decision.toLowerCase()} ${changeRef(changeId)} as its requester/owner${settlesAlone ? " (settles the board)" : ""}`
+      : `Approval ${decision.toLowerCase()} on ${changeRef(changeId)}`,
+    meta: selfDecision ? { selfApproval: true, mode: selfMode, decision, justification: comment } : undefined,
   });
   revalidatePath(`/changes/${changeId}`);
   revalidatePath("/changes");
@@ -499,19 +527,35 @@ type BoardChange = {
 /**
  * The board a draft goes to approval with: seats a manager already added stay (unless the
  * owner, creator, role or active state changed since), and the auto-selected board tops it
- * up within the type's size limit.
+ * up within the type's size limit. With self-approval allowed, the owner and requester join
+ * as the mode says (`seatBoard`); `selfIds` lists them.
  */
-async function planCabBoard(change: BoardChange) {
+async function planCabBoard(change: BoardChange, mode: ChangeSelfApprovalMode) {
   const seats = await db.changeApproval.findMany({
     where: { changeId: change.id },
     select: { id: true, approverId: true, approver: { select: { role: true, isActive: true } } },
   });
   const seated = seats.map((s) => ({ approvalId: s.id, approverId: s.approverId, ...s.approver }));
-  const dropped = invalidSeats(seated, change, approverRolesForRisk(change.risk));
+  const eligibleRoles = approverRolesForRisk(change.risk);
+  const dropped = invalidSeats(seated, change, eligibleRoles);
   const droppedIds = new Set(dropped.map((d) => d.approvalId));
   const keptIds = seated.filter((s) => !droppedIds.has(s.approvalId)).map((s) => s.approverId);
-  const addedIds = approversToSeat(await selectApprovers(change), keptIds, boardSizeLimit(change.type));
-  return { dropped, keptIds, addedIds };
+  const { autoIds, selfIds } = seatBoard({
+    mode,
+    selected: await selectApprovers(change),
+    kept: keptIds,
+    parties: mode === "OFF" ? [] : await changeParties(change),
+    eligibleRoles,
+    limit: boardSizeLimit(change.type),
+  });
+  return { dropped, keptIds, addedIds: [...selfIds, ...autoIds], selfIds };
+}
+
+/** The change's owner and requester as seating candidates, owner first. */
+async function changeParties(change: BoardChange): Promise<SelfSeatCandidate[]> {
+  const ids = [change.assigneeId, change.createdById].filter((v): v is string => !!v);
+  const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, role: true, isActive: true } });
+  return ids.flatMap((id) => users.filter((u) => u.id === id));
 }
 
 const NO_FREEZE_OVERRIDE: FreezeVerdict = { ok: true, overrideComment: null };
@@ -575,7 +619,7 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
     if (approved.count === 0) return refuse(STALE_CHANGE_MESSAGE);
     await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "Standard change auto-approved (pre-authorized)" });
   } else {
-    const { dropped, keptIds, addedIds } = await planCabBoard(current);
+    const { dropped, keptIds, addedIds, selfIds } = await planCabBoard(current, await getChangeSelfApprovalMode());
     if (keptIds.length + addedIds.length === 0) {
       // Never silently approve an unreviewed change — stay in DRAFT for a retry.
       await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: "No eligible CAB approvers — submission blocked" });
@@ -599,7 +643,8 @@ export async function submitChangeForApproval(formData: FormData): Promise<Chang
       await notify(approverId, { type: "APPROVAL", title: "Approval needed", body: current.title, entity: "Change", entityId: String(id) });
     }
     const droppedNote = dropped.length > 0 ? ` (${dropped.length} ineligible approver${dropped.length === 1 ? "" : "s"} removed)` : "";
-    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Submitted for approval${droppedNote}${freeze.overrideComment ? " (change freeze overridden)" : ""}` });
+    const selfNote = selfIds.length > 0 ? " (requester/owner seated for self-approval)" : "";
+    await writeAudit({ userId: me.id, action: "UPDATE", entity: "Change", entityId: id, summary: `Submitted for approval${droppedNote}${selfNote}${freeze.overrideComment ? " (change freeze overridden)" : ""}` });
   }
 
   revalidatePath(`/changes/${id}`);

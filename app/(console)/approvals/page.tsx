@@ -12,7 +12,17 @@ import { ApprovalActions } from "@/components/changes/approval-actions";
 import { EntityApprovalDecision } from "@/components/approvals/entity-approval-decision";
 import { parseFormSchema, answersToText } from "@/lib/service-forms";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
-import { approvalTabs, changeSelfApprovalError, requestSelfApprovalError, DEFAULT_APPROVAL_TAB, tabShowsSection } from "@/lib/approval-rules";
+import {
+  approvalTabs,
+  changeSelfApprovalError,
+  isChangeSelfApproval,
+  requestSelfApprovalError,
+  selfDecisionSettlesBoard,
+  DEFAULT_APPROVAL_TAB,
+  tabShowsSection,
+} from "@/lib/approval-rules";
+import { approverRolesForRisk } from "@/lib/cab";
+import { getChangeSelfApprovalMode } from "@/lib/settings";
 import type { SearchParams } from "@/lib/query";
 import { ticketRef, changeRef, CHANGE_TYPE_META, RISK_META, APPROVAL_ENTITY_META, type ApprovalEntityType } from "@/lib/constants";
 import { getEnumT, getFormatter, getServerMessageT, getT } from "@/lib/i18n/server";
@@ -29,7 +39,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const [t, tc, te, f, tm] = await Promise.all([getT("approvals"), getT("common"), getEnumT(), getFormatter(), getServerMessageT()]);
   const scope = me.role === "ADMIN" ? {} : { approverId: me.id };
-  const [pending, pendingChanges, pendingAdHoc] = await Promise.all([
+  const [pending, pendingChanges, pendingAdHoc, selfApprovalMode] = await Promise.all([
     db.ticketApproval.findMany({
       // Only requests still awaiting a decision — a cancelled request has nothing left to approve.
       where: { status: "PENDING", ...scope, ticket: { approvalState: "PENDING", status: { not: "CANCELLED" } } },
@@ -47,6 +57,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
       orderBy: { createdAt: "asc" },
       include: { requestedBy: true, approver: true },
     }),
+    getChangeSelfApprovalMode(),
   ]);
 
   const total = pending.length + pendingChanges.length + pendingAdHoc.length;
@@ -129,7 +140,15 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
             {pendingChanges.length > 0 && tabShowsSection(activeTab, "changes") ? (
               <Section icon={GitPullRequestArrow} label={t("sections.changes")} count={pendingChanges.length}>
                 {pendingChanges.map((a) => {
-                  const selfApproval = changeSelfApprovalError(a.change, me.id);
+                  const selfApproval = changeSelfApprovalError(a.change, me.id, {
+                    mode: selfApprovalMode,
+                    approverId: a.approverId,
+                    role: me.role,
+                    eligibleRoles: approverRolesForRisk(a.change.risk),
+                  });
+                  const ownSelfApproval = isChangeSelfApproval(a.change, me.id)
+                    ? { settlesBoard: selfDecisionSettlesBoard(selfApprovalMode) }
+                    : undefined;
                   return (
                     <ApprovalShell
                       key={a.id}
@@ -147,7 +166,11 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                         </>
                       }
                       decision={
-                        selfApproval ? <SelfNote message={tm(selfApproval)} /> : <ApprovalActions approvalId={a.id} />
+                        selfApproval ? (
+                          <SelfNote message={tm(selfApproval)} />
+                        ) : (
+                          <ApprovalActions approvalId={a.id} selfApproval={ownSelfApproval} />
+                        )
                       }
                     />
                   );
