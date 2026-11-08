@@ -29,6 +29,9 @@ const PLACEHOLDER_VARS = {
   details: "{{details}}",
   stage: "{{stage}}",
   comment: "{{comment}}",
+  subject: "{{subject}}",
+  message: "{{message}}",
+  link: "{{link}}",
 };
 
 export default async function EmailTemplatesPage() {
@@ -54,6 +57,8 @@ export default async function EmailTemplatesPage() {
     stage: approvalStageText(0, 2, brand.locale),
     details: quotedTextHtml(t("emailTemplates.sampleDetails")),
     comment: quotedTextHtml(t("emailTemplates.sampleComment")),
+    recipientName: "Alex Admin",
+    subject: `[INC-0042] ${t("emailTemplates.sampleTitle")}`,
   };
   const ctx = { brand, vars: sampleVars };
 

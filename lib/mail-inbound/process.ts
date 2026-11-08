@@ -168,6 +168,7 @@ export async function processInboundMail(mail: ParsedInboundMail): Promise<Inbou
   const ref = ticketRef(ticketId, t?.prefix || t?.type || "INC");
   await notifyAssigneeAndWatchers(ticketId, sender.id, {
     type: "COMMENT", title: `Email reply on ${ref}`, body: snippet, entity: "Ticket", entityId: String(ticketId),
+    ...(isInternal ? {} : { email: { kind: "REQUESTER_REPLY" as const, authorName: sender.name ?? from, snippet } }),
   });
   await writeAudit({ userId: sender.id, action: "UPDATE", entity: "Ticket", entityId: ticketId, summary: "Email reply received" });
 

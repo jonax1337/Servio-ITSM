@@ -17,27 +17,28 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id               String    @id @default(cuid())
-  email            String    @unique
-  name             String?
-  passwordHash     String?
-  image            String?
-  role             String    @default("USER") // ADMIN | MANAGER | AGENT | USER
-  isVip            Boolean   @default(false)
-  jobTitle         String?
-  phone            String?
-  department       String?
-  timezone         String    @default("UTC")
-  locale           String    @default("auto") // "auto" = instance default (APP_LOCALE), else a locale code (lib/i18n/config.ts)
-  signature        String? // sanitized rich-text HTML, appended to replies/emails
-  signatureEnabled Boolean   @default(false)
-  isActive         Boolean   @default(true)
-  syncSourceId     String?
-  externalId       String?
-  lastLoginAt      DateTime?
-  emailVerified    DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  name               String?
+  passwordHash       String?
+  image              String?
+  role               String    @default("USER") // ADMIN | MANAGER | AGENT | USER
+  isVip              Boolean   @default(false)
+  jobTitle           String?
+  phone              String?
+  department         String?
+  timezone           String    @default("UTC")
+  locale             String    @default("auto") // "auto" = instance default (APP_LOCALE), else a locale code (lib/i18n/config.ts)
+  signature          String? // sanitized rich-text HTML, appended to replies/emails
+  signatureEnabled   Boolean   @default(false)
+  emailNotifications String? // JSON: which notifications are also emailed (lib/notification-email-rules.ts); null = defaults
+  isActive           Boolean   @default(true)
+  syncSourceId       String?
+  externalId         String?
+  lastLoginAt        DateTime?
+  emailVerified      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   accounts           Account[]
   sessions           Session[]
@@ -163,10 +164,10 @@ model AiConversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User        @relation("AiConversationUser", fields: [userId], references: [id], onDelete: Cascade)
-  folder   AiFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  project  AiProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  messages AiMessage[]
+  user              User                 @relation("AiConversationUser", fields: [userId], references: [id], onDelete: Cascade)
+  folder            AiFolder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  project           AiProject?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages          AiMessage[]
   proposalDecisions AiProposalDecision[]
 
   @@index([userId, archived, updatedAt])

@@ -127,6 +127,8 @@ const settings = {
   "template.request_approved.description": "To the requester when the last approval stage approved their catalog request, with the approver's comment ({comment}).",
   "template.request_rejected.label": "Request declined",
   "template.request_rejected.description": "To the requester when their catalog request was declined, with the approver's comment ({comment}).",
+  "template.notification.label": "Notification",
+  "template.notification.description": "Email copy of an in-app notification (new unassigned ticket, requester reply, SLA, contracts and licenses, recurring tickets) for people who switched it on in their account settings. {subject}, {message} and {details} are written in the recipient's language; {link} opens the record.",
   "emailTemplates.sampleItem": "New laptop",
   "emailTemplates.sampleDetails": "• Model: 14-inch business laptop\n• Needed by: next Monday",
   "emailTemplates.sampleComment": "Approved within the hardware budget.",

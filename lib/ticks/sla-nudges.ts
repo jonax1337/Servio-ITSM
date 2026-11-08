@@ -82,6 +82,7 @@ export async function runSlaNudgeTick(): Promise<void> {
         ...nudgeMessage(ticket, elapsed),
         entity: "Ticket",
         entityId: String(ticket.id),
+        email: { kind: "SLA_NUDGE", percent: Math.floor(elapsed) },
       });
       nudged++;
     } catch (error) {
