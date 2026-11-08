@@ -726,11 +726,13 @@ model TicketComment {
   fromEmail      String? // external sender address when it came in via email
   emailMessageId String? // link to the inbound EmailMessage that produced it
   createdAt      DateTime @default(now())
+  importRef      String? // source id of a comment written by the history import (unique per ticket; dedup on re-runs)
 
   ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   author      User         @relation(fields: [authorId], references: [id])
   attachments Attachment[]
 
+  @@unique([ticketId, importRef])
   @@index([ticketId])
 }
 
@@ -944,10 +946,12 @@ model ProblemComment {
   bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
+  importRef  String? // source id of a comment written by the history import (unique per problem; dedup on re-runs)
 
   problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
   author  User    @relation(fields: [authorId], references: [id])
 
+  @@unique([problemId, importRef])
   @@index([problemId])
 }
 
@@ -1016,10 +1020,12 @@ model ChangeComment {
   bodyHtml   String?
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
+  importRef  String? // source id of a comment written by the history import (unique per change; dedup on re-runs)
 
   change Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
   author User   @relation(fields: [authorId], references: [id])
 
+  @@unique([changeId, importRef])
   @@index([changeId])
 }
 

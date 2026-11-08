@@ -39,6 +39,7 @@ export function GET() {
       groups: "/api/v1/groups",
       users: "/api/v1/users",
       import: "/api/v1/import/{tickets|problems|changes}",
+      import_update: "/api/v1/import/{tickets|problems|changes}/{import_ref}",
       attachments: "/api/v1/{tickets|changes|problems|assets|licenses}/{id}/attachments",
       attachment: "/api/v1/{tickets|changes|problems|assets|licenses}/{id}/attachments/{attachment_id}",
     },

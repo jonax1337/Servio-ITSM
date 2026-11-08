@@ -250,6 +250,7 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
 | `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
 | `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
+| `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `admin` + ADMIN owner |
 
 There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
 records (only for relations, license seats and attachments).
@@ -707,15 +708,65 @@ so it needs a token with the **`admin` scope whose owner is an `ADMIN`** (else
   `change_id`, `resolution_code`, `resolution_note`, `first_response_at`,
   `resolved_at`, `closed_at`; imported tickets have `source = API`, no SLA and no
   breach flags.
-- **`comments`** (up to 1000): `{ body, internal (default true), author_id
-  (default: the token owner), created_at }`.
+- **`comments`** (up to 1000): `{ import_ref (optional), body, internal
+  (default true), author_id (default: the token owner), created_at }`. The
+  comment `import_ref` (≤ 200 chars, e.g. `glpi:followup:812`) is the source id
+  of the comment, unique within its record (sending one twice in a body is a
+  `422`); the comment endpoints return it as `import_ref`.
 - Every referenced id (users incl. comment authors, group, category, service,
   problem, change) is checked first; unknown ids are a `422`, never a `500`.
 - One audit row per record (`CREATE`, "Imported from <ref> via API").
 
 Import problems first, then changes and tickets that point at them via
 `problem_id` (look ids up with `GET /problems?import_ref=…`). Once imported, a
-record is an ordinary one: e.g. a `CLOSED` change is locked like any other.
+record is an ordinary one: e.g. a `CLOSED` change is locked like any other —
+for the console and the regular API. Only the update mode below rewrites it.
+
+#### Update mode for re-runs
+
+`PUT /import/{tickets|problems|changes}/{import_ref}` brings an imported record
+up to the source system's current state, e.g. at cut-over, when a change that
+was `DRAFT` at the first import has been closed since and got another comment.
+Same token rules (`admin` scope + `ADMIN` owner) and the same strict body as
+the `POST` import; `import_ref` comes from the path (URL-encoded, e.g.
+`glpi%3Achange%3A129`) and may be repeated in the body only with the same
+value (else `422`). The same checks apply (timeline, unknown ids → `422`).
+
+- **New ref:** the record is created exactly like the `POST` import → `201`,
+  `meta.result: "created"`.
+- **Existing ref:** the payload is the record's **full current state**. Every
+  field the import writes is replaced with the payload's value; an omitted
+  optional field falls back to the import default (`risk` `MEDIUM`, `outcome`
+  `null`, …), exactly as on a first import. Not touched: the ticket `prefix`
+  (the ref stays stable when `type` changes) and `source`; `created_by_id` /
+  `requester_id` (they default to the token owner) and `custom_fields` unless
+  sent (`{}` clears them); everything outside the import (SLA fields,
+  approvals, affected CIs, links, attachments). Lifecycle rules do not apply,
+  so a closed or locked record is updated too.
+- **Comments are only ever appended**, never edited or removed (comments added
+  in Servio after the import stay). A payload comment counts as present when
+  the record has a comment with the same `import_ref`, or else — without a
+  ref, or with a ref not stored yet (a thread first imported without refs) —
+  a ref-less comment with the same `body` and the same `created_at` (to the
+  millisecond). Each stored comment matches once, so two identical source
+  comments stay two. Sending comment refs makes the dedup robust against
+  edited bodies.
+- **`created_at`** is part of the source state and replaced when it differs,
+  but may not move past the record's earliest comment (`422`).
+- **`updated_at`** follows the import rules (the sent value, else the latest
+  timestamp in the payload). It is written with any change; on its own it only
+  counts as a change when it was sent and differs, so a derived value never
+  turns an otherwise identical run into an update.
+- **Response:** the record, plus `meta.result` (`created` | `updated` |
+  `unchanged`), `meta.changed` (API field names whose value changed, e.g.
+  `["status", "outcome", "closure_notes", "actual_end"]`; on `created` every
+  field written, defaults included) and `meta.comments_added`. `updated` writes the fields and the
+  new comments in one statement and one audit row (`UPDATE`, "Re-imported from
+  <ref> via API", meta with `changed` and `commentsAdded`); `unchanged`
+  (`200`) writes nothing and no audit row.
+- Only records that carry this `importRef` are found: a natively created record
+  (no `importRef`) can never be addressed. The `POST` import is unchanged (an
+  existing ref is still returned as is).
 
 ### Lookups
 
