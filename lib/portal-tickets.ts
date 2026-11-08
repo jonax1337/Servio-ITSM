@@ -1,12 +1,12 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { writeAudit, notify } from "@/lib/audit";
+import { writeAudit } from "@/lib/audit";
 import { sendMail, tplTicketReceived, mailBrand, quoteHtml, textToHtmlParagraphs } from "@/lib/mail";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket } from "@/lib/assignment";
 import { slaCreateData } from "@/lib/sla";
-import { parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN } from "@/lib/service-forms";
-import { isAgent, type Role } from "@/lib/session";
+import { parseFormSchema, validateAnswers, answersToText, MAX_ANSWER_LEN, catalogApprovalPlan, effectiveApprovalStages } from "@/lib/service-forms";
+import { resolveStageApprover, seatCatalogStage } from "@/lib/approval-seating";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
 import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
@@ -155,17 +155,12 @@ export async function createCatalogRequestFor(
     include: { service: { select: { groupId: true } }, category: { select: { groupId: true } } },
   });
   if (!item || !item.isPublished) return { ok: false, error: "This item can't be requested." };
-  if (item.requiresApproval && !item.approverId) {
-    return { ok: false, error: "This item requires approval but has no approver configured. Please contact IT." };
-  }
-  // Re-check the approver is still active + an agent at REQUEST time, not just at
-  // edit time — the configured approver may have been deactivated or demoted since.
-  if (item.requiresApproval && item.approverId) {
-    const approver = await db.user.findUnique({ where: { id: item.approverId }, select: { role: true, isActive: true } });
-    if (!approver || !approver.isActive || !isAgent(approver.role as Role)) {
-      return { ok: false, error: "This item requires approval but its approver is no longer available. Please contact IT." };
-    }
-  }
+  // Judge approval on the item's ordered stages at REQUEST time, not at edit time:
+  // a named approver may have been deactivated or demoted since, and a group stage
+  // only needs one active agent member (not the one mirrored into approverId).
+  const firstStage = item.requiresApproval ? effectiveApprovalStages(item)[0] : undefined;
+  const plan = catalogApprovalPlan(item, firstStage ? (await resolveStageApprover(firstStage)) !== null : false);
+  if ("error" in plan) return { ok: false, error: plan.error };
 
   const fields = parseFormSchema(item.formSchema);
   const data: Record<string, string> = {};
@@ -188,7 +183,7 @@ export async function createCatalogRequestFor(
   const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
   // Pre-route: the service's team, else the category's team, else Service Desk triage.
   const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? triage?.id ?? null;
-  const needsApproval = item.requiresApproval && !!item.approverId;
+  const needsApproval = plan.stages.length > 0;
   const sla = await slaCreateData({ serviceId: item.serviceId, priority: "MEDIUM" });
 
   const ticket = await db.ticket.create({
@@ -215,21 +210,13 @@ export async function createCatalogRequestFor(
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Ticket", entityId: ticket.id, summary: `Ordered "${item.name}" from the catalog` });
 
-  if (needsApproval && item.approverId) {
-    await db.ticketApproval.create({ data: { ticketId: ticket.id, approverId: item.approverId } });
-    await notify(item.approverId, {
-      type: "APPROVAL", title: "Approval needed",
-      body: `${me.name} requested ${item.name} (${ticketRef(ticket.id, "REQUEST")})`,
-      entity: "Ticket", entityId: String(ticket.id),
+  // Seat the first stage: its named approver, or the group's lead / first active agent.
+  if (needsApproval && !(await seatCatalogStage(ticket.id, 0, { details: summary }))) {
+    // The approver went away between the check and the seat: leave a trail; the
+    // request stays PENDING until an admin fixes the item or it is re-requested.
+    await db.ticketComment.create({
+      data: { ticketId: ticket.id, authorId: me.id, isInternal: true, body: "Approval could not be routed: no eligible approver for the first stage." },
     });
-    const approver = await db.user.findUnique({ where: { id: item.approverId } });
-    if (approver?.email) {
-      await sendMail({
-        to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id, template: "approval_request",
-        subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${item.name}`,
-        body: `Hi ${approver.name ?? "there"},\n\n${me.name} has requested "${item.name}".\n\n${summary}\n\nPlease review and approve or reject it in Servio under Approvals.\n\n- Servio`,
-      });
-    }
   }
 
   if (me.email) {

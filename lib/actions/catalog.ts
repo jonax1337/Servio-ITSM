@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import { createCatalogRequestFor, linkStagedAttachments } from "@/lib/portal-tickets";
-import { seatCatalogApprovalStages } from "@/lib/approval-seating";
 
 export type CatalogState =
   | { error?: string; fieldErrors?: Record<string, string> }
@@ -25,10 +24,6 @@ export async function createCatalogRequest(
 
   const result = await createCatalogRequestFor(me, itemId, rawAnswers);
   if (!result.ok) return { error: result.error, fieldErrors: result.fieldErrors };
-
-  // createCatalogRequestFor auto-seats a single legacy stage-0 approval; reconcile
-  // it to the item's ORDERED approval stages (multi-stage / group-first items).
-  await seatCatalogApprovalStages(result.ticket.id);
 
   await linkStagedAttachments(me.id, result.ticket.id, formData.getAll("attachmentIds").map(String));
   redirect(`/portal/tickets/${result.ticket.id}`);
@@ -68,7 +63,6 @@ export async function reRequestCatalogItem(formData: FormData): Promise<void> {
 
   const result = await createCatalogRequestFor(me, source.catalogItemId, answers);
   if (!result.ok) return;
-  await seatCatalogApprovalStages(result.ticket.id);
 
   revalidatePath(`/portal/tickets/${sourceId}`);
   revalidatePath("/portal/tickets");

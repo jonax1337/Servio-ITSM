@@ -179,8 +179,9 @@ releases a claim held by a ticket that is no longer open the next time the key i
 > [`prisma/seed-extras.ts`](../prisma/seed-extras.ts).
 
 `CatalogItem.approvalStages` (JSON as TEXT) holds an ordered array of stage descriptors (each an
-`approverId` **or** a `groupId`) for multi-stage / group catalog approvals; `approverId` remains the
-single-stage-0 fallback. See [modules.md](./modules.md#service-catalog-admin).
+`approverId` **or** a `groupId`) for multi-stage / group catalog approvals; requests are routed by
+these stages. `approverId` is the single-stage fallback for items without stages (and mirrors stage
+0's concrete approver otherwise). See [modules.md](./modules.md#service-catalog-admin).
 
 ### SLA calendars & escalation
 

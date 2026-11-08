@@ -19,7 +19,7 @@ import { ticketRef } from "@/lib/constants";
  *  first active-agent member, so the seated TicketApproval always names a real
  *  person while /approvals still shows it to that stage's decider. Returns null
  *  when no eligible approver exists (caller should surface a config error). */
-async function resolveStageApprover(stage: ApprovalStage): Promise<string | null> {
+export async function resolveStageApprover(stage: ApprovalStage): Promise<string | null> {
   if (stage.approverId) {
     const u = await db.user.findUnique({ where: { id: stage.approverId }, select: { id: true, role: true, isActive: true } });
     return u && u.isActive && isAgent(u.role as Role) ? u.id : null;
@@ -39,9 +39,10 @@ async function resolveStageApprover(stage: ApprovalStage): Promise<string | null
  * Seat the PENDING approval for a given stage index on a catalog request. Used
  * both to seat stage 0 at submit time and to advance to stage+1 on approval.
  * Returns true if a stage was seated, false when there is no such stage (the
- * flow has run out of stages and the request should be released).
+ * flow has run out of stages and the request should be released) or no eligible
+ * approver. `details` (the request's answers) goes into the approver's email.
  */
-export async function seatCatalogStage(ticketId: number, stageIndex: number): Promise<boolean> {
+export async function seatCatalogStage(ticketId: number, stageIndex: number, opts: { details?: string } = {}): Promise<boolean> {
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
     include: { requester: { select: { id: true, name: true } }, catalogItem: true },
@@ -69,51 +70,10 @@ export async function seatCatalogStage(ticketId: number, stageIndex: number): Pr
     await sendMail({
       to: approver.email, toName: approver.name, entity: "Ticket", entityId: ticket.id, template: "approval_request",
       subject: `[${ticketRef(ticket.id, "REQUEST")}] Approval needed: ${ticket.catalogItem.name}`,
-      body: `Hi ${approver.name ?? "there"},\n\nA request for "${ticket.catalogItem.name}" needs your approval${stages.length > 1 ? ` (stage ${stageIndex + 1} of ${stages.length})` : ""}.\n\nReview it in Servio under Approvals.\n\n— Servio Service Desk`,
+      body: `Hi ${approver.name ?? "there"},\n\n${ticket.requester?.name ?? "A user"} has requested "${ticket.catalogItem.name}", which needs your approval${stages.length > 1 ? ` (stage ${stageIndex + 1} of ${stages.length})` : ""}.${opts.details ? `\n\n${opts.details}` : ""}\n\nReview it in Servio under Approvals.\n\n— Servio Service Desk`,
     });
   }
   return !!approval;
-}
-
-/**
- * Reconcile a freshly-created catalog request's seated approvals to its item's
- * ordered stages. `createCatalogRequestFor` (lib/portal-tickets) auto-seats a
- * single stage-0 approval from the legacy approverId; for multi-stage or
- * group-first items we drop that and seat the correct first stage. Called from
- * lib/actions/catalog after the request is created. No-op for non-approval and
- * single-approver items (their auto-seated stage 0 is already correct).
- */
-export async function seatCatalogApprovalStages(ticketId: number): Promise<void> {
-  const ticket = await db.ticket.findUnique({
-    where: { id: ticketId },
-    include: { catalogItem: true, approvals: true },
-  });
-  if (!ticket || !ticket.catalogItem) return;
-  const stages = effectiveApprovalStages(ticket.catalogItem);
-  if (stages.length === 0) return;
-
-  const firstStage = stages[0];
-  const existing = ticket.approvals.find((a) => a.status === "PENDING");
-  // Single named-approver stage 0 that portal-tickets already seated correctly.
-  if (
-    stages.length === 1 &&
-    firstStage.approverId &&
-    existing &&
-    existing.stage === 0 &&
-    existing.approverId === firstStage.approverId
-  ) {
-    return;
-  }
-  // Otherwise re-seat: clear any auto-seated approval and seat the real stage 0.
-  await db.ticketApproval.deleteMany({ where: { ticketId } });
-  const seated = await seatCatalogStage(ticketId, 0);
-  if (!seated) {
-    // No eligible approver for stage 0 — leave a trail; the request stays PENDING
-    // and an admin must fix the item's stage config or re-request.
-    await db.ticketComment.create({
-      data: { ticketId, authorId: ticket.requesterId, isInternal: true, body: "Approval could not be routed: no eligible approver for the first stage." },
-    });
-  }
 }
 
 /**
