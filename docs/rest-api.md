@@ -111,9 +111,9 @@ revoke any. Revoked tokens are excluded from authentication immediately.
 | --- | --- |
 | Base path | `/api/v1` |
 | Current version | `1.0.0` (see `GET /api/v1`) |
-| Content type | `application/json` |
+| Content type | `application/json` (uploads: `multipart/form-data`; downloads: the file's own type) |
 | Runtime | Node.js (`runtime = "nodejs"`); list/detail routes are `dynamic = "force-dynamic"` |
-| CORS | Default **closed**: no `Access-Control-*` headers are emitted unless `API_CORS_ORIGIN` is set to an explicit origin (never `*`); when set, methods `GET, POST, PATCH, OPTIONS`, allowed headers `Authorization, Content-Type`. Every route except `/openapi` implements `OPTIONS` (preflight → `204`). `GET /openapi` is the exception: it always sends `Access-Control-Allow-Origin: *`. |
+| CORS | Default **closed**: no `Access-Control-*` headers are emitted unless `API_CORS_ORIGIN` is set to an explicit origin (never `*`); when set, methods `GET, POST, PUT, PATCH, DELETE, OPTIONS`, allowed headers `Authorization, Content-Type`. Every route except `/openapi` implements `OPTIONS` (preflight → `204`). `GET /openapi` is the exception: it always sends `Access-Control-Allow-Origin: *`. |
 | Session | `/api/v1` is a public path in the session middleware ([`lib/route-guard.ts`](../lib/route-guard.ts)), so it never needs a cookie; only the Bearer token authenticates. |
 
 Because these are Bearer-token endpoints, they do not rely on cookies.
@@ -156,7 +156,9 @@ only for validation failures:
 | `401` | Missing or invalid token |
 | `403` | Token lacks the required scope, or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
 | `404` | Resource not found (or hidden from a non-agent); a non-numeric ticket id is also `404` |
-| `409` | Illegal ticket status transition, a merged ticket (only `CANCELLED` is allowed), or a request awaiting approval (only cancelling is allowed) |
+| `409` | A closed or cancelled ticket refusing a new file; illegal ticket status transition, a merged ticket (only `CANCELLED` is allowed), or a request awaiting approval (only cancelling is allowed) |
+| `413` | Upload larger than `MAX_UPLOAD_MB` (or cut short by the server's request body limit, see [Attachments](#attachments)) |
+| `415` | Upload not `multipart/form-data`, or a file type / extension / content not on the allow-list |
 | `422` | Zod validation failed, or an invalid `assigneeId` (`details` holds field errors) |
 | `429` | Rate limit exceeded — a `Retry-After` header is returned |
 | `503` | Maintenance mode is active: the middleware answers every `/api/*` request except `/api/auth` and `/api/maintenance` with `{ "error": "maintenance", "endsAt": … }` and a `Retry-After` header. Bearer clients carry no admin session, so they are refused until the window ends ([`proxy.ts`](../proxy.ts), [`lib/maintenance-rules.ts`](../lib/maintenance-rules.ts)) |
@@ -188,7 +190,7 @@ Pagination applies to every list endpoint except `GET /services`, `/categories`,
 
 | Endpoint | Filters |
 | --- | --- |
-| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`) |
+| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved) |
 | `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
 
 **Sorting is fixed** (not client-configurable): tickets by `updatedAt` descending,
@@ -209,6 +211,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
 | `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `write` |
+| `GET` | `/tickets/ref/{ref}` | The ticket carrying an external reference: the open one, else the most recent (see [Monitoring dedup](#monitoring-dedup-external-reference)). | `read` |
+| `POST` | `/tickets/ref/{ref}/resolve` | Resolve the open ticket carrying an external reference (monitoring recovery). Agent tokens only. | `write` |
 | `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
 | `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
@@ -241,12 +245,14 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `read` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `read` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `read` |
+| `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `read` / `write` |
+| `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `read` / `write` |
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
 | `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
 | `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
 
-There are no `DELETE` endpoints and no endpoints for knowledge, releases or
-assets' relationships yet.
+There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
+records (only for relations, license seats and attachments).
 
 ### Tickets
 
@@ -279,6 +285,11 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "assignee": null,
   "category_id": null,
   "service_id": null,
+  "problem_id": null,
+  "change_id": null,
+  "import_ref": null,
+  "external_ref": null,
+  "external_ref_open": false,
   "due_at": null,
   "resolved_at": null,
   "created_at": "2026-08-09T10:00:00.000Z",
@@ -300,6 +311,8 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `status` | ticket status enum — **open statuses only** | `NEW` | **agents only** |
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
+| `externalRef` | string, 1–200 of `A-Z a-z 0-9 . _ : @ -`, starting with a letter or digit | — | **agents only** (a non-agent token gets `403`); monitoring dedup key, see below |
+| `onDuplicate` | `return` \| `comment` | `return` | what a repeat with an open `externalRef` does |
 
 For non-agent tokens, only `title`, `description`, `type`, `priority`, `impact`,
 `urgency` are honored; all other fields fall back to defaults (an unknown
@@ -329,6 +342,43 @@ ticket carries `problem_id` and `change_id`. Changing `status`:
   ticket's creation plus its banked pause time (the clock never restarts), via the
   shared `slaRepricePatch` (same contract as the console's `updateTicketField`).
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
+- `RESOLVED`, `CLOSED` and `CANCELLED` release the ticket's external reference
+  (see below), so the next alert with that key opens a new ticket.
+
+#### Monitoring dedup (external reference)
+
+Monitoring integrations (Zabbix, Wazuh, …) call the API per alert. With an
+`external_ref` — the alert's stable key, e.g. `zabbix:event:12345` or
+`wazuh:rule:92206:host:ws01` — repeated alerts land in **one open ticket**:
+
+| Request | Answer |
+| --- | --- |
+| `POST /tickets` with an `external_ref` no open ticket carries | `201`, the new ticket, `meta.deduplicated: false` |
+| `POST /tickets` with the `external_ref` of an open ticket | `200`, **that** ticket, `meta.deduplicated: true`; nothing else in the body is applied |
+| … with `on_duplicate: "comment"` | the same, and the request's `description` (its `title` when empty) is added to the open ticket as an **internal** note through the same path as `POST /tickets/{id}/comments` (`meta.comment`); when the token's owner may not write to that ticket the answer is that endpoint's `403`, with the ticket in `error.details.ticket` |
+| `POST /tickets/ref/{ref}/resolve` | resolves the open ticket (`200`); `404` when none is open |
+| `GET /tickets/ref/{ref}` | the open ticket, else the most recent one that carried the key; `404` if none |
+| `GET /tickets?external_ref=…` | every ticket that ever carried the key |
+
+The key is unique among **open** tickets (`NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`,
+`ON_HOLD`). Concurrent POSTs with the same new key (Wazuh fires integrations in
+parallel) end in one ticket: the database's unique index picks the single
+winner and the others answer `200` with it. Once the ticket reaches `RESOLVED`,
+`CLOSED` or `CANCELLED` — through this endpoint, `PATCH`, the console, a macro,
+an automation or a merge — the key is released and the next POST opens a new
+ticket; the old one keeps `external_ref` as history (`external_ref_open: false`).
+Reopening a resolved ticket does **not** reclaim the key (a newer ticket may
+hold it by then): a reopened alert ticket is handled as a human ticket.
+
+The resolve body is optional: `resolution_note`, `resolution_code`
+(`RESOLUTION_CODES`), `internal` (default `true`: the note is an internal
+comment; `false` makes it the public resolution reply). It runs the console's
+resolution action as the token's owner (see [How the ITSM endpoints enforce the
+console's rules](#how-the-itsm-endpoints-enforce-the-consoles-rules)): the
+configured workflow map and role gates (a refused move is `409`), the merge and
+approval rules, SLA stamping (`resolvedAt`, `resolveBreached`, a paused clock is
+resumed first), the resolution comment and mail, and automations. Only someone
+who may act on the ticket can resolve it (`403`).
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,
 `CLOSED`, `CANCELLED`. Open statuses (matched by `?status=open`): `NEW`, `OPEN`,
@@ -568,6 +618,65 @@ behaves like one typed in the console: it stamps the first response, notifies
 watchers and mentions and emails the requester. Change and problem comments send
 no mail. Every comment writes an audit row as the token owner.
 
+### Attachments
+
+Files on tickets, changes, problems, assets and licenses live under
+`/{entity}/{id}/attachments` (`entity` = `tickets`, `changes`, `problems`, `assets`
+or `licenses`; `{id}` is numeric for the first three, a cuid for assets and
+licenses). They are the same files the console shows: the ticket's Details tab and
+comment thread, and the Attachments card in the rail of a change, problem, asset
+or license. The handlers ([`app/api/v1/_attachments.ts`](../app/api/v1/_attachments.ts))
+use the console's intake ([`lib/attachment-upload.ts`](../lib/attachment-upload.ts)):
+the same storage driver, per-file cap, type allow-list and magic-byte check, and the
+console's `deleteAttachment` for removals.
+
+**Who may do what.** Tickets follow the ticket rules: an agent token reads the files
+of every ticket and writes (upload, delete) only where its owner may act on the
+ticket (assignee, member of the ticket's group, or MANAGER+, as for
+`POST /tickets/{id}/comments`, else `403`). A `USER` token sees only its own tickets
+(another ticket is a `404`, never a `403`), never sees files on internal notes, may
+upload to its own ticket while it is not `CLOSED`/`CANCELLED`, and may delete only
+files it uploaded. Changes, problems and assets are agent-only (`403` for a `USER`
+token); license files are read by agents and written by **MANAGER+** (the console's
+contracts rule). An attachment id that belongs to another record, or that the token
+cannot see, is a `404`.
+
+- **`GET /{entity}/{id}/attachments`** (paginated, oldest first): `id`, `filename`
+  (the stored, sanitized name), `content_type`, `size` (bytes), `comment_id`
+  (tickets: the comment the file belongs to, else `null`), `uploaded_by`
+  (`id`, `name`, `email` or `null`), `created_at` and `download_url`. A ticket's list
+  includes the files of its comments.
+- **`GET /{entity}/{id}/attachments/{attachment_id}`** streams the bytes as stored
+  (byte-identical to the upload), with the stored `Content-Type`, `Content-Length`,
+  and `Content-Disposition: attachment; filename="…"; filename*=UTF-8''…` (RFC 5987/6266:
+  the quoted fallback is printable ASCII only, the exact name is percent-encoded).
+  Always a download, never inline, plus `X-Content-Type-Options: nosniff` and a
+  sandboxing CSP. The blob is located by its server-generated storage key, so
+  nothing in the request can address a path.
+- **`POST /{entity}/{id}/attachments`** takes `multipart/form-data` with one part
+  `file` and optionally `comment_id` (tickets only: a comment on this ticket; a
+  `USER` token only its own public reply; a file on a comment belongs to the
+  comment). Responds `201` with the attachment as listed. The form is strict: an
+  unknown or repeated part is a `422`. Refusals: `413` larger than `MAX_UPLOAD_MB`
+  (Admin Settings, default 15), `415` not multipart or a type / extension / content
+  not on the allow-list, `422` no or empty file or an unparsable body, `409` the
+  ticket is `CLOSED`/`CANCELLED`, `429` too many uploads (`USER` tokens only,
+  `UPLOAD_RATE_LIMIT` per window, shared with the portal; `Retry-After` is set).
+  The body is capped while it streams, so an oversized upload is refused without
+  being buffered. Next.js passes request bodies through `proxy.ts` only up to
+  `proxyClientMaxBodySize` (10 MB by default); a body cut short there is reported
+  as `413` when the client declared its `Content-Length`.
+- **History import:** a token with the **`admin` scope owned by an `ADMIN`** (the
+  rule of [History import](#history-import), else `403`) may also send
+  `created_at` (ISO with offset, not in the future) and `uploaded_by_id` (an
+  existing user, else `422`), and may add files to a closed ticket, e.g. the
+  documents of a GLPI record or the opsi license file of a license.
+- **`DELETE /{entity}/{id}/attachments/{attachment_id}`** removes the row and the
+  stored blob; responds `{ "data": { "id": "…", "deleted": true } }`.
+
+Each upload writes an audit row (`Attachment`, `CREATE`, "Uploaded … to CHG-0008 via
+API" or "Imported …"), each removal one (`DELETE`), as the token owner.
+
 ### History import
 
 `POST /import/tickets`, `/import/problems`, `/import/changes` write one record **as
@@ -623,7 +732,8 @@ record is an ordinary one: e.g. a `CLOSED` change is locked like any other.
 `GET /api/v1/openapi` serves an OpenAPI 3.1 document
 ([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)). For the ticket,
 asset and service paths it is hand-written: minimal `Ticket` and `Asset` schemas
-and no write-body detail. For the ITSM paths (changes, problems, comments,
+and no write-body detail. The attachment paths describe their `multipart/form-data`
+body and the `Attachment` shape by hand. For the ITSM paths (changes, problems, comments,
 lookups) the request bodies are generated from the same Zod schemas the handlers
 validate with (`z.toJSONSchema`), so they cannot drift; responses are described in
 prose. This page is the authoritative reference.
@@ -665,6 +775,18 @@ curl -s -X POST "$BASE/tickets" \
   -H "Content-Type: application/json" \
   -d '{"title":"VPN is down","type":"INCIDENT","priority":"HIGH"}'
 
+# Monitoring alert: one open ticket per key (repeat = 200 + internal note)
+curl -s -X POST "$BASE/tickets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Disk full on ws01","description":"95% on /var","external_ref":"zabbix:event:12345","on_duplicate":"comment"}'
+
+# Monitoring recovery: resolve the open ticket for the key
+curl -s -X POST "$BASE/tickets/ref/zabbix:event:12345/resolve" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resolution_note":"Recovered: 60% on /var","resolution_code":"FIXED"}'
+
 # Transition a ticket (agent token)
 curl -s -X PATCH "$BASE/tickets/1" \
   -H "Authorization: Bearer $TOKEN" \
@@ -676,6 +798,12 @@ curl -s "$BASE/assets?type=LAPTOP&q=dev" -H "Authorization: Bearer $TOKEN"
 
 # List services and their SLAs
 curl -s "$BASE/services" -H "Authorization: Bearer $TOKEN"
+
+# Attach a file to change 8, list the change's files, download one
+curl -s -X POST "$BASE/changes/8/attachments" \
+  -H "Authorization: Bearer $TOKEN" -F "file=@evidence.pdf"
+curl -s "$BASE/changes/8/attachments" -H "Authorization: Bearer $TOKEN"
+curl -s -OJ "$BASE/changes/8/attachments/<attachment_id>" -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
@@ -695,7 +823,7 @@ versioned or guaranteed stable:
 | `GET /api/maintenance` | **Public.** Whether maintenance mode is on (`{ "active": false }` otherwise); the maintenance page polls it | [`app/api/maintenance/route.ts`](../app/api/maintenance/route.ts) |
 | `GET` / `POST /api/auth/*` | Auth.js handlers (sign-in, callbacks, session) | [`app/api/auth/[...nextauth]/route.ts`](../app/api/auth/[...nextauth]/route.ts) |
 | `GET /api/export?type=…` | CSV export. `type=tickets` (AGENT+) exports the ticket list; `type=audit` (ADMIN, honours the viewer's filters) exports the audit log. Returns a `text/csv` download. | [`app/api/export/route.ts`](../app/api/export/route.ts) |
-| `POST /api/files/upload` | Attachment upload (session only, never Bearer). `multipart/form-data` with a `file` and at most one target (`ticketId`, `commentId`, `articleId` or `aiProjectId`); no target stages the file for a later form submit. The per-file cap is `MAX_UPLOAD_MB`. Errors: `401`, `413` (too large), `415` (not multipart, or type / extension / magic bytes not allowed), `422` (no file, empty file, unparsable body, bad target), `429` (`USER`-role accounts only, `UPLOAD_RATE_LIMIT`), plus `400` / `404` / `409` when the target or the store refuses it. | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
+| `POST /api/files/upload` | Attachment upload (session only, never Bearer). `multipart/form-data` with a `file` and at most one target (`ticketId`, `commentId`, `articleId`, `aiProjectId`, `changeId`, `problemId`, `assetId` or `licenseId`); no target stages the file for a later form submit. The per-file cap is `MAX_UPLOAD_MB`. Errors: `401`, `413` (too large), `415` (not multipart, or type / extension / magic bytes not allowed), `422` (no file, empty file, unparsable body, bad target), `429` (`USER`-role accounts only, `UPLOAD_RATE_LIMIT`), plus `400` / `404` / `409` when the target or the store refuses it. | [`app/api/files/upload/route.ts`](../app/api/files/upload/route.ts) |
 | `GET /api/files/{id}` | Attachment download | [`app/api/files/[id]/route.ts`](../app/api/files/[id]/route.ts) |
 | `GET /api/files/{id}/preview` | Rendered HTML preview of an attachment for the lightbox (files above 25 MB fall back to download) | [`app/api/files/[id]/preview/route.ts`](../app/api/files/[id]/preview/route.ts) |
 | `GET /api/files/{id}/pdf` | Office document → PDF preview via Gotenberg (`GOTENBERG_URL`); `204` when the file is not convertible or Gotenberg is not configured or fails | [`app/api/files/[id]/pdf/route.ts`](../app/api/files/[id]/pdf/route.ts) |

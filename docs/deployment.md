@@ -342,6 +342,7 @@ until an object-storage adapter is implemented.**
   proxied through an authorized route, and the storage keys are unguessable
   (`YYYY/MM/<uuid>-<safeName>`, see `buildStorageKey`).
 - `MAX_UPLOAD_MB` (default `15`) caps per-file size; `lib/files.ts` derives the byte limit.
+- `PROXY_MAX_BODY_MB` (build time, default `32`) is how much of a request body Next.js buffers for `proxy.ts`; keep the upload cap below it. The published image is built with 32 MB.
 
 > **Platform implication.** Because the only working driver is local-filesystem, Servio is
 > best deployed on a host with a persistent disk (VM, Docker with a volume, Fly.io volume,

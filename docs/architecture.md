@@ -110,7 +110,7 @@ The outside world talks to Servio through Route Handlers, **not** Server Actions
 | --- | --- |
 | `app/api/auth/[...nextauth]/route.ts` | Auth.js sign-in/callback handlers. |
 | `app/api/v1/*` | Public, token-authenticated REST API (index `route.ts`, `tickets` incl. `[id]`, `assets`, `services`, `openapi`). |
-| `app/api/files/*` | Attachment upload (`upload`), download (`[id]`) and in-browser `preview` / `pdf` renditions; each handler authorises the live DB user (`canUploadTo` / `canViewAttachment`). |
+| `app/api/files/*` | Attachment upload (`upload`), download (`[id]`) and in-browser `preview` / `pdf` renditions; each handler authorises the live DB user (`canUploadTo` / `canViewAttachment`). The multipart intake (stream-capped parse, allow-list validation, blob + row write) lives in `lib/attachment-upload.ts` and is shared with the REST API's `/{entity}/{id}/attachments`. |
 | `app/api/search/route.ts` | Global search. |
 | `app/api/export/route.ts` | Streaming CSV export (`?type=audit` ADMIN, `?type=tickets` AGENT+). |
 | `app/api/dashboard/widget/route.ts` | On-demand widget computation for the dashboard editor preview (AGENT+, DB-truth guard). |
@@ -429,7 +429,11 @@ portable across both databases while giving the UI a single, typed source of enu
 metadata. Full model reference in [data-model.md](./data-model.md).
 
 The Prisma client is a lazily-created singleton in [`lib/db.ts`](../lib/db.ts),
-cached on `globalThis` in non-production to survive Turbopack/HMR reloads.
+cached on `globalThis` in non-production to survive Turbopack/HMR reloads. It
+carries one query extension: a ticket write into a terminal status also clears
+`openExternalRef`, the monitoring dedup key (see [data-model.md](./data-model.md)).
+The extended client keeps the plain `PrismaClient` type, since a query extension
+changes no signatures.
 
 ---
 

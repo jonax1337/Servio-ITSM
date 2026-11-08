@@ -24,6 +24,8 @@ export function serializeTicket(t: {
   problemId?: number | null;
   changeId?: number | null;
   importRef?: string | null;
+  externalRef?: string | null;
+  openExternalRef?: string | null;
   dueAt: Date | null;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -47,6 +49,9 @@ export function serializeTicket(t: {
     problem_id: t.problemId ?? null,
     change_id: t.changeId ?? null,
     import_ref: t.importRef ?? null,
+    // Monitoring dedup key; `external_ref_open` = this is the open ticket that new alerts with the key land in.
+    external_ref: t.externalRef ?? null,
+    external_ref_open: !!t.openExternalRef,
     due_at: t.dueAt?.toISOString() ?? null,
     resolved_at: t.resolvedAt?.toISOString() ?? null,
     created_at: t.createdAt.toISOString(),
@@ -299,4 +304,21 @@ function parseCustomFields(raw: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** A file on a ticket, change, problem, asset or license. Never exposes the storage key or path. */
+export function serializeAttachment(
+  a: { id: string; filename: string; mime: string; size: number; createdAt: Date; commentId: string | null; uploadedBy?: Userish },
+  downloadUrl: string,
+) {
+  return {
+    id: a.id,
+    filename: a.filename,
+    content_type: a.mime,
+    size: a.size,
+    comment_id: a.commentId,
+    uploaded_by: user(a.uploadedBy ?? null),
+    created_at: a.createdAt.toISOString(),
+    download_url: downloadUrl,
+  };
 }

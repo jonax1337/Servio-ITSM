@@ -93,6 +93,7 @@ file. The sample file is a starting point, not the full list.
 | `STORAGE_DRIVER` | No | `fs` | Blob storage driver. Only `fs` is implemented; `s3` and `vercel-blob` are seams in [`../lib/storage.ts`](../lib/storage.ts). An unknown value throws at startup. |
 | `UPLOAD_DIR` | No | `./.uploads` | Filesystem root for the `fs` driver. **Must stay outside `./public`** — see [File storage](#file-storage--attachments). |
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. The upload route enforces the Settings › Uploads value (falling back to the env value); [`../lib/files.ts`](../lib/files.ts) derives the client-side mirror `MAX_UPLOAD_BYTES` from the env value only. |
+| `PROXY_MAX_BODY_MB` | No (**build time**) | `32` | How much of a request body Next.js buffers for `proxy.ts` (`experimental.proxyClientMaxBodySize` in [`../next.config.ts`](../next.config.ts)). Must exceed the upload cap plus multipart overhead, or larger uploads fail. Baked into the build: the published image uses 32 MB, so an upload cap above ~31 MB needs a source build with a higher value. |
 | `AI_PROVIDER` | No | `anthropic` | Sable's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Sable)](#ai-service-agent-sable). |
 | `AI_ALLOW_EXTERNAL` | No | `false` | **Privacy gate.** Must be exactly `"true"` to allow an external provider (`anthropic`/`openai`); `ollama`/`claude-code` are not gated. |
 | `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-sonnet-5` / `gpt-4o` / `$OLLAMA_MODEL` / `sonnet` (claude-code). |
@@ -445,6 +446,10 @@ authoritative: uploads are validated against an allow-list of MIME types
 (images, PDF, Office `docx`/`xlsx`/`pptx`, `txt`/`log`/`csv`) **and** magic-byte
 signatures, and oversized/empty/mismatched files are rejected. See
 [rest-api.md](rest-api.md) for the upload endpoint and error codes.
+
+Uploads also pass through `proxy.ts`, for which Next.js buffers request bodies only
+up to `PROXY_MAX_BODY_MB` (build time, default 32 MB). Keep the upload cap below
+that value minus ~1 MB for multipart overhead; above it, uploads fail.
 
 ---
 

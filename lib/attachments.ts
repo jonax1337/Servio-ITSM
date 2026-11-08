@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { isAgent, type Role } from "@/lib/session";
+import { mayWriteRecordAttachment, recordTargetOf } from "@/lib/attachment-rules";
 import { loadAccessibleProject } from "@/lib/ai-projects";
 
 export type SessionActor = { id: string; role: Role };
@@ -8,7 +9,11 @@ export type UploadTarget =
   | { kind: "ticket"; ticketId: number }
   | { kind: "comment"; commentId: string }
   | { kind: "article"; articleId: string }
-  | { kind: "aiProject"; projectId: string; folderId?: string | null };
+  | { kind: "aiProject"; projectId: string; folderId?: string | null }
+  | { kind: "change"; changeId: number }
+  | { kind: "problem"; problemId: number }
+  | { kind: "asset"; assetId: string }
+  | { kind: "license"; licenseId: string };
 
 /**
  * The FK columns to persist on the created Attachment row. Ticket/comment/article
@@ -16,13 +21,32 @@ export type UploadTarget =
  * lives on AiProjectFile.attachmentId @unique), so it resolves to an empty object —
  * a non-null "allowed, no FK" signal distinct from `null` (deny/not-found).
  */
-type ForeignKey = { ticketId?: number; commentId?: string; articleId?: string };
+export type AttachmentForeignKey = {
+  ticketId?: number;
+  commentId?: string;
+  articleId?: string;
+  changeId?: number;
+  problemId?: number;
+  assetId?: string;
+  licenseId?: string;
+};
+
+/** The columns {@link canViewAttachment} needs; select these wherever an attachment is served. */
+export const ATTACHMENT_ACCESS_SELECT = {
+  ticketId: true,
+  commentId: true,
+  articleId: true,
+  changeId: true,
+  problemId: true,
+  assetId: true,
+  licenseId: true,
+} as const;
 
 /**
  * Authorize an upload to a target and return the FK columns to persist, or null
  * on deny OR not-found (the caller maps both to 404 — no existence oracle).
  */
-export async function canUploadTo(actor: SessionActor, target: UploadTarget): Promise<ForeignKey | null> {
+export async function canUploadTo(actor: SessionActor, target: UploadTarget): Promise<AttachmentForeignKey | null> {
   const agent = isAgent(actor.role);
 
   if (target.kind === "ticket") {
@@ -54,6 +78,23 @@ export async function canUploadTo(actor: SessionActor, target: UploadTarget): Pr
     return access ? {} : null;
   }
 
+  if (target.kind === "change" || target.kind === "problem" || target.kind === "asset" || target.kind === "license") {
+    if (!mayWriteRecordAttachment(actor.role, target.kind)) return null;
+    const found =
+      target.kind === "change"
+        ? await db.change.findUnique({ where: { id: target.changeId }, select: { id: true } })
+        : target.kind === "problem"
+          ? await db.problem.findUnique({ where: { id: target.problemId }, select: { id: true } })
+          : target.kind === "asset"
+            ? await db.asset.findUnique({ where: { id: target.assetId }, select: { id: true } })
+            : await db.softwareLicense.findUnique({ where: { id: target.licenseId }, select: { id: true } });
+    if (!found) return null;
+    if (target.kind === "change") return { changeId: target.changeId };
+    if (target.kind === "problem") return { problemId: target.problemId };
+    if (target.kind === "asset") return { assetId: target.assetId };
+    return { licenseId: target.licenseId };
+  }
+
   // article — agents only
   const a = await db.article.findUnique({ where: { id: target.articleId }, select: { id: true } });
   if (!a) return null;
@@ -64,9 +105,21 @@ export async function canUploadTo(actor: SessionActor, target: UploadTarget): Pr
 /** Whether an actor (possibly anonymous) may download an attachment. */
 export async function canViewAttachment(
   actor: SessionActor | null,
-  att: { id?: string; ticketId: number | null; commentId: string | null; articleId: string | null },
+  att: {
+    id?: string;
+    ticketId: number | null;
+    commentId: string | null;
+    articleId: string | null;
+    changeId?: number | null;
+    problemId?: number | null;
+    assetId?: string | null;
+    licenseId?: string | null;
+  },
 ): Promise<boolean> {
   const agent = !!actor && isAgent(actor.role);
+
+  // Files on changes, problems, assets and licenses are staff data: agents only.
+  if (recordTargetOf(att)) return agent;
 
   // A project-library file: allow when the actor can access its project. Checked
   // first because such blobs carry no ticket/comment/article FK.

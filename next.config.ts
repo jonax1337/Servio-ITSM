@@ -15,8 +15,19 @@ const SECURITY_HEADERS = [
   // { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
 ];
 
+// proxy.ts runs on every request, so Next.js buffers request bodies for it — by
+// default only the first 10 MB, silently dropping the rest. Uploads up to the
+// 15 MB cap (MAX_UPLOAD_MB / Settings › Uploads) then failed as "could not parse".
+// The limit is fixed at BUILD time; 32 MB covers the default cap plus multipart
+// overhead without letting any request buffer far more than an upload can use.
+// Raise it with PROXY_MAX_BODY_MB at build time if you allow bigger uploads.
+const PROXY_MAX_BODY_MB = Number(process.env.PROXY_MAX_BODY_MB) || 32;
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    proxyClientMaxBodySize: `${PROXY_MAX_BODY_MB}mb`,
+  },
   // The Claude Agent SDK locates and spawns the Claude Code CLI at runtime; bundling it
   // makes Turbopack trace OS paths from its source (e.g. C:/Windows/System32/where.exe).
   serverExternalPackages: ["@anthropic-ai/claude-agent-sdk"],

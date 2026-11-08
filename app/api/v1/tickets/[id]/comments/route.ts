@@ -1,12 +1,9 @@
-import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent } from "@/lib/api";
-import { writeAudit } from "@/lib/audit";
-import { canActOnTicket } from "@/lib/authz";
-import { deliverTicketReply } from "@/lib/ticket-core";
 import { commentCreateSchema } from "@/lib/api-itsm-input";
 import { serializeComment } from "../../../_serializers";
 import { readBody, recordId } from "../../../_itsm";
+import { authorizeTicketComment, writeTicketComment } from "../../../_ticket-comments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,33 +44,15 @@ export async function POST(req: Request, ctx: Ctx) {
   const auth = await guard(req, "write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
-  const ticket = id ? await db.ticket.findUnique({ where: { id }, include: { requester: true } }) : null;
+  const ticket = id ? await db.ticket.findUnique({ where: { id }, select: { assigneeId: true, groupId: true } }) : null;
   if (!id || !ticket) return apiError(404, "Ticket not found");
   if (!principalIsAgent(auth.principal)) return apiError(404, "Ticket not found");
 
-  const me = await db.user.findUnique({ where: { id: auth.principal.userId }, select: { id: true, email: true, name: true, role: true } });
-  if (!me) return apiError(401, "Missing or invalid API token.");
-  if (!(await canActOnTicket(me, { assigneeId: ticket.assigneeId, groupId: ticket.groupId }))) {
-    return apiError(403, "Only the assignee, a member of the ticket's group or a manager may write to this ticket.");
-  }
+  const allowed = await authorizeTicketComment(auth.principal, ticket);
+  if ("refused" in allowed) return apiError(allowed.refused.status, allowed.refused.message);
   const body = await readBody(req, commentCreateSchema);
   if ("response" in body) return body.response;
-  const { body: text, internal } = body.data;
 
-  const comment = await db.ticketComment.create({
-    data: { ticketId: id, authorId: me.id, body: text, bodyHtml: null, isInternal: internal },
-    include: { author: true },
-  });
-  const updated = await db.ticket.update({ where: { id }, data: { updatedAt: new Date() }, include: { requester: true } });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Ticket", entityId: id, summary: "Added a comment via API" });
-  await deliverTicketReply({
-    ticket: updated,
-    comment,
-    author: { ...me, name: me.name ?? me.email },
-    body: text,
-    bodyHtml: null,
-    isInternal: internal,
-  });
-  revalidatePath(`/tickets/${id}`);
+  const comment = await writeTicketComment(allowed.author, id, body.data.body, body.data.internal);
   return ok(serializeComment(comment), { status: 201 });
 }

@@ -11,6 +11,7 @@ import {
   problemTransitionSchema,
 } from "@/lib/api-itsm-input";
 import { changeImportSchema, problemImportSchema, ticketImportSchema } from "@/lib/api-import-input";
+import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
   licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
@@ -35,6 +36,79 @@ const pageParams = [
 const q = (name: string, description?: string) => ({ name, in: "query", schema: { type: "string" }, ...(description ? { description } : {}) });
 const refused = { "409": { description: "Refused by the workflow rules (message says why)" }, "422": { description: "Validation failed" } };
 const agentOnly = "Agent tokens only (AGENT, MANAGER, ADMIN); a USER token gets 403.";
+
+// Attachments: multipart bodies and binary downloads, described by hand.
+const ATTACHMENT_PARENTS = [
+  ["tickets", "ticket", idParam, "Agents: all tickets, writes where they may act on the ticket. USER tokens: own tickets only (others 404), no files of internal notes."],
+  ["changes", "change", idParam, agentOnly],
+  ["problems", "problem", idParam, agentOnly],
+  ["assets", "asset", strId, agentOnly],
+  ["licenses", "license", strId, `${agentOnly} Uploads and deletes need MANAGER+.`],
+] as const;
+const attachmentIdParam = { name: "attachment_id", in: "path", required: true, schema: { type: "string" } };
+const uploadBody = {
+  required: true,
+  content: {
+    "multipart/form-data": {
+      schema: {
+        type: "object",
+        required: ["file"],
+        additionalProperties: false,
+        properties: {
+          file: { type: "string", format: "binary", description: "One file. Size cap MAX_UPLOAD_MB; type, extension and content checked against the allow-list." },
+          comment_id: { type: "string", description: "Tickets only: attach to this comment of the ticket (USER tokens: their own public reply)." },
+          created_at: { type: "string", format: "date-time", description: "History import: original upload time (ISO with offset). Needs the admin scope and an ADMIN owner." },
+          uploaded_by_id: { type: "string", description: "History import: the original uploader (an existing user id). Needs the admin scope and an ADMIN owner." },
+        },
+      },
+    },
+  },
+};
+const attachmentRef = { "application/json": { schema: { type: "object", properties: { data: { $ref: "#/components/schemas/Attachment" } } } } };
+
+function attachmentPaths(): Record<string, unknown> {
+  const paths: Record<string, unknown> = {};
+  for (const [path, entity, param, access] of ATTACHMENT_PARENTS) {
+    paths[`/${path}/{id}/attachments`] = {
+      get: {
+        summary: `List the files of a ${entity}`,
+        description: access,
+        parameters: [param, ...pageParams],
+        responses: { "200": { description: "Oldest first, paginated (data: Attachment[])" }, "404": { description: "Not found" } },
+      },
+      post: {
+        summary: `Upload a file to a ${entity}`,
+        description: `${access} Strict form: unknown parts are a 422.`,
+        parameters: [param],
+        requestBody: uploadBody,
+        responses: {
+          "201": { description: "Stored", content: attachmentRef },
+          "403": { description: "Not allowed to write here, or history fields without an admin token" },
+          "404": { description: "Not found" },
+          "409": { description: "Ticket closed or cancelled" },
+          "413": { description: "Larger than MAX_UPLOAD_MB" },
+          "415": { description: "Not multipart, or the file type is not allowed" },
+          "422": { description: "No or empty file, unknown part, bad comment_id / created_at / uploaded_by_id" },
+          "429": { description: "Upload rate limit (USER tokens)" },
+        },
+      },
+    };
+    paths[`/${path}/{id}/attachments/{attachment_id}`] = {
+      get: {
+        summary: `Download a file of a ${entity}`,
+        description: "The stored bytes, with the stored Content-Type and Content-Disposition: attachment (RFC 5987 filename*).",
+        parameters: [param, attachmentIdParam],
+        responses: { "200": { description: "The file", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } }, "404": { description: "Not found, or not a file of this record" } },
+      },
+      delete: {
+        summary: `Remove a file of a ${entity} (and its stored blob)`,
+        parameters: [param, attachmentIdParam],
+        responses: { "200": { description: "Removed" }, "403": { description: "Not allowed to write here" }, "404": { description: "Not found, or not a file of this record" } },
+      },
+    };
+  }
+  return paths;
+}
 
 function commentPaths(entity: string) {
   return {
@@ -66,6 +140,8 @@ const spec = {
           type: { type: "string", enum: ["INCIDENT", "REQUEST"] },
           status: { type: "string" },
           priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+          external_ref: { type: ["string", "null"], description: "Integration key (monitoring dedup); kept after resolution" },
+          external_ref_open: { type: "boolean", description: "This is the open ticket new POSTs with the key land in" },
         },
       },
       Asset: {
@@ -75,6 +151,19 @@ const spec = {
           name: { type: "string" },
           type: { type: "string" },
           status: { type: "string" },
+        },
+      },
+      Attachment: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          filename: { type: "string" },
+          content_type: { type: "string" },
+          size: { type: "number", description: "Bytes" },
+          comment_id: { type: ["string", "null"] },
+          uploaded_by: { type: ["object", "null"], properties: { id: { type: "string" }, name: { type: ["string", "null"] }, email: { type: "string" } } },
+          created_at: { type: "string", format: "date-time" },
+          download_url: { type: "string" },
         },
       },
     },
@@ -88,20 +177,40 @@ const spec = {
           { name: "priority", in: "query", schema: { type: "string" } },
           { name: "type", in: "query", schema: { type: "string" } },
           { name: "q", in: "query", schema: { type: "string" } },
+          q("import_ref"),
+          q("external_ref", "Every ticket that carried this key, open or resolved"),
           { name: "page", in: "query", schema: { type: "integer" } },
           { name: "per_page", in: "query", schema: { type: "integer" } },
         ],
         responses: { "200": { description: "A paginated list of tickets" } },
       },
       post: {
-        summary: "Create a ticket",
-        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/Ticket" } } } },
-        responses: { "201": { description: "Created" }, "422": { description: "Validation failed" } },
+        summary: "Create a ticket (or land in the open one carrying `external_ref`)",
+        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one.",
+        requestBody: body(ticketCreateSchema),
+        responses: {
+          "201": { description: "Created" },
+          "200": { description: "Deduplicated: the open ticket with this external_ref (meta.deduplicated, meta.comment)" },
+          "403": { description: "external_ref on a non-agent token, or the dedup comment was refused (ticket in details)" },
+          "422": { description: "Validation failed" },
+        },
       },
     },
     "/tickets/{id}": {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: { summary: "Update a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Updated" } } },
+    },
+    "/tickets/ref/{ref}": {
+      get: { summary: "Get the ticket carrying an external reference (the open one, else the most recent)", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+    },
+    "/tickets/ref/{ref}/resolve": {
+      post: {
+        summary: "Resolve the open ticket carrying an external reference (monitoring recovery)",
+        description: `${agentOnly} Runs the console's resolution action: workflow map, SLA stamping, resolution comment and mail. Body optional; the note is internal unless \`internal: false\`.`,
+        parameters: [refParam],
+        requestBody: { ...body(ticketResolveSchema), required: false },
+        responses: { "200": { description: "Resolved" }, "403": { description: "Not an agent token, or may not act on the ticket" }, "404": { description: "No open ticket carries the ref" }, ...refused },
+      },
     },
     "/assets": {
       get: {
@@ -240,6 +349,7 @@ const spec = {
         },
       ]),
     ),
+    ...attachmentPaths(),
     "/users": { get: { summary: "Look up users (minimal fields)", description: agentOnly, parameters: [q("q", "Name or email"), q("role"), q("active", "true (default), false or all"), ...pageParams], responses: { "200": { description: "OK" } } } },
   },
 };

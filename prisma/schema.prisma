@@ -655,6 +655,11 @@ model Ticket {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   importRef           String?   @unique // origin of a record imported via POST /api/v1/import/tickets (e.g. "glpi:ticket:42")
+  // Integration key of a monitoring alert (e.g. "zabbix:event:12345"), set via POST /api/v1/tickets. Kept for
+  // good as history; `openExternalRef` mirrors it only while the ticket is open, so the unique index allows one
+  // OPEN ticket per key (Prisma cannot express a partial unique index). lib/db.ts clears it on RESOLVED/CLOSED/CANCELLED.
+  externalRef         String?
+  openExternalRef     String?   @unique
 
   requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
   requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
@@ -707,6 +712,7 @@ model Ticket {
   @@index([problemId])
   @@index([changeId])
   @@index([mergedIntoId])
+  @@index([externalRef])
 }
 
 model TicketComment {
@@ -917,14 +923,15 @@ model Problem {
   resolvedAt      DateTime?
   importRef       String?   @unique // origin of a record imported via POST /api/v1/import/problems
 
-  assignee   User?            @relation("ProblemAssignee", fields: [assigneeId], references: [id])
-  group      Group?           @relation(fields: [groupId], references: [id])
-  category   Category?        @relation(fields: [categoryId], references: [id])
-  tickets    Ticket[]
-  changes    Change[]
-  comments   ProblemComment[]
-  aiProjects AiProject[]
-  aiInsights AiInsight[]
+  assignee    User?            @relation("ProblemAssignee", fields: [assigneeId], references: [id])
+  group       Group?           @relation(fields: [groupId], references: [id])
+  category    Category?        @relation(fields: [categoryId], references: [id])
+  tickets     Ticket[]
+  changes     Change[]
+  comments    ProblemComment[]
+  attachments Attachment[]
+  aiProjects  AiProject[]
+  aiInsights  AiInsight[]
 
   @@index([status])
 }
@@ -982,18 +989,19 @@ model Change {
   updatedAt          DateTime  @updatedAt
   importRef          String?   @unique // origin of a record imported via POST /api/v1/import/changes (e.g. "glpi:change:129")
 
-  assignee   User?            @relation("ChangeAssignee", fields: [assigneeId], references: [id])
-  createdBy  User?            @relation("ChangeCreatedBy", fields: [createdById], references: [id])
-  group      Group?           @relation(fields: [groupId], references: [id])
-  category   Category?        @relation(fields: [categoryId], references: [id])
-  problem    Problem?         @relation(fields: [problemId], references: [id])
-  release    Release?         @relation(fields: [releaseId], references: [id], onDelete: SetNull)
-  template   ChangeTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  approvals  ChangeApproval[]
-  assets     ChangeAsset[]
-  tickets    Ticket[]
-  comments   ChangeComment[]
-  aiProjects AiProject[]
+  assignee    User?            @relation("ChangeAssignee", fields: [assigneeId], references: [id])
+  createdBy   User?            @relation("ChangeCreatedBy", fields: [createdById], references: [id])
+  group       Group?           @relation(fields: [groupId], references: [id])
+  category    Category?        @relation(fields: [categoryId], references: [id])
+  problem     Problem?         @relation(fields: [problemId], references: [id])
+  release     Release?         @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  template    ChangeTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  approvals   ChangeApproval[]
+  assets      ChangeAsset[]
+  tickets     Ticket[]
+  comments    ChangeComment[]
+  attachments Attachment[]
+  aiProjects  AiProject[]
 
   @@index([status])
   @@index([releaseId])
@@ -1149,6 +1157,7 @@ model Asset {
   services           ServiceAsset[]
   contracts          ContractAsset[]
   licenseAssignments LicenseAssignment[]
+  attachments        Attachment[]
 
   @@unique([syncSourceId, externalId])
   @@index([type])
@@ -1233,18 +1242,30 @@ model Attachment {
   ticketId     Int?
   commentId    String?
   articleId    String?
+  changeId     Int?
+  problemId    Int?
+  assetId      String?
+  licenseId    String?
   uploadedById String?
   createdAt    DateTime @default(now())
 
-  ticket        Ticket?        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  comment       TicketComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  article       Article?       @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  uploadedBy    User?          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
-  aiProjectFile AiProjectFile? @relation("AiProjectFileBlob")
+  ticket        Ticket?          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  comment       TicketComment?   @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  article       Article?         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  change        Change?          @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  problem       Problem?         @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  asset         Asset?           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  license       SoftwareLicense? @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  uploadedBy    User?            @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  aiProjectFile AiProjectFile?   @relation("AiProjectFileBlob")
 
   @@index([ticketId])
   @@index([commentId])
   @@index([articleId])
+  @@index([changeId])
+  @@index([problemId])
+  @@index([assetId])
+  @@index([licenseId])
   @@index([uploadedById])
   @@index([storageKey])
 }
@@ -1776,6 +1797,7 @@ model SoftwareLicense {
   contract    Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
   owner       User?               @relation("LicenseOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   assignments LicenseAssignment[]
+  attachments Attachment[]
 
   @@index([vendorId])
   @@index([contractId])

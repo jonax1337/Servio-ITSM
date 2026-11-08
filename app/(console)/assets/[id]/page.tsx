@@ -9,6 +9,7 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { AssetProperties } from "@/components/assets/asset-properties";
 import { AssetEditDialog } from "@/components/assets/asset-edit-dialog";
+import { RecordAttachments } from "@/components/attachments/record-attachments";
 import { DeleteAssetButton } from "@/components/assets/delete-asset-button";
 import { AssetContracts } from "@/components/assets/asset-contracts";
 import { EntityHistory } from "@/components/history/entity-history";
@@ -205,6 +206,8 @@ export default async function AssetDetailPage({
             )}
           </CardContent>
         </Card>
+
+        <RecordAttachments className="mt-4" target={{ assetId: asset.id }} role={me?.role ?? "USER"} />
       </aside>
     </div>
   );
