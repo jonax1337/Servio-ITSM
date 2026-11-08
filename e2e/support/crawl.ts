@@ -12,7 +12,8 @@ type CrawlOptions = {
 };
 
 const NOT_FOUND_OR_ERROR_HEADING =
-  /^(Page not found|This page could not be found\.?|Something went wrong|Application error.*)$/;
+  // English and German (e2e/i18n.spec.ts crawls as German users; see messages/de/errors.ts).
+  /^(Page not found|This page could not be found\.?|Something went wrong|Application error.*|Seite nicht gefunden|Etwas ist schiefgelaufen)$/;
 const SKIPPED_PATHS = /^\/(api|_next)\/|\/(log-?out|sign-?out)(\/|$)/i;
 
 /** Where the proxy sends a role away from a page it may not open. */
