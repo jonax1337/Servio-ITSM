@@ -9,13 +9,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ChangeForm } from "@/components/changes/change-form";
 import { TemplatePicker, type PickableTemplate } from "@/components/changes/templates/template-picker";
 import type { CustomFieldDef } from "@/lib/custom-fields";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New change" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("changes");
+  return { title: t("new.title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NewChangePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const me = await requireUser();
+  const t = await getT("changes");
   const [options, customFieldDefs, templates] = await Promise.all([
     getFormOptions(),
     db.customFieldDef.findMany({
@@ -43,8 +48,8 @@ export default async function NewChangePage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         icon={GitPullRequestArrow}
-        title="New change"
-        description="Raise a change request for review and approval."
+        title={t("new.title")}
+        description={t("new.description")}
       />
       <PageBody className="mx-auto grid max-w-3xl gap-4">
         <TemplatePicker

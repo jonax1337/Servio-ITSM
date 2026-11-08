@@ -14,6 +14,7 @@ import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import { initials } from "@/lib/avatar";
 import type { FormOptions } from "@/lib/data/options";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 export type EditableRelease = {
   id: number;
@@ -48,6 +49,10 @@ export function ReleaseForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const t = useT("releases");
+  const tc = useT("common");
+  const tch = useT("changes");
+  const tm = useServerMessage();
 
   const ownerOpts: ComboOption[] = options.agents.map((a) => ({
     value: a.id,
@@ -65,13 +70,13 @@ export function ReleaseForm({
       if (release) {
         formData.set("id", String(release.id));
         const result = await updateReleaseAction(formData);
-        if (!result.ok) return setError(result.error ?? "Could not save the release.");
-        toast.success("Release updated");
+        if (!result.ok) return setError(result.error ? tm(result.error) : t("form.saveFailed"));
+        toast.success(t("form.updated"));
         onSaved?.();
         return;
       }
       const result = await createReleaseAction(formData);
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) return setError(tm(result.error));
       router.push(`/releases/${result.id}`);
     });
   };
@@ -82,34 +87,34 @@ export function ReleaseForm({
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
       ) : null}
 
-      <Field label="Name">
-        <Input name="name" defaultValue={release?.name} placeholder="e.g. March platform update" required minLength={3} maxLength={120} />
+      <Field label={tc("name")}>
+        <Input name="name" defaultValue={release?.name} placeholder={t("form.namePlaceholder")} required minLength={3} maxLength={120} />
       </Field>
 
-      <Field label="Description" hint="What ships in this release and why.">
+      <Field label={tc("description")} hint={t("form.descriptionHint")}>
         <Textarea name="description" defaultValue={release?.description ?? ""} className="min-h-24" />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Owner">
+        <Field label={tc("owner")}>
           <ComboField
             name="ownerId"
             defaultValue={release ? (release.ownerId ?? "none") : defaultOwnerId}
             options={ownerOpts}
             includeNone
-            noneLabel="No owner"
+            noneLabel={t("form.noOwner")}
           />
         </Field>
-        <Field label="Group">
-          <ComboField name="groupId" defaultValue={release?.groupId ?? "none"} options={groupOpts} includeNone noneLabel="No group" />
+        <Field label={tc("group")}>
+          <ComboField name="groupId" defaultValue={release?.groupId ?? "none"} options={groupOpts} includeNone noneLabel={tch("props.noGroup")} />
         </Field>
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">
-        {release ? null : <LinkButton href="/releases" variant="ghost">Cancel</LinkButton>}
+        {release ? null : <LinkButton href="/releases" variant="ghost">{tc("cancel")}</LinkButton>}
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : release ? <Save className="size-4" /> : <Plus className="size-4" />}
-          {release ? "Save changes" : "Create release"}
+          {release ? tc("saveChanges") : t("form.create")}
         </Button>
       </div>
     </form>

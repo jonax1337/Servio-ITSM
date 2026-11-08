@@ -16,6 +16,7 @@ import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { PaginationBar } from "@/components/pagination-bar";
 import { EmptyState } from "@/components/empty-state";
+import { getEnumT, getT } from "@/lib/i18n/server";
 import {
   TICKET_STATUS_META,
   PRIORITY_META,
@@ -25,7 +26,10 @@ import {
   TICKET_TYPES,
 } from "@/lib/constants";
 
-export const metadata: Metadata = { title: "Tickets" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("tickets");
+  return { title: t("list.title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function TicketsPage({
@@ -35,6 +39,7 @@ export default async function TicketsPage({
 }) {
   const sp = await searchParams;
   const page = getPage(sp);
+  const [t, tc, te] = await Promise.all([getT("tickets"), getT("common"), getEnumT()]);
   const me = await getSessionUser();
   const [opts, savedViews] = await Promise.all([
     getFormOptions(),
@@ -86,37 +91,37 @@ export default async function TicketsPage({
   const filters: FilterDef[] = [
     {
       key: "status",
-      label: "Status",
+      label: tc("status"),
       options: [
-        { value: "open", label: "Open (active)" },
-        ...TICKET_STATUSES.map((s) => ({ value: s, label: TICKET_STATUS_META[s].label })),
+        { value: "open", label: t("list.openActive") },
+        ...te.options(TICKET_STATUS_META, TICKET_STATUSES),
       ],
     },
-    { key: "priority", label: "Priority", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })) },
-    { key: "type", label: "Type", options: TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label })) },
-    { key: "group", label: "Group", options: opts.groups.map((g) => ({ value: g.id, label: g.name })) },
+    { key: "priority", label: tc("priority"), options: te.options(PRIORITY_META, PRIORITIES) },
+    { key: "type", label: tc("type"), options: te.options(TICKET_TYPE_META, TICKET_TYPES) },
+    { key: "group", label: tc("group"), options: opts.groups.map((g) => ({ value: g.id, label: g.name })) },
     {
       key: "assignee",
-      label: "Assignee",
+      label: tc("assignee"),
       options: [
-        { value: "unassigned", label: "Unassigned" },
+        { value: "unassigned", label: tc("unassigned") },
         ...opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
       ],
     },
-    { key: "sla", label: "SLA", options: SLA_VIEWS.map((v) => ({ value: v, label: SLA_VIEW_META[v].label })) },
-    { key: "category", label: "Category", options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
-    { key: "service", label: "Service", options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
+    { key: "sla", label: "SLA", options: SLA_VIEWS.map((v) => ({ value: v, label: t.dyn(`slaView.${v}`, undefined, SLA_VIEW_META[v].label) })) },
+    { key: "category", label: tc("category"), options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
+    { key: "service", label: tc("service"), options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
   ];
 
   return (
     <>
       <PageHeader
         icon={TicketIcon}
-        title="Tickets"
-        description="Incidents and service requests across all teams."
+        title={t("list.title")}
+        description={t("list.description")}
       >
         <LinkButton href="/tickets/new">
-          <Plus className="size-4" /> New ticket
+          <Plus className="size-4" /> {t("newTicket")}
         </LinkButton>
       </PageHeader>
 
@@ -130,20 +135,20 @@ export default async function TicketsPage({
           canManageShared={!!me && hasRole(me.role as Role, "MANAGER")}
           teams={opts.groups.map((g) => ({ value: g.id, label: g.name }))}
         />
-        <ListToolbar filters={filters} searchPlaceholder="Search title, description, comments, requester…">
+        <ListToolbar filters={filters} searchPlaceholder={t("list.searchPlaceholder")}>
           <LinkButton href={exportHref} variant="outline" size="sm">
-            <Download className="size-4" /> Export CSV
+            <Download className="size-4" /> {tc("exportCsv")}
           </LinkButton>
         </ListToolbar>
 
         {tickets.length === 0 ? (
           <EmptyState
             icon={TicketIcon}
-            title="No tickets found"
-            description="Try adjusting your filters, or create a new ticket to get started."
+            title={t("list.emptyTitle")}
+            description={t("list.emptyDescription")}
           >
             <LinkButton href="/tickets/new" size="sm">
-              <Plus className="size-4" /> New ticket
+              <Plus className="size-4" /> {t("newTicket")}
             </LinkButton>
           </EmptyState>
         ) : (

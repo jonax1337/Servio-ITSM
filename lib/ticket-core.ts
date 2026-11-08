@@ -140,18 +140,17 @@ export async function createTicketCore(
   }
 
   // Confirmation to the requester
-  const brand = await mailBrand();
   if (ticket.requester?.email) {
     // This confirmation is the ROOT of the ticket's mail thread — its Message-ID
     // is what inbound replies reference back to. Hence ticketId is set.
     const threadOnSource = sourceMessageId ? { inReplyTo: sourceMessageId, references: sourceMessageId } : {};
-    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...threadOnSource, ...(await tplTicketReceived(ticket, brand, { requesterName: ticket.requester.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
+    await sendMail({ to: ticket.requester.email, toName: ticket.requester.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...threadOnSource, ...(await tplTicketReceived(ticket, await mailBrand(ticket.requester), { requesterName: ticket.requester.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   // Assignment notice
   if (ticket.assignee && ticket.assigneeId !== actorId) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
     if (ticket.assignee.email) {
-      await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", brand)) });
+      await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand(ticket.assignee))) });
     }
   }
 

@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { UserAvatar } from "@/components/user-avatar";
 import { RotationPreview } from "./rotation-preview";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 export type PersonOption = { id: string; name: string | null; email: string };
 export type GroupOption = { id: string; name: string };
@@ -38,12 +40,13 @@ const TIME_ZONE_LIST_ID = "oncall-time-zones";
 function Field({
   label, htmlFor, error, hint, children,
 }: { label: string; htmlFor?: string; error?: string[]; hint?: string; children: React.ReactNode }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -52,15 +55,15 @@ const subscribeNever = () => () => {};
 
 const personLabel = (p: PersonOption) => p.name ?? p.email;
 
-function rotationHint(rotationType: string): string {
-  if (rotationType === "CUSTOM") return "Each person is on call for the shift length below, then hands off to the next.";
-  const unit = ONCALL_ROTATION_META[rotationType as OnCallRotationType]?.hours === 24 ? "day" : "week";
-  return `Each person is on call for one ${unit}, then hands off to the next in the order below.`;
+function rotationHint(rotationType: string, t: Translator<"oncall">): string {
+  if (rotationType === "CUSTOM") return t("hintCustom");
+  return ONCALL_ROTATION_META[rotationType as OnCallRotationType]?.hours === 24 ? t("hintDay") : t("hintWeek");
 }
 
 function RotationMembers({
   agents, value, onChange,
 }: { agents: PersonOption[]; value: string[]; onChange: (ids: string[]) => void }) {
+  const t = useT("oncall");
   const byId = new Map(agents.map((a) => [a.id, a]));
   const addable: ComboOption[] = agents
     .filter((a) => !value.includes(a.id))
@@ -81,13 +84,13 @@ function RotationMembers({
             <span className="w-5 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
             <UserAvatar name={person?.name} email={person?.email} size="xs" />
             <span className="min-w-0 flex-1 truncate">{person ? personLabel(person) : id}</span>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Move earlier" disabled={index === 0} onClick={() => move(index, -1)}>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={t("moveEarlier")} disabled={index === 0} onClick={() => move(index, -1)}>
               <ArrowUp className="size-4" />
             </Button>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Move later" disabled={index === value.length - 1} onClick={() => move(index, 1)}>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={t("moveLater")} disabled={index === value.length - 1} onClick={() => move(index, 1)}>
               <ArrowDown className="size-4" />
             </Button>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove from rotation" onClick={() => onChange(value.filter((v) => v !== id))}>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={t("removeFromRotation")} onClick={() => onChange(value.filter((v) => v !== id))}>
               <X className="size-4" />
             </Button>
           </div>
@@ -97,9 +100,9 @@ function RotationMembers({
         options={addable}
         value=""
         onChange={(id) => onChange([...value, id])}
-        placeholder={value.length === 0 ? "Add the first person to the rotation…" : "Add another person…"}
-        searchPlaceholder="Search agents…"
-        emptyText="Everyone is already in the rotation."
+        placeholder={value.length === 0 ? t("addFirstPerson") : t("addAnotherPerson")}
+        searchPlaceholder={t("searchAgents")}
+        emptyText={t("everyoneInRotation")}
       />
       {value.map((id) => <input key={id} type="hidden" name="memberIds" value={id} />)}
     </div>
@@ -117,6 +120,10 @@ export function ScheduleForm({
   onSaved?: () => void;
 }) {
   const editing = !!scheduleId;
+  const t = useT("oncall");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const [state, setState] = useState<OnCallFormState>(undefined);
   const [pending, startTransition] = useTransition();
   const [groupId, setGroupId] = useState(initial.groupId);
@@ -137,8 +144,8 @@ export function ScheduleForm({
 
   const zones = useMemo(() => ["UTC", ...Intl.supportedValuesOf("timeZone")], []);
   const groupOpts: ComboOption[] = groups.map((g) => ({ value: g.id, label: g.name }));
-  const rotationOpts: ComboOption[] = ONCALL_ROTATION_TYPES.map((t) => ({
-    value: t, label: ONCALL_ROTATION_META[t].label, tone: ONCALL_ROTATION_META[t].tone,
+  const rotationOpts: ComboOption[] = ONCALL_ROTATION_TYPES.map((r) => ({
+    value: r, label: te(ONCALL_ROTATION_META[r]), tone: ONCALL_ROTATION_META[r].tone,
   }));
   const byId = new Map(agents.map((a) => [a.id, a]));
   const rotationMembers = memberIds.flatMap((id) => byId.get(id) ?? []);
@@ -161,28 +168,28 @@ export function ScheduleForm({
       <input type="hidden" name="isActive" value={String(isActive)} />
 
       {state?.error ? (
-        <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+        <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
       ) : null}
 
       <div className="grid items-start gap-4 sm:grid-cols-2">
-        <Field label="Name" htmlFor="oncall-name" error={fe.name}>
-          <Input id="oncall-name" name="name" defaultValue={initial.name} placeholder="e.g. Primary on-call" required />
+        <Field label={tc("name")} htmlFor="oncall-name" error={fe.name}>
+          <Input id="oncall-name" name="name" defaultValue={initial.name} placeholder={t("namePlaceholder")} required />
         </Field>
-        <Field label="Team" error={fe.groupId} hint="Escalations for this team's tickets reach whoever is on call here.">
-          <Combobox options={groupOpts} value={groupId} onChange={setGroupId} placeholder="Choose a team" />
+        <Field label={t("team")} error={fe.groupId} hint={t("teamHint")}>
+          <Combobox options={groupOpts} value={groupId} onChange={setGroupId} placeholder={t("chooseTeam")} />
         </Field>
       </div>
 
-      <Field label="Description" htmlFor="oncall-description" error={fe.description}>
-        <Textarea id="oncall-description" name="description" defaultValue={initial.description ?? ""} className="min-h-16" placeholder="Optional: what this rotation covers" />
+      <Field label={tc("description")} htmlFor="oncall-description" error={fe.description}>
+        <Textarea id="oncall-description" name="description" defaultValue={initial.description ?? ""} className="min-h-16" placeholder={t("descriptionPlaceholder")} />
       </Field>
 
       <div className="grid items-start gap-4 sm:grid-cols-2">
-        <Field label="Rotation" error={fe.rotationType} hint={rotationHint(rotationType)}>
+        <Field label={t("rotation")} error={fe.rotationType} hint={rotationHint(rotationType, t)}>
           <Combobox options={rotationOpts} value={rotationType} onChange={setRotationType} />
         </Field>
         {rotationType === "CUSTOM" ? (
-          <Field label="Shift length (hours)" htmlFor="oncall-hours" error={fe.customIntervalHours}>
+          <Field label={t("shiftLength")} htmlFor="oncall-hours" error={fe.customIntervalHours}>
             <Input
               id="oncall-hours" name="customIntervalHours" type="number" min={1} max={720} required
               value={customHours} onChange={(e) => setCustomHours(e.target.value)}
@@ -192,28 +199,28 @@ export function ScheduleForm({
       </div>
 
       <div className="grid items-start gap-4 sm:grid-cols-3">
-        <Field label="Time zone" htmlFor="oncall-timezone" error={fe.timezone}>
+        <Field label={t("timeZone")} htmlFor="oncall-timezone" error={fe.timezone}>
           <Input
             id="oncall-timezone" name="timezone" list={TIME_ZONE_LIST_ID} required
             value={timezone} onChange={(e) => setTimezone(e.target.value)}
           />
           <datalist id={TIME_ZONE_LIST_ID}>{zones.map((z) => <option key={z} value={z} />)}</datalist>
         </Field>
-        <Field label="Handoff time" htmlFor="oncall-handoff" error={fe.handoffTime}>
+        <Field label={t("handoffTime")} htmlFor="oncall-handoff" error={fe.handoffTime}>
           <Input id="oncall-handoff" name="handoffTime" type="time" required value={handoffTime} onChange={(e) => setHandoffTime(e.target.value)} />
         </Field>
-        <Field label="First handoff" htmlFor="oncall-start" error={fe.startDate}>
+        <Field label={t("firstHandoff")} htmlFor="oncall-start" error={fe.startDate}>
           <Input id="oncall-start" name="startDate" type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </Field>
       </div>
       <p className="-mt-2 text-xs text-muted-foreground">
-        The first person starts on the first handoff date at the handoff time, in the schedule&apos;s time zone. Nobody is on call before that.
+        {t("firstHandoffHint")}
       </p>
 
       <Field
-        label="Rotation order"
+        label={t("rotationOrderLabel")}
         error={fe.memberIds}
-        hint={editing ? "Changing the members or their order re-maps every shift from the first handoff." : "Shifts go to people in this order, then start over."}
+        hint={editing ? t("rotationOrderEditHint") : t("rotationOrderNewHint")}
       >
         <RotationMembers agents={agents} value={memberIds} onChange={setMemberIds} />
       </Field>
@@ -230,14 +237,14 @@ export function ScheduleForm({
       {editing ? (
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={isActive} onCheckedChange={setIsActive} />
-          Active (inactive schedules are ignored when resolving who is on call)
+          {t("activeSwitch")}
         </label>
       ) : null}
 
       <div className="flex justify-end border-t pt-4">
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          {editing ? "Save changes" : "Create schedule"}
+          {editing ? tc("saveChanges") : t("createSchedule")}
         </Button>
       </div>
     </form>

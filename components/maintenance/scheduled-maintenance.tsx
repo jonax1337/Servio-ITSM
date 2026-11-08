@@ -4,16 +4,18 @@ import { listOpenWindows } from "@/lib/maintenance";
 import { MAINTENANCE_STATUS_META, TONE_BANNER_CLASSES, TONE_TEXT_CLASSES, metaFor } from "@/lib/constants";
 import { StatusBadge } from "@/components/status-badge";
 import { LocalPeriod } from "@/components/maintenance/local-period";
+import { getT } from "@/lib/i18n/server";
 
 /** Upcoming and running maintenance windows for the status pages; renders nothing when there are none. */
 export async function ScheduledMaintenance({ className }: { className?: string }) {
   const windows = await listOpenWindows();
   if (windows.length === 0) return null;
+  const t = await getT("maintenance");
 
   return (
     <section aria-labelledby="scheduled-maintenance" className={cn("grid gap-3", className)}>
       <h2 id="scheduled-maintenance" className="flex items-center gap-2 font-medium">
-        <CalendarClock className="size-4 text-muted-foreground" aria-hidden /> Scheduled maintenance
+        <CalendarClock className="size-4 text-muted-foreground" aria-hidden /> {t("scheduledMaintenance")}
       </h2>
       {windows.map((window) => {
         const { tone } = metaFor(MAINTENANCE_STATUS_META, window.status);
@@ -27,7 +29,7 @@ export async function ScheduledMaintenance({ className }: { className?: string }
             <p className="text-sm text-muted-foreground">
               <LocalPeriod startsAt={window.startsAt.toISOString()} endsAt={window.endsAt.toISOString()} />
             </p>
-            <p className="text-sm">{window.message ?? (window.blockAccess ? "Servio will be unavailable." : "")}</p>
+            <p className="text-sm">{window.message ?? (window.blockAccess ? t("unavailable") : "")}</p>
           </article>
         );
       })}

@@ -10,20 +10,21 @@ import { PaginationBar } from "@/components/pagination-bar";
 import { ToneBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-const filters: FilterDef[] = [
-  {
-    key: "state",
-    label: "State",
-    options: [
-      { value: "active", label: "Active" },
-      { value: "inactive", label: "Inactive" },
-    ],
-  },
-];
+import { getT } from "@/lib/i18n/server";
 
 /** The Vendors tab of /contracts: filterable, sortable, paginated. */
 export async function VendorList({ sp, createAction }: { sp: SearchParams; createAction: ReactNode }) {
+  const [t, tc] = await Promise.all([getT("contracts"), getT("common")]);
+  const filters: FilterDef[] = [
+    {
+      key: "state",
+      label: t("col.state"),
+      options: [
+        { value: "active", label: tc("active") },
+        { value: "inactive", label: tc("inactive") },
+      ],
+    },
+  ];
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const state = getParam(sp, "state");
@@ -51,17 +52,13 @@ export async function VendorList({ sp, createAction }: { sp: SearchParams; creat
 
   return (
     <div className="grid gap-4">
-      <ListToolbar filters={filters} searchPlaceholder="Search vendors…" />
+      <ListToolbar filters={filters} searchPlaceholder={t("searchVendors")} />
 
       {vendors.length === 0 ? (
         <EmptyState
           icon={Building2}
-          title={isFiltered ? "No vendors match" : "No vendors yet"}
-          description={
-            isFiltered
-              ? "Try adjusting your search or filters."
-              : "Add the suppliers you hold contracts and licenses with."
-          }
+          title={isFiltered ? t("vendors.noMatch") : t("vendors.none")}
+          description={isFiltered ? t("adjustFilters") : t("vendors.noneHint")}
         >
           {isFiltered ? null : createAction}
         </EmptyState>
@@ -70,11 +67,11 @@ export async function VendorList({ sp, createAction }: { sp: SearchParams; creat
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead k="name" label="Vendor" sort={sort} dir={dir} />
-                <TableHead className="hidden md:table-cell">Contact</TableHead>
-                <SortableHead k="contracts" label="Contracts" sort={sort} dir={dir} numeric />
-                <TableHead>Licenses</TableHead>
-                <TableHead>State</TableHead>
+                <SortableHead k="name" label={t("col.vendor")} sort={sort} dir={dir} />
+                <TableHead className="hidden md:table-cell">{t("col.contact")}</TableHead>
+                <SortableHead k="contracts" label={t("tab.contracts")} sort={sort} dir={dir} numeric />
+                <TableHead>{t("tab.licenses")}</TableHead>
+                <TableHead>{t("col.state")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -89,7 +86,7 @@ export async function VendorList({ sp, createAction }: { sp: SearchParams; creat
                   <TableCell className="tabular-nums">{v._count.contracts}</TableCell>
                   <TableCell className="tabular-nums">{v._count.licenses}</TableCell>
                   <TableCell>
-                    <ToneBadge meta={v.isActive ? { label: "Active", tone: "success" } : { label: "Inactive", tone: "neutral" }} dot />
+                    <ToneBadge meta={v.isActive ? { label: tc("active"), tone: "success" } : { label: tc("inactive"), tone: "neutral" }} dot />
                   </TableCell>
                 </TableRow>
               ))}

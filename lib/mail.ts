@@ -7,6 +7,7 @@ import {
   type MailBrand,
 } from "@/lib/mail-template";
 import { renderTicketEmail } from "@/lib/email-templates";
+import { localeForUser } from "@/lib/i18n/instance";
 
 /**
  * Pluggable mailer. If SMTP is configured it sends via nodemailer; otherwise it
@@ -262,10 +263,23 @@ type TicketLike = { id: number; title: string; type: string; prefix?: string | n
 /** The ticket's stable ref: the stored prefix survives a later type switch. */
 const refOf = (t: TicketLike) => ticketRef(t.id, t.prefix || t.type);
 
-/** Brand + public origin for links, read from settings (APP_NAME / APP_URL). */
-export async function mailBrand(): Promise<MailBrand> {
-  const [appName, appUrl] = await Promise.all([getSetting("APP_NAME"), getSetting("APP_URL")]);
-  return { appName: appName || "Servio", appUrl: appUrl || undefined };
+/**
+ * Brand + public origin for links, read from settings (APP_NAME / APP_URL), plus the
+ * language of the built-in template wording: the recipient's `User.locale` when a
+ * recipient is given, else (or for "auto") the instance default (APP_LOCALE).
+ */
+export async function mailBrand(recipient?: { locale?: string | null; email?: string | null } | null): Promise<MailBrand> {
+  // A recipient given without its locale (e.g. a session user) is looked up by email.
+  const withLocale =
+    recipient && recipient.locale === undefined && recipient.email
+      ? await db.user.findUnique({ where: { email: recipient.email }, select: { locale: true } }).catch(() => null)
+      : recipient;
+  const [appName, appUrl, locale] = await Promise.all([
+    getSetting("APP_NAME"),
+    getSetting("APP_URL"),
+    localeForUser(withLocale),
+  ]);
+  return { appName: appName || "Servio", appUrl: appUrl || undefined, locale };
 }
 
 export function tplTicketReceived(t: TicketLike, brand?: MailBrand, opts?: { requesterName?: string; messageHtml?: string }) {

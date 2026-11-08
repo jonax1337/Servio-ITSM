@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type SettingsActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -37,7 +38,7 @@ export type SettingField =
 export function SettingsForm({
   action,
   fields,
-  submitLabel = "Save changes",
+  submitLabel,
 }: {
   action: (
     state: SettingsActionState,
@@ -51,15 +52,17 @@ export function SettingsForm({
     undefined,
   );
   const submit = useFormSubmit(formAction);
+  const t = useT("settings");
+  const tm = useServerMessage();
   const wasPending = useRef(false);
 
   useEffect(() => {
     if (wasPending.current && !pending) {
-      if (state?.error) toast.error(state.error);
-      else if (state?.ok) toast.success("Settings saved");
+      if (state?.error) toast.error(tm(state.error));
+      else if (state?.ok) toast.success(t("form.saved"));
     }
     wasPending.current = pending;
-  }, [pending, state]);
+  }, [pending, state, t, tm]);
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5 rounded-xl border bg-card p-5">
@@ -85,7 +88,7 @@ export function SettingsForm({
                 <Label htmlFor={`set-${f.name}`}>{f.label}</Label>
                 {f.type === "password" && f.isSet ? (
                   <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                    Configured
+                    {t("form.configured")}
                   </span>
                 ) : null}
               </div>
@@ -102,7 +105,7 @@ export function SettingsForm({
                 defaultValue={f.type === "password" ? "" : f.defaultValue}
                 placeholder={
                   f.type === "password" && f.isSet
-                    ? "•••••••• (leave blank to keep)"
+                    ? t("form.keepPlaceholder")
                     : f.placeholder
                 }
                 autoComplete={f.type === "password" ? "new-password" : undefined}
@@ -121,7 +124,7 @@ export function SettingsForm({
           ) : (
             <Save className="size-4" />
           )}
-          {submitLabel}
+          {submitLabel ?? t("form.saveChanges")}
         </Button>
       </div>
     </form>

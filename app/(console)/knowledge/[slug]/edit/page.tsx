@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { BookOpen } from "lucide-react";
 import { db } from "@/lib/db";
 import { hasRole, requireRole } from "@/lib/session";
-import { FOUR_EYES_EDIT_HINT, statusAfterEdit } from "@/lib/article-rules";
+import { statusAfterEdit } from "@/lib/article-rules";
+import { getT } from "@/lib/i18n/server";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArticleEditor } from "@/components/knowledge/article-editor";
@@ -11,7 +12,10 @@ import { AttachmentsCard } from "@/components/attachments/attachments-card";
 import { updateArticle } from "@/lib/actions/knowledge";
 import { getMaxUploadMb } from "@/lib/settings";
 
-export const metadata: Metadata = { title: "Edit article" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("knowledge");
+  return { title: t("editTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function EditArticlePage({
@@ -21,6 +25,7 @@ export default async function EditArticlePage({
 }) {
   const me = await requireRole("AGENT");
   const { slug } = await params;
+  const [t, tc] = await Promise.all([getT("knowledge"), getT("common")]);
   const [article, categories] = await Promise.all([
     db.article.findUnique({ where: { slug }, include: { attachments: { orderBy: { createdAt: "desc" } } } }),
     db.category.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -34,13 +39,13 @@ export default async function EditArticlePage({
     <>
       <PageHeader
         icon={BookOpen}
-        title="Edit article"
-        description="Each save creates a new revision in the article history."
+        title={t("editTitle")}
+        description={t("editDescription")}
       />
       <PageBody>
         {sendsBackToReview ? (
           <p className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
-            {FOUR_EYES_EDIT_HINT}
+            {t("fourEyesHint")}
           </p>
         ) : null}
         <Card className="mx-auto max-w-5xl">
@@ -48,7 +53,7 @@ export default async function EditArticlePage({
             <ArticleEditor
               action={updateArticle}
               categories={categories}
-              submitLabel="Save changes"
+              submitLabel={tc("saveChanges")}
               defaults={{
                 id: article.id,
                 title: article.title,

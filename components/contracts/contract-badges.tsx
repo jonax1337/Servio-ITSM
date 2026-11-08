@@ -4,21 +4,18 @@ import {
 import { cn } from "@/lib/utils";
 import type { Meta } from "@/lib/constants";
 import { ToneBadge } from "@/components/status-badge";
-
-function endsLabel(days: number): string {
-  if (days === 0) return "Ends today";
-  if (days === 1) return "Ends tomorrow";
-  return `Ends in ${days} days`;
-}
+import { getT } from "@/lib/i18n/server";
+import { endsLabel } from "./contract-format";
 
 /** Warns about a contract that is inside its renewal notice period or already past its end date. */
-export function ContractExpiryBadge({ contract, now }: { contract: ContractTimeline; now: Date }) {
+export async function ContractExpiryBadge({ contract, now }: { contract: ContractTimeline; now: Date }) {
   const expiry = contractExpiry(contract, now);
   if (expiry !== "EXPIRING" && expiry !== "EXPIRED") return null;
+  const t = await getT("contracts");
   const meta: Meta =
     expiry === "EXPIRED"
-      ? { label: "Expired", tone: "danger" }
-      : { label: endsLabel(daysUntil(contract.endDate as Date, now)), tone: "warning" };
+      ? { label: t("expiry.expired"), tone: "danger" }
+      : { label: endsLabel(t, daysUntil(contract.endDate as Date, now)), tone: "warning" };
   return <ToneBadge meta={meta} dot />;
 }
 
@@ -33,11 +30,12 @@ export function LicenseExpiryBadge({ expiresAt, now }: { expiresAt: Date | null;
 }
 
 /** Seats used against seats purchased, toned by compliance. */
-export function LicenseComplianceBadge({ compliance }: { compliance: LicenseCompliance }) {
-  const base = `${compliance.used} / ${compliance.seats} seats`;
+export async function LicenseComplianceBadge({ compliance }: { compliance: LicenseCompliance }) {
+  const t = await getT("contracts");
+  const base = t("seats.usedOf", { used: compliance.used, seats: compliance.seats });
   const meta: Meta =
     compliance.state === "OVER"
-      ? { label: `${base} · ${compliance.overBy} over`, tone: "danger" }
+      ? { label: t("seats.usedOver", { base, over: compliance.overBy }), tone: "danger" }
       : { label: base, tone: compliance.state === "FULL" ? "warning" : "success" };
   return <ToneBadge meta={meta} dot />;
 }
@@ -49,12 +47,13 @@ const METER_FILL: Record<LicenseCompliance["state"], string> = {
 };
 
 /** A bar of assigned seats against purchased seats; an over-allocation fills it completely in red. */
-export function SeatMeter({ compliance }: { compliance: LicenseCompliance }) {
+export async function SeatMeter({ compliance }: { compliance: LicenseCompliance }) {
+  const t = await getT("contracts");
   const percent = compliance.seats > 0 ? Math.min(100, Math.round((compliance.used / compliance.seats) * 100)) : 0;
   return (
     <div
       role="meter"
-      aria-label="Seats assigned"
+      aria-label={t("seats.assigned")}
       aria-valuemin={0}
       aria-valuemax={compliance.seats}
       aria-valuenow={compliance.used}

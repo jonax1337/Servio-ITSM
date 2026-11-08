@@ -414,7 +414,7 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | API tokens | `settings/api/page.tsx` | Create/revoke API tokens | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`); `components/settings/token-manager` |
 | Mail log | `settings/mail/page.tsx` (MANAGER+) | SMTP status + mail log (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
 | SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
-| General & branding | `settings/general/page.tsx` (ADMIN) | App name/branding and base settings | `saveGeneralSettings` in `lib/actions/settings.ts`; `components/settings/settings-form` |
+| General & branding | `settings/general/page.tsx` (ADMIN) | App name/branding, base settings and the instance **Default language** (`APP_LOCALE`) | `saveGeneralSettings` in `lib/actions/settings.ts`; `components/settings/settings-form` |
 | Email (SMTP) | `settings/email/page.tsx` (ADMIN) | Outbound mail settings | `saveEmailSettings`; `settings-form` |
 | Inbound mail (IMAP) | `settings/inbound/page.tsx` (ADMIN) | Inbound mailbox polling settings | `saveInboundSettings`; `settings-form` |
 | Email templates | `settings/email-templates/page.tsx` (ADMIN) | Edit/reset outgoing mail templates | `lib/actions/email-templates.ts` (`saveEmailTemplate`, `resetEmailTemplate`); `lib/email-templates.ts`; `components/settings/email-template-editor` |
@@ -460,7 +460,8 @@ Per-user preferences and signature, opened as a dialog from the user menu (no ro
 | | |
 | --- | --- |
 | UI | `components/account/` — `account-settings-dialog` (opened from `components/user-menu.tsx`), `account-fields` |
-| Actions | `lib/actions/account.ts` — `getMyAccount`, `updateMySettings`; sign-in/out in `lib/actions/auth.ts` (`authenticate`, `ssoSignIn`, `doSignOut`) |
+| Actions | `lib/actions/account.ts` — `getMyAccount`, `updateMySettings` (also sets/clears the `servio-locale` cookie for the chosen language); sign-in/out in `lib/actions/auth.ts` (`authenticate`, `ssoSignIn`, `doSignOut`) |
+| Language | *Preferences › Language*: **Instance default** (`User.locale = "auto"`, the default) or an explicit `en`/`de`; applied on save. See [i18n.md](./i18n.md). |
 
 ### Notifications
 Per-user in-app notification feed, shown as a **popover** opened from the topbar bell (no dedicated route).
@@ -508,6 +509,7 @@ Reused across every module, worth knowing before building UI:
 | `components/history/entity-history.tsx` | Audit/history timeline |
 | `components/edit-entity-dialog.tsx`, `confirm-dialog.tsx`, `empty-state.tsx`, `stat-card.tsx`, `combobox.tsx`, `combo-field.tsx` | Generic primitives |
 | `components/ui/` | shadcn/base-ui design-system primitives — see [design-system.md](./design-system.md) |
+| `lib/i18n/`, `messages/` | UI translations: `getT`/`useT`, enum labels, server-message and date formatting — see [i18n.md](./i18n.md) |
 
 ---
 

@@ -1,11 +1,9 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
-import { formatPlannedWindow } from "@/lib/change-rules";
 import { LinkButton } from "@/components/link-button";
 import { LinkPicker } from "@/components/link-picker";
 import { StatusBadge } from "@/components/status-badge";
@@ -19,7 +17,6 @@ import { addChangeToReleaseAction } from "@/lib/actions/releases";
 import { CHANGE_STATUS_META, RELEASE_STATUS_META, changeRef, releaseRef } from "@/lib/constants";
 import {
   allowedReleaseTransitions,
-  bundleLockedMessage,
   isBundleEditable,
   isReleaseFinished,
   releaseReadiness,
@@ -27,6 +24,10 @@ import {
   releaseWindow,
 } from "@/lib/release-rules";
 import type { ComboOption } from "@/components/combobox";
+import { bundleLockedText } from "@/components/releases/release-text";
+import { readinessText } from "@/components/releases/release-text";
+import { formatWindow } from "@/components/changes/window-text";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,12 @@ type Params = Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const releaseId = Number((await params).id);
-  if (!Number.isFinite(releaseId)) return { title: "Release" };
-  const release = await db.release.findUnique({ where: { id: releaseId }, select: { name: true } });
-  return { title: release?.name ?? "Release" };
+  const release = Number.isFinite(releaseId)
+    ? await db.release.findUnique({ where: { id: releaseId }, select: { name: true } })
+    : null;
+  if (release) return { title: release.name };
+  const t = await getT("releases");
+  return { title: t("detail.fallbackTitle") };
 }
 
 function Prop({ label, children }: { label: string; children: React.ReactNode }) {
@@ -68,13 +72,19 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
     }),
   ]);
   if (!release) notFound();
+  const [t, tc, tch, te, f] = await Promise.all([getT("releases"), getT("common"), getT("changes"), getEnumT(), getFormatter()]);
 
   const readiness = releaseReadiness(release.changes);
   const window = releaseWindow(release.changes);
   const bundleEditable = isBundleEditable(release.status);
   const moves = allowedReleaseTransitions(release.status).map((status) => ({
     status,
-    blockedReason: releaseTransitionError(release.status, status, release.changes),
+    // The rule decides; the reason is worded in the viewer's language (moves are always allowed transitions).
+    blockedReason: releaseTransitionError(release.status, status, release.changes)
+      ? readiness.active === 0
+        ? t("move.bundleFirst")
+        : t("move.notApproved", { summary: readinessText(readiness, t) })
+      : null,
   }));
 
   const candidates = bundleEditable
@@ -88,7 +98,7 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
   const candidateOptions: ComboOption[] = candidates.map((c) => ({
     value: String(c.id),
     label: `${changeRef(c.id)} · ${c.title}`,
-    hint: CHANGE_STATUS_META[c.status]?.label,
+    hint: te(CHANGE_STATUS_META, c.status),
   }));
 
   return (
@@ -96,7 +106,7 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
       {/* Main column — scrolls independently from the details rail, like a change */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/releases" variant="ghost" size="icon-sm" aria-label="Back to releases">
+          <LinkButton href="/releases" variant="ghost" size="icon-sm" aria-label={t("detail.back")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">{releaseRef(release.id)}</span>
@@ -122,8 +132,8 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight">{release.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Created {formatDistanceToNow(release.createdAt, { addSuffix: true })}
-              {release.owner ? <> · owned by {release.owner.name ?? release.owner.email}</> : null}
+              {t("detail.created", { time: f.relative(release.createdAt) })}
+              {release.owner ? <> · {t("detail.ownedBy", { name: release.owner.name ?? release.owner.email })}</> : null}
             </p>
           </div>
 
@@ -135,34 +145,34 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-sm">Changes ({release.changes.length})</CardTitle>
+              <CardTitle className="text-sm">{t("detail.changes", { count: release.changes.length })}</CardTitle>
               {bundleEditable ? (
                 <LinkPicker
                   action={addChangeToReleaseAction}
-                  triggerLabel="Add change"
-                  title="Add a change to this release"
-                  description="Only changes that are not part of another release are listed."
+                  triggerLabel={t("detail.addChange")}
+                  title={t("detail.addChangeTitle")}
+                  description={t("detail.addChangeDescription")}
                   hidden={{ releaseId: release.id }}
                   valueName="changeId"
                   options={candidateOptions}
-                  placeholder="Choose a change…"
-                  searchPlaceholder="Search changes…"
-                  emptyText="Every open change already ships in a release."
-                  submitLabel="Add to release"
-                  successMessage="Change added to the release"
+                  placeholder={t("detail.chooseChange")}
+                  searchPlaceholder={tch("list.searchPlaceholder")}
+                  emptyText={t("detail.noCandidates")}
+                  submitLabel={t("detail.addToRelease")}
+                  successMessage={t("detail.added")}
                 />
               ) : null}
             </CardHeader>
             <CardContent className={release.changes.length > 0 ? "px-0" : undefined}>
               {release.changes.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  {bundleEditable ? "No changes bundled yet. Add the changes that ship together." : "No changes were bundled."}
+                  {bundleEditable ? t("detail.emptyEditable") : t("detail.empty")}
                 </p>
               ) : (
                 <ReleaseChangesTable releaseId={release.id} changes={release.changes} editable={bundleEditable} />
               )}
               {!bundleEditable && release.changes.length > 0 ? (
-                <p className="px-4 pt-3 text-xs text-muted-foreground">{bundleLockedMessage(release.status)}</p>
+                <p className="px-4 pt-3 text-xs text-muted-foreground">{bundleLockedText(release.status, t, te(RELEASE_STATUS_META, release.status))}</p>
               ) : null}
             </CardContent>
           </Card>
@@ -172,25 +182,25 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
       <aside className="grid content-start gap-4 p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Details</CardTitle>
+            <CardTitle className="text-sm">{tc("details")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <Prop label="Window">
-              {window.start || window.end ? formatPlannedWindow(window) : "Set by the planned windows of the bundled changes"}
+            <Prop label={t("list.window")}>
+              {window.start || window.end ? formatWindow(window, f, tch) : t("detail.windowHint")}
             </Prop>
-            <Prop label="Owner">
+            <Prop label={tc("owner")}>
               {release.owner ? (
                 <span className="flex items-center gap-2">
                   <UserAvatar name={release.owner.name} email={release.owner.email} size="sm" />
                   {release.owner.name ?? release.owner.email}
                 </span>
               ) : (
-                <span className="text-muted-foreground">No owner</span>
+                <span className="text-muted-foreground">{t("form.noOwner")}</span>
               )}
             </Prop>
-            <Prop label="Group">{release.group?.name ?? <span className="text-muted-foreground">No group</span>}</Prop>
-            {release.deployedAt ? <Prop label="Deployed">{format(release.deployedAt, "PP p")}</Prop> : null}
-            <Prop label="Last updated">{format(release.updatedAt, "PP p")}</Prop>
+            <Prop label={tc("group")}>{release.group?.name ?? <span className="text-muted-foreground">{tch("props.noGroup")}</span>}</Prop>
+            {release.deployedAt ? <Prop label={t("detail.deployed")}>{f.date(release.deployedAt, "dateTime")}</Prop> : null}
+            <Prop label={t("detail.lastUpdated")}>{f.date(release.updatedAt, "dateTime")}</Prop>
           </CardContent>
         </Card>
       </aside>

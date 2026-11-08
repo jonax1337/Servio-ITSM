@@ -1,9 +1,12 @@
 "use client";
 
+import { useT } from "@/lib/i18n/client";
+
 /** Three bouncing dots shown while Sable is generating a reply. */
 export function TypingDots() {
+  const t = useT("assistant");
   return (
-    <span className="inline-flex items-center gap-1" aria-label="Assistant is typing">
+    <span className="inline-flex items-center gap-1" aria-label={t("thread.typing")}>
       {[0, 1, 2].map((i) => (
         <span
           key={i}

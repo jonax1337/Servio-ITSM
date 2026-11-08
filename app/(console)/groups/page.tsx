@@ -21,8 +21,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GROUP_TYPE_META, GROUP_TYPES } from "@/lib/constants";
+import { getEnumT, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Groups" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("groups");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function GroupsPage({
@@ -31,6 +35,7 @@ export default async function GroupsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const [t, te] = await Promise.all([getT("groups"), getEnumT()]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const type = getParam(sp, "type");
@@ -64,8 +69,8 @@ export default async function GroupsPage({
   const filters: FilterDef[] = [
     {
       key: "type",
-      label: "Type",
-      options: GROUP_TYPES.map((t) => ({ value: t, label: GROUP_TYPE_META[t].label })),
+      label: t("filterType"),
+      options: te.options(GROUP_TYPE_META, GROUP_TYPES),
     },
   ];
 
@@ -73,20 +78,20 @@ export default async function GroupsPage({
     <>
       <PageHeader
         icon={Users}
-        title="Groups"
-        description="Teams, departments and vendors that own work across the service desk."
+        title={t("title")}
+        description={t("description")}
       >
         <CreateGroupDialog options={options} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search groups…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {groups.length === 0 ? (
           <EmptyState
             icon={Users}
-            title="No groups found"
-            description="Try adjusting your filters, or create a new group to organise your teams."
+            title={t("noneFound")}
+            description={t("noneFoundText")}
           >
             <CreateGroupDialog options={options} size="sm" />
           </EmptyState>
@@ -95,11 +100,11 @@ export default async function GroupsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
-                  <TableHead>Type</TableHead>
-                  <SortableHead k="manager" label="Manager" sort={sort} dir={dir} className="hidden md:table-cell" />
-                  <SortableHead k="email" label="Email" sort={sort} dir={dir} className="hidden lg:table-cell" />
-                  <SortableHead k="members" label="Members" sort={sort} dir={dir} numeric className="text-right" />
+                  <SortableHead k="name" label={t("colName")} sort={sort} dir={dir} />
+                  <TableHead>{t("colType")}</TableHead>
+                  <SortableHead k="manager" label={t("colManager")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="email" label={t("colEmail")} sort={sort} dir={dir} className="hidden lg:table-cell" />
+                  <SortableHead k="members" label={t("colMembers")} sort={sort} dir={dir} numeric className="text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>

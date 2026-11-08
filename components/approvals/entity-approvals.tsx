@@ -18,6 +18,7 @@ import {
 import { APPROVAL_META } from "@/lib/constants";
 import { requestSelfApprovalError } from "@/lib/approval-rules";
 import { LocalTime, timeAgo } from "@/components/local-time";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -40,7 +41,7 @@ export function EntityApprovals({
   entityType,
   entityId,
   entityTitle,
-  heading = "Approvals",
+  heading: headingProp,
   approvals,
   currentUserId,
   isAdmin,
@@ -64,6 +65,9 @@ export function EntityApprovals({
   const [approverId, setApproverId] = useState("none");
   const [title, setTitle] = useState("");
   const [pending, start] = useTransition();
+  const t = useT("approvals");
+  const tc = useT("common");
+  const heading = headingProp ?? t("entity.heading");
 
   // Can't request from yourself or from someone already on this entity.
   const existing = new Set(approvals.map((a) => a.approver.id));
@@ -83,7 +87,7 @@ export function EntityApprovals({
       setOpen(false);
       setApproverId("none");
       setTitle("");
-      toast.success("Approval requested");
+      toast.success(t("entity.requested"));
     });
   }
 
@@ -97,26 +101,26 @@ export function EntityApprovals({
         {canRequest ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button variant="outline" size="sm" />}>
-              <Plus className="size-4" /> Request approval
+              <Plus className="size-4" /> {t("entity.request")}
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Request approval</DialogTitle>
+                <DialogTitle>{t("entity.request")}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
-                  <Label>Approver</Label>
+                  <Label>{t("entity.approver")}</Label>
                   <Combobox
                     options={approverOpts}
                     value={approverId}
-                    placeholder="Choose an approver…"
-                    searchPlaceholder="Search people…"
-                    emptyText="No eligible approvers."
+                    placeholder={t("entity.chooseApprover")}
+                    searchPlaceholder={t("entity.searchPeople")}
+                    emptyText={t("entity.noApprovers")}
                     onChange={setApproverId}
                   />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label htmlFor="appr-title">What needs approval?</Label>
+                  <Label htmlFor="appr-title">{t("entity.what")}</Label>
                   <Input
                     id="appr-title"
                     value={title}
@@ -127,11 +131,11 @@ export function EntityApprovals({
               </div>
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
-                  Cancel
+                  {tc("cancel")}
                 </Button>
                 <Button type="button" onClick={submitRequest} disabled={pending || approverId === "none"}>
                   {pending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
-                  Send request
+                  {t("entity.send")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -142,7 +146,7 @@ export function EntityApprovals({
       {approvals.length === 0 ? (
         <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
           <CheckCircle2 className="size-4" />
-          No {heading.toLowerCase()} requested.{canRequest ? " Request a sign-off from a colleague above." : ""}
+          {t(canRequest ? "entity.emptyCanRequest" : "entity.empty", { heading: t.locale === "en" ? heading.toLowerCase() : heading })}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -173,6 +177,8 @@ function ApprovalCard({
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const t = useT("approvals");
+  const tm = useServerMessage();
 
   function decide(decision: "APPROVED" | "REJECTED") {
     const fd = new FormData();
@@ -182,13 +188,14 @@ function ApprovalCard({
     start(async () => {
       const res = await decideEntityApproval(fd);
       if (!res.ok) {
-        setError(res.error ?? "The decision could not be recorded.");
-        toast.error(res.error ?? "The decision could not be recorded.");
+        const message = res.error ? tm(res.error) : t("decision.failed");
+        setError(message);
+        toast.error(message);
         return;
       }
       setError(null);
       setComment("");
-      toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
+      toast.success(decision === "APPROVED" ? t("decision.approved") : t("decision.rejected"));
     });
   }
 
@@ -197,7 +204,7 @@ function ApprovalCard({
     fd.set("approvalId", row.id);
     start(async () => {
       await cancelApproval(fd);
-      toast.success("Approval withdrawn");
+      toast.success(t("entity.withdrawn"));
     });
   }
 
@@ -209,7 +216,7 @@ function ApprovalCard({
           <div className="truncate text-sm font-medium">{row.approver.name ?? row.approver.email}</div>
           <div className="truncate text-xs text-muted-foreground">
             {row.title ? `${row.title} · ` : ""}
-            {row.decidedAt ? <>Decided <LocalTime date={row.decidedAt} render={timeAgo} /></> : "Awaiting decision"}
+            {row.decidedAt ? <>{t("entity.decided")} <LocalTime date={row.decidedAt} render={timeAgo} /></> : t("entity.awaiting")}
           </div>
         </div>
         <StatusBadge map={APPROVAL_META} value={row.status} />
@@ -218,8 +225,8 @@ function ApprovalCard({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="Withdraw request"
-            title="Withdraw request"
+            aria-label={t("entity.withdraw")}
+            title={t("entity.withdraw")}
             onClick={cancel}
             disabled={pending}
             className="text-muted-foreground hover:text-destructive"
@@ -234,21 +241,21 @@ function ApprovalCard({
         </p>
       ) : null}
       {canDecide && selfApproval ? (
-        <p className="mt-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">{selfApproval}</p>
+        <p className="mt-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">{tm(selfApproval)}</p>
       ) : canDecide ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Input
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Add a comment (optional)"
+            placeholder={t("decision.comment")}
             className="h-7 min-w-40 flex-1 text-xs"
           />
           <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("APPROVED")}>
             {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-            Approve
+            {t("decision.approve")}
           </Button>
           <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("REJECTED")}>
-            <X className="size-3.5" /> Reject
+            <X className="size-3.5" /> {t("decision.reject")}
           </Button>
           {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
         </div>

@@ -6,11 +6,14 @@ import { toast } from "sonner";
 import { decideApproval } from "@/lib/actions/changes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 export function ApprovalActions({ approvalId }: { approvalId: string }) {
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const t = useT("changes");
+  const tm = useServerMessage();
 
   function decide(decision: "APPROVED" | "REJECTED") {
     const fd = new FormData();
@@ -21,12 +24,12 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
       const res = await decideApproval(fd);
       if (!res.ok) {
         setError(res.error);
-        toast.error(res.error);
+        toast.error(tm(res.error));
         return;
       }
       setError(null);
       setComment("");
-      toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
+      toast.success(decision === "APPROVED" ? t("approvalActions.approved") : t("approvalActions.rejected"));
     });
   }
 
@@ -35,7 +38,7 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
       <Input
         value={comment}
         onChange={(e) => setComment(e.target.value)}
-        placeholder="Add a comment (optional)"
+        placeholder={t("approvalActions.commentPlaceholder")}
         className="h-7 flex-1 min-w-40 text-xs"
       />
       <Button
@@ -45,7 +48,7 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
         onClick={() => decide("APPROVED")}
       >
         {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-        Approve
+        {t("approvalActions.approve")}
       </Button>
       <Button
         size="sm"
@@ -53,9 +56,9 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
         disabled={pending}
         onClick={() => decide("REJECTED")}
       >
-        <X className="size-3.5" /> Reject
+        <X className="size-3.5" /> {t("approvalActions.reject")}
       </Button>
-      {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="basis-full text-xs text-destructive">{tm(error)}</p> : null}
     </div>
   );
 }

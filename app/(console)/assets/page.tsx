@@ -25,8 +25,12 @@ import {
   ASSET_TYPES,
   ASSET_STATUSES,
 } from "@/lib/constants";
+import { getEnumT, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Assets" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("assets");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function AssetsPage({
@@ -35,6 +39,7 @@ export default async function AssetsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const [t, tc, te] = await Promise.all([getT("assets"), getT("common"), getEnumT()]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const type = getParam(sp, "type");
@@ -74,47 +79,33 @@ export default async function AssetsPage({
   ]);
 
   const filters: FilterDef[] = [
-    {
-      key: "type",
-      label: "Type",
-      options: ASSET_TYPES.map((t) => ({
-        value: t,
-        label: ASSET_TYPE_META[t].label,
-      })),
-    },
-    {
-      key: "status",
-      label: "Status",
-      options: ASSET_STATUSES.map((s) => ({
-        value: s,
-        label: ASSET_STATUS_META[s].label,
-      })),
-    },
+    { key: "type", label: tc("type"), options: te.options(ASSET_TYPE_META, ASSET_TYPES) },
+    { key: "status", label: tc("status"), options: te.options(ASSET_STATUS_META, ASSET_STATUSES) },
   ];
 
   return (
     <>
       <PageHeader
         icon={HardDrive}
-        title="Assets"
-        description="Configuration items and hardware tracked in the CMDB."
+        title={t("title")}
+        description={t("description")}
       >
         <LinkButton href="/assets/new">
-          <Plus className="size-4" /> New asset
+          <Plus className="size-4" /> {t("new.title")}
         </LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search assets…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {assets.length === 0 ? (
           <EmptyState
             icon={HardDrive}
-            title="No assets found"
-            description="Try adjusting your filters, or add a new asset to the CMDB."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           >
             <LinkButton href="/assets/new" size="sm">
-              <Plus className="size-4" /> New asset
+              <Plus className="size-4" /> {t("new.title")}
             </LinkButton>
           </EmptyState>
         ) : (
@@ -122,12 +113,12 @@ export default async function AssetsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
-                  <TableHead>Type</TableHead>
-                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
-                  <SortableHead k="owner" label="Owner" sort={sort} dir={dir} className="hidden md:table-cell" />
-                  <SortableHead k="location" label="Location" sort={sort} dir={dir} className="hidden lg:table-cell" />
-                  <SortableHead k="ipAddress" label="IP address" sort={sort} dir={dir} className="hidden xl:table-cell" />
+                  <SortableHead k="name" label={tc("name")} sort={sort} dir={dir} />
+                  <TableHead>{tc("type")}</TableHead>
+                  <SortableHead k="status" label={tc("status")} sort={sort} dir={dir} />
+                  <SortableHead k="owner" label={tc("owner")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="location" label={tc("location")} sort={sort} dir={dir} className="hidden lg:table-cell" />
+                  <SortableHead k="ipAddress" label={t("field.ipAddress")} sort={sort} dir={dir} className="hidden xl:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>

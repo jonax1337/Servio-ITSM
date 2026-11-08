@@ -33,6 +33,7 @@ import {
 } from "@/lib/constants";
 import { MCP_MIN_ROLES, type McpMinRole, type McpServerInput, type RemoteMcpTool } from "@/lib/sable-mcp-policy";
 import { cn } from "@/lib/utils";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 /**
  * What the settings page passes in: `servers` from `listMcpServers()`
@@ -40,15 +41,11 @@ import { cn } from "@/lib/utils";
  */
 export type AiMcpManagerProps = { servers: McpServerView[]; allowExternal: boolean };
 
-const TRANSPORT_LABEL: Record<AiMcpTransport, string> = { http: "Streamable HTTP", sse: "SSE (legacy)" };
-const ROLE_LABEL: Record<McpMinRole, string> = { AGENT: "Agents", MANAGER: "Managers", ADMIN: "Admins" };
-
-/** What Sable does with a non-read-only tool under each mode. */
-const WRITE_TOOL_OUTCOME: Record<AiMcpMode, string> = {
-  READ_ONLY: "Blocked",
-  APPROVAL: "Needs approval",
-  TRUSTED: "Runs directly",
-};
+// Labels: settings › mcp.transport.*, mcp.role.*, and mcp.outcome.* (what Sable does with a
+// non-read-only tool under each mode).
+const transportKey = (t: AiMcpTransport) => `mcp.transport.${t}` as const;
+const roleKey = (r: McpMinRole) => `mcp.role.${r}` as const;
+const outcomeKey = (m: AiMcpMode) => `mcp.outcome.${m}` as const;
 
 type Editor = { server: McpServerView | null };
 
@@ -64,17 +61,14 @@ function Pill({ children, tone = "muted" }: { children: React.ReactNode; tone?: 
 /** Remote MCP servers Sable may use in the console chat (Settings › Sable). */
 export function AiMcpManager({ servers, allowExternal }: AiMcpManagerProps) {
   const [editor, setEditor] = useState<Editor | null>(null);
+  const t = useT("settings");
 
   return (
     <div className="grid gap-3">
       {allowExternal ? null : (
         <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            An MCP server is an external destination: {AI_ASSISTANT_NAME} only uses these servers while
-            &ldquo;Allow external providers&rdquo; (Privacy &amp; behaviour) is on. You can configure and
-            test them now.
-          </span>
+          <span>{t("mcp.externalWarning", { name: AI_ASSISTANT_NAME })}</span>
         </p>
       )}
 
@@ -86,13 +80,13 @@ export function AiMcpManager({ servers, allowExternal }: AiMcpManagerProps) {
         </ul>
       ) : (
         <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-          No MCP servers yet. Add a remote server (HTTP or SSE) to give {AI_ASSISTANT_NAME} its tools.
+          {t("mcp.empty", { name: AI_ASSISTANT_NAME })}
         </p>
       )}
 
       <div>
         <Button type="button" variant="outline" size="sm" onClick={() => setEditor({ server: null })}>
-          <Plus className="size-4" /> Add server
+          <Plus className="size-4" /> {t("mcp.addServer")}
         </Button>
       </div>
 
@@ -106,31 +100,33 @@ export function AiMcpManager({ servers, allowExternal }: AiMcpManagerProps) {
 }
 
 function ServerRow({ server, onEdit }: { server: McpServerView; onEdit: () => void }) {
+  const t = useT("settings");
+  const te = useEnumT();
   return (
     <li className="flex items-center gap-3 rounded-lg border p-3">
       <div className="grid min-w-0 flex-1 gap-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate font-mono text-xs font-medium">{server.name}</span>
-          <Pill tone="sable">{AI_MCP_MODE_META[server.mode].label}</Pill>
-          <Pill>{ROLE_LABEL[server.minRole]}+</Pill>
-          {server.enabled ? null : <Pill tone="warn">Disabled</Pill>}
+          <Pill tone="sable">{te(AI_MCP_MODE_META[server.mode])}</Pill>
+          <Pill>{t(roleKey(server.minRole))}+</Pill>
+          {server.enabled ? null : <Pill tone="warn">{t("mcp.disabled")}</Pill>}
         </div>
         <span className="truncate text-xs text-muted-foreground">
-          {server.url} · {TRANSPORT_LABEL[server.transport]}
-          {server.headerNames.length ? ` · headers: ${server.headerNames.join(", ")}` : ""}
+          {server.url} · {t(transportKey(server.transport))}
+          {server.headerNames.length ? ` · ${t("mcp.headersList", { names: server.headerNames.join(", ") })}` : ""}
         </span>
       </div>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={`Edit ${server.name}`} onClick={onEdit}>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("mcp.edit", { name: server.name })} onClick={onEdit}>
         <Pencil className="size-3.5" />
       </Button>
       <ConfirmButton
         action={deleteMcpServer}
         fields={{ id: server.id }}
-        title={`Remove "${server.name}"?`}
-        description={`${AI_ASSISTANT_NAME} will no longer see this server's tools, and pending approvals for it will fail.`}
+        title={t("mcp.removeTitle", { name: server.name })}
+        description={t("mcp.removeDescription", { assistant: AI_ASSISTANT_NAME })}
         triggerVariant="ghost"
-        triggerLabel={`Remove ${server.name}`}
-        successMessage="MCP server removed."
+        triggerLabel={t("mcp.remove", { name: server.name })}
+        successMessage={t("mcp.removed")}
       />
     </li>
   );
@@ -154,6 +150,9 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
   );
   const [tools, setTools] = useState<RemoteMcpTool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const t = useT("settings");
+  const te = useEnumT();
+  const tm = useServerMessage();
 
   const input = (): McpServerInput => ({
     id: server?.id,
@@ -189,7 +188,7 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
         setError(result.error);
         return;
       }
-      toast.success(server ? "MCP server saved." : "MCP server added.");
+      toast.success(server ? t("mcp.saved") : t("mcp.added"));
       onClose();
       router.refresh();
     });
@@ -198,18 +197,17 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <PlugZap className="size-4 text-sable" /> {server ? "Edit MCP server" : "Add MCP server"}
+          <PlugZap className="size-4 text-sable" /> {server ? t("mcp.editTitle") : t("mcp.addTitle")}
         </DialogTitle>
         <DialogDescription>
-          A remote MCP server whose tools {AI_ASSISTANT_NAME} can use in the console chat. Never offered in the
-          self-service portal.
+          {t("mcp.dialogDescription", { name: AI_ASSISTANT_NAME })}
         </DialogDescription>
       </DialogHeader>
 
       <div className="grid max-h-[65vh] gap-4 overflow-y-auto pr-1">
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
           <div className="grid gap-1.5">
-            <Label htmlFor="mcp-name">Name</Label>
+            <Label htmlFor="mcp-name">{t("mcp.name")}</Label>
             <Input
               id="mcp-name"
               value={name}
@@ -219,7 +217,7 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="mcp-url">URL</Label>
+            <Label htmlFor="mcp-url">{t("mcp.url")}</Label>
             <Input
               id="mcp-url"
               value={url}
@@ -229,22 +227,21 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
           </div>
         </div>
         <p className="-mt-2 text-xs text-muted-foreground">
-          Lowercase letters and digits, optionally joined by - or _. The model sees the tools as
-          <code className="mx-1 font-mono">mcp__{name.trim() || "name"}__tool</code>.
+          {t.rich("mcp.nameHint", { example: <code className="mx-1 font-mono">mcp__{name.trim() || "name"}__tool</code> })}
         </p>
 
         <ChoiceRow
-          label="Transport"
-          options={AI_MCP_TRANSPORTS.map((t) => ({ value: t, label: TRANSPORT_LABEL[t] }))}
+          label={t("mcp.transportLabel")}
+          options={AI_MCP_TRANSPORTS.map((tr) => ({ value: tr, label: t(transportKey(tr)) }))}
           value={transport}
           onChange={setTransport}
         />
 
         <div className="grid gap-1.5">
           <div className="flex items-center justify-between">
-            <Label>Headers</Label>
+            <Label>{t("mcp.headers")}</Label>
             <Button type="button" variant="ghost" size="sm" onClick={addHeader}>
-              <Plus className="size-3.5" /> Add header
+              <Plus className="size-3.5" /> {t("mcp.addHeader")}
             </Button>
           </div>
           {headers.length ? (
@@ -252,26 +249,26 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
               {headers.map((h) => (
                 <div key={h.key} className="flex items-center gap-2">
                   <Input
-                    aria-label="Header name"
+                    aria-label={t("mcp.headerName")}
                     value={h.name}
                     onChange={(e) => updateHeader(h.key, { name: e.target.value })}
                     placeholder="Authorization"
                     className="w-2/5 font-mono text-xs"
                   />
                   <Input
-                    aria-label={`Value of ${h.name || "header"}`}
+                    aria-label={t("mcp.headerValueOf", { name: h.name || t("mcp.header") })}
                     type="password"
                     autoComplete="new-password"
                     value={h.value}
                     onChange={(e) => updateHeader(h.key, { value: e.target.value })}
-                    placeholder={h.stored ? "Unchanged (stored encrypted)" : "Value"}
+                    placeholder={h.stored ? t("mcp.headerStored") : t("mcp.headerValue")}
                     className="flex-1"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Remove header ${h.name}`}
+                    aria-label={t("mcp.removeHeader", { name: h.name })}
                     onClick={() => setHeaders((rows) => rows.filter((r) => r.key !== h.key))}
                   >
                     <X className="size-3.5" />
@@ -281,13 +278,12 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
             </div>
           ) : null}
           <p className="text-xs text-muted-foreground">
-            E.g. an API token. Values are stored encrypted and never shown again; leave a value blank to keep it
-            (only while the URL stays on the same host).
+            {t("mcp.headersHint")}
           </p>
         </div>
 
         <div className="grid gap-1.5">
-          <Label>Mode</Label>
+          <Label>{t("mcp.mode")}</Label>
           <div className="grid gap-2 sm:grid-cols-3">
             {AI_MCP_MODES.map((m) => (
               <button
@@ -300,23 +296,23 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
                   mode === m ? "border-sable bg-sable-muted/40" : "hover:bg-muted/50",
                 )}
               >
-                <span className="text-sm font-medium">{AI_MCP_MODE_META[m].label}</span>
-                <span className="text-xs text-muted-foreground">{AI_MCP_MODE_META[m].description}</span>
+                <span className="text-sm font-medium">{te(AI_MCP_MODE_META[m])}</span>
+                <span className="text-xs text-muted-foreground">{te.description(AI_MCP_MODE_META[m])}</span>
               </button>
             ))}
           </div>
         </div>
 
         <ChoiceRow
-          label="Available to"
-          options={MCP_MIN_ROLES.map((r) => ({ value: r, label: `${ROLE_LABEL[r]} and above` }))}
+          label={t("mcp.availableTo")}
+          options={MCP_MIN_ROLES.map((r) => ({ value: r, label: t("mcp.roleAndAbove", { role: t(roleKey(r)) }) }))}
           value={minRole}
           onChange={setMinRole}
         />
 
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={enabled} onCheckedChange={setEnabled} />
-          Enabled
+          {t("mcp.enabled")}
         </label>
 
         {tools ? <ToolList tools={tools} mode={mode} /> : null}
@@ -324,7 +320,7 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
         {error ? (
           <p className="flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span className="min-w-0">{error}</span>
+            <span className="min-w-0">{tm(error)}</span>
           </p>
         ) : null}
       </div>
@@ -332,11 +328,11 @@ function ServerEditor({ server, onClose }: { server: McpServerView | null; onClo
       <DialogFooter>
         <Button type="button" variant="outline" onClick={test} disabled={testing || saving || !url.trim()}>
           {testing ? <Loader2 className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
-          Test connection
+          {t("mcp.testConnection")}
         </Button>
         <Button type="button" onClick={save} disabled={saving || !name.trim() || !url.trim()}>
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          Save
+          {t("mcp.save")}
         </Button>
       </DialogFooter>
     </>
@@ -377,30 +373,31 @@ function ChoiceRow<T extends string>({
 
 /** The tools a test connection found, with what the selected mode does to each. */
 function ToolList({ tools, mode }: { tools: RemoteMcpTool[]; mode: AiMcpMode }) {
+  const t = useT("settings");
   if (!tools.length) {
-    return <p className="rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">Connected — the server lists no tools.</p>;
+    return <p className="rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">{t("mcp.noTools")}</p>;
   }
   return (
     <div className="grid gap-1.5">
       <Label>
-        {tools.length} {tools.length === 1 ? "tool" : "tools"}
+        {t("mcp.toolCount", { count: tools.length })}
       </Label>
       <ul className="grid max-h-56 gap-1 overflow-y-auto rounded-lg border p-2">
-        {tools.map((t) => (
-          <li key={t.name} className="flex items-start justify-between gap-2 py-0.5">
+        {tools.map((tool) => (
+          <li key={tool.name} className="flex items-start justify-between gap-2 py-0.5">
             <div className="grid min-w-0 gap-0.5">
-              <span className="truncate font-mono text-xs">{t.name}</span>
-              {t.description ? (
-                <span className="line-clamp-1 text-[11px] text-muted-foreground">{t.description}</span>
+              <span className="truncate font-mono text-xs">{tool.name}</span>
+              {tool.description ? (
+                <span className="line-clamp-1 text-[11px] text-muted-foreground">{tool.description}</span>
               ) : null}
             </div>
             <div className="flex shrink-0 gap-1">
-              {t.readOnly ? (
-                <Pill tone="sable">Read-only</Pill>
+              {tool.readOnly ? (
+                <Pill tone="sable">{t("mcp.readOnly")}</Pill>
               ) : (
                 <>
-                  <Pill>Writes</Pill>
-                  <Pill tone={mode === "TRUSTED" ? "warn" : "muted"}>{WRITE_TOOL_OUTCOME[mode]}</Pill>
+                  <Pill>{t("mcp.writes")}</Pill>
+                  <Pill tone={mode === "TRUSTED" ? "warn" : "muted"}>{t(outcomeKey(mode))}</Pill>
                 </>
               )}
             </div>

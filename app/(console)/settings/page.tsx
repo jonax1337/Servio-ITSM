@@ -27,8 +27,12 @@ import { APP_VERSION } from "@/lib/constants";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SableMark } from "@/components/sable-mark";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Settings" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 type SettingCard = {
@@ -173,6 +177,7 @@ const RANK = { AGENT: 1, MANAGER: 2, ADMIN: 3 } as const;
 
 export default async function SettingsPage() {
   const me = await requireRole("MANAGER");
+  const t = await getT("settings");
   // Only show cards the viewer can actually open — a card that redirects to
   // /no-access is a dead end (mirrors lib/nav.ts's filterNav ranks).
   const visible = CARDS.filter(
@@ -183,8 +188,8 @@ export default async function SettingsPage() {
     <>
       <PageHeader
         icon={Settings}
-        title="Settings"
-        description="Configure your workspace, integrations and access."
+        title={t("title")}
+        description={t("description")}
       />
 
       <PageBody className="grid gap-6">
@@ -199,9 +204,9 @@ export default async function SettingsPage() {
                   <ArrowUpRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
                 </CardHeader>
                 <CardContent className="grid gap-1">
-                  <CardTitle>{card.title}</CardTitle>
+                  <CardTitle>{t.dyn(`card.${card.href}.title`, undefined, card.title)}</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {card.description}
+                    {t.dyn(`card.${card.href}.description`, undefined, card.description)}
                   </p>
                 </CardContent>
               </Card>
@@ -212,23 +217,23 @@ export default async function SettingsPage() {
         <Card>
           <CardHeader className="flex-row items-center gap-2">
             <Info className="size-4 text-muted-foreground" />
-            <CardTitle>About Servio</CardTitle>
+            <CardTitle>{t("about.title")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <div className="flex items-center justify-between gap-2 border-b pb-2.5">
-              <span className="text-muted-foreground">Application</span>
+              <span className="text-muted-foreground">{t("about.application")}</span>
               <span className="font-medium">Servio</span>
             </div>
             <div className="flex items-center justify-between gap-2 border-b pb-2.5">
-              <span className="text-muted-foreground">Version</span>
+              <span className="text-muted-foreground">{t("about.version")}</span>
               <span className="font-mono text-xs">{APP_VERSION}</span>
             </div>
             <div className="flex items-center justify-between gap-2 border-b pb-2.5">
-              <span className="text-muted-foreground">License</span>
+              <span className="text-muted-foreground">{t("about.license")}</span>
               <span className="font-medium">MIT</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Signed in as</span>
+              <span className="text-muted-foreground">{t("about.signedInAs")}</span>
               <span className="font-medium">{me.email}</span>
             </div>
           </CardContent>

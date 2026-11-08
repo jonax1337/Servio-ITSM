@@ -30,9 +30,12 @@ import {
   PRIORITIES,
   problemRef,
 } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Problems" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("problems");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function ProblemsPage({
@@ -41,7 +44,14 @@ export default async function ProblemsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
-  const [me, options] = await Promise.all([requireUser(), getFormOptions()]);
+  const [me, options, t, tc, te, f] = await Promise.all([
+    requireUser(),
+    getFormOptions(),
+    getT("problems"),
+    getT("common"),
+    getEnumT(),
+    getFormatter(),
+  ]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
@@ -81,28 +91,28 @@ export default async function ProblemsPage({
   ]);
 
   const filters: FilterDef[] = [
-    { key: "status", label: "Status", options: PROBLEM_STATUSES.map((s) => ({ value: s, label: PROBLEM_STATUS_META[s].label })) },
-    { key: "priority", label: "Priority", options: PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })) },
+    { key: "status", label: tc("status"), options: te.options(PROBLEM_STATUS_META, PROBLEM_STATUSES) },
+    { key: "priority", label: tc("priority"), options: te.options(PRIORITY_META, PRIORITIES) },
   ];
 
   return (
     <>
       <PageHeader
         icon={AlertTriangle}
-        title="Problems"
-        description="Root-cause analysis for recurring incidents and known errors."
+        title={t("title")}
+        description={t("description")}
       >
         <CreateProblemDialog options={options} currentUserId={me.id} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search problems…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {problems.length === 0 ? (
           <EmptyState
             icon={AlertTriangle}
-            title="No problems found"
-            description="Try adjusting your filters, or create a new problem record to get started."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           >
             <CreateProblemDialog options={options} currentUserId={me.id} size="sm" />
           </EmptyState>
@@ -111,13 +121,13 @@ export default async function ProblemsPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="id" label="Ref" sort={sort} dir={dir} numeric className="w-[92px]" />
-                  <SortableHead k="title" label="Title" sort={sort} dir={dir} />
-                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
-                  <TableHead>Priority</TableHead>
-                  <SortableHead k="assignee" label="Assignee" sort={sort} dir={dir} className="hidden md:table-cell" />
-                  <SortableHead k="incidents" label="Incidents" sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
-                  <SortableHead k="createdAt" label="Created" sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
+                  <SortableHead k="id" label={t("col.ref")} sort={sort} dir={dir} numeric className="w-[92px]" />
+                  <SortableHead k="title" label={tc("title")} sort={sort} dir={dir} />
+                  <SortableHead k="status" label={tc("status")} sort={sort} dir={dir} />
+                  <TableHead>{tc("priority")}</TableHead>
+                  <SortableHead k="assignee" label={tc("assignee")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="incidents" label={t("col.incidents")} sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
+                  <SortableHead k="createdAt" label={tc("created")} sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -162,7 +172,7 @@ export default async function ProblemsPage({
                       {p._count.tickets}
                     </TableCell>
                     <TableCell className="hidden xl:table-cell text-right text-xs text-muted-foreground">
-                      {formatDistanceToNow(p.createdAt, { addSuffix: true })}
+                      {f.relative(p.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))}

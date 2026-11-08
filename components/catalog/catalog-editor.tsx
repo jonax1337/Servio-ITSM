@@ -17,9 +17,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { IconPicker } from "@/components/icon-picker";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Opt = { value: string; label: string }[];
-const FIELD_TYPE_OPTIONS: ComboOption[] = FIELD_TYPES.map((t) => ({ value: t, label: t }));
 export type CatalogItemData = {
   id: string; name: string; description: string | null; shortDescription: string | null;
   icon: string | null; categoryId: string | null; serviceId: string | null; estimatedDays: number | null;
@@ -40,6 +40,10 @@ export function CatalogEditor({
   agents: Opt;
 }) {
   const editing = !!item;
+  const t = useT("catalog");
+  const tc = useT("common");
+  const tm = useServerMessage();
+  const FIELD_TYPE_OPTIONS: ComboOption[] = FIELD_TYPES.map((ft) => ({ value: ft, label: t(`fieldType.${ft}`) }));
   const [open, setOpen] = useState(false);
   // Close only on success — a validation error must stay visible with the input intact.
   const [state, action, pending] = useActionState<CatalogAdminState, FormData>(
@@ -60,22 +64,22 @@ export function CatalogEditor({
   const [requiresApproval, setRequiresApproval] = useState(item?.requiresApproval ?? false);
   const [fields, setFields] = useState<ServiceField[]>(item?.fields ?? []);
 
-  const catOpts: ComboOption[] = [{ value: "none", label: "No category" }, ...categories];
-  const serviceOpts: ComboOption[] = [{ value: "none", label: "No service" }, ...services];
-  const approverOpts: ComboOption[] = [{ value: "none", label: "No approver" }, ...agents.map((a) => ({ ...a, avatar: a.label.slice(0, 2).toUpperCase() }))];
+  const catOpts: ComboOption[] = [{ value: "none", label: t("noCategory") }, ...categories];
+  const serviceOpts: ComboOption[] = [{ value: "none", label: t("noService") }, ...services];
+  const approverOpts: ComboOption[] = [{ value: "none", label: t("noApprover") }, ...agents.map((a) => ({ ...a, avatar: a.label.slice(0, 2).toUpperCase() }))];
   const normalized = fields.filter((f) => f.label.trim()).map((f) => ({ ...f, key: f.key || slug(f.label) }));
 
   const update = (i: number, patch: Partial<ServiceField>) => setFields((f) => f.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? "Edit item" : undefined} />}>
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New catalog item</>}
+      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? t("editItem") : undefined} />}>
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("newCatalogItem")}</>}
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><ShoppingBag className="size-4 text-primary" /> {editing ? "Edit" : "New"} catalog item</DialogTitle>
-          <DialogDescription>What end users can request from the self-service catalog.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><ShoppingBag className="size-4 text-primary" /> {editing ? t("editCatalogItem") : t("newCatalogItem")}</DialogTitle>
+          <DialogDescription>{t("editorDescription")}</DialogDescription>
         </DialogHeader>
 
         <form method="post" onSubmit={submit} className="grid gap-5">
@@ -88,76 +92,76 @@ export function CatalogEditor({
           <input type="hidden" name="requiresApproval" value={String(requiresApproval)} />
           <input type="hidden" name="formSchema" value={JSON.stringify(normalized)} />
 
-          {state?.error ? <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p> : null}
+          {state?.error ? <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p> : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Name</Label>
-              <Input name="name" defaultValue={item?.name} placeholder="e.g. New laptop" required />
+              <Label>{tc("name")}</Label>
+              <Input name="name" defaultValue={item?.name} placeholder={t("namePlaceholder")} required />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Short description <span className="text-muted-foreground">(shown on the card)</span></Label>
-              <Input name="shortDescription" defaultValue={item?.shortDescription ?? ""} placeholder="One line users see in the catalog" />
+              <Label>{t("shortDescription")} <span className="text-muted-foreground">{t("shownOnCard")}</span></Label>
+              <Input name="shortDescription" defaultValue={item?.shortDescription ?? ""} placeholder={t("shortDescriptionPlaceholder")} />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Full description</Label>
+              <Label>{t("fullDescription")}</Label>
               <Textarea name="description" defaultValue={item?.description ?? ""} className="min-h-20" />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Icon</Label>
+              <Label>{t("icon")}</Label>
               <IconPicker value={icon} onChange={setIcon} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Category</Label>
-              <Combobox options={catOpts} value={categoryId} onChange={setCategoryId} searchPlaceholder="Search categories…" />
+              <Label>{tc("category")}</Label>
+              <Combobox options={catOpts} value={categoryId} onChange={setCategoryId} searchPlaceholder={t("searchCategories")} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Service <span className="text-muted-foreground">(pre-routes requests)</span></Label>
-              <Combobox options={serviceOpts} value={serviceId} onChange={setServiceId} searchPlaceholder="Search services…" />
+              <Label>{tc("service")} <span className="text-muted-foreground">{t("preRoutes")}</span></Label>
+              <Combobox options={serviceOpts} value={serviceId} onChange={setServiceId} searchPlaceholder={t("searchServices")} />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Estimated delivery (days)</Label>
-              <Input name="estimatedDays" type="number" defaultValue={item?.estimatedDays ?? ""} placeholder="e.g. 3" />
+              <Label>{t("estimatedDelivery")}</Label>
+              <Input name="estimatedDays" type="number" defaultValue={item?.estimatedDays ?? ""} placeholder={t("estimatedPlaceholder")} />
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-              <Checkbox checked={isPublished} onCheckedChange={(v) => setIsPublished(!!v)} /> Published in the catalog
+              <Checkbox checked={isPublished} onCheckedChange={(v) => setIsPublished(!!v)} /> {t("publishedInCatalog")}
             </label>
             <label className="flex items-center gap-2 rounded-lg border p-3 text-sm">
-              <Checkbox checked={requiresApproval} onCheckedChange={(v) => setRequiresApproval(!!v)} /> Requires approval
+              <Checkbox checked={requiresApproval} onCheckedChange={(v) => setRequiresApproval(!!v)} /> {t("requiresApproval")}
             </label>
           </div>
           {requiresApproval ? (
             <div className="grid gap-1.5">
-              <Label>Approver</Label>
-              <Combobox options={approverOpts} value={approverId} onChange={setApproverId} searchPlaceholder="Search people…" />
+              <Label>{t("approver")}</Label>
+              <Combobox options={approverOpts} value={approverId} onChange={setApproverId} searchPlaceholder={t("searchPeople")} />
             </div>
           ) : null}
 
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <Label>Request form</Label>
+              <Label>{t("requestForm")}</Label>
               <Button type="button" variant="outline" size="sm" onClick={() => setFields((f) => [...f, { key: "", label: "", type: "text", required: false }])}>
-                <Plus className="size-4" /> Add field
+                <Plus className="size-4" /> {t("addField")}
               </Button>
             </div>
             {fields.length === 0 ? (
-              <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No fields — the requester just sees a free-text box.</p>
+              <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">{t("noFields")}</p>
             ) : (
               fields.map((f, i) => (
                 <div key={i} className="grid gap-2 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_10rem_auto_auto] sm:items-center">
-                  <Input value={f.label} placeholder="Question / label" onChange={(e) => update(i, { label: e.target.value, key: slug(e.target.value) })} />
-                  <Combobox options={FIELD_TYPE_OPTIONS} value={f.type} onChange={(v) => update(i, { type: (v as FieldType) || "text" })} searchPlaceholder="Search types…" />
+                  <Input value={f.label} placeholder={t("questionLabel")} onChange={(e) => update(i, { label: e.target.value, key: slug(e.target.value) })} />
+                  <Combobox options={FIELD_TYPE_OPTIONS} value={f.type} onChange={(v) => update(i, { type: (v as FieldType) || "text" })} searchPlaceholder={t("searchTypes")} />
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Checkbox checked={!!f.required} onCheckedChange={(v) => update(i, { required: !!v })} /> req.
+                    <Checkbox checked={!!f.required} onCheckedChange={(v) => update(i, { required: !!v })} /> {t("requiredShort")}
                   </label>
                   <Button type="button" variant="ghost" size="icon-sm" onClick={() => setFields((arr) => arr.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
                   {f.type === "select" ? (
-                    <Input className="sm:col-span-4" placeholder="Options, comma separated" value={(f.options ?? []).join(", ")}
+                    <Input className="sm:col-span-4" placeholder={t("optionsPlaceholder")} value={(f.options ?? []).join(", ")}
                       onChange={(e) => update(i, { options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
                   ) : null}
                 </div>
@@ -168,7 +172,7 @@ export function CatalogEditor({
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save item" : "Create item"}
+              {editing ? t("saveItem") : t("createItem")}
             </Button>
           </DialogFooter>
         </form>

@@ -181,6 +181,7 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
       const raw = (g[col] as string | null) ?? null;
       return {
         label: labelFor(raw),
+        key: raw,
         value: g._count._all,
         href: ticketsHref(widget.filters, { field, value: raw }),
         color: colorFor(raw),
@@ -188,7 +189,7 @@ async function computeBreakdown(widget: Widget, where: Prisma.TicketWhereInput):
     })
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
-  return { kind: "breakdown", rows, chartType: widget.options?.chartType ?? "bar" };
+  return { kind: "breakdown", rows, chartType: widget.options?.chartType ?? "bar", field };
 }
 
 async function computeVolume(widget: Widget, filters: TicketFilters): Promise<Computed> {
@@ -200,12 +201,14 @@ async function computeVolume(widget: Widget, filters: TicketFilters): Promise<Co
     where: { AND: [base, { OR: [{ createdAt: { gte: from } }, { resolvedAt: { gte: from } }] }] },
     select: { createdAt: true, resolvedAt: true },
   });
-  const buckets: { label: string; created: number; resolved: number; key: string }[] = [];
+  const buckets: { label: string; created: number; resolved: number; key: string; date: string }[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = startOfDay(new Date(Date.now() - i * 86400000));
     buckets.push({
       key: d.toISOString().slice(0, 10),
       label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      // The server-local calendar day, so every viewer's locale formats the same day.
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
       created: 0,
       resolved: 0,
     });
@@ -219,7 +222,7 @@ async function computeVolume(widget: Widget, filters: TicketFilters): Promise<Co
       if (idx.has(rk)) buckets[idx.get(rk)!].resolved++;
     }
   }
-  return { kind: "volume", data: buckets.map(({ label, created, resolved }) => ({ label, created, resolved })) };
+  return { kind: "volume", data: buckets.map(({ label, created, resolved, date }) => ({ label, created, resolved, date })) };
 }
 
 async function computeSla(filters: TicketFilters): Promise<Computed> {
@@ -305,10 +308,10 @@ async function computeAging(where: Prisma.TicketWhereInput): Promise<Computed> {
   return {
     kind: "aging",
     rows: [
-      { label: "< 1 day", value: c1 },
-      { label: "1–3 days", value: c3 - c1 },
-      { label: "3–7 days", value: c7 - c3 },
-      { label: "> 7 days", value: total - c7 },
+      { label: "< 1 day", value: c1, key: "lt1" },
+      { label: "1–3 days", value: c3 - c1, key: "1to3" },
+      { label: "3–7 days", value: c7 - c3, key: "3to7" },
+      { label: "> 7 days", value: total - c7, key: "gt7" },
     ],
   };
 }

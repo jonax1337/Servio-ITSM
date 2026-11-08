@@ -22,12 +22,16 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { EnumTranslator } from "@/lib/i18n/enums";
+import type { Translator } from "@/lib/i18n/translate";
 
-const enumOpts = (arr: readonly string[], meta: Record<string, { label: string }>): ComboOption[] =>
-  arr.map((v) => ({ value: v, label: meta[v]?.label ?? v }));
+const enumOptsFor = (te: EnumTranslator) => (arr: readonly string[], meta: Record<string, { label: string }>): ComboOption[] =>
+  arr.map((v) => ({ value: v, label: meta[v] ? te(meta, v) : v }));
 
 // Value options for a visibility condition, keyed by (entity, built-in field).
-function conditionValueOptions(entity: CustomFieldEntity, field: string): ComboOption[] | "text" {
+function conditionValueOptions(entity: CustomFieldEntity, field: string, te: EnumTranslator): ComboOption[] | "text" {
+  const enumOpts = enumOptsFor(te);
   const map: Record<string, ComboOption[] | "text"> = {
     type: entity === "CHANGE" ? enumOpts(CHANGE_TYPES, CHANGE_TYPE_META) : enumOpts(TICKET_TYPES, TICKET_TYPE_META),
     status:
@@ -53,13 +57,15 @@ function ValuePicker({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const t = useT("settings");
   if (kind === "none") return <span className="text-xs text-muted-foreground">—</span>;
   if (kind === "text")
-    return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="value" className="h-8" />;
-  return <Combobox options={kind} value={value} onChange={onChange} size="sm" placeholder="value" />;
+    return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("cfEditor.value")} className="h-8" />;
+  return <Combobox options={kind} value={value} onChange={onChange} size="sm" placeholder={t("cfEditor.value")} />;
 }
 
-const TYPE_OPTS: ComboOption[] = CUSTOM_FIELD_TYPES.map((t) => ({ value: t, label: CUSTOM_FIELD_TYPE_LABELS[t] }));
+const typeOpts = (t: Translator<"settings">): ComboOption[] =>
+  CUSTOM_FIELD_TYPES.map((ty) => ({ value: ty, label: t.dyn(`customFields.type.${ty}`, undefined, CUSTOM_FIELD_TYPE_LABELS[ty]) }));
 
 function slugPreview(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
@@ -73,6 +79,9 @@ export function CustomFieldEditor({
   def?: CustomFieldDef;
 }) {
   const editing = !!def;
+  const t = useT("settings");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FieldState, FormData>(
     editing ? updateCustomField : createCustomField,
@@ -101,14 +110,14 @@ export function CustomFieldEditor({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "sm"} aria-label={editing ? "Edit field" : undefined} />}
+        render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "sm"} aria-label={editing ? t("cfEditor.editField") : undefined} />}
       >
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New field</>}
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("cfEditor.newField")}</>}
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><SlidersHorizontal className="size-4 text-primary" /> {editing ? "Edit" : "New"} custom field</DialogTitle>
-          <DialogDescription>Collect extra data on the detail sidebar, shown only when your conditions match.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><SlidersHorizontal className="size-4 text-primary" /> {editing ? t("cfEditor.titleEdit") : t("cfEditor.titleNew")}</DialogTitle>
+          <DialogDescription>{t("cfEditor.description")}</DialogDescription>
         </DialogHeader>
 
         <form action={submit} className="grid gap-5">
@@ -121,29 +130,29 @@ export function CustomFieldEditor({
           <input type="hidden" name="visibility" value={JSON.stringify(conditions.filter((c) => c.field))} />
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Label</Label>
-              <Input name="label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Cost centre" required />
+              <Label>{t("cfEditor.label")}</Label>
+              <Input name="label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("cfEditor.labelPlaceholder")} required />
               {!editing && label ? (
-                <p className="text-xs text-muted-foreground">Key: <span className="font-mono">{slugPreview(label) || "field"}</span></p>
+                <p className="text-xs text-muted-foreground">{t("cfEditor.key")} <span className="font-mono">{slugPreview(label) || "field"}</span></p>
               ) : null}
-              {editing ? <p className="text-xs text-muted-foreground">Key: <span className="font-mono">{def.key}</span></p> : null}
+              {editing ? <p className="text-xs text-muted-foreground">{t("cfEditor.key")} <span className="font-mono">{def.key}</span></p> : null}
             </div>
             <div className="grid gap-1.5">
-              <Label>Type</Label>
-              <Combobox options={TYPE_OPTS} value={type} onChange={(v) => setType(v)} />
+              <Label>{t("cfEditor.type")}</Label>
+              <Combobox options={typeOpts(t)} value={type} onChange={(v) => setType(v)} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Placeholder</Label>
-              <Input name="placeholder" value={placeholder} onChange={(e) => setPlaceholder(e.target.value)} placeholder="Optional" />
+              <Label>{t("cfEditor.placeholder")}</Label>
+              <Input name="placeholder" value={placeholder} onChange={(e) => setPlaceholder(e.target.value)} placeholder={t("cfEditor.optional")} />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Help text</Label>
-              <Input name="help" value={help} onChange={(e) => setHelp(e.target.value)} placeholder="Optional hint shown under the field" />
+              <Label>{t("cfEditor.helpText")}</Label>
+              <Input name="help" value={help} onChange={(e) => setHelp(e.target.value)} placeholder={t("cfEditor.helpPlaceholder")} />
             </div>
           </div>
 
@@ -151,18 +160,18 @@ export function CustomFieldEditor({
           {type === "select" ? (
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
-                <Label>Choices</Label>
+                <Label>{t("cfEditor.choices")}</Label>
                 <Button type="button" variant="outline" size="sm" onClick={() => setOptions((o) => [...o, ""])}>
-                  <Plus className="size-4" /> Add choice
+                  <Plus className="size-4" /> {t("cfEditor.addChoice")}
                 </Button>
               </div>
               {options.length === 0 ? (
-                <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">Add at least one choice.</p>
+                <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">{t("cfEditor.addAtLeastOne")}</p>
               ) : (
                 options.map((o, i) => (
                   <div key={i} className="grid grid-cols-[1fr_auto] items-center gap-2">
-                    <Input value={o} onChange={(e) => setOptions((arr) => arr.map((x, idx) => (idx === i ? e.target.value : x)))} placeholder="Choice label" className="h-8" />
-                    <Button type="button" variant="ghost" size="icon-sm" onClick={() => setOptions((arr) => arr.filter((_, idx) => idx !== i))}>
+                    <Input value={o} onChange={(e) => setOptions((arr) => arr.map((x, idx) => (idx === i ? e.target.value : x)))} placeholder={t("cfEditor.choicePlaceholder")} className="h-8" />
+                    <Button type="button" variant="ghost" size="icon-sm" aria-label={t("cfEditor.removeChoice")} onClick={() => setOptions((arr) => arr.filter((_, idx) => idx !== i))}>
                       <Trash2 className="size-4 text-muted-foreground" />
                     </Button>
                   </div>
@@ -173,36 +182,36 @@ export function CustomFieldEditor({
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
-              <Label>Required</Label>
-              <p className="text-xs text-muted-foreground">Agents must fill it in when the field is visible.</p>
+              <Label>{t("cfEditor.required")}</Label>
+              <p className="text-xs text-muted-foreground">{t("cfEditor.requiredHint")}</p>
             </div>
-            <Switch checked={required} onCheckedChange={(c) => setRequired(!!c)} disabled={type === "checkbox"} aria-label="Required" />
+            <Switch checked={required} onCheckedChange={(c) => setRequired(!!c)} disabled={type === "checkbox"} aria-label={t("cfEditor.required")} />
           </div>
 
           {/* Visibility conditions */}
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
               <div>
-                <Label>Show when</Label>
-                <p className="text-xs text-muted-foreground">No conditions ⇒ always shown.</p>
+                <Label>{t("cfEditor.showWhen")}</Label>
+                <p className="text-xs text-muted-foreground">{t("cfEditor.noConditions")}</p>
               </div>
               <div className="flex items-center gap-2">
-                <Combobox options={MATCH_TYPES.map((t) => ({ value: t.value, label: t.label }))} value={matchType} onChange={setMatchType} size="sm" className="w-auto" />
+                <Combobox options={MATCH_TYPES.map((m) => ({ value: m.value, label: t.dyn(`match.${m.value}`, undefined, m.label) }))} value={matchType} onChange={setMatchType} size="sm" className="w-auto" />
                 <Button type="button" variant="outline" size="sm" onClick={() => setConditions((c) => [...c, { field: fields[0]?.value ?? "status", op: "eq", value: "" }])}>
-                  <Plus className="size-4" /> Add
+                  <Plus className="size-4" /> {t("cfEditor.add")}
                 </Button>
               </div>
             </div>
             {conditions.map((c, i) => {
-              const vk = ["empty", "not_empty"].includes(c.op) ? "none" : conditionValueOptions(entityType, c.field);
+              const vk = ["empty", "not_empty"].includes(c.op) ? "none" : conditionValueOptions(entityType, c.field, te);
               return (
                 <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-                  <Combobox options={fields.map((f) => ({ value: f.value, label: f.label }))} value={c.field} size="sm"
+                  <Combobox options={fields.map((f) => ({ value: f.value, label: t.dyn(`cfField.${f.value}`, undefined, f.label) }))} value={c.field} size="sm"
                     onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, field: v, value: "" } : x)))} />
-                  <Combobox options={OPERATORS.map((op) => ({ value: op.value, label: op.label }))} value={c.op} size="sm"
+                  <Combobox options={OPERATORS.map((op) => ({ value: op.value, label: t.dyn(`op.${op.value}`, undefined, op.label) }))} value={c.op} size="sm"
                     onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, op: v } : x)))} />
                   <ValuePicker kind={vk} value={c.value ?? ""} onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} />
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => setConditions((arr) => arr.filter((_, idx) => idx !== i))}>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={t("cfEditor.removeCondition")} onClick={() => setConditions((arr) => arr.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
                 </div>
@@ -213,7 +222,7 @@ export function CustomFieldEditor({
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save field" : "Create field"}
+              {editing ? t("cfEditor.saveField") : t("cfEditor.createField")}
             </Button>
           </DialogFooter>
         </form>

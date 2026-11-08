@@ -6,12 +6,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SableMark } from "@/components/sable-mark";
 import { summarizeThread } from "@/lib/actions/ai";
-import { AI_TEASER_MESSAGE } from "@/lib/constants";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Summary = { status: "idle" } | { status: "ready"; html: string } | { status: "failed"; error: string };
 
 /** The client half of TicketSummaryCard: opens on click, loads the summary once, refreshes on request. */
 export function TicketSummaryPanel({ ticketId, teaser }: { ticketId: number; teaser: boolean }) {
+  const t = useT("assistant");
+  const tc = useT("common");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState<Summary>({ status: "idle" });
   const [pending, startTransition] = useTransition();
@@ -24,7 +27,7 @@ export function TicketSummaryPanel({ ticketId, teaser }: { ticketId: number; tea
   }
 
   function toggle() {
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    if (teaser) return void toast.info(t("teaser"));
     const opening = !open;
     setOpen(opening);
     if (opening && summary.status !== "ready" && !pending) load();
@@ -39,7 +42,7 @@ export function TicketSummaryPanel({ ticketId, teaser }: { ticketId: number; tea
         className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <SableMark className="size-4" />
-        <span className="flex-1">Thread summary</span>
+        <span className="flex-1">{t("summary.title")}</span>
         <ChevronDown className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -47,7 +50,7 @@ export function TicketSummaryPanel({ ticketId, teaser }: { ticketId: number; tea
         <div className="border-t border-sable/25 px-3 py-3">
           {pending ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Reading the ticket…
+              <Loader2 className="size-4 animate-spin" /> {t("summary.reading")}
             </div>
           ) : summary.status === "ready" ? (
             <>
@@ -57,15 +60,15 @@ export function TicketSummaryPanel({ ticketId, teaser }: { ticketId: number; tea
               />
               <div className="mt-2.5 flex justify-end">
                 <Button type="button" variant="ghost" size="sm" onClick={load}>
-                  <RefreshCw className="size-3.5" /> Refresh
+                  <RefreshCw className="size-3.5" /> {tc("refresh")}
                 </Button>
               </div>
             </>
           ) : summary.status === "failed" ? (
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-destructive">{summary.error}</span>
+              <span className="text-destructive">{tm(summary.error)}</span>
               <Button type="button" variant="outline" size="sm" onClick={load}>
-                Try again
+                {t("summary.tryAgain")}
               </Button>
             </div>
           ) : null}

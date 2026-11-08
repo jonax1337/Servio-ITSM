@@ -5,14 +5,19 @@ import { requireRole, hasRole, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { MacroManager, type MacroRow } from "@/components/settings/macro-manager";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Macros" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("macros.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function MacrosSettingsPage() {
   // Agents reach this page for their PERSONAL macros; sharing stays MANAGER+.
   const me = await requireRole("AGENT");
   const canShare = hasRole(me.role as Role, "MANAGER");
+  const t = await getT("settings");
 
   const [macros, options] = await Promise.all([
     // Show shared macros + the current user's personal macros.
@@ -39,8 +44,8 @@ export default async function MacrosSettingsPage() {
     <>
       <PageHeader
         icon={MessageSquareText}
-        title="Macros"
-        description="One-click bundles of actions — set status/priority, route, assign and post a canned reply — that agents can apply to a ticket. Shared macros are available to every agent; personal macros are only yours."
+        title={t("macros.title")}
+        description={t("macros.description")}
       />
       <PageBody>
         <MacroManager

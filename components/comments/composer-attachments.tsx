@@ -5,6 +5,7 @@ import { Paperclip, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteAttachment } from "@/lib/actions/attachments";
 import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes } from "@/lib/attachments-ui";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Staged = { id: string; filename: string };
 
@@ -32,6 +33,8 @@ export function ComposerAttachments({
   const [error, setError] = useState<string | null>(null);
   const [, startDelete] = useTransition();
   const maxBytes = maxUploadBytes(maxMb);
+  const t = useT("tickets");
+  const tm = useServerMessage();
 
   useEffect(() => {
     const form = rootRef.current?.closest("form");
@@ -55,11 +58,14 @@ export function ComposerAttachments({
             setFiles((f) => [...f, { id: r.id, filename: r.filename }]);
           } catch { /* ignore parse error */ }
         } else {
-          try { setError(JSON.parse(xhr.responseText)?.error ?? "Upload failed."); } catch { setError("Upload failed."); }
+          try {
+            const err = JSON.parse(xhr.responseText)?.error;
+            setError(err ? tm(err) : t("attachments.uploadFailed"));
+          } catch { setError(t("attachments.uploadFailed")); }
         }
         resolve();
       };
-      xhr.onerror = () => { setError("Network error during upload."); resolve(); };
+      xhr.onerror = () => { setError(t("attachments.networkError")); resolve(); };
       xhr.send(fd);
     });
 
@@ -68,7 +74,7 @@ export function ComposerAttachments({
     setError(null);
     setBusy(true);
     for (const file of Array.from(list)) {
-      if (file.size > maxBytes) { setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`); continue; }
+      if (file.size > maxBytes) { setError(t("attachments.tooLarge", { name: file.name, max: formatBytes(maxBytes) })); continue; }
       await upload(file);
     }
     setBusy(false);
@@ -95,7 +101,7 @@ export function ComposerAttachments({
     <span key={f.id} className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs">
       <Paperclip className="size-3 shrink-0" />
       <span className="max-w-40 truncate">{f.filename}</span>
-      <button type="button" onClick={() => remove(f.id)} aria-label={`Remove ${f.filename}`} className="text-muted-foreground hover:text-foreground">
+      <button type="button" onClick={() => remove(f.id)} aria-label={t("attachments.remove", { name: f.filename })} className="text-muted-foreground hover:text-foreground">
         <X className="size-3" />
       </button>
     </span>
@@ -104,7 +110,7 @@ export function ComposerAttachments({
   const trigger = (
     <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
       {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
-      Attach files
+      {t("attachments.attachFiles")}
     </Button>
   );
 

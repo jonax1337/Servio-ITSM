@@ -23,7 +23,7 @@ import {
   OPEN_TICKET_STATUSES,
   ticketRef,
 } from "@/lib/constants";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,8 @@ export async function generateMetadata({
     where: { id },
     select: { name: true },
   });
-  return { title: s ? s.name : "Service" };
+  const t = await getT("services");
+  return { title: s ? s.name : t("service") };
 }
 
 export default async function ServiceDetailPage({
@@ -71,6 +72,7 @@ export default async function ServiceDetailPage({
     getSessionUser(),
   ]);
   if (!service) notFound();
+  const [t, tc, f] = await Promise.all([getT("services"), getT("common"), getFormatter()]);
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const approvals = await getEntityApprovals("SERVICE", service.id);
@@ -88,11 +90,11 @@ export default async function ServiceDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/services" variant="ghost" size="icon-sm" aria-label="Back to services">
+          <LinkButton href="/services" variant="ghost" size="icon-sm" aria-label={t("backToServices")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="text-sm font-medium text-muted-foreground">
-            Service
+            {t("service")}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={CRITICALITY_META} value={service.criticality} dot />
@@ -116,7 +118,7 @@ export default async function ServiceDetailPage({
                 {service.name}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Operational service
+                {t("operationalService")}
                 {service.category ? ` · ${service.category.name}` : ""}
               </p>
             </div>
@@ -125,7 +127,7 @@ export default async function ServiceDetailPage({
           <div className="mt-4 rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
             {service.description || (
               <span className="text-muted-foreground">
-                No description provided.
+                {t("noDescription")}
               </span>
             )}
           </div>
@@ -134,11 +136,11 @@ export default async function ServiceDetailPage({
           <div className="mt-8">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
               <TicketIcon className="size-4 text-muted-foreground" />
-              Open tickets · {service.tickets.length}
+              {t("openTicketsHeading", { count: service.tickets.length })}
             </h2>
             {service.tickets.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No open tickets are linked to this service.
+                {t("noOpenTickets")}
               </p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
@@ -178,23 +180,23 @@ export default async function ServiceDetailPage({
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <ShoppingBag className="size-4 text-muted-foreground" />
-                Catalog items · {service.catalogItems.length}
+                {t("catalogItems", { count: service.catalogItems.length })}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2">
               {service.catalogItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No catalog items reference this service.</p>
+                <p className="text-sm text-muted-foreground">{t("noCatalogItems")}</p>
               ) : (
                 service.catalogItems.map((item) => (
                   <div key={item.id} className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.name}</span>
-                    <ToneBadge meta={item.isPublished ? { label: "Published", tone: "success" } : { label: "Unpublished", tone: "neutral" }} dot />
+                    <ToneBadge meta={item.isPublished ? { label: t("published"), tone: "success" } : { label: t("unpublished"), tone: "neutral" }} dot />
                   </div>
                 ))
               )}
               {canManage ? (
                 <Link href="/catalog" className="text-xs text-muted-foreground hover:text-primary">
-                  Manage the service catalog
+                  {t("manageCatalog")}
                 </Link>
               ) : null}
             </CardContent>
@@ -219,7 +221,7 @@ export default async function ServiceDetailPage({
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Properties</CardTitle>
+            <CardTitle className="text-sm">{tc("properties")}</CardTitle>
           </CardHeader>
           <CardContent>
             <ServiceProperties service={service} options={options} />
@@ -230,35 +232,35 @@ export default async function ServiceDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <Timer className="size-4 text-muted-foreground" />
-              SLA
+              {t("sla")}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             {service.sla ? (
               <>
-                <Meta label="Policy" value={service.sla.name} />
+                <Meta label={t("policy")} value={service.sla.name} />
                 <Meta
-                  label="Response"
-                  value={`${service.sla.responseMins} min`}
+                  label={t("response")}
+                  value={t("minutes", { count: service.sla.responseMins })}
                 />
                 <Meta
-                  label="Resolve"
-                  value={`${service.sla.resolveMins} min`}
+                  label={t("resolve")}
+                  value={t("minutes", { count: service.sla.resolveMins })}
                 />
               </>
             ) : (
-              <p className="text-muted-foreground">No SLA assigned.</p>
+              <p className="text-muted-foreground">{t("noSla")}</p>
             )}
           </CardContent>
         </Card>
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle className="text-sm">Details</CardTitle>
+            <CardTitle className="text-sm">{tc("details")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <Meta
-              label="Owner"
+              label={tc("owner")}
               value={
                 service.owner
                   ? (service.owner.name ?? service.owner.email)
@@ -266,11 +268,11 @@ export default async function ServiceDetailPage({
               }
             />
             <Meta
-              label="Category"
+              label={tc("category")}
               value={service.category ? service.category.name : "—"}
             />
-            <Meta label="Created" value={format(service.createdAt, "PP")} />
-            <Meta label="Updated" value={format(service.updatedAt, "PP")} />
+            <Meta label={tc("created")} value={f.date(service.createdAt)} />
+            <Meta label={tc("updated")} value={f.date(service.updatedAt)} />
           </CardContent>
         </Card>
       </aside>

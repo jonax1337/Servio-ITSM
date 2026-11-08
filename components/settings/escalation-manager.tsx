@@ -22,8 +22,9 @@ import {
 } from "@/lib/constants";
 import type { NamedRef } from "@/components/settings/sla-manager";
 import { isOnCallEscalationAction } from "@/lib/oncall-rules";
-
-const ONCALL_TARGET_LABEL = "On call for the ticket’s group";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { EnumTranslator } from "@/lib/i18n/enums";
+import type { Translator } from "@/lib/i18n/translate";
 
 export type StepRow = {
   id: string;
@@ -38,18 +39,21 @@ export type StepRow = {
 export type PolicyRow = { id: string; name: string; steps: StepRow[] };
 
 function Field({ label, error, children, hint }: { label: string; error?: string[]; children: React.ReactNode; hint?: string }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
 
 function PolicyDialog({ policy }: { policy?: PolicyRow }) {
   const editing = !!policy;
+  const t = useT("settings");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
@@ -66,26 +70,26 @@ function PolicyDialog({ policy }: { policy?: PolicyRow }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? "Rename policy" : undefined} />}>
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New policy</>}
+      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? t("esc.renamePolicy") : undefined} />}>
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("esc.newPolicy")}</>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><TrendingUp className="size-4 text-primary" /> {editing ? "Rename policy" : "New escalation policy"}</DialogTitle>
-          <DialogDescription>A named set of steps fired as an SLA’s clock elapses. Add steps after creating it.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><TrendingUp className="size-4 text-primary" /> {editing ? t("esc.renamePolicy") : t("esc.newPolicyTitle")}</DialogTitle>
+          <DialogDescription>{t("esc.policyDescription")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           {editing ? <input type="hidden" name="id" value={policy.id} /> : null}
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
-          <Field label="Name" error={state?.fieldErrors?.name}>
-            <Input name="name" defaultValue={policy?.name} placeholder="e.g. Tiered escalation" required />
+          <Field label={t("esc.name")} error={state?.fieldErrors?.name}>
+            <Input name="name" defaultValue={policy?.name} placeholder={t("esc.namePlaceholder")} required />
           </Field>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save" : "Create policy"}
+              {editing ? t("esc.save") : t("esc.createPolicy")}
             </Button>
           </DialogFooter>
         </form>
@@ -95,6 +99,9 @@ function PolicyDialog({ policy }: { policy?: PolicyRow }) {
 }
 
 function StepDialog({ policyId, groups, users }: { policyId: string; groups: NamedRef[]; users: NamedRef[] }) {
+  const t = useT("settings");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
@@ -115,21 +122,21 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
   };
 
   const actionOpts: ComboOption[] = ESCALATION_ACTIONS.map((a) => ({
-    value: a, label: ESCALATION_ACTION_META[a].label, tone: ESCALATION_ACTION_META[a].tone, icon: ESCALATION_ACTION_META[a].icon,
+    value: a, label: te(ESCALATION_ACTION_META[a]), tone: ESCALATION_ACTION_META[a].tone, icon: ESCALATION_ACTION_META[a].icon,
   }));
-  const groupOpts: ComboOption[] = [{ value: "none", label: "— None —" }, ...groups.map((g) => ({ value: g.id, label: g.name }))];
-  const userOpts: ComboOption[] = [{ value: "none", label: "— None —" }, ...users.map((u) => ({ value: u.id, label: u.name }))];
-  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
+  const groupOpts: ComboOption[] = [{ value: "none", label: t("esc.none") }, ...groups.map((g) => ({ value: g.id, label: g.name }))];
+  const userOpts: ComboOption[] = [{ value: "none", label: t("esc.none") }, ...users.map((u) => ({ value: u.id, label: u.name }))];
+  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: te(PRIORITY_META[p]), tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-        <Plus className="size-4" /> Add step
+        <Plus className="size-4" /> {t("esc.addStep")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add escalation step</DialogTitle>
-          <DialogDescription>Runs once when the ticket’s SLA reaches the threshold percentage of elapsed time.</DialogDescription>
+          <DialogTitle>{t("esc.addStepTitle")}</DialogTitle>
+          <DialogDescription>{t("esc.stepDescription")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           <input type="hidden" name="policyId" value={policyId} />
@@ -139,35 +146,41 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
           <input type="hidden" name="bumpToPriority" value={bumpTo} />
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Threshold (% elapsed)" error={fe.thresholdPercent} hint="e.g. 50, 75, 100">
+            <Field label={t("esc.threshold")} error={fe.thresholdPercent} hint={t("esc.thresholdHint")}>
               <Input name="thresholdPercent" type="number" min={1} max={1000} defaultValue={75} required />
             </Field>
-            <Field label="Action">
+            <Field label={t("esc.action")}>
               <Combobox options={actionOpts} value={action} onChange={setAction} />
             </Field>
           </div>
 
           {action === "BUMP_PRIORITY" ? (
-            <Field label="Bump to priority" error={fe.bumpToPriority}>
+            <Field label={t("esc.bumpTo")} error={fe.bumpToPriority}>
               <Combobox options={prioOpts} value={bumpTo} onChange={setBumpTo} />
             </Field>
           ) : isOnCallEscalationAction(action) ? (
             <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               {action === "NOTIFY_ONCALL"
-                ? "Notifies whoever is on call for the ticket’s group. If nobody is, the whole group is notified instead."
-                : "Assigns the ticket to whoever is on call for its group. If nobody is, the ticket stays as it is and the group is notified."}{" "}
-              Rotations are set up under <Link href="/oncall" className="font-medium text-foreground underline-offset-2 hover:underline">On-call</Link>.
+                ? t("esc.notifyOncallHint")
+                : t("esc.reassignOncallHint")}{" "}
+              {t.rich("esc.rotationsHint", {
+                link: (c) => (
+                  <Link href="/oncall" className="font-medium text-foreground underline-offset-2 hover:underline">
+                    {c}
+                  </Link>
+                ),
+              })}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Target group" error={fe.targetGroupId}>
+              <Field label={t("esc.targetGroup")} error={fe.targetGroupId}>
                 <Combobox options={groupOpts} value={groupId} onChange={setGroupId} />
               </Field>
-              <Field label="Target user" error={fe.targetUserId}>
+              <Field label={t("esc.targetUser")} error={fe.targetUserId}>
                 <Combobox options={userOpts} value={userId} onChange={setUserId} />
               </Field>
             </div>
@@ -175,7 +188,7 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Add step
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} {t("esc.addStep")}
             </Button>
           </DialogFooter>
         </form>
@@ -184,9 +197,9 @@ function StepDialog({ policyId, groups, users }: { policyId: string; groups: Nam
   );
 }
 
-function stepTarget(step: StepRow, groups: NamedRef[], users: NamedRef[]): string {
-  if (step.action === "BUMP_PRIORITY") return step.bumpToPriority ?? "—";
-  if (isOnCallEscalationAction(step.action)) return ONCALL_TARGET_LABEL;
+function stepTarget(step: StepRow, groups: NamedRef[], users: NamedRef[], t: Translator<"settings">, te: EnumTranslator): string {
+  if (step.action === "BUMP_PRIORITY") return te(PRIORITY_META, step.bumpToPriority);
+  if (isOnCallEscalationAction(step.action)) return t("esc.oncallTarget");
   const parts: string[] = [];
   const g = groups.find((x) => x.id === step.targetGroupId);
   const u = users.find((x) => x.id === step.targetUserId);
@@ -204,11 +217,13 @@ export function EscalationManager({
   groups: NamedRef[];
   users: NamedRef[];
 }) {
+  const t = useT("settings");
+  const te = useEnumT();
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {policies.length} polic{policies.length === 1 ? "y" : "ies"} · steps fire once as the SLA clock crosses each threshold.
+          {t("esc.summary", { count: policies.length })}
         </p>
         <PolicyDialog />
       </div>
@@ -216,8 +231,8 @@ export function EscalationManager({
       {policies.length === 0 ? (
         <EmptyState
           icon={TrendingUp}
-          title="No escalation policies yet"
-          description="Create a policy, add threshold steps (notify, reassign, bump priority or reach whoever is on call), then assign it to an SLA."
+          title={t("esc.emptyTitle")}
+          description={t("esc.emptyDescription")}
         />
       ) : (
         <div className="grid gap-3">
@@ -227,15 +242,15 @@ export function EscalationManager({
                 <span className="grid size-9 place-items-center rounded-lg border text-primary"><TrendingUp className="size-4.5" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{p.name}</div>
-                  <div className="text-xs text-muted-foreground">{p.steps.length} step{p.steps.length === 1 ? "" : "s"}</div>
+                  <div className="text-xs text-muted-foreground">{t("esc.stepCount", { count: p.steps.length })}</div>
                 </div>
                 <PolicyDialog policy={p} />
                 <ConfirmButton
                   action={deletePolicy}
                   fields={{ id: p.id }}
-                  title="Delete policy?"
-                  description={`"${p.name}" and its steps will be removed and unlinked from any SLAs. This can't be undone.`}
-                  triggerLabel="Delete policy"
+                  title={t("esc.deletePolicyTitle")}
+                  description={t("esc.deletePolicyDescription", { name: p.name })}
+                  triggerLabel={t("esc.deletePolicy")}
                 >
                   <Trash2 className="size-4" />
                 </ConfirmButton>
@@ -243,25 +258,25 @@ export function EscalationManager({
 
               <div className="border-t px-4 py-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Steps</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("esc.steps")}</span>
                   <StepDialog policyId={p.id} groups={groups} users={users} />
                 </div>
                 {p.steps.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No steps yet.</p>
+                  <p className="text-xs text-muted-foreground">{t("esc.noSteps")}</p>
                 ) : (
                   <ul className="divide-y">
                     {p.steps.map((s) => (
                       <li key={s.id} className="flex items-center gap-3 py-2 text-sm">
                         <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">{s.thresholdPercent}%</span>
                         <StatusBadge map={ESCALATION_ACTION_META} value={s.action} />
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">{stepTarget(s, groups, users)}</span>
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground">{stepTarget(s, groups, users, t, te)}</span>
                         <ConfirmButton
                           action={deleteStep}
                           fields={{ id: s.id }}
-                          title="Delete escalation step?"
-                          description={`The ${s.thresholdPercent}% step will be removed from this policy.`}
+                          title={t("esc.deleteStepTitle")}
+                          description={t("esc.deleteStepDescription", { percent: s.thresholdPercent })}
                           triggerVariant="ghost"
-                          triggerLabel="Delete step"
+                          triggerLabel={t("esc.deleteStep")}
                         >
                           <Trash2 className="size-4 text-muted-foreground" />
                         </ConfirmButton>

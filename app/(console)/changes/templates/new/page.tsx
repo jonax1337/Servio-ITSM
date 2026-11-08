@@ -5,20 +5,24 @@ import { requireRole } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { TemplateForm } from "@/components/changes/templates/template-form";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New change template" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("changes");
+  return { title: t("templates.newTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NewChangeTemplatePage() {
   await requireRole("MANAGER");
-  const options = await getFormOptions();
+  const [options, t] = await Promise.all([getFormOptions(), getT("changes")]);
 
   return (
     <>
       <PageHeader
         icon={FileStack}
-        title="New change template"
-        description="Define the prefilled values for a repeatable change."
+        title={t("templates.newTitle")}
+        description={t("templates.newDescription")}
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">

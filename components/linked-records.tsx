@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 import type { ReactNode } from "react";
 import { readActionResult } from "@/lib/action-result";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /**
  * A linked-record chip: a bordered pill linking to the record, with an unlink
@@ -36,7 +37,7 @@ export function LinkedChip({
 export function UnlinkButton({
   action,
   fields,
-  successMessage = "Unlinked",
+  successMessage,
 }: {
   // Actions may return void or a typed result ({ ok, error }) — failures are
   // surfaced as a toast instead of silently no-oping.
@@ -44,13 +45,15 @@ export function UnlinkButton({
   fields: Record<string, string | number>;
   successMessage?: string;
 }) {
+  const t = useT("components");
+  const tm = useServerMessage();
   // Adapt to <form action>'s `Promise<void>` signature while tolerating actions
   // that return nothing at all.
   const submit = async (fd: FormData): Promise<void> => {
     const result = readActionResult(await action(fd));
     if (!result) return;
-    if (result.ok) toast.success(successMessage);
-    else toast.error(result.error || "Could not unlink record.");
+    if (result.ok) toast.success(successMessage ?? t("link.unlinked"));
+    else toast.error(result.error ? tm(result.error) : t("link.unlinkFailed"));
   };
   return (
     <form action={submit} className="flex">
@@ -59,7 +62,7 @@ export function UnlinkButton({
       ))}
       <button
         type="submit"
-        aria-label="Unlink"
+        aria-label={t("link.unlink")}
         className="mr-1 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/chip:opacity-100 hover:text-destructive"
       >
         <X className="size-3.5" />

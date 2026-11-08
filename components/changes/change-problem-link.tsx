@@ -5,6 +5,7 @@ import { setChangeProblem } from "@/lib/actions/changes";
 import { LinkPicker } from "@/components/link-picker";
 import { LinkedChip, UnlinkButton } from "@/components/linked-records";
 import type { ComboOption } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 /** The "Fixes problem" link of a change: a searchable picker to set it, a chip with unlink to show it. */
 export function ChangeProblemPicker({
@@ -15,20 +16,21 @@ export function ChangeProblemPicker({
 }) {
   // LinkPicker reports the returned result as a toast and keeps the dialog open on a refusal.
   const link = (formData: FormData) => setChangeProblem(changeId, Number(formData.get("problemId")));
+  const t = useT("changes");
 
   return (
     <LinkPicker
       action={link}
-      successMessage="Problem linked"
-      triggerLabel="Fixes problem"
-      title="Link the problem this change fixes"
-      description="Choose the problem record that this change resolves."
+      successMessage={t("problemLink.linked")}
+      triggerLabel={t("problemLink.trigger")}
+      title={t("problemLink.title")}
+      description={t("problemLink.description")}
       hidden={{ changeId }}
       valueName="problemId"
       options={options}
-      placeholder="Choose a problem"
-      searchPlaceholder="Search problems…"
-      emptyText="No other problems available to link."
+      placeholder={t("problemLink.choose")}
+      searchPlaceholder={t("problemLink.search")}
+      emptyText={t("problemLink.empty")}
     />
   );
 }
@@ -42,13 +44,14 @@ export function ChangeProblemChip({
   editable: boolean;
 }) {
   const unlink = () => setChangeProblem(changeId, null);
+  const t = useT("changes");
 
   return (
     <LinkedChip
       href={`/problems/${problemId}`}
       icon={<AlertTriangle className="size-3.5 text-amber-500" />}
-      label={`Fixes ${label}`}
-      unlink={editable ? <UnlinkButton action={unlink} fields={{ changeId }} successMessage="Problem unlinked" /> : undefined}
+      label={t("problemLink.fixes", { label })}
+      unlink={editable ? <UnlinkButton action={unlink} fields={{ changeId }} successMessage={t("problemLink.unlinked")} /> : undefined}
     />
   );
 }

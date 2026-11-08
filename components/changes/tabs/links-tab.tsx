@@ -8,6 +8,7 @@ import { ChangeProblemChip, ChangeProblemPicker } from "@/components/changes/cha
 import { setTicketChange } from "@/lib/actions/tickets";
 import { problemRef, ticketRef } from "@/lib/constants";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
+import { getT } from "@/lib/i18n/server";
 
 const LINK_PICKER_PROBLEM_LIMIT = 200;
 const LINK_PICKER_TICKET_LIMIT = 100;
@@ -36,6 +37,7 @@ export async function LinksTab({ change, isAgent }: ChangeTabContext) {
       : [],
   ]);
 
+  const t = await getT("changes");
   const problemOpts = openProblems
     .filter((p) => p.id !== change.problemId)
     .map((p) => ({ value: String(p.id), label: `${problemRef(p.id)} · ${p.title}` }));
@@ -46,22 +48,22 @@ export async function LinksTab({ change, isAgent }: ChangeTabContext) {
       <section>
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <TicketIcon className="size-4 text-muted-foreground" /> Linked records
+            <TicketIcon className="size-4 text-muted-foreground" /> {t("links.title")}
           </h2>
           {isAgent ? (
             <div className="flex items-center gap-2">
               <ChangeProblemPicker changeId={change.id} options={problemOpts} />
               <LinkPicker
                 action={setTicketChange}
-                triggerLabel="Link incident"
-                title="Link an incident"
-                description="Attach an existing ticket to this change."
+                triggerLabel={t("links.linkIncident")}
+                title={t("links.linkIncidentTitle")}
+                description={t("links.linkIncidentDescription")}
                 hidden={{ changeId: change.id }}
                 valueName="ticketId"
                 options={ticketOpts}
-                placeholder="Choose a ticket"
-                searchPlaceholder="Search tickets…"
-                emptyText="No unlinked tickets available."
+                placeholder={t("links.chooseTicket")}
+                searchPlaceholder={t("links.searchTickets")}
+                emptyText={t("links.noTickets")}
               />
             </div>
           ) : null}
@@ -92,7 +94,7 @@ export async function LinksTab({ change, isAgent }: ChangeTabContext) {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No linked records yet.</p>
+          <p className="text-sm text-muted-foreground">{t("links.empty")}</p>
         )}
       </section>
 

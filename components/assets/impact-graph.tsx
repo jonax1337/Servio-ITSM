@@ -8,22 +8,24 @@ import {
   metaFor,
 } from "@/lib/constants";
 import type { ImpactResult } from "@/lib/cmdb-graph";
+import { getT } from "@/lib/i18n/server";
+import type { Translator } from "@/lib/i18n/translate";
 
 /**
  * Blast-radius panel for an asset. Renders the pre-computed impact result
  * (see `computeImpact` in lib/cmdb-graph.ts) grouped by BFS depth so the
  * closest dependencies read first. Read-only — no interactivity required.
  */
-export function ImpactGraph({ impact }: { impact: ImpactResult }) {
+export async function ImpactGraph({ impact }: { impact: ImpactResult }) {
   const { impacted } = impact;
+  const t = await getT("assets");
 
   if (impacted.length === 0) {
     return (
       <div className="mt-8">
-        <ImpactHeading count={0} />
+        <ImpactHeading t={t} count={0} />
         <p className="text-sm text-muted-foreground">
-          No downstream or upstream configuration items. This CI has no
-          traversable dependencies.
+          {t("impact.empty")}
         </p>
       </div>
     );
@@ -40,11 +42,9 @@ export function ImpactGraph({ impact }: { impact: ImpactResult }) {
 
   return (
     <div className="mt-8">
-      <ImpactHeading count={impacted.length} />
+      <ImpactHeading t={t} count={impacted.length} />
       <p className="mb-4 text-sm text-muted-foreground">
-        Configuration items reachable across the dependency graph. A change or
-        outage here may cascade to the CIs below, ordered by how many hops away
-        they are.
+        {t("impact.description")}
       </p>
 
       <div className="relative grid gap-6">
@@ -57,8 +57,8 @@ export function ImpactGraph({ impact }: { impact: ImpactResult }) {
                   {depth}
                 </span>
                 <span className="text-xs font-medium text-muted-foreground">
-                  {depth === 1 ? "Direct" : `${depth} hops away`} ·{" "}
-                  {nodes.length} {nodes.length === 1 ? "CI" : "CIs"}
+                  {depth === 1 ? t("impact.direct") : t("impact.hops", { depth })} ·{" "}
+                  {t("impact.ciCount", { count: nodes.length })}
                 </span>
               </div>
               <div className="grid gap-2 sm:pl-8">
@@ -101,11 +101,11 @@ export function ImpactGraph({ impact }: { impact: ImpactResult }) {
   );
 }
 
-function ImpactHeading({ count }: { count: number }) {
+function ImpactHeading({ t, count }: { t: Translator<"assets">; count: number }) {
   return (
     <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
       <Radar className="size-4 text-muted-foreground" />
-      Impact / dependencies · {count}
+      {t("impact.heading", { count })}
     </h2>
   );
 }

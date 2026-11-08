@@ -5,7 +5,10 @@ import Link from "next/link";
 import { HardDrive, Loader2, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { assignLicense, unassignLicense } from "@/lib/actions/contracts";
-import { formatDay, licenseCompliance } from "@/lib/contract-rules";
+import { licenseCompliance } from "@/lib/contract-rules";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
+import { formatDayIn } from "./contract-format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -24,10 +27,10 @@ export type SeatAssignment = {
 };
 
 /** What assigning one more seat does to the license, said before the manager commits to it. */
-function seatOutlook(seats: number, used: number): { text: string; overAllocates: boolean } {
+function seatOutlook(t: Translator<"contracts">, seats: number, used: number): { text: string; overAllocates: boolean } {
   const { free } = licenseCompliance(seats, used);
-  if (free > 0) return { text: `${free} of ${seats} ${seats === 1 ? "seat is" : "seats are"} free.`, overAllocates: false };
-  return { text: `All ${seats} ${seats === 1 ? "seat is" : "seats are"} taken. Assigning another over-allocates the license.`, overAllocates: true };
+  if (free > 0) return { text: t("seats.outlookFree", { free, seats }), overAllocates: false };
+  return { text: t("seats.outlookTaken", { seats }), overAllocates: true };
 }
 
 function AssignSeatDialog({
@@ -47,7 +50,9 @@ function AssignSeatDialog({
   const [userId, setUserId] = useState("");
   const [assetId, setAssetId] = useState("");
   const [pending, startTransition] = useTransition();
-  const outlook = seatOutlook(seats, used);
+  const t = useT("contracts");
+  const tm = useServerMessage();
+  const outlook = seatOutlook(t, seats, used);
 
   function submit() {
     const formData = new FormData();
@@ -57,10 +62,10 @@ function AssignSeatDialog({
     startTransition(async () => {
       const result = await assignLicense(formData);
       if (!result.ok) {
-        toast.error(result.error ?? "Could not assign the seat.");
+        toast.error(result.error ? tm(result.error) : t("seats.couldNotAssign"));
         return;
       }
-      toast.success("Seat assigned");
+      toast.success(t("seats.assignedToast"));
       setOpen(false);
       setUserId("");
       setAssetId("");
@@ -70,22 +75,22 @@ function AssignSeatDialog({
   return (
     <>
       <Button type="button" variant="outline" size="xs" onClick={() => setOpen(true)}>
-        <Plus className="size-3.5" /> Assign seat
+        <Plus className="size-3.5" /> {t("seats.assignSeat")}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign a seat</DialogTitle>
-            <DialogDescription>Give a seat to a user, to an asset, or to a user on a specific asset.</DialogDescription>
+            <DialogTitle>{t("seats.assignTitle")}</DialogTitle>
+            <DialogDescription>{t("seats.assignDescription")}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <div className="grid gap-1.5">
-              <Label>User</Label>
-              <Combobox options={[{ value: "", label: "No user" }, ...userOptions]} value={userId} onChange={setUserId} placeholder="No user" searchPlaceholder="Search users…" />
+              <Label>{t("seats.user")}</Label>
+              <Combobox options={[{ value: "", label: t("seats.noUser") }, ...userOptions]} value={userId} onChange={setUserId} placeholder={t("seats.noUser")} searchPlaceholder={t("seats.searchUsers")} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Asset</Label>
-              <Combobox options={[{ value: "", label: "No asset" }, ...assetOptions]} value={assetId} onChange={setAssetId} placeholder="No asset" searchPlaceholder="Search assets…" />
+              <Label>{t("seats.asset")}</Label>
+              <Combobox options={[{ value: "", label: t("seats.noAsset") }, ...assetOptions]} value={assetId} onChange={setAssetId} placeholder={t("seats.noAsset")} searchPlaceholder={t("seats.searchAssets")} />
             </div>
             <p className={outlook.overAllocates ? "text-xs text-amber-600 dark:text-amber-400" : "text-xs text-muted-foreground"}>
               {outlook.text}
@@ -94,7 +99,7 @@ function AssignSeatDialog({
           <DialogFooter>
             <Button type="button" onClick={submit} disabled={pending || (!userId && !assetId)}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              Assign
+              {t("seats.assign")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -119,12 +124,13 @@ export function LicenseAssignments({
   assetOptions: ComboOption[];
   canEdit: boolean;
 }) {
+  const t = useT("contracts");
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <Users className="size-4 text-muted-foreground" />
-          Assigned seats · {assignments.length}
+          {t("seats.assignedCount", { count: assignments.length })}
           {canEdit ? (
             <span className="ml-auto">
               <AssignSeatDialog
@@ -141,9 +147,7 @@ export function LicenseAssignments({
       <CardContent className="grid gap-2">
         {assignments.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {canEdit
-              ? "No seat is assigned yet. Use Assign seat to give one to a user, an asset, or both."
-              : "No seat is assigned yet."}
+            {canEdit ? t("seats.emptyEditable") : t("seats.empty")}
           </p>
         ) : (
           assignments.map((a) => (
@@ -160,8 +164,8 @@ export function LicenseAssignments({
                   <span className="truncate">{a.asset.name}</span>
                 </Link>
               ) : null}
-              <span className="ml-auto text-xs tabular-nums text-muted-foreground">since {formatDay(a.assignedAt)}</span>
-              {canEdit ? <UnlinkButton action={unassignLicense} fields={{ assignmentId: a.id }} successMessage="Seat released" /> : null}
+              <span className="ml-auto text-xs tabular-nums text-muted-foreground">{t("seats.since", { date: formatDayIn(t.locale, new Date(a.assignedAt)) })}</span>
+              {canEdit ? <UnlinkButton action={unassignLicense} fields={{ assignmentId: a.id }} successMessage={t("seats.released")} /> : null}
             </div>
           ))
         )}

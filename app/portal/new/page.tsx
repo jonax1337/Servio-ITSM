@@ -8,8 +8,12 @@ import { listPublicIncidents } from "@/lib/status-incidents";
 import { getMaxUploadMb } from "@/lib/settings";
 import type { SearchParams } from "@/lib/query";
 import { getParam } from "@/lib/query";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New request" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("portal");
+  return { title: t("newRequestTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function PortalNewPage({
@@ -20,6 +24,7 @@ export default async function PortalNewPage({
   const user = await requireUser();
   const sp = await searchParams;
   const maxUploadMb = await getMaxUploadMb();
+  const t = await getT("portal");
   const [activeIncidents, categories, services] = await Promise.all([
     listPublicIncidents(user.id, "active", 5),
     db.category.findMany({
@@ -35,19 +40,19 @@ export default async function PortalNewPage({
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Submit a request</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{t("submitRequestHeading")}</h1>
         <p className="mt-1 text-muted-foreground">
-          Tell us what you need and we&apos;ll route it to the right team. The more detail, the faster we can help.
+          {t("submitRequestText")}
         </p>
       </div>
       {activeIncidents.length > 0 ? (
         <section aria-labelledby="known-issues" className="mb-6 grid gap-3">
           <div>
             <h2 id="known-issues" className="font-medium">
-              Known issues right now
+              {t("knownIssues")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              If one of these matches your problem, let us know it affects you too instead of filing a new request.
+              {t("knownIssuesText")}
             </p>
           </div>
           {activeIncidents.map((incident) => (

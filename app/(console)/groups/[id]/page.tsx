@@ -15,6 +15,7 @@ import { GroupMembers } from "@/components/groups/group-members";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { deleteGroup } from "@/lib/actions/groups";
 import { GROUP_TYPE_META, OPEN_TICKET_STATUSES } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const g = await db.group.findUnique({ where: { id }, select: { name: true } });
-  return { title: g ? g.name : "Group" };
+  return { title: g ? g.name : (await getT("groups"))("group") };
 }
 
 export default async function GroupDetailPage({
@@ -48,6 +49,7 @@ export default async function GroupDetailPage({
   ]);
   if (!group) notFound();
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
+  const t = await getT("groups");
 
   const openTickets = await db.ticket.count({
     where: { groupId: group.id, status: { in: [...OPEN_TICKET_STATUSES] } },
@@ -60,7 +62,7 @@ export default async function GroupDetailPage({
   return (
     <>
       <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/groups" variant="ghost" size="icon-sm" aria-label="Back to groups">
+        <LinkButton href="/groups" variant="ghost" size="icon-sm" aria-label={t("backToGroups")}>
           <ArrowLeft className="size-4" />
         </LinkButton>
         <span
@@ -77,12 +79,12 @@ export default async function GroupDetailPage({
             <ConfirmButton
               action={deleteGroup}
               fields={{ id: group.id }}
-              title="Delete group"
-              description={`Permanently delete "${group.name}"? Members are removed; tickets, changes and other records are kept but unassigned from this group.`}
-              confirmLabel="Delete group"
+              title={t("deleteGroup")}
+              description={t("deleteGroupText", { name: group.name })}
+              confirmLabel={t("deleteGroup")}
               triggerVariant="outline"
               triggerSize="icon-sm"
-              triggerLabel="Delete group"
+              triggerLabel={t("deleteGroup")}
               triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
             >
               <Trash2 className="size-4" />
@@ -100,25 +102,25 @@ export default async function GroupDetailPage({
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
-            label="Open tickets"
+            label={t("openTickets")}
             value={openTickets}
             icon={TicketIcon}
             href={`/tickets?status=open`}
             tone="primary"
           />
-          <StatCard label="Members" value={group.members.length} icon={Users} tone="muted" />
+          <StatCard label={t("members")} value={group.members.length} icon={Users} tone="muted" />
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Members · {group.members.length}</CardTitle>
+              <CardTitle className="text-sm">{t("membersCount", { count: group.members.length })}</CardTitle>
             </CardHeader>
             <CardContent>
               {canManage ? (
                 <GroupMembers groupId={group.id} members={group.members} candidates={candidates} />
               ) : group.members.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No members yet.</p>
+                <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
               ) : (
                 <div className="grid gap-1">
                   {group.members.map((m) => (
@@ -146,7 +148,7 @@ export default async function GroupDetailPage({
                             : "border-border bg-muted text-muted-foreground"
                         }`}
                       >
-                        {m.role === "LEAD" ? "Lead" : "Member"}
+                        {m.role === "LEAD" ? t("lead") : t("member")}
                       </span>
                     </div>
                   ))}
@@ -158,17 +160,17 @@ export default async function GroupDetailPage({
           <div className="grid content-start gap-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Details</CardTitle>
+                <CardTitle className="text-sm">{t("details")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Manager</span>
+                  <span className="text-muted-foreground">{t("manager")}</span>
                   <span className="text-right font-medium">
                     {group.manager ? (group.manager.name ?? group.manager.email) : "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Email</span>
+                  <span className="text-muted-foreground">{t("email")}</span>
                   {group.email ? (
                     <span className="inline-flex items-center gap-1.5 text-right font-medium">
                       <Mail className="size-3.5" /> {group.email}
@@ -182,12 +184,12 @@ export default async function GroupDetailPage({
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Auto-assignment</CardTitle>
+                <CardTitle className="text-sm">{t("autoAssignment")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2">
                 <AutoAssignControl groupId={group.id} value={group.autoAssign} />
                 <p className="text-xs text-muted-foreground">
-                  New tickets routed to this team are assigned automatically. Round-robin cycles through members; least busy picks the agent with the fewest open tickets.
+                  {t("autoAssignmentText")}
                 </p>
               </CardContent>
             </Card>

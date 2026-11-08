@@ -212,9 +212,13 @@ const [state, action, pending] = useActionState<ActionState, FormData>(createWid
 
 Inline-edit controls are client components that fire the FormData action inside a `useTransition` (see [`ticket-properties.tsx`](components/tickets/ticket-properties.tsx)). Toasts use `import { toast } from "sonner"`.
 
+### 5b. User-facing text → `messages/`
+
+Never hard-code UI text. Add every string to your module's namespace in `messages/en/<ns>.ts` **and** `messages/de/<ns>.ts` (a missing German key is a type error), then read it with `await getT("<ns>")` in Server Components / actions or `useT("<ns>")` in client components. Enum labels go through `te(...)` (`getEnumT`/`useEnumT`), dates through the locale formatter, and English action errors shown to the user through `useServerMessage()`. Details, message syntax and the German style guide: [docs/i18n.md](docs/i18n.md).
+
 ### 6. Navigation entry → `lib/nav.ts`
 
-Add your route to the correct `NavGroup` in [`lib/nav.ts`](lib/nav.ts), with a lucide icon and an optional `minRole` gate:
+Add your route to the correct `NavGroup` in [`lib/nav.ts`](lib/nav.ts), with a lucide icon and an optional `minRole` gate, and add its href as a key to `messages/{en,de}/nav.ts` (`tests/unit/i18n-nav.test.ts` checks it):
 
 ```ts
 { title: "Widgets", href: "/widgets", icon: Boxes, minRole: "AGENT" },

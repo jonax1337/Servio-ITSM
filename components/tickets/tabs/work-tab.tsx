@@ -3,10 +3,12 @@ import { TicketTasks } from "@/components/tickets/ticket-tasks";
 import { WorkLog } from "@/components/tickets/work-log";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TicketViewer } from "./ticket-tabs";
+import { getT } from "@/lib/i18n/server";
 
 /** Work tab (agents only): the task checklist and the logged time. Loads its own data. */
 export async function WorkTab({ ticketId, viewer }: { ticketId: number; viewer: TicketViewer }) {
-  const [tasks, worklogs] = await Promise.all([
+  const [t, tasks, worklogs] = await Promise.all([
+    getT("tickets"),
     db.task.findMany({ where: { ticketId }, orderBy: { createdAt: "asc" } }),
     db.workLog.findMany({ where: { ticketId }, include: { user: true }, orderBy: { loggedAt: "desc" } }),
   ]);
@@ -15,7 +17,7 @@ export async function WorkTab({ ticketId, viewer }: { ticketId: number; viewer: 
   return (
     <div>
       <Card>
-        <CardHeader><CardTitle className="text-sm">Tasks</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t("workTab.tasks")}</CardTitle></CardHeader>
         <CardContent>
           <TicketTasks ticketId={ticketId} tasks={tasks} />
         </CardContent>

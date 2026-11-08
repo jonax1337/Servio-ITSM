@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
+import { getT } from "@/lib/i18n/server";
 import { MATCH_TYPES } from "@/lib/automation-defs";
 import {
   CUSTOM_FIELD_TYPES, CUSTOM_FIELD_ENTITIES,
@@ -69,7 +70,7 @@ export async function createCustomField(_prev: FieldState, formData: FormData): 
 
   const key = slugify(d.key?.trim() || d.label);
   const clash = await db.customFieldDef.findUnique({ where: { entityType_key: { entityType: d.entityType, key } } });
-  if (clash) return { error: `A field with key "${key}" already exists for this entity` };
+  if (clash) return { error: (await getT("settings"))("cfEditor.keyExists", { key }) };
 
   const count = await db.customFieldDef.count({ where: { entityType: d.entityType } });
   const def = await db.customFieldDef.create({

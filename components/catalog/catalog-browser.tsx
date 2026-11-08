@@ -6,6 +6,7 @@ import { ArrowRight, ShieldCheck, Clock, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { PortalSearchField } from "@/components/portal/portal-search-field";
+import { useT } from "@/lib/i18n/client";
 
 export type CatalogCard = {
   id: string;
@@ -22,6 +23,7 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
     () => Array.from(new Set(items.map((i) => i.category))),
     [items],
   );
+  const t = useT("catalog");
   const [active, setActive] = useState<string>("All");
   const [query, setQuery] = useState("");
 
@@ -55,7 +57,7 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
       )}
     >
       {label === "All" ? <LayoutGrid className="size-3.5" /> : null}
-      {label}
+      {label === "All" ? t("all") : label}
       <span
         className={cn(
           "rounded-full px-1.5 text-xs tabular-nums",
@@ -73,18 +75,18 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
       <PortalSearchField
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search the catalog…"
+        placeholder={t("searchCatalog")}
       />
 
       {/* Category navigation */}
-      <div role="group" aria-label="Filter by category" className="-mx-1 flex flex-wrap gap-2 px-1">
+      <div role="group" aria-label={t("filterByCategory")} className="-mx-1 flex flex-wrap gap-2 px-1">
         {chip("All")}
         {categories.map((c) => chip(c))}
       </div>
 
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card/40 py-16 text-center text-sm text-muted-foreground">
-          No services match your search.
+          {t("noMatches")}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -100,7 +102,7 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
                 </span>
                 {it.requiresApproval ? (
                   <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                    <ShieldCheck className="size-3" /> Approval
+                    <ShieldCheck className="size-3" /> {t("approvalBadge")}
                   </span>
                 ) : null}
               </div>
@@ -112,11 +114,11 @@ export function CatalogBrowser({ items }: { items: CatalogCard[] }) {
                 <span className="truncate">{it.category}</span>
                 {it.estimatedDays != null ? (
                   <span className="flex shrink-0 items-center gap-1">
-                    <Clock className="size-3.5" /> ~{it.estimatedDays}d
+                    <Clock className="size-3.5" /> {t("estimatedDays", { count: it.estimatedDays })}
                   </span>
                 ) : null}
                 <span className="ml-auto flex shrink-0 items-center gap-1 font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                  Request <ArrowRight className="size-3.5" />
+                  {t("request")} <ArrowRight className="size-3.5" />
                 </span>
               </div>
             </Link>

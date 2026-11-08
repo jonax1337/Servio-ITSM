@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import { sanitizeCommentHtml } from "@/lib/markdown";
+import type { Locale } from "@/lib/i18n/config";
 
 /**
  * Deliberately minimal email rendering. A ticket email should read like a normal
@@ -9,7 +10,8 @@ import { sanitizeCommentHtml } from "@/lib/markdown";
  * whole history into the body either. Light HTML + a plaintext twin, nothing else.
  */
 
-export type MailBrand = { appName?: string; appUrl?: string };
+/** `locale`: the recipient's language for built-in template wording (see mailBrand in lib/mail.ts). */
+export type MailBrand = { appName?: string; appUrl?: string; locale?: Locale };
 
 /** Wrap already-safe content HTML in a bare, well-behaved email body. */
 export function renderEmailHtml(opts: { contentHtml: string }): string {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import type { ComboOption } from "@/components/combobox";
 import { UserAvatar } from "@/components/user-avatar";
+import { useT } from "@/lib/i18n/client";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,6 +30,7 @@ export function RecipientField({
   const [emails, setEmails] = useState<string[]>(() => uniq(defaultEmails.map((e) => e.toLowerCase())));
   const [input, setInput] = useState("");
   const [open, setOpen] = useState(false);
+  const t = useT("tickets");
 
   const labelFor = useMemo(() => new Map(users.map((u) => [u.value.toLowerCase(), u.label])), [users]);
   const q = input.trim().toLowerCase();
@@ -59,7 +61,7 @@ export function RecipientField({
           {emails.map((e) => (
             <span key={e} className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium" title={e}>
               {labelFor.get(e) ?? e}
-              <button type="button" aria-label={`Remove ${e}`} onClick={() => remove(e)} className="text-muted-foreground hover:text-foreground">
+              <button type="button" aria-label={t("attachments.remove", { name: e })} onClick={() => remove(e)} className="text-muted-foreground hover:text-foreground">
                 <X className="size-3" />
               </button>
             </span>
@@ -79,7 +81,7 @@ export function RecipientField({
                 remove(emails[emails.length - 1]);
               }
             }}
-            placeholder={emails.length ? "" : "Name or email…"}
+            placeholder={emails.length ? "" : t("comments.nameOrEmail")}
             className="min-w-32 flex-1 border-0 bg-transparent px-1 py-0.5 text-sm outline-none placeholder:text-muted-foreground"
           />
         </div>

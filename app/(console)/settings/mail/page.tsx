@@ -10,9 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Mail" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("mail.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 const MAIL_STATUS_META = {
@@ -35,6 +38,10 @@ function parseList(v: string | null): string[] {
 
 export default async function MailSettingsPage() {
   await requireRole("MANAGER");
+  const [t, f] = await Promise.all([getT("settings"), getFormatter()]);
+  const statusMeta = Object.fromEntries(
+    Object.entries(MAIL_STATUS_META).map(([k, v]) => [k, { ...v, label: t.dyn(`mail.status.${k}`, undefined, v.label) }]),
+  );
   const configured = await smtpConfigured();
   const [messages, sentCount] = await Promise.all([
     db.emailMessage.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
@@ -45,14 +52,14 @@ export default async function MailSettingsPage() {
     <>
       <PageHeader
         icon={Mail}
-        title="Mail"
-        description="Outgoing notifications and incoming email replies for tickets."
+        title={t("mail.title")}
+        description={t("mail.description")}
       />
       <PageBody className="grid gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <Server className="size-4 text-muted-foreground" /> Delivery
+              <Server className="size-4 text-muted-foreground" /> {t("mail.delivery")}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm sm:grid-cols-3">
@@ -60,32 +67,32 @@ export default async function MailSettingsPage() {
               {configured ? (
                 <>
                   <CheckCircle2 className="size-4 text-emerald-500" />
-                  <span>SMTP configured — emails are delivered</span>
+                  <span>{t("mail.smtpConfigured")}</span>
                 </>
               ) : (
                 <>
                   <Inbox className="size-4 text-amber-500" />
-                  <span>Outbox mode — set <code className="font-mono text-xs">SMTP_HOST</code> to deliver</span>
+                  <span>{t.rich("mail.outboxMode", { var: <code className="font-mono text-xs">SMTP_HOST</code> })}</span>
                 </>
               )}
             </div>
             <div className="text-muted-foreground">
-              Total sent: <span className="font-medium text-foreground">{sentCount}</span>
+              {t("mail.totalSent")} <span className="font-medium text-foreground">{sentCount}</span>
             </div>
           </CardContent>
         </Card>
 
         {messages.length === 0 ? (
-          <EmptyState icon={Mail} title="No emails yet" description="Notifications will appear here as tickets are created and updated." />
+          <EmptyState icon={Mail} title={t("mail.emptyTitle")} description={t("mail.emptyDescription")} />
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Recipient</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">When</TableHead>
+                  <TableHead>{t("mail.colRecipient")}</TableHead>
+                  <TableHead>{t("mail.colSubject")}</TableHead>
+                  <TableHead>{t("mail.colStatus")}</TableHead>
+                  <TableHead className="text-right">{t("mail.colWhen")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -107,7 +114,7 @@ export default async function MailSettingsPage() {
                         {inbound ? m.fromEmail : m.toEmail}
                       </div>
                       {cc.length > 0 ? (
-                        <div className="text-xs text-muted-foreground">Cc: {cc.join(", ")}</div>
+                        <div className="text-xs text-muted-foreground">{t("mail.cc")} {cc.join(", ")}</div>
                       ) : null}
                     </TableCell>
                     <TableCell className="max-w-[420px]">
@@ -117,10 +124,10 @@ export default async function MailSettingsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge map={MAIL_STATUS_META} value={m.status} />
+                      <StatusBadge map={statusMeta} value={m.status} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right text-xs text-muted-foreground">
-                      {formatDistanceToNow(m.createdAt, { addSuffix: true })}
+                      {f.relative(m.createdAt)}
                     </TableCell>
                   </TableRow>
                   );

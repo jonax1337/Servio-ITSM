@@ -17,8 +17,31 @@ import { RaiseProblemDialog } from "@/components/tickets/raise-problem-dialog";
 import { problemDraftFromTickets } from "@/lib/ticket-drafts";
 import { PRIORITY_META, SLA_STATE_META, TICKET_STATUS_META, metaFor, ticketRef } from "@/lib/constants";
 import type { SlaCell } from "@/lib/sla-column";
-import { format } from "date-fns";
 import { LocalTime, timeAgo } from "@/components/local-time";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
+
+/** "2h 10m" (lib/sla-column compactDuration) in the viewer's units. */
+function localizeSpan(span: string, t: Translator<"tickets">): string {
+  return span
+    .split(" ")
+    .map((part) => {
+      const m = /^(\d+)([dhm])$/.exec(part);
+      if (!m) return part;
+      const n = Number(m[1]);
+      return m[2] === "d" ? t("sla.days", { n }) : m[2] === "h" ? t("sla.hours", { n }) : t("sla.minutes", { n });
+    })
+    .join(" ");
+}
+
+/** The SLA cell detail ("overdue 3d" / "2h left", built in lib/sla-column) in the viewer's language. */
+function localizeSlaDetail(detail: string, t: Translator<"tickets">): string {
+  const overdue = /^overdue (.+)$/.exec(detail);
+  if (overdue) return t("sla.overdue", { span: localizeSpan(overdue[1], t) });
+  const left = /^(.+) left$/.exec(detail);
+  if (left) return t("sla.left", { span: localizeSpan(left[1], t) });
+  return detail;
+}
 
 type Row = {
   id: number;
@@ -36,10 +59,11 @@ type Row = {
 };
 
 function SlaIndicator({ cell }: { cell: SlaCell }) {
+  const t = useT("tickets");
   return (
     <span className="inline-flex flex-col items-start gap-0.5">
       <ToneBadge meta={metaFor(SLA_STATE_META, cell.state)} />
-      {cell.detail ? <span className="text-xs text-muted-foreground">{cell.detail}</span> : null}
+      {cell.detail ? <span className="text-xs text-muted-foreground">{localizeSlaDetail(cell.detail, t)}</span> : null}
     </span>
   );
 }
@@ -95,6 +119,8 @@ export function TicketsTable({
 
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [problemOpen, setProblemOpen] = useState(false);
+  const tr = useT("tickets");
+  const tc = useT("common");
 
   function toggleSort(k: string) {
     const params = new URLSearchParams(sp.toString());
@@ -132,13 +158,13 @@ export function TicketsTable({
     <div className="grid gap-2">
       {canBulk && some ? (
         <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 px-3 py-2 backdrop-blur">
-          <span className="text-sm font-medium">{sel.size} selected</span>
+          <span className="text-sm font-medium">{tr("table.selected", { count: sel.size })}</span>
           <BulkEditDialog ticketIds={[...sel]} options={bulkOptions} onApplied={onBulkApplied} />
           <Button type="button" variant="outline" size="sm" onClick={() => setProblemOpen(true)}>
-            <TriangleAlert className="size-4" /> Create problem
+            <TriangleAlert className="size-4" /> {tr("raiseProblem.title")}
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setSel(new Set())}>
-            <X className="size-4" /> Clear
+            <X className="size-4" /> {tc("clear")}
           </Button>
           <RaiseProblemDialog
             open={problemOpen}
@@ -159,19 +185,19 @@ export function TicketsTable({
                     checked={allSelected}
                     indeterminate={some && !allSelected}
                     onCheckedChange={toggleAll}
-                    aria-label="Select all"
+                    aria-label={tr("table.selectAll")}
                   />
                 </TableHead>
               ) : null}
-              <SortHead {...sortHead} k="id" label="Ref" className="w-[92px]" />
-              <SortHead {...sortHead} k="title" label="Subject" />
-              <SortHead {...sortHead} k="requester" label="Requester" className="hidden lg:table-cell" />
-              <TableHead>Priority</TableHead>
-              <SortHead {...sortHead} k="status" label="Status" />
+              <SortHead {...sortHead} k="id" label={tr("table.ref")} className="w-[92px]" />
+              <SortHead {...sortHead} k="title" label={tr("form.subject")} />
+              <SortHead {...sortHead} k="requester" label={tc("requester")} className="hidden lg:table-cell" />
+              <TableHead>{tc("priority")}</TableHead>
+              <SortHead {...sortHead} k="status" label={tc("status")} />
               <SortHead {...sortHead} k="sla" label="SLA" className="hidden md:table-cell" />
-              <SortHead {...sortHead} k="assignee" label="Assignee" className="hidden md:table-cell" />
-              <SortHead {...sortHead} k="createdAt" label="Created" className="hidden 2xl:table-cell text-right" />
-              <SortHead {...sortHead} k="updatedAt" label="Updated" className="hidden xl:table-cell text-right" />
+              <SortHead {...sortHead} k="assignee" label={tc("assignee")} className="hidden md:table-cell" />
+              <SortHead {...sortHead} k="createdAt" label={tc("created")} className="hidden 2xl:table-cell text-right" />
+              <SortHead {...sortHead} k="updatedAt" label={tc("updated")} className="hidden xl:table-cell text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -179,7 +205,7 @@ export function TicketsTable({
               <TableRow key={t.id} className={cn("group", sel.has(t.id) && "bg-primary/5")}>
                 {canBulk ? (
                   <TableCell className="w-[40px]">
-                    <Checkbox checked={sel.has(t.id)} onCheckedChange={() => toggleOne(t.id)} aria-label={`Select ${ticketRef(t.id, t.prefix)}`} />
+                    <Checkbox checked={sel.has(t.id)} onCheckedChange={() => toggleOne(t.id)} aria-label={tr("table.selectRef", { ref: ticketRef(t.id, t.prefix) })} />
                   </TableCell>
                 ) : null}
                 <TableCell className="font-mono text-xs text-muted-foreground">{ticketRef(t.id, t.prefix)}</TableCell>
@@ -213,7 +239,7 @@ export function TicketsTable({
                   )}
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell text-right text-xs text-muted-foreground">
-                  <LocalTime date={t.createdAt} render={(d) => format(d, "PP")} />
+                  <LocalTime date={t.createdAt} render={(d, f) => f.date(d)} />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell text-right text-xs text-muted-foreground">
                   <LocalTime date={t.updatedAt} render={timeAgo} />

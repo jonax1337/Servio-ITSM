@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { summarizeBriefing } from "@/lib/dashboard/briefing-actions";
 import { briefingIsEmpty } from "@/lib/dashboard/briefing-rules";
 import type { BriefingSection, BriefingSectionKey } from "@/lib/dashboard/types";
+import { useFormatter, useServerMessage, useT } from "@/lib/i18n/client";
 
 const SECTION_ICONS: Record<BriefingSectionKey, LucideIcon> = {
   sla: Clock,
@@ -28,13 +29,15 @@ const SHRINKABLE_COLUMN = "grid grid-cols-[minmax(0,1fr)]";
 
 function SectionBlock({ section }: { section: BriefingSection }) {
   const Icon = SECTION_ICONS[section.key];
+  const t = useT("dashboard");
+  const f = useFormatter();
   const hidden = section.total - section.items.length;
   return (
     <section className={cn(SHRINKABLE_COLUMN, "gap-1")}>
       <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3.5" />
         {section.title}
-        <span className="tabular-nums">· {section.total}</span>
+        <span className="tabular-nums">· {f.number(section.total)}</span>
       </h4>
       <ul className="-mx-2">
         {section.items.map((item) => (
@@ -52,7 +55,7 @@ function SectionBlock({ section }: { section: BriefingSection }) {
             </Link>
           </li>
         ))}
-        {hidden > 0 ? <li className="px-2 py-0.5 text-xs text-muted-foreground">and {hidden} more</li> : null}
+        {hidden > 0 ? <li className="px-2 py-0.5 text-xs text-muted-foreground">{t("andMore", { count: hidden })}</li> : null}
       </ul>
     </section>
   );
@@ -62,19 +65,21 @@ function SectionBlock({ section }: { section: BriefingSection }) {
 export function BriefingBody({ sections, aiAvailable }: { sections: BriefingSection[]; aiAvailable: boolean }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const t = useT("dashboard");
+  const tm = useServerMessage();
 
   function summarize() {
     startTransition(async () => {
       const result = await summarizeBriefing();
-      if (result.ok) setSummary(result.text);
-      else toast.error(result.error);
+      if (result.ok) setSummary(tm(result.text));
+      else toast.error(tm(result.error));
     });
   }
 
   if (briefingIsEmpty(sections)) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <CheckCheck className="size-4" /> All clear: nothing needs your attention right now.
+        <CheckCheck className="size-4" /> {t("allClear")}
       </p>
     );
   }
@@ -85,16 +90,16 @@ export function BriefingBody({ sections, aiAvailable }: { sections: BriefingSect
         <div className="rounded-lg border border-sable/25 bg-sable-muted/40 p-2.5">
           <div className="flex items-center gap-2">
             <SableMark className="size-4" />
-            <span className="flex-1 text-xs font-medium">Sable summary</span>
+            <span className="flex-1 text-xs font-medium">{t("sableSummary")}</span>
             <Button type="button" variant="ghost" size="xs" onClick={summarize} disabled={pending}>
               {pending ? <Loader2 className="size-3 animate-spin" /> : null}
-              {summary ? "Refresh" : "Summarize"}
+              {summary ? t("refresh") : t("summarize")}
             </Button>
           </div>
           {summary ? (
             <>
               <p className="mt-1.5 text-sm leading-relaxed">{summary}</p>
-              <p className="mt-1 text-xs text-muted-foreground">AI-generated from the list below. Not saved.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("aiGenerated")}</p>
             </>
           ) : null}
         </div>

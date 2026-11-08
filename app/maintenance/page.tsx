@@ -4,14 +4,19 @@ import { Wrench } from "lucide-react";
 import { Wordmark } from "@/components/brand";
 import { MaintenanceCountdown } from "@/components/maintenance/maintenance-countdown";
 import { readMaintenanceFlag } from "@/lib/maintenance-flag";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Maintenance" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("errors");
+  return { title: t("maintenanceTitle") };
+}
 export const dynamic = "force-dynamic";
 
 /** Shown by proxy.ts (a 503 rewrite) to everyone but admins while maintenance mode is on. */
-export default function MaintenancePage() {
+export default async function MaintenancePage() {
   const maintenance = readMaintenanceFlag();
   if (!maintenance) redirect("/");
+  const t = await getT("errors");
 
   return (
     <div className="relative flex min-h-svh items-center justify-center overflow-hidden bg-sidebar p-6">
@@ -26,9 +31,7 @@ export default function MaintenancePage() {
           <h1 className="font-display text-2xl font-semibold tracking-tight">{maintenance.title}</h1>
           <p className="mt-2 text-muted-foreground">
             {maintenance.message ??
-              (maintenance.kind === "UPDATE"
-                ? "Servio is being updated. It will be back in a few minutes."
-                : "Servio is down for scheduled maintenance. It will be back shortly.")}
+              (maintenance.kind === "UPDATE" ? t("maintenanceUpdate") : t("maintenanceGeneral"))}
           </p>
           <MaintenanceCountdown endsAt={maintenance.endsAt} />
         </div>

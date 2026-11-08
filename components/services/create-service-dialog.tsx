@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import type { FormOptions } from "@/lib/data/options";
 import { ServiceForm } from "./service-form";
+import { useT } from "@/lib/i18n/client";
 
 export function CreateServiceDialog({
   options,
@@ -22,16 +23,17 @@ export function CreateServiceDialog({
   size?: "default" | "sm";
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("services");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button size={size} />}>
-        <Plus className="size-4" /> New service
+        <Plus className="size-4" /> {t("newService")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New service</DialogTitle>
+          <DialogTitle>{t("newService")}</DialogTitle>
           <DialogDescription>
-            Add a business or IT service to the catalog.
+            {t("newServiceDescription")}
           </DialogDescription>
         </DialogHeader>
         <ServiceForm options={options} />

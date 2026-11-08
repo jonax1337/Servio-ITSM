@@ -28,7 +28,7 @@ import {
   ASSET_STATUS_META,
   ticketRef,
 } from "@/lib/constants";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,7 @@ export async function generateMetadata({
     where: { id },
     select: { name: true, email: true },
   });
-  return { title: u ? u.name ?? u.email : "Person" };
+  return { title: u ? u.name ?? u.email : (await getT("people"))("person") };
 }
 
 export default async function PersonDetailPage({
@@ -52,6 +52,7 @@ export default async function PersonDetailPage({
 }) {
   const { id } = await params;
   const me = await requireUser();
+  const [t, f] = await Promise.all([getT("people"), getFormatter()]);
 
   const [user, openTickets, ownedAssets] = await Promise.all([
     db.user.findUnique({
@@ -85,10 +86,10 @@ export default async function PersonDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/people" variant="ghost" size="icon-sm" aria-label="Back to people">
+          <LinkButton href="/people" variant="ghost" size="icon-sm" aria-label={t("backToPeople")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
-          <span className="text-sm text-muted-foreground">People</span>
+          <span className="text-sm text-muted-foreground">{t("title")}</span>
           <div className="ml-auto flex items-center gap-2">
             {hasRole(me.role, "ADMIN") ? (
               <PersonDialog
@@ -108,7 +109,7 @@ export default async function PersonDetailPage({
                     : "size-1.5 rounded-full bg-muted-foreground/40"
                 }
               />
-              {user.isActive ? "Active" : "Inactive"}
+              {user.isActive ? t("active") : t("inactive")}
             </span>
           </div>
         </div>
@@ -139,16 +140,16 @@ export default async function PersonDetailPage({
 
           {/* Contact rows */}
           <div className="mt-6 grid gap-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2">
-            <ContactRow icon={Mail} label="Email" value={user.email} />
-            <ContactRow icon={Phone} label="Phone" value={user.phone ?? "—"} />
+            <ContactRow icon={Mail} label={t("email")} value={user.email} />
+            <ContactRow icon={Phone} label={t("phone")} value={user.phone ?? "—"} />
             <ContactRow
               icon={Briefcase}
-              label="Job title"
+              label={t("jobTitle")}
               value={user.jobTitle ?? "—"}
             />
             <ContactRow
               icon={Building2}
-              label="Department"
+              label={t("department")}
               value={user.department ?? "—"}
             />
           </div>
@@ -157,23 +158,23 @@ export default async function PersonDetailPage({
           <div className="mt-8">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
               <TicketIcon className="size-4 text-muted-foreground" />
-              Open tickets · {openTickets.length}
+              {t("openTickets", { count: openTickets.length })}
             </h2>
             {openTickets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No open tickets.</p>
+              <p className="text-sm text-muted-foreground">{t("noOpenTickets")}</p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
-                {openTickets.map((t) => (
+                {openTickets.map((tk) => (
                   <Link
-                    key={t.id}
-                    href={`/tickets/${t.id}`}
+                    key={tk.id}
+                    href={`/tickets/${tk.id}`}
                     className="flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
                   >
                     <span className="font-mono text-xs text-muted-foreground">
-                      {ticketRef(t.id, t.prefix)}
+                      {ticketRef(tk.id, tk.prefix)}
                     </span>
-                    <span className="line-clamp-1 flex-1 text-sm font-medium">{t.title}</span>
-                    <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+                    <span className="line-clamp-1 flex-1 text-sm font-medium">{tk.title}</span>
+                    <StatusBadge map={TICKET_STATUS_META} value={tk.status} />
                   </Link>
                 ))}
               </div>
@@ -184,10 +185,10 @@ export default async function PersonDetailPage({
           <div className="mt-8">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
               <Server className="size-4 text-muted-foreground" />
-              Assigned assets · {ownedAssets.length}
+              {t("assignedAssets", { count: ownedAssets.length })}
             </h2>
             {ownedAssets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No assets assigned to this person.</p>
+              <p className="text-sm text-muted-foreground">{t("noAssets")}</p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
                 {ownedAssets.map((a) => (
@@ -214,7 +215,7 @@ export default async function PersonDetailPage({
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Access</CardTitle>
+            <CardTitle className="text-sm">{t("access")}</CardTitle>
           </CardHeader>
           <CardContent>
             <UserProperties
@@ -232,13 +233,13 @@ export default async function PersonDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <UsersIcon className="size-4 text-muted-foreground" />
-              Groups · {user.memberships.length}
+              {t("groupsCount", { count: user.memberships.length })}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
             {user.memberships.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not a member of any group.
+                {t("noGroups")}
               </p>
             ) : (
               user.memberships.map((m) => (
@@ -263,16 +264,14 @@ export default async function PersonDetailPage({
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle className="text-sm">Details</CardTitle>
+            <CardTitle className="text-sm">{t("details")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <Meta
-              label="Last login"
-              value={
-                user.lastLoginAt ? format(user.lastLoginAt, "PP p") : "Never"
-              }
+              label={t("lastLogin")}
+              value={user.lastLoginAt ? f.date(user.lastLoginAt, "dateTime") : t("never")}
             />
-            <Meta label="Created" value={format(user.createdAt, "PP")} />
+            <Meta label={t("created")} value={f.date(user.createdAt)} />
           </CardContent>
         </Card>
       </aside>

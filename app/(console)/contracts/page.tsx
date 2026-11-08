@@ -13,18 +13,15 @@ import { VendorDialog } from "@/components/contracts/vendor-dialog";
 import { ContractList } from "@/components/contracts/contract-list";
 import { LicenseList } from "@/components/contracts/license-list";
 import { VendorList } from "@/components/contracts/vendor-list";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Contracts" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("contracts");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 type TabKey = "contracts" | "licenses" | "vendors";
-
-/** One line per section so the difference between the three record kinds is clear at a glance. */
-const TAB_HINTS: Record<TabKey, string> = {
-  contracts: "Agreements with a vendor: support, leases, warranties. Each has a term and an owner who is reminded before it ends.",
-  licenses: "Pools of software seats you assign to users and assets. Over-allocated pools are flagged and their owner is alerted.",
-  vendors: "The suppliers behind your contracts and licenses.",
-};
 
 /** Contracts that need attention: inside their renewal notice period, or already past their end date. */
 async function countContractsNeedingAttention(now: Date): Promise<number> {
@@ -46,6 +43,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const me = await requireUser();
   const canWrite = !!me && hasRole(me.role, "MANAGER");
+  const t = await getT("contracts");
 
   const [contractCount, licenseCount, vendorCount, needAttention, overAllocated] = await Promise.all([
     db.contract.count(),
@@ -56,9 +54,9 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   ]);
 
   const tabs: EntityTab<TabKey>[] = [
-    { key: "contracts", label: "Contracts", count: contractCount, warning: needAttention > 0 ? `${needAttention} expiring or expired` : undefined },
-    { key: "licenses", label: "Licenses", count: licenseCount, warning: overAllocated > 0 ? `${overAllocated} over-allocated` : undefined },
-    { key: "vendors", label: "Vendors", count: vendorCount },
+    { key: "contracts", label: t("tab.contracts"), count: contractCount, warning: needAttention > 0 ? t("tab.contractsWarning", { count: needAttention }) : undefined },
+    { key: "licenses", label: t("tab.licenses"), count: licenseCount, warning: overAllocated > 0 ? t("tab.licensesWarning", { count: overAllocated }) : undefined },
+    { key: "vendors", label: t("tab.vendors"), count: vendorCount },
   ];
   const active = resolveTab(sp, tabs, "contracts");
   const options = canWrite ? await getContractFormOptions() : null;
@@ -70,8 +68,8 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader
         icon={FileSignature}
-        title="Contracts"
-        description="Vendors, contracts and software licenses, with renewal reminders and seat compliance."
+        title={t("title")}
+        description={t("description")}
       >
         {active === "contracts" ? createContract : null}
         {active === "licenses" ? createLicense : null}
@@ -80,8 +78,8 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
 
       <PageBody className="grid gap-4">
         {/* Tab links carry only ?tab=, so one tab's filters never leak into another. */}
-        <EntityTabs tabs={tabs} active={active} defaultTab="contracts" basePath="/contracts" searchParams={{}} label="Contract sections" />
-        <p className="-mt-2 text-sm text-muted-foreground">{TAB_HINTS[active]}</p>
+        <EntityTabs tabs={tabs} active={active} defaultTab="contracts" basePath="/contracts" searchParams={{}} label={t("sections")} />
+        <p className="-mt-2 text-sm text-muted-foreground">{t(`hint.${active}`)}</p>
         {active === "contracts" ? <ContractList sp={sp} createAction={createContract} /> : null}
         {active === "licenses" ? <LicenseList sp={sp} createAction={createLicense} /> : null}
         {active === "vendors" ? <VendorList sp={sp} createAction={createVendor} /> : null}

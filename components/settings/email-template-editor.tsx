@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { saveEmailTemplate, resetEmailTemplate } from "@/lib/actions/email-templates";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type State = { error?: string; ok?: boolean } | undefined;
 
@@ -38,14 +39,16 @@ export function EmailTemplateEditor({
   const wasPending = useRef(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const t = useT("settings");
+  const tm = useServerMessage();
 
   useEffect(() => {
     if (wasPending.current && !pending) {
-      if (state?.error) toast.error(state.error);
-      else if (state?.ok) toast.success(`${label} saved`);
+      if (state?.error) toast.error(tm(state.error));
+      else if (state?.ok) toast.success(t("tpl.saved", { label }));
     }
     wasPending.current = pending;
-  }, [pending, state, label]);
+  }, [pending, state, label, t, tm]);
 
   function insertVar(v: string) {
     const el = bodyRef.current;
@@ -64,9 +67,9 @@ export function EmailTemplateEditor({
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">{label}</h3>
             {customized ? (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Customized</span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">{t("tpl.customized")}</span>
             ) : (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Default</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t("tpl.default")}</span>
             )}
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
@@ -78,17 +81,17 @@ export function EmailTemplateEditor({
         <input type="hidden" name="key" value={templateKey} />
 
         <label className="flex items-center justify-between gap-4">
-          <span className="text-sm font-medium">Enabled</span>
+          <span className="text-sm font-medium">{t("tpl.enabled")}</span>
           <Switch name="enabled" defaultChecked={enabled} />
         </label>
 
         <div className="grid gap-1.5">
-          <Label htmlFor={`subj-${templateKey}`}>Subject</Label>
+          <Label htmlFor={`subj-${templateKey}`}>{t("tpl.subject")}</Label>
           <Input id={`subj-${templateKey}`} name="subject" defaultValue={subject} />
         </div>
 
         <div className="grid gap-1.5">
-          <Label htmlFor={`body-${templateKey}`}>Body (HTML)</Label>
+          <Label htmlFor={`body-${templateKey}`}>{t("tpl.body")}</Label>
           <textarea
             id={`body-${templateKey}`}
             name="bodyHtml"
@@ -101,14 +104,14 @@ export function EmailTemplateEditor({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">Variables:</span>
+          <span className="text-xs text-muted-foreground">{t("tpl.variables")}</span>
           {vars.map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => insertVar(v)}
               className="rounded-md border bg-muted/50 px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 transition-colors hover:bg-muted"
-              title="Insert"
+              title={t("tpl.insert")}
             >
               {`{{${v}}}`}
             </button>
@@ -119,10 +122,10 @@ export function EmailTemplateEditor({
           <div className="flex items-center gap-2">
             <Button type="submit" disabled={pending} size="sm">
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              Save
+              {t("tpl.save")}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => setShowPreview((s) => !s)}>
-              <Eye className="size-4" /> {showPreview ? "Hide preview" : "Preview"}
+              <Eye className="size-4" /> {showPreview ? t("tpl.hidePreview") : t("tpl.preview")}
             </Button>
           </div>
         </div>
@@ -133,14 +136,14 @@ export function EmailTemplateEditor({
         <form action={resetEmailTemplate}>
           <input type="hidden" name="key" value={templateKey} />
           <Button type="submit" variant="ghost" size="sm" className="text-muted-foreground">
-            <RotateCcw className="size-4" /> Reset to default
+            <RotateCcw className="size-4" /> {t("tpl.resetToDefault")}
           </Button>
         </form>
       ) : null}
 
       {showPreview ? (
         <div className="overflow-hidden rounded-lg border">
-          <div className="border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">Preview (sample data)</div>
+          <div className="border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">{t("tpl.previewSample")}</div>
           <iframe title={`preview-${templateKey}`} sandbox="" srcDoc={previewHtml} className="h-[420px] w-full bg-white" />
         </div>
       ) : null}

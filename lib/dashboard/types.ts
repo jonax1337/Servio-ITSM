@@ -57,12 +57,17 @@ export type BriefingSectionKey = "sla" | "customer" | "approvals" | "changes";
 /** `total` counts every match; `items` holds only the first few. */
 export type BriefingSection = { key: BriefingSectionKey; title: string; total: number; items: BriefingItem[] };
 
+/** Ticket-age buckets of the "aging" widget. */
+export type AgingBucket = "lt1" | "1to3" | "3to7" | "gt7";
+
 /** The computed payload the renderer switches on (data resolved server-side). */
 export type Computed =
   | { kind: "stat"; value: number; href?: string; tone?: Tone }
-  | { kind: "breakdown"; rows: { label: string; value: number; href?: string; color?: string }[]; chartType?: "bar" | "donut" }
-  | { kind: "aging"; rows: { label: string; value: number }[] }
-  | { kind: "volume"; data: { label: string; created: number; resolved: number }[] }
+  // `label` is English (cached across viewers); `field` + `key` let the renderer show it in the viewer's language.
+  | { kind: "breakdown"; rows: { label: string; value: number; href?: string; color?: string; key?: string | null }[]; chartType?: "bar" | "donut"; field?: BreakdownField }
+  | { kind: "aging"; rows: { label: string; value: number; key?: AgingBucket }[] }
+  // `date` (YYYY-MM-DD) lets the renderer format the axis in the viewer's locale.
+  | { kind: "volume"; data: { label: string; created: number; resolved: number; date?: string }[] }
   | { kind: "sla"; pct: number | null; mttrHours: number | null; resolved: number; href?: string }
   | { kind: "csat"; avg: number | null; count: number; max: number }
   | { kind: "list"; tickets: { id: number; prefix: string; title: string; status: string; priority: string }[] }
@@ -96,3 +101,12 @@ export const DEFAULT_LAYOUT: Widget[] = [
   { id: "d-aging", type: "aging", title: "Open ticket aging", filters: { status: "open" }, x: 6, y: 4, w: 6, h: 2 },
   { id: "d-recent", type: "list", title: "Recent tickets", filters: {}, x: 0, y: 6, w: 12, h: 2 },
 ];
+
+/**
+ * The default-layout widget a stored widget still mirrors (same id, unchanged title), so its
+ * built-in English title can be shown in the viewer's language; null for user-titled widgets.
+ */
+export function defaultWidgetId(widget: Pick<Widget, "id" | "title">): string | null {
+  const d = DEFAULT_LAYOUT.find((w) => w.id === widget.id);
+  return d && d.title === widget.title ? d.id : null;
+}

@@ -5,6 +5,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkflowList } from "@/components/settings/workflow-list";
 import { WorkflowGraph } from "@/components/settings/workflow-graph";
+import { getEnumT, getT } from "@/lib/i18n/server";
 import {
   WORKFLOW_ENTITY_TYPES, getEffectiveTransitions, type WorkflowEntityType,
 } from "@/lib/workflow";
@@ -13,14 +14,11 @@ import {
   TICKET_STATUS_META, PROBLEM_STATUS_META, CHANGE_STATUS_META, type Meta, type Tone,
 } from "@/lib/constants";
 
-export const metadata: Metadata = { title: "Status workflows" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("workflows.metaTitle") };
+}
 export const dynamic = "force-dynamic";
-
-const ENTITY_LABEL: Record<WorkflowEntityType, string> = {
-  TICKET: "Tickets",
-  PROBLEM: "Problems",
-  CHANGE: "Changes",
-};
 
 /** Strip meta to the serializable {label, tone} the client editor needs (no icons). */
 function stripMeta(m: Record<string, Meta>): Record<string, { label: string; tone: Tone }> {
@@ -28,6 +26,12 @@ function stripMeta(m: Record<string, Meta>): Record<string, { label: string; ton
   for (const [k, v] of Object.entries(m)) out[k] = { label: v.label, tone: v.tone };
   return out;
 }
+
+const SOURCE_META: Record<WorkflowEntityType, Record<string, Meta>> = {
+  TICKET: TICKET_STATUS_META,
+  PROBLEM: PROBLEM_STATUS_META,
+  CHANGE: CHANGE_STATUS_META,
+};
 
 const META: Record<WorkflowEntityType, Record<string, { label: string; tone: Tone }>> = {
   TICKET: stripMeta(TICKET_STATUS_META),
@@ -41,22 +45,23 @@ const STATUS_ORDER: Record<WorkflowEntityType, readonly string[]> = {
   CHANGE: CHANGE_STATUSES,
 };
 
-function statusList(entityType: WorkflowEntityType) {
+function statusList(entityType: WorkflowEntityType, te: Awaited<ReturnType<typeof getEnumT>>) {
   const meta = META[entityType];
   return STATUS_ORDER[entityType].map((value) => ({
     value,
-    label: meta[value]?.label ?? value,
+    label: meta[value] ? te(SOURCE_META[entityType], value) : value,
     tone: meta[value]?.tone ?? ("neutral" as Tone),
   }));
 }
 
 export default async function WorkflowsSettingsPage() {
   await requireRole("MANAGER");
+  const [t, te] = await Promise.all([getT("settings"), getEnumT()]);
 
   const data = await Promise.all(
     WORKFLOW_ENTITY_TYPES.map(async (entityType) => ({
       entityType,
-      statuses: statusList(entityType),
+      statuses: statusList(entityType, te),
       transitions: await getEffectiveTransitions(entityType),
     })),
   );
@@ -65,18 +70,18 @@ export default async function WorkflowsSettingsPage() {
     <>
       <PageHeader
         icon={Workflow}
-        title="Status workflows"
-        description="Define which status changes are allowed for each entity — add or remove transitions freehand and gate any of them behind a role. Empty falls back to sensible defaults."
+        title={t("workflows.title")}
+        description={t("workflows.description")}
       />
       <PageBody className="grid gap-6">
         {data.map(({ entityType, statuses, transitions }) => (
           <Card key={entityType}>
             <CardHeader>
-              <CardTitle className="text-sm">{ENTITY_LABEL[entityType]}</CardTitle>
+              <CardTitle className="text-sm">{t(`workflows.entity.${entityType}`)}</CardTitle>
               <CardAction>
                 <WorkflowGraph
                   entityType={entityType}
-                  entityLabel={ENTITY_LABEL[entityType]}
+                  entityLabel={t(`workflows.entity.${entityType}`)}
                   statuses={statuses}
                   transitions={transitions}
                 />

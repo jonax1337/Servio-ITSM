@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
+import { useT } from "@/lib/i18n/client";
 
 export default function PortalError({
   error,
@@ -12,6 +13,7 @@ export default function PortalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useT("portal");
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -20,15 +22,11 @@ export default function PortalError({
     <div className="py-6">
       <EmptyState
         icon={AlertTriangle}
-        title="Something went wrong"
-        description={
-          error.digest
-            ? `An unexpected error occurred. Reference: ${error.digest}`
-            : "An unexpected error occurred. Please try again."
-        }
+        title={t("errorTitle")}
+        description={error.digest ? t("errorWithRef", { digest: error.digest }) : t("errorGeneric")}
       >
         <Button variant="outline" size="sm" onClick={reset}>
-          <RotateCcw className="size-4" /> Try again
+          <RotateCcw className="size-4" /> {t("tryAgain")}
         </Button>
       </EmptyState>
     </div>

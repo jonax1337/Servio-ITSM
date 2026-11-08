@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Plain form inputs for an entity's custom fields inside a CREATE form. Values
@@ -28,6 +29,7 @@ export function FormCustomFields({
 }) {
   const [selectValues, setSelectValues] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const t = useT("settings");
   if (defs.length === 0) return null;
 
   return (
@@ -70,7 +72,7 @@ export function FormCustomFields({
                   value={selectValues[def.key] ?? null}
                   size="sm"
                   disabled={disabled}
-                  placeholder={def.placeholder ?? "Select…"}
+                  placeholder={def.placeholder ?? t("cfInput.select")}
                   onChange={(v) => setSelectValues((prev) => ({ ...prev, [def.key]: v }))}
                 />
               </>

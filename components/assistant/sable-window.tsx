@@ -11,6 +11,7 @@ import { SableRail } from "./sable-rail";
 import { SableHeader, SABLE_MIN_SIZE } from "./sable-chrome";
 import { ProjectHome } from "./project-home";
 import { SableCanvas } from "./sable-canvas";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * The global Sable window. A SINGLE persistent chat is kept mounted across the
@@ -33,6 +34,7 @@ export function SableWindow({
   variant?: "overlay" | "inline";
 }) {
   const sable = useSable();
+  const t = useT("assistant");
   const inline = variant === "inline";
   const state = inline ? "max" : sable.state;
 
@@ -147,7 +149,7 @@ export function SableWindow({
       projectName={sable.projectName}
       onOpenOverview={
         sable.projectId
-          ? () => openProjectOverview(sable.projectId as string, sable.projectName ?? "Project")
+          ? () => openProjectOverview(sable.projectId as string, sable.projectName ?? t("projectFallback"))
           : undefined
       }
       onConversationCreated={onConversationCreated}
@@ -158,23 +160,23 @@ export function SableWindow({
   const header = (
     <SableHeader
       beta
-      subtitle={sable.context?.ticketId ? `Helping with ticket #${sable.context.ticketId}` : undefined}
+      subtitle={sable.context?.ticketId ? t("helpingWithTicket", { id: sable.context.ticketId }) : undefined}
     >
-      <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChatGlobal} aria-label="New chat">
+      <Button type="button" variant="ghost" size="icon-sm" onClick={onNewChatGlobal} aria-label={t("newChat")}>
         <Plus className="size-4" />
       </Button>
       {!inline && state === "min" ? (
-        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.maximize} aria-label="Expand">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.maximize} aria-label={t("expand")}>
           <Maximize2 className="size-4" />
         </Button>
       ) : null}
       {!inline && state === "max" ? (
-        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.minimize} aria-label="Minimize">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={sable.minimize} aria-label={t("minimize")}>
           <Minus className="size-4" />
         </Button>
       ) : null}
       {!inline ? (
-        <Button type="button" variant="ghost" size="icon-sm" onClick={handleClose} aria-label="Close">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={handleClose} aria-label={t("close")}>
           <X className="size-4" />
         </Button>
       ) : null}
@@ -209,8 +211,8 @@ export function SableWindow({
         {disabled ? (
           <div className="border-b bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-700 dark:text-amber-300">
             {teaser
-              ? `${AI_ASSISTANT_NAME} is a preview here — ask your admin to enable AI to use it.`
-              : `${AI_ASSISTANT_NAME} is not enabled. Ask your admin to configure AI.`}
+              ? t("previewNotice", { name: AI_ASSISTANT_NAME })
+              : t("notEnabledNotice", { name: AI_ASSISTANT_NAME })}
           </div>
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chat}</div>

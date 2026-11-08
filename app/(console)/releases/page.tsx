@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Plus, Rocket } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
-import { format } from "date-fns";
 import { db } from "@/lib/db";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
@@ -16,20 +15,26 @@ import { UserAvatar } from "@/components/user-avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RELEASE_STATUSES, RELEASE_STATUS_META, releaseRef } from "@/lib/constants";
 import { releaseReadiness, releaseSearchId, releaseWindow } from "@/lib/release-rules";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
+import type { Formatter } from "@/lib/i18n/format";
 
-export const metadata: Metadata = { title: "Releases" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("releases");
+  return { title: t("list.title") };
+}
 export const dynamic = "force-dynamic";
 
 const DEFAULT_SORT = "updatedAt";
 
-function windowLabel({ start, end }: { start: Date | null; end: Date | null }) {
+function windowLabel({ start, end }: { start: Date | null; end: Date | null }, f: Formatter) {
   if (!start && !end) return "—";
-  const fmt = (d: Date | null) => (d ? format(d, "PP") : "…");
+  const fmt = (d: Date | null) => (d ? f.date(d) : "…");
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
 export default async function ReleasesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
+  const [t, tc, te, f] = await Promise.all([getT("releases"), getT("common"), getEnumT(), getFormatter()]);
   const page = getPage(sp);
   const q = getParam(sp, "q")?.trim();
   const status = getParam(sp, "status");
@@ -68,30 +73,30 @@ export default async function ReleasesPage({ searchParams }: { searchParams: Pro
   const filters: FilterDef[] = [
     {
       key: "status",
-      label: "Status",
-      options: RELEASE_STATUSES.map((s) => ({ value: s, label: RELEASE_STATUS_META[s].label })),
+      label: tc("status"),
+      options: te.options(RELEASE_STATUS_META, RELEASE_STATUSES),
     },
   ];
 
   return (
     <>
-      <PageHeader icon={Rocket} title="Releases" description="Bundles of changes that ship together.">
+      <PageHeader icon={Rocket} title={t("list.title")} description={t("list.description")}>
         <LinkButton href="/releases/new">
-          <Plus className="size-4" /> New release
+          <Plus className="size-4" /> {t("list.new")}
         </LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search releases…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("list.search")} />
 
         {releases.length === 0 ? (
           <EmptyState
             icon={Rocket}
-            title="No releases found"
-            description="Try adjusting your filters, or create a release to bundle changes that ship together."
+            title={t("list.emptyTitle")}
+            description={t("list.emptyDescription")}
           >
             <LinkButton href="/releases/new" size="sm">
-              <Plus className="size-4" /> New release
+              <Plus className="size-4" /> {t("list.new")}
             </LinkButton>
           </EmptyState>
         ) : (
@@ -99,12 +104,12 @@ export default async function ReleasesPage({ searchParams }: { searchParams: Pro
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="id" label="Ref" sort={sort} dir={dir} numeric className="w-[96px]" />
-                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
-                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
-                  <TableHead className="hidden md:table-cell">Changes</TableHead>
-                  <TableHead className="hidden lg:table-cell">Window</TableHead>
-                  <SortableHead k="owner" label="Owner" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="id" label={t("list.ref")} sort={sort} dir={dir} numeric className="w-[96px]" />
+                  <SortableHead k="name" label={tc("name")} sort={sort} dir={dir} />
+                  <SortableHead k="status" label={tc("status")} sort={sort} dir={dir} />
+                  <TableHead className="hidden md:table-cell">{t("list.changes")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("list.window")}</TableHead>
+                  <SortableHead k="owner" label={tc("owner")} sort={sort} dir={dir} className="hidden md:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -122,10 +127,10 @@ export default async function ReleasesPage({ searchParams }: { searchParams: Pro
                         <StatusBadge map={RELEASE_STATUS_META} value={release.status} />
                       </TableCell>
                       <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                        {readiness.active === 0 ? "—" : `${readiness.approved}/${readiness.active} approved`}
+                        {readiness.active === 0 ? "—" : t("list.approvedOf", { approved: readiness.approved, active: readiness.active })}
                       </TableCell>
                       <TableCell className="hidden text-xs tabular-nums text-muted-foreground lg:table-cell">
-                        {windowLabel(releaseWindow(release.changes))}
+                        {windowLabel(releaseWindow(release.changes), f)}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         {release.owner ? (

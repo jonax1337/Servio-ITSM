@@ -1,4 +1,5 @@
 import type { ChangeTabKey } from "@/components/changes/tabs/change-tabs";
+import { createTranslator, type Translator } from "@/lib/i18n/translate";
 
 export type NextStep = {
   title: string;
@@ -21,78 +22,59 @@ export type NextStepInput = {
   pendingApprovals: number;
 };
 
-const PLANNING = { key: "planning", label: "Open Planning" } as const;
-const CAB = { key: "cab", label: "Open CAB & approvals" } as const;
+type T = Translator<"changes">;
+const EN = createTranslator("en", "changes");
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+const planningTab = (t: T) => ({ key: "planning", label: t("nextStep.openPlanning") }) as const;
+const cabTab = (t: T) => ({ key: "cab", label: t("nextStep.openCab") }) as const;
 
-function draftStep({ type, preAuthorized, submitBlockers, freezeNames }: NextStepInput): NextStep {
+function draftStep({ type, preAuthorized, submitBlockers, freezeNames }: NextStepInput, t: T): NextStep {
   if (submitBlockers.length > 0) {
-    return { title: "Complete the plan to submit", detail: `Still missing: ${submitBlockers.join(", ")}.`, tab: PLANNING };
+    return {
+      title: t("nextStep.completePlan"),
+      detail: t("nextStep.completePlanDetail", { items: submitBlockers.join(", ") }),
+      tab: planningTab(t),
+    };
   }
   if (freezeNames.length > 0 && type !== "EMERGENCY") {
     return {
-      title: "Move the planned window out of the freeze",
-      detail: `It falls inside ${freezeNames.join(", ")}, so submitting is refused. Choose another window, or raise an emergency change.`,
-      tab: PLANNING,
+      title: t("nextStep.leaveFreeze"),
+      detail: t("nextStep.leaveFreezeDetail", { freezes: freezeNames.join(", ") }),
+      tab: planningTab(t),
     };
   }
   if (preAuthorized) {
-    return {
-      title: "Ready to submit",
-      detail: "This standard change follows its approved template: submitting moves it straight to Approved.",
-    };
+    return { title: t("nextStep.readyToSubmit"), detail: t("nextStep.readyToSubmitDetail") };
   }
-  return {
-    title: "Ready to submit for approval",
-    detail: "Submitting asks the CAB to decide. Approvers are picked by type and risk; you can seat some yourself first.",
-    tab: CAB,
-  };
+  return { title: t("nextStep.readyForApproval"), detail: t("nextStep.readyForApprovalDetail"), tab: cabTab(t) };
 }
 
-function approvalStep({ seatedApprovers, pendingApprovals }: NextStepInput): NextStep {
+function approvalStep({ seatedApprovers, pendingApprovals }: NextStepInput, t: T): NextStep {
   if (seatedApprovers === 0) {
-    return { title: "Seat approvers", detail: "Nobody can decide this change yet. Add approvers to the CAB.", tab: CAB };
+    return { title: t("nextStep.seatApprovers"), detail: t("nextStep.seatApproversDetail"), tab: cabTab(t) };
   }
   return {
-    title: `Waiting for ${plural(pendingApprovals, "approver")}`,
-    detail: "The CAB decides by its rule. Approvers record their decision in CAB & approvals.",
-    tab: CAB,
+    title: t("nextStep.waiting", { count: pendingApprovals }),
+    detail: t("nextStep.waitingDetail"),
+    tab: cabTab(t),
   };
 }
 
-/** What happens after the status moves on; each entry is the next manual move on the Status field. */
-const STATUS_STEPS: Record<string, NextStep> = {
-  APPROVED: {
-    title: "Approved: schedule or start it",
-    detail: "Confirm the planned window, then set the status to Scheduled, or to In progress when the work begins.",
-  },
-  SCHEDULED: {
-    title: "Scheduled",
-    detail: "Set the status to In progress when the work starts. Moving the window now needs a reason.",
-  },
-  IN_PROGRESS: {
-    title: "Implementation under way",
-    detail: "When the work is done, set the status to Review, or to Failed if it went wrong.",
-  },
-  REVIEW: {
-    title: "Post-implementation review",
-    detail: "Close the change and record its outcome and review notes.",
-  },
-  FAILED: {
-    title: "Implementation failed",
-    detail: "Record what happened by moving the change to Review or Closed.",
-  },
-  REJECTED: {
-    title: "Rejected by the CAB",
-    detail: "Revise the plan and set the status back to Draft to submit it again.",
-    tab: PLANNING,
-  },
-};
+/** Statuses after the approval; each has a next manual move on the Status field. */
+const STATUS_STEPS = ["APPROVED", "SCHEDULED", "IN_PROGRESS", "REVIEW", "FAILED", "REJECTED"] as const;
+type StepStatus = (typeof STATUS_STEPS)[number];
 
-/** The next move on a change, or null once it is closed or cancelled. */
-export function changeNextStep(input: NextStepInput): NextStep | null {
-  if (input.status === "DRAFT") return draftStep(input);
-  if (input.status === "APPROVAL") return approvalStep(input);
-  return STATUS_STEPS[input.status] ?? null;
+function statusStep(status: StepStatus, t: T): NextStep {
+  return {
+    title: t(`nextStep.${status}.title`),
+    detail: t(`nextStep.${status}.detail`),
+    ...(status === "REJECTED" ? { tab: planningTab(t) } : {}),
+  };
+}
+
+/** The next move on a change, or null once it is closed or cancelled. Text in `t`'s language (default English). */
+export function changeNextStep(input: NextStepInput, t: T = EN): NextStep | null {
+  if (input.status === "DRAFT") return draftStep(input, t);
+  if (input.status === "APPROVAL") return approvalStep(input, t);
+  return (STATUS_STEPS as readonly string[]).includes(input.status) ? statusStep(input.status as StepStatus, t) : null;
 }

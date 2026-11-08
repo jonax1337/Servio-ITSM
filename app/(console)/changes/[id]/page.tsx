@@ -26,7 +26,7 @@ import { RecordAttachments } from "@/components/attachments/record-attachments";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, changeRef } from "@/lib/constants";
 import type { SearchParams } from "@/lib/query";
-import { formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const c = await db.change.findUnique({ where: { id: Number(id) }, select: { title: true } });
-  return { title: c ? c.title : "Change" };
+  if (c) return { title: c.title };
+  const t = await getT("changes");
+  return { title: t("detail.fallbackTitle") };
 }
 
 export default async function ChangeDetailPage({
@@ -66,6 +68,7 @@ export default async function ChangeDetailPage({
     requireUser(),
   ]);
   if (!change) notFound();
+  const [t, tc, f] = await Promise.all([getT("changes"), getT("common"), getFormatter()]);
 
   const cfValues = parseValues(change.customFields);
   const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
@@ -87,8 +90,9 @@ export default async function ChangeDetailPage({
     pending: change.approvals.filter((a) => a.status === "PENDING").length,
   };
   const tabs = buildChangeTabs({
+    t,
     status: change.status,
-    submitBlockers: missingForSubmit.map((m) => m.label),
+    submitBlockers: missingForSubmit.map((m) => t(`submitField.${m.field}`)),
     counts: {
       pendingApprovals: approvals.pending,
       affectedCis: change._count.assets,
@@ -103,7 +107,7 @@ export default async function ChangeDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/changes" variant="ghost" size="icon-sm" aria-label="Back to changes">
+          <LinkButton href="/changes" variant="ghost" size="icon-sm" aria-label={t("detail.back")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
@@ -141,8 +145,8 @@ export default async function ChangeDetailPage({
             {change.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raised {formatDistanceToNow(change.createdAt, { addSuffix: true })}
-            {change.assignee ? <> · owned by {change.assignee.name ?? change.assignee.email}</> : null}
+            {t("detail.raised", { time: f.relative(change.createdAt) })}
+            {change.assignee ? <> · {t("detail.ownedBy", { name: change.assignee.name ?? change.assignee.email })}</> : null}
           </p>
 
           <EntityTabs
@@ -152,7 +156,7 @@ export default async function ChangeDetailPage({
             defaultTab={DEFAULT_CHANGE_TAB}
             basePath={`/changes/${change.id}`}
             searchParams={sp}
-            label="Change sections"
+            label={t("detail.sections")}
           />
 
           <div className="mt-4">
@@ -175,7 +179,7 @@ export default async function ChangeDetailPage({
       {/* Sidebar */}
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
-          <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{tc("properties")}</CardTitle></CardHeader>
           <CardContent>
             <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} locked={locked} />
           </CardContent>

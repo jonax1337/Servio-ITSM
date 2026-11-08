@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 type ClosureDialogProps = {
   changeId: number;
@@ -47,12 +48,16 @@ function ClosureForm({
   );
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [pending, start] = useTransition();
+  const t = useT("changes");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
 
   const outcomeOpts: ComboOption[] = outcomes.map((o) => ({
-    value: o, label: CHANGE_OUTCOME_META[o].label, tone: CHANGE_OUTCOME_META[o].tone, icon: CHANGE_OUTCOME_META[o].icon,
+    value: o, label: te(CHANGE_OUTCOME_META[o]), tone: CHANGE_OUTCOME_META[o].tone, icon: CHANGE_OUTCOME_META[o].icon,
   }));
   const problem = closureError({ toStatus, type: changeType, outcome, notes });
-  const statusLabel = CHANGE_STATUS_META[toStatus]?.label ?? toStatus;
+  const statusLabel = te(CHANGE_STATUS_META, toStatus);
 
   const confirm = () =>
     start(async () => {
@@ -64,43 +69,43 @@ function ClosureForm({
       fd.set("closureNotes", notes);
       const res = await updateChangeField(fd);
       if (!res.ok) {
-        toast.error(res.error);
+        toast.error(tm(res.error));
         return;
       }
-      toast.success(`Change moved to ${statusLabel}`);
+      toast.success(t("closure.moved", { status: statusLabel }));
       onClose();
     });
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{toStatus === "FAILED" ? "Mark change as failed" : "Close change"}</DialogTitle>
+        <DialogTitle>{toStatus === "FAILED" ? t("closure.failTitle") : t("closure.closeTitle")}</DialogTitle>
         <DialogDescription>
           {changeType === "EMERGENCY"
-            ? "Emergency changes require a post-implementation review before they can be closed."
-            : "Record how the change went and what was learned (post-implementation review)."}
+            ? t("closure.emergencyDescription")
+            : t("closure.description")}
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-3">
         <div className="grid gap-1.5">
-          <Label>Outcome</Label>
+          <Label>{t("overview.outcome")}</Label>
           <Combobox options={outcomeOpts} value={outcome} onChange={setOutcome} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="closure-notes">Closure notes</Label>
+          <Label htmlFor="closure-notes">{t("closure.notes")}</Label>
           <Textarea
             id="closure-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="What happened, what went well or badly, lessons learned…"
+            placeholder={t("closure.notesPlaceholder")}
             rows={5}
           />
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
-          <Button type="button" onClick={confirm} disabled={pending || !!problem} title={problem ?? undefined}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>{tc("cancel")}</Button>
+          <Button type="button" onClick={confirm} disabled={pending || !!problem} title={problem ? tm(problem) : undefined}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {toStatus === "FAILED" ? "Mark as failed" : "Close change"}
+            {toStatus === "FAILED" ? t("closure.fail") : t("closure.closeTitle")}
           </Button>
         </DialogFooter>
       </div>

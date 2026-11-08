@@ -7,12 +7,17 @@ import { SlaManager } from "@/components/settings/sla-manager";
 import { CalendarManager } from "@/components/settings/calendar-manager";
 import { EscalationManager } from "@/components/settings/escalation-manager";
 import { SlaSettingsTabs } from "./tabs";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "SLA policies" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("sla.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function SlaSettingsPage() {
   await requireRole("MANAGER");
+  const t = await getT("settings");
 
   const [slas, calendars, policies, groups, users] = await Promise.all([
     db.sLA.findMany({
@@ -60,8 +65,8 @@ export default async function SlaSettingsPage() {
     <>
       <PageHeader
         icon={Timer}
-        title="SLA policies"
-        description="Define response and resolution targets, working-hours calendars, and multi-stage escalation. The clock pauses automatically while a ticket is Pending or On Hold."
+        title={t("sla.title")}
+        description={t("sla.description")}
       />
       <PageBody>
         <SlaSettingsTabs

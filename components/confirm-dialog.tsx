@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import type { VariantProps } from "class-variance-authority";
 import { buttonVariants } from "@/components/ui/button";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type BtnVariant = VariantProps<typeof buttonVariants>["variant"];
 type BtnSize = VariantProps<typeof buttonVariants>["size"];
@@ -25,8 +26,8 @@ export function ConfirmButton({
   fields = {},
   title,
   description,
-  confirmLabel = "Delete",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   confirmVariant = "destructive",
   triggerVariant = "destructive",
   triggerSize = "icon-sm",
@@ -51,6 +52,8 @@ export function ConfirmButton({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const t = useT("components");
+  const tm = useServerMessage();
 
   const confirm = () => {
     const fd = new FormData();
@@ -60,7 +63,7 @@ export function ConfirmButton({
       // by the action (e.g. deleteArticle) still propagates after closing.
       try {
         const result = readActionResult(await action(fd));
-        if (result && !result.ok) toast.error(result.error || "Action failed.");
+        if (result && !result.ok) toast.error(result.error ? tm(result.error) : t("confirm.failed"));
         else if (result && successMessage) toast.success(successMessage);
       } finally {
         setOpen(false);
@@ -84,11 +87,11 @@ export function ConfirmButton({
         </DialogHeader>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-            {cancelLabel}
+            {cancelLabel ?? t("confirm.cancel")}
           </Button>
           <Button type="button" variant={confirmVariant} onClick={confirm} disabled={pending}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {confirmLabel}
+            {confirmLabel ?? t("confirm.delete")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -107,8 +110,8 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = "Delete",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   confirmVariant = "destructive",
 }: {
   open: boolean;
@@ -121,6 +124,7 @@ export function ConfirmDialog({
   confirmVariant?: BtnVariant;
 }) {
   const [pending, startTransition] = useTransition();
+  const t = useT("components");
   const confirm = () => {
     startTransition(async () => {
       try {
@@ -139,11 +143,11 @@ export function ConfirmDialog({
         </DialogHeader>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-            {cancelLabel}
+            {cancelLabel ?? t("confirm.cancel")}
           </Button>
           <Button type="button" variant={confirmVariant} onClick={confirm} disabled={pending}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {confirmLabel}
+            {confirmLabel ?? t("confirm.delete")}
           </Button>
         </DialogFooter>
       </DialogContent>

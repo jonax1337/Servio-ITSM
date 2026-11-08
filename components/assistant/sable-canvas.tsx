@@ -25,6 +25,7 @@ const CanvasCode = dynamic(() => import("./canvas-code"), {
 import { ProposalCard, type ProposalStatus } from "./proposal-card";
 import { saveArtifactToProject } from "@/lib/actions/ai-project-files";
 import { listProjects, type AssistantProposal, type ProjectSummary } from "@/lib/actions/ai-assistant";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Map a language hint → a file extension for a saved artifact. */
 const LANG_EXT: Record<string, string> = {
@@ -173,6 +174,7 @@ function shikiLangFor(doc: { language?: string; filename?: string }): string {
  */
 export function SableCanvas() {
   const sable = useSable();
+  const t = useT("assistant");
   const doc = sable.canvasDoc;
 
   const preview = !!doc?.preview;
@@ -186,7 +188,7 @@ export function SableCanvas() {
     return doc.html ? sanitizeDocumentHtml(doc.html) : renderMarkdown(doc.markdown, "markdown");
   }, [doc, isCode]);
   const shikiLang = useMemo(() => (doc ? shikiLangFor(doc) : "text"), [doc]);
-  const badge = isCode ? LANG_LABEL[shikiLang] ?? "Code" : "Document";
+  const badge = isCode ? LANG_LABEL[shikiLang] ?? t("canvas.code") : t("canvas.document");
 
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -204,16 +206,16 @@ export function SableCanvas() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Couldn't copy to the clipboard.");
+      toast.error(t("canvas.copyFailed"));
     }
-  }, [rawContent]);
+  }, [rawContent, t]);
 
   const insert = useCallback(() => {
     const text = rawContent();
     if (!text.trim()) return;
     sable.insertIntoComposer(text);
-    toast.success("Added to the chat composer.");
-  }, [sable, rawContent]);
+    toast.success(t("canvas.inserted"));
+  }, [sable, rawContent, t]);
 
   // Download the artifact as its file (no server round-trip; the draft is local).
   const download = useCallback(() => {
@@ -242,7 +244,7 @@ export function SableCanvas() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {preview ? "Preview" : isCode ? artifactFilename(doc) : "Canvas"}
+              {preview ? t("canvas.preview") : isCode ? artifactFilename(doc) : t("canvas.canvas")}
             </p>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
               {badge}
@@ -256,7 +258,7 @@ export function SableCanvas() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="Close canvas"
+          aria-label={t("canvas.close")}
           onClick={sable.closeCanvas}
         >
           <X className="size-4" />
@@ -281,11 +283,11 @@ export function SableCanvas() {
         <div className="flex flex-wrap items-center gap-1.5">
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={copy}>
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("canvas.copied") : t("canvas.copy")}
           </Button>
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={download}>
             <Download className="size-3.5" />
-            Download
+            {t("canvas.download")}
           </Button>
           {/* A proposal preview is read-only: only Copy / Download / Close. The
               write-actions belong to the approval card, not the preview. */}
@@ -293,7 +295,7 @@ export function SableCanvas() {
             <>
               <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={insert}>
                 <MessageSquarePlus className="size-3.5" />
-                Insert into chat
+                {t("canvas.insert")}
               </Button>
               <SaveToProjectMenu
                 filename={artifactFilename(doc)}
@@ -311,7 +313,7 @@ export function SableCanvas() {
               onClick={() => setPublishing((p) => !p)}
             >
               <Save className="size-3.5" />
-              Save as KB article
+              {t("canvas.saveKb")}
             </Button>
           ) : null}
         </div>
@@ -340,6 +342,8 @@ function SaveToProjectMenu({
   getContent: () => string;
   defaultProjectId: string | null;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -357,21 +361,21 @@ function SaveToProjectMenu({
     async (projectId: string, projectName: string) => {
       const content = getContent();
       if (!content.trim()) {
-        toast.error("Nothing to save.");
+        toast.error(t("canvas.nothingToSave"));
         return;
       }
       setSavingId(projectId);
       try {
         const res = await saveArtifactToProject(projectId, { name: filename, content });
-        if (res.ok) toast.success(`Saved “${res.file.name}” to ${projectName}.`);
-        else toast.error(res.error || "Couldn't save to the project.");
+        if (res.ok) toast.success(t("canvas.savedTo", { file: res.file.name, project: projectName }));
+        else toast.error(res.error ? tm(res.error) : t("canvas.saveFailed"));
       } catch {
-        toast.error("Couldn't save to the project.");
+        toast.error(t("canvas.saveFailed"));
       } finally {
         setSavingId(null);
       }
     },
-    [filename, getContent],
+    [filename, getContent, t, tm],
   );
 
   // The chat's bound project floats to the top (marked "current").
@@ -387,16 +391,16 @@ function SaveToProjectMenu({
         render={<Button type="button" variant="outline" size="sm" className="gap-1.5" />}
       >
         <FolderPlus className="size-3.5" />
-        Save to project
+        {t("canvas.saveToProject")}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-72 min-w-52">
         {loading ? (
           <DropdownMenuItem disabled>
-            <Loader2 className="size-3.5 animate-spin" /> Loading…
+            <Loader2 className="size-3.5 animate-spin" /> {t("canvas.loading")}
           </DropdownMenuItem>
         ) : null}
         {!loading && ordered.length === 0 ? (
-          <DropdownMenuItem disabled>No projects yet</DropdownMenuItem>
+          <DropdownMenuItem disabled>{t("canvas.noProjects")}</DropdownMenuItem>
         ) : null}
         {ordered.map((p) => (
           <DropdownMenuItem
@@ -408,7 +412,7 @@ function SaveToProjectMenu({
             <span className="min-w-0 truncate">{p.name}</span>
             {p.id === defaultProjectId ? (
               <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                current
+                {t("canvas.current")}
               </span>
             ) : null}
           </DropdownMenuItem>
@@ -431,6 +435,7 @@ function SaveToProjectMenu({
  */
 function SableCanvasPublish({ title, html }: { title: string; html: string }) {
   const sable = useSable();
+  const t = useT("assistant");
   const conversationId = sable.conversationId;
 
   const proposal = useMemo<AssistantProposal>(
@@ -450,8 +455,7 @@ function SableCanvasPublish({ title, html }: { title: string; html: string }) {
   if (!conversationId) {
     return (
       <p className="rounded-lg bg-muted/50 px-2.5 py-2 text-[11px] text-muted-foreground">
-        Send a message in the chat first, then you can publish this draft as a
-        Knowledge Base article.
+        {t("canvas.sendFirst")}
       </p>
     );
   }

@@ -9,6 +9,7 @@ import {
 } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
+import { useFormatter } from "@/lib/i18n/client"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
 
@@ -18,7 +19,7 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = "label",
   buttonVariant = "ghost",
-  locale,
+  locale: localeProp,
   formatters,
   components,
   ...props
@@ -26,6 +27,9 @@ function Calendar({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const defaultClassNames = getDefaultClassNames()
+  // Month and weekday names follow the viewer's language unless the caller passes a locale.
+  const viewerLocale = useFormatter().dateFnsLocale as unknown as Locale
+  const locale = localeProp ?? viewerLocale
 
   return (
     <DayPicker

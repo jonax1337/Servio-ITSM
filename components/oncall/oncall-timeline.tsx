@@ -4,6 +4,9 @@ import type { TimelineSegment } from "@/lib/oncall-rules";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatDayInZone, formatInZone } from "./format";
+import { getT } from "@/lib/i18n/server";
+import { INTL_LOCALE } from "@/lib/i18n/config";
+import type { Translator } from "@/lib/i18n/translate";
 
 export type TimelinePerson = { name: string | null; email: string };
 
@@ -15,8 +18,8 @@ const INITIALS_MIN_PERCENT = 3;
 /** Long lists scroll instead of pushing the rest of the page down. */
 const LIST_SCROLL_AFTER = 8;
 
-function segmentLabel(name: string | null, width: number): string {
-  if (!name) return width < INITIALS_MIN_PERCENT ? "" : "Nobody";
+function segmentLabel(name: string | null, width: number, t: Translator<"oncall">): string {
+  if (!name) return width < INITIALS_MIN_PERCENT ? "" : t("nobody");
   if (width >= NAME_MIN_PERCENT) return name;
   return width >= INITIALS_MIN_PERCENT ? initials(name) : "";
 }
@@ -26,7 +29,7 @@ function segmentLabel(name: string | null, width: number): string {
  * overrides outlined, gaps hatched) over a day axis, with the same facts as a
  * list below for screen readers and exact times.
  */
-export function OnCallTimeline({
+export async function OnCallTimeline({
   segments, people, from, to, timezone, now,
 }: {
   segments: TimelineSegment[];
@@ -36,13 +39,15 @@ export function OnCallTimeline({
   timezone: string;
   now: Date;
 }) {
+  const t = await getT("oncall");
+  const intl = INTL_LOCALE[t.locale];
   const span = to.getTime() - from.getTime();
   const pct = (t: number) => ((t - from.getTime()) / span) * 100;
   const days = Array.from({ length: Math.round(span / DAY_MS) }, (_, i) => new Date(from.getTime() + i * DAY_MS));
   const personOf = (userId: string | null) => (userId ? people.get(userId) ?? null : null);
-  const startLabel = (start: Date) => (start.getTime() === from.getTime() ? "Now" : formatInZone(start, timezone));
+  const startLabel = (start: Date) => (start.getTime() === from.getTime() ? t("now") : formatInZone(start, timezone, intl));
   // The last stretch is cut off where the window ends, not where the shift does.
-  const endLabel = (end: Date) => (end.getTime() === to.getTime() ? "…" : formatInZone(end, timezone));
+  const endLabel = (end: Date) => (end.getTime() === to.getTime() ? "…" : formatInZone(end, timezone, intl));
   const hasOverride = segments.some((s) => s.source === "OVERRIDE");
   const hasGap = segments.some((s) => s.userId === null);
 
@@ -53,7 +58,7 @@ export function OnCallTimeline({
           <div className="relative h-5 text-[11px] text-muted-foreground" aria-hidden>
             {days.map((day, i) => (
               <span key={day.toISOString()} className="absolute top-0 whitespace-nowrap" style={{ left: `${(i / days.length) * 100}%` }}>
-                {i % 2 === 0 ? formatDayInZone(day, timezone) : ""}
+                {i % 2 === 0 ? formatDayInZone(day, timezone, intl) : ""}
               </span>
             ))}
           </div>
@@ -65,7 +70,7 @@ export function OnCallTimeline({
               return (
                 <div
                   key={s.start.toISOString()}
-                  title={`${name ?? "Nobody on call"} · ${startLabel(s.start)} – ${endLabel(s.end)}`}
+                  title={`${name ?? t("nobodyOnCall")} · ${startLabel(s.start)} – ${endLabel(s.end)}`}
                   className={cn(
                     "absolute inset-y-0 flex items-center justify-center overflow-hidden border-r border-background/60 px-1 text-xs font-medium text-white",
                     width >= NAME_MIN_PERCENT && "justify-start px-2",
@@ -78,7 +83,7 @@ export function OnCallTimeline({
                     ...(name ? avatarColor(name) : {}),
                   }}
                 >
-                  <span className="truncate">{segmentLabel(name, width)}</span>
+                  <span className="truncate">{segmentLabel(name, width, t)}</span>
                 </div>
               );
             })}
@@ -90,13 +95,13 @@ export function OnCallTimeline({
       </div>
 
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-foreground" aria-hidden /> Now</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-foreground" aria-hidden /> {t("now")}</span>
         {hasOverride ? (
           <span className="inline-flex items-center gap-1.5">
-            <span className="size-3 rounded-sm bg-muted ring-2 ring-inset ring-foreground/50" aria-hidden /> Outlined = override
+            <span className="size-3 rounded-sm bg-muted ring-2 ring-inset ring-foreground/50" aria-hidden /> {t("outlinedOverride")}
           </span>
         ) : null}
-        {hasGap ? <span className="text-destructive">Nobody is on call for part of this period.</span> : null}
+        {hasGap ? <span className="text-destructive">{t("gapNotice")}</span> : null}
       </p>
 
       <ul className={cn("divide-y rounded-lg border text-sm", segments.length > LIST_SCROLL_AFTER && "max-h-72 overflow-y-auto")}>
@@ -110,11 +115,11 @@ export function OnCallTimeline({
                   <span className="truncate font-medium">{person.name ?? person.email}</span>
                 </span>
               ) : (
-                <span className="font-medium text-destructive">Nobody on call</span>
+                <span className="font-medium text-destructive">{t("nobodyOnCall")}</span>
               )}
               {s.source === "OVERRIDE" ? (
                 <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                  <CalendarClock className="size-3" /> Override
+                  <CalendarClock className="size-3" /> {t("override")}
                 </span>
               ) : null}
               <span className="ml-auto text-xs tabular-nums text-muted-foreground">

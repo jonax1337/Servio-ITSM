@@ -49,6 +49,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 /* ------------------------------------------------------------------ *
  *  1. Slash commands — ITSM prompt templates
@@ -214,6 +215,7 @@ const ITEM_CLASS = cn(
  */
 export function ComposerCommands() {
   const aui = useAui();
+  const t = useT("assistant");
   const text = useAuiState((s) => s.composer.text);
 
   // Slash templates are only meaningful at the very start of the composer (a
@@ -223,17 +225,18 @@ export function ComposerCommands() {
 
   const slashCommands = useMemo<readonly Unstable_SlashCommand[]>(
     () =>
-      SABLE_SLASH_TEMPLATES.map((t) => ({
-        id: t.command,
-        label: t.label,
-        description: t.description,
+      SABLE_SLASH_TEMPLATES.map((tpl) => ({
+        id: tpl.command,
+        label: tpl.label,
+        // The template becomes the user's own message, so it follows their language too.
+        description: t.dyn(`slash.${tpl.command}.description`, undefined, tpl.description),
         execute: () => {
           // `removeOnExecute` has already stripped the typed `/cmd`; drop in the
           // full prompt template, ready for the user to edit or send.
-          aui.composer.setText(t.template);
+          aui.composer.setText(t.dyn(`slash.${tpl.command}.template`, undefined, tpl.template));
         },
       })),
-    [aui],
+    [aui, t],
   );
 
   const slash = unstable_useSlashCommandAdapter({
@@ -293,11 +296,11 @@ export function ComposerCommands() {
           {(items) => (
             <>
               <div className="text-muted-foreground px-2.5 pt-0.5 pb-1.5 text-[11px] font-medium tracking-wide uppercase">
-                Prompts
+                {t("slash.prompts")}
               </div>
               {items.map((item, index) => {
                 const tpl = SABLE_SLASH_TEMPLATES.find(
-                  (t) => t.command === item.id,
+                  (tpl) => tpl.command === item.id,
                 );
                 const Icon = tpl?.icon ?? SearchIcon;
                 return (
@@ -342,7 +345,7 @@ export function ComposerCommands() {
           {(items) =>
             items.length === 0 ? (
               <div className="text-muted-foreground px-2.5 py-3 text-center text-xs">
-                {mentions.isLoading ? "Searching…" : "No matches"}
+                {mentions.isLoading ? t("mentions.searching") : t("mentions.noMatches")}
               </div>
             ) : (
               items.map((item, index) => {

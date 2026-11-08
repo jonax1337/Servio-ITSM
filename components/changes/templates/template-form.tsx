@@ -23,6 +23,7 @@ import {
   CHANGE_TYPE_META, RISK_META, PRIORITY_META, LEVEL_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 export type EditableTemplate = {
   id: string;
@@ -46,18 +47,19 @@ export type EditableTemplate = {
 function Field({
   label, error, children, hint,
 }: { label: string; error?: string[]; children: React.ReactNode; hint?: string }) {
+  const tm = useServerMessage();
   return (
     <div className="grid content-start gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
 
-const option = (value: string, meta: { label: string; tone: ComboOption["tone"]; icon?: ComboOption["icon"] }): ComboOption => ({
-  value, label: meta.label, tone: meta.tone, icon: meta.icon,
+const option = (value: string, meta: { label: string; tone: ComboOption["tone"]; icon?: ComboOption["icon"] }, label: string): ComboOption => ({
+  value, label, tone: meta.tone, icon: meta.icon,
 });
 
 /** Creates a change template, or edits `template` when given. */
@@ -70,15 +72,20 @@ export function TemplateForm({ options, template }: { options: FormOptions; temp
   const [isActive, setIsActive] = useState(template?.isActive ?? true);
   const [type, setType] = useState(template?.type ?? "STANDARD");
   const fe = state?.fieldErrors ?? {};
+  const t = useT("changes");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
+  const savedMessage = t("templateForm.saved");
 
   useEffect(() => {
-    if (state?.saved) toast.success("Template saved");
-  }, [state]);
+    if (state?.saved) toast.success(savedMessage);
+  }, [state, savedMessage]);
 
-  const typeOpts = CHANGE_TEMPLATE_TYPES.map((t) => option(t, CHANGE_TYPE_META[t]));
-  const riskOpts = RISKS.map((r) => option(r, RISK_META[r]));
-  const prioOpts = PRIORITIES.map((p) => option(p, PRIORITY_META[p]));
-  const impactOpts = IMPACT_URGENCY.map((l) => option(l, LEVEL_META[l]));
+  const typeOpts = CHANGE_TEMPLATE_TYPES.map((ty) => option(ty, CHANGE_TYPE_META[ty], te(CHANGE_TYPE_META[ty])));
+  const riskOpts = RISKS.map((r) => option(r, RISK_META[r], te(RISK_META[r])));
+  const prioOpts = PRIORITIES.map((p) => option(p, PRIORITY_META[p], te(PRIORITY_META[p])));
+  const impactOpts = IMPACT_URGENCY.map((l) => option(l, LEVEL_META[l], te(LEVEL_META[l])));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
   const serviceOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
@@ -87,69 +94,69 @@ export function TemplateForm({ options, template }: { options: FormOptions; temp
     <form method="post" onSubmit={submit} className="grid gap-5">
       {template ? <input type="hidden" name="id" value={template.id} /> : null}
       {state?.error ? (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
       ) : null}
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Template name" error={fe.name} hint="Shown in the template picker.">
-          <Input name="name" defaultValue={template?.name} placeholder="e.g. Rotate TLS certificate" required />
+        <Field label={t("templateForm.name")} error={fe.name} hint={t("templateForm.nameHint")}>
+          <Input name="name" defaultValue={template?.name} placeholder={t("templateForm.namePlaceholder")} required />
         </Field>
-        <Field label="Type" hint={isPreAuthorized(type) ? "Standard: changes created from this template are pre-approved, no CAB review." : "Normal: changes go through CAB review."}>
+        <Field label={tc("type")} hint={isPreAuthorized(type) ? t("templateForm.standardHint") : t("templateForm.normalHint")}>
           <Combobox name="type" options={typeOpts} value={type} onChange={setType} />
         </Field>
       </div>
 
-      <Field label="When to use it" error={fe.summary}>
-        <Input name="summary" defaultValue={template?.summary ?? ""} placeholder="Short guidance for the person picking the template" />
+      <Field label={t("templateForm.summary")} error={fe.summary}>
+        <Input name="summary" defaultValue={template?.summary ?? ""} placeholder={t("templateForm.summaryPlaceholder")} />
       </Field>
 
       <label className="flex items-center gap-2 text-sm">
         <Checkbox checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
-        Available in the picker
+        {t("templateForm.available")}
         <input type="hidden" name="isActive" value={isActive ? "on" : ""} />
       </label>
 
       <div className="grid gap-5 border-t pt-5">
-        <Field label="Change title" error={fe.title}>
-          <Input name="title" defaultValue={template?.title} placeholder="Prefilled title of the change" required />
+        <Field label={t("templateForm.changeTitle")} error={fe.title}>
+          <Input name="title" defaultValue={template?.title} placeholder={t("templateForm.changeTitlePlaceholder")} required />
         </Field>
-        <Field label="Description" error={fe.description}>
+        <Field label={tc("description")} error={fe.description}>
           <Textarea name="description" defaultValue={template?.description} className="min-h-24" />
         </Field>
-        <Field label="Reason for change">
+        <Field label={t("overview.reason")}>
           <Textarea name="reason" defaultValue={template?.reason ?? ""} className="min-h-20" />
         </Field>
-        <Field label="Implementation plan" error={fe.implementationPlan}>
+        <Field label={t("planning.implementationPlan")} error={fe.implementationPlan}>
           <Textarea name="implementationPlan" defaultValue={template?.implementationPlan ?? ""} className="min-h-24" />
         </Field>
-        <Field label="Rollback plan" error={fe.rollbackPlan}>
+        <Field label={t("planning.rollbackPlan")} error={fe.rollbackPlan}>
           <Textarea name="rollbackPlan" defaultValue={template?.rollbackPlan ?? ""} className="min-h-24" />
         </Field>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-3">
-        <Field label="Risk"><ComboField name="risk" defaultValue={template?.risk ?? "LOW"} options={riskOpts} /></Field>
-        <Field label="Priority"><ComboField name="priority" defaultValue={template?.priority ?? "MEDIUM"} options={prioOpts} /></Field>
-        <Field label="Impact"><ComboField name="impact" defaultValue={template?.impact ?? "MEDIUM"} options={impactOpts} /></Field>
+        <Field label={tc("risk")}><ComboField name="risk" defaultValue={template?.risk ?? "LOW"} options={riskOpts} /></Field>
+        <Field label={tc("priority")}><ComboField name="priority" defaultValue={template?.priority ?? "MEDIUM"} options={prioOpts} /></Field>
+        <Field label={tc("impact")}><ComboField name="impact" defaultValue={template?.impact ?? "MEDIUM"} options={impactOpts} /></Field>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-3">
-        <Field label="Category">
-          <ComboField name="categoryId" defaultValue={template?.categoryId ?? "none"} options={catOpts} includeNone noneLabel="No category" />
+        <Field label={tc("category")}>
+          <ComboField name="categoryId" defaultValue={template?.categoryId ?? "none"} options={catOpts} includeNone noneLabel={t("props.noCategory")} />
         </Field>
-        <Field label="Service" hint="Groups the template with that service in the picker.">
-          <ComboField name="serviceId" defaultValue={template?.serviceId ?? "none"} options={serviceOpts} includeNone noneLabel="No service" />
+        <Field label={tc("service")} hint={t("templateForm.serviceHint")}>
+          <ComboField name="serviceId" defaultValue={template?.serviceId ?? "none"} options={serviceOpts} includeNone noneLabel={t("templateForm.noService")} />
         </Field>
-        <Field label="Group">
-          <ComboField name="groupId" defaultValue={template?.groupId ?? "none"} options={groupOpts} includeNone noneLabel="No group" />
+        <Field label={tc("group")}>
+          <ComboField name="groupId" defaultValue={template?.groupId ?? "none"} options={groupOpts} includeNone noneLabel={t("props.noGroup")} />
         </Field>
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t pt-4">
-        <LinkButton href="/changes/templates" variant="ghost">Cancel</LinkButton>
+        <LinkButton href="/changes/templates" variant="ghost">{tc("cancel")}</LinkButton>
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : template ? <Save className="size-4" /> : <Plus className="size-4" />}
-          {template ? "Save template" : "Create template"}
+          {template ? t("templateForm.save") : t("templateForm.create")}
         </Button>
       </div>
     </form>

@@ -15,13 +15,14 @@ import {
   SignatureFields,
   type AccountUser,
 } from "@/components/account/account-fields";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type SectionId = "profile" | "preferences" | "signature";
 
-const SECTIONS: { id: SectionId; label: string; icon: LucideIcon }[] = [
-  { id: "profile", label: "Profile", icon: User },
-  { id: "preferences", label: "Preferences", icon: SlidersHorizontal },
-  { id: "signature", label: "Signature", icon: PenLine },
+const SECTIONS: { id: SectionId; label: "profile" | "preferences" | "signature"; icon: LucideIcon }[] = [
+  { id: "profile", label: "profile", icon: User },
+  { id: "preferences", label: "preferences", icon: SlidersHorizontal },
+  { id: "signature", label: "signature", icon: PenLine },
 ];
 
 export function AccountSettingsDialog({
@@ -32,6 +33,8 @@ export function AccountSettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const t = useT("account");
+  const tm = useServerMessage();
   const [user, setUser] = useState<AccountUser | null>(null);
   const [section, setSection] = useState<SectionId>("profile");
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -73,7 +76,7 @@ export function AccountSettingsDialog({
     };
   }, [state, router]);
 
-  const fe = state?.fieldErrors ?? {};
+  const fe = tm.fields(state?.fieldErrors) ?? {};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -81,7 +84,7 @@ export function AccountSettingsDialog({
         showCloseButton
         className="h-[36rem] max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl"
       >
-        <DialogTitle className="sr-only">Account settings</DialogTitle>
+        <DialogTitle className="sr-only">{t("dialogTitle")}</DialogTitle>
 
         {user === null ? (
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -97,7 +100,7 @@ export function AccountSettingsDialog({
             {/* Sidebar */}
             <aside className="flex flex-row gap-1 border-b bg-muted/30 p-3 sm:flex-col sm:border-b-0 sm:border-r">
               <div className="hidden px-2 pb-1 pt-1 text-xs font-semibold text-muted-foreground sm:block">
-                Account settings
+                {t("dialogTitle")}
               </div>
               {SECTIONS.map((s) => (
                 <button
@@ -112,7 +115,7 @@ export function AccountSettingsDialog({
                   )}
                 >
                   <s.icon className="size-4 shrink-0" />
-                  {s.label}
+                  {t(s.label)}
                 </button>
               ))}
             </aside>
@@ -122,30 +125,30 @@ export function AccountSettingsDialog({
               <div className="flex-1 min-h-0 overflow-y-auto p-5">
                 {state?.error ? (
                   <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {state.error}
+                    {tm(state.error)}
                   </p>
                 ) : null}
 
                 <div className={cn(section !== "profile" && "hidden")}>
                   <SectionHeader
-                    title="Profile"
-                    description="How you appear to colleagues and requesters."
+                    title={t("profile")}
+                    description={t("profileDescription")}
                   />
                   <ProfileFields user={user} fe={fe} />
                 </div>
 
                 <div className={cn(section !== "preferences" && "hidden")}>
                   <SectionHeader
-                    title="Preferences"
-                    description="Localisation for dates, times and the interface."
+                    title={t("preferences")}
+                    description={t("preferencesDescription")}
                   />
                   <PreferencesFields user={user} />
                 </div>
 
                 <div className={cn(section !== "signature" && "hidden")}>
                   <SectionHeader
-                    title="Email signature"
-                    description="Appended to your public ticket replies and outgoing emails."
+                    title={t("signatureTitle")}
+                    description={t("signatureDescription")}
                   />
                   <SignatureFields user={user} />
                 </div>
@@ -155,7 +158,7 @@ export function AccountSettingsDialog({
               <div className="flex items-center justify-end gap-3 border-t bg-muted/50 px-4 py-3">
                 {state?.ok ? (
                   <span className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
-                    <Check className="size-4" /> Saved
+                    <Check className="size-4" /> {t("saved")}
                   </span>
                 ) : null}
                 <Button type="submit" disabled={pending}>
@@ -164,7 +167,7 @@ export function AccountSettingsDialog({
                   ) : (
                     <Save className="size-4" />
                   )}
-                  Save changes
+                  {t("saveChanges")}
                 </Button>
               </div>
             </div>

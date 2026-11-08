@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions/assets";
 import { canAttachToChange, SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
 import { TICKET_STATUS_META, CHANGE_STATUS_META, ticketRef, changeRef } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 export async function AssetWorkTab({
   assetId,
@@ -44,13 +45,14 @@ export async function AssetWorkTab({
         })
       : [],
   ]);
+  const t = await getT("assets");
   const tickets = links?.tickets ?? [];
   const changes = links?.changes ?? [];
 
-  const linkedTicketIds = new Set(tickets.map((t) => t.ticketId));
+  const linkedTicketIds = new Set(tickets.map((tk) => tk.ticketId));
   const ticketOpts = openTickets
-    .filter((t) => !linkedTicketIds.has(t.id))
-    .map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
+    .filter((tk) => !linkedTicketIds.has(tk.id))
+    .map((tk) => ({ value: String(tk.id), label: `${ticketRef(tk.id, tk.prefix)} · ${tk.title}` }));
   const linkedChangeIds = new Set(changes.map((c) => c.changeId));
   const changeOpts = openChanges
     .filter((c) => !linkedChangeIds.has(c.id))
@@ -64,28 +66,28 @@ export async function AssetWorkTab({
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <TicketIcon className="size-4 text-muted-foreground" />
-            Linked tickets · {tickets.length}
+            {t("work.ticketsHeading", { count: tickets.length })}
           </h2>
           {isAgentUser ? (
             <LinkPicker
               action={linkTicketToAsset}
-              triggerLabel="Link ticket"
-              title="Link a ticket"
-              description="Attach a ticket that involves this configuration item."
+              triggerLabel={t("work.linkTicket")}
+              title={t("work.linkTicketTitle")}
+              description={t("work.linkTicketDescription")}
               hidden={{ assetId }}
               valueName="ticketId"
               options={ticketOpts}
-              placeholder="Choose a ticket"
-              searchPlaceholder="Search tickets…"
-              emptyText="No more open tickets to link."
-              submitLabel="Link ticket"
-              successMessage="Ticket linked"
+              placeholder={t("work.chooseTicket")}
+              searchPlaceholder={t("work.searchTickets")}
+              emptyText={t("work.noTicketsAvailable")}
+              submitLabel={t("work.linkTicket")}
+              successMessage={t("work.ticketLinked")}
             />
           ) : null}
         </div>
         {tickets.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No tickets linked to this asset.
+            {t("work.ticketsEmpty")}
           </p>
         ) : (
           <div className="grid gap-2">
@@ -107,7 +109,7 @@ export async function AssetWorkTab({
                   <UnlinkButton
                     action={unlinkTicketFromAsset}
                     fields={{ assetId, ticketId: ta.ticketId }}
-                    successMessage="Ticket unlinked"
+                    successMessage={t("work.ticketUnlinked")}
                   />
                 ) : null}
               </div>
@@ -121,33 +123,33 @@ export async function AssetWorkTab({
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <GitPullRequestArrow className="size-4 text-muted-foreground" />
-            Changes affecting this asset · {changes.length}
+            {t("work.changesHeading", { count: changes.length })}
           </h2>
           {isAgentUser && canAddToChange ? (
             <LinkPicker
               action={addAssetToChange}
-              triggerLabel="Add to change"
-              title="Add to a change"
-              description="Mark this configuration item as affected by a change."
+              triggerLabel={t("work.addToChange")}
+              title={t("work.addToChangeTitle")}
+              description={t("work.addToChangeDescription")}
               hidden={{ assetId }}
               valueName="changeId"
               options={changeOpts}
-              placeholder="Choose a change"
-              searchPlaceholder="Search changes…"
-              emptyText="No open changes available."
-              submitLabel="Add to change"
-              successMessage="Added to change"
+              placeholder={t("work.chooseChange")}
+              searchPlaceholder={t("work.searchChanges")}
+              emptyText={t("work.noChangesAvailable")}
+              submitLabel={t("work.addToChange")}
+              successMessage={t("work.addedToChange")}
             />
           ) : null}
         </div>
         {isAgentUser && !canAddToChange ? (
           <p className="mb-3 text-sm text-muted-foreground">
-            Retired or disposed assets can&apos;t be added to new changes.
+            {t("work.inactiveHint")}
           </p>
         ) : null}
         {changes.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No changes affect this asset.
+            {t("work.changesEmpty")}
           </p>
         ) : (
           <div className="grid gap-2">
@@ -169,7 +171,7 @@ export async function AssetWorkTab({
                   <UnlinkButton
                     action={removeAssetFromChange}
                     fields={{ assetId, changeId: ca.changeId }}
-                    successMessage="Removed from change"
+                    successMessage={t("work.removedFromChange")}
                   />
                 ) : null}
               </div>

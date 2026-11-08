@@ -9,14 +9,11 @@ import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { SableMark } from "@/components/sable-mark";
 import { useSableChatAdapters } from "@/components/assistant/sable-adapters";
 import { PortalToolUI } from "./portal-tool-ui";
+import { useT } from "@/lib/i18n/client";
 
-// Tappable starter prompts shown on the empty portal chat.
-const PORTAL_SUGGESTIONS = [
-  "I can't log in",
-  "Reset my password",
-  "Request a new laptop",
-  "What's the status of my tickets?",
-];
+// Tappable starter prompts shown on the empty portal chat (sent as the user's message,
+// so they follow the UI language — Sable answers in the language it is addressed in).
+const PORTAL_SUGGESTIONS = ["suggestion.login", "suggestion.password", "suggestion.laptop", "suggestion.status"] as const;
 
 /** The signed-in user's first name, for the personalised empty-state greeting. */
 const FirstNameContext = createContext("");
@@ -24,17 +21,17 @@ const FirstNameContext = createContext("");
 /** Empty-state greeting (replaces a seeded message so the suggestions show). */
 function PortalWelcome() {
   const firstName = useContext(FirstNameContext);
+  const t = useT("portal");
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center gap-3 px-4 text-center">
       <span className="grid size-11 place-items-center rounded-xl bg-sable text-sable-foreground">
         <SableMark className="size-6" />
       </span>
       <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-xl font-semibold duration-200">
-        Hi {firstName}! I&apos;m {AI_ASSISTANT_NAME}.
+        {t("welcomeTitle", { name: firstName, assistant: AI_ASSISTANT_NAME })}
       </h1>
       <p className="text-muted-foreground max-w-xs text-sm">
-        Ask me anything, attach a screenshot of an error, and I&apos;ll find an answer, point you to
-        the right service, or open a request for you.
+        {t("welcomeText")}
       </p>
     </div>
   );
@@ -56,6 +53,8 @@ export function PortalThread({ firstName }: { firstName: string }) {
   );
 
   const adapters = useSableChatAdapters();
+  const t = useT("portal");
+  const suggestions = useMemo(() => PORTAL_SUGGESTIONS.map((k) => t(k)), [t]);
 
   const runtime = useChatRuntime<UIMessage>({ transport, adapters });
 
@@ -63,7 +62,7 @@ export function PortalThread({ firstName }: { firstName: string }) {
     <AssistantRuntimeProvider runtime={runtime}>
       <FirstNameContext.Provider value={firstName}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <Thread components={PORTAL_COMPONENTS} suggestions={PORTAL_SUGGESTIONS} />
+          <Thread components={PORTAL_COMPONENTS} suggestions={suggestions} />
         </div>
       </FirstNameContext.Provider>
     </AssistantRuntimeProvider>

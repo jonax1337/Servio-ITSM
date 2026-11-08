@@ -21,16 +21,28 @@ export function customerRepliedLast(lastPublicAuthorId: string | null, requester
   return lastPublicAuthorId === requesterId;
 }
 
+/** How long ago `since` was, in the coarsest unit that is not zero (for a localized label). */
+export function ageParts(since: Date, now: Date): { unit: "h" | "d"; n: number } {
+  const hours = Math.max(0, Math.floor((now.getTime() - since.getTime()) / HOUR_MS));
+  return hours >= 24 ? { unit: "d", n: Math.floor(hours / 24) } : { unit: "h", n: hours };
+}
+
+/** How long until `at`, in hours from 60 minutes on (for a localized label). */
+export function untilParts(at: Date, now: Date): { unit: "m" | "h"; n: number } {
+  const minutes = Math.max(0, Math.round((at.getTime() - now.getTime()) / 60_000));
+  return minutes >= 60 ? { unit: "h", n: Math.floor(minutes / 60) } : { unit: "m", n: minutes };
+}
+
 /** "3h", "2d": how long ago `since` was, in the coarsest unit that is not zero. */
 export function ageLabel(since: Date, now: Date): string {
-  const hours = Math.max(0, Math.floor((now.getTime() - since.getTime()) / HOUR_MS));
-  return hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+  const { unit, n } = ageParts(since, now);
+  return `${n}${unit}`;
 }
 
 /** "in 5h", "in 25m": how long until `at`. */
 export function untilLabel(at: Date, now: Date): string {
-  const minutes = Math.max(0, Math.round((at.getTime() - now.getTime()) / 60_000));
-  return minutes >= 60 ? `in ${Math.floor(minutes / 60)}h` : `in ${minutes}m`;
+  const { unit, n } = untilParts(at, now);
+  return `in ${n}${unit}`;
 }
 
 export function briefingIsEmpty(sections: BriefingSection[]): boolean {

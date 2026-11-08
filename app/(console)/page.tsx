@@ -11,8 +11,15 @@ import { LinkButton } from "@/components/link-button";
 import { buttonVariants } from "@/components/ui/button";
 import { getParam, type SearchParams } from "@/lib/query";
 import { Pencil, Download } from "lucide-react";
+import type { Metadata } from "next";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("dashboard");
+  return { title: t("title") };
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -20,6 +27,7 @@ export default async function DashboardPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const t = await getT("dashboard");
   const dashboardId = getParam(sp, "dashboard");
   const me = await getSessionUser();
 
@@ -87,20 +95,20 @@ export default async function DashboardPage({
   return (
     <>
       <PageHeader
-        title={`Good ${greeting()}, ${me?.name?.split(" ")[0] ?? "there"}`}
-        description="Your service desk at a glance — pick or build a dashboard."
+        title={t(greetingKey(), { name: me?.name?.split(" ")[0] ?? t("greetingFallbackName") })}
+        description={t("description")}
       >
         {me && isAgent(me.role) ? (
           <a
             href="/api/export?type=tickets"
             download
-            title="Export tickets as CSV"
+            title={t("exportTitle")}
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
-            <Download className="size-4" /> Export CSV
+            <Download className="size-4" /> {t("exportCsv")}
           </a>
         ) : null}
-        <LinkButton href="/tickets/new">New ticket</LinkButton>
+        <LinkButton href="/tickets/new">{t("newTicket")}</LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -114,7 +122,7 @@ export default async function DashboardPage({
           />
           {editable ? (
             <LinkButton href={`/?dashboard=${activeId}&edit=1`} variant="outline" size="sm">
-              <Pencil className="size-4" /> Edit
+              <Pencil className="size-4" /> {t("edit")}
             </LinkButton>
           ) : null}
         </div>
@@ -125,9 +133,9 @@ export default async function DashboardPage({
   );
 }
 
-function greeting() {
+function greetingKey() {
   const h = new Date().getHours();
-  if (h < 12) return "morning";
-  if (h < 18) return "afternoon";
-  return "evening";
+  if (h < 12) return "greetingMorning" as const;
+  if (h < 18) return "greetingAfternoon" as const;
+  return "greetingEvening" as const;
 }

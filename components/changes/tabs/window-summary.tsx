@@ -1,21 +1,20 @@
-import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
-
-const DISPLAY_DATE = "PP p";
-const formatOrDash = (date: Date | null) => (date ? format(date, DISPLAY_DATE) : "—");
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 /** Read-only schedule summary for the properties rail; the window is edited on the Planning tab. */
-export function WindowSummary({ change, className }: { change: ChangeTabContext["change"]; className?: string }) {
+export async function WindowSummary({ change, className }: { change: ChangeTabContext["change"]; className?: string }) {
+  const [t, f] = await Promise.all([getT("changes"), getFormatter()]);
+  const fmt = (date: Date | null) => f.date(date, "dateTime");
   return (
     <Card className={className}>
-      <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-sm">{t("planning.plannedWindow")}</CardTitle></CardHeader>
       <CardContent className="grid gap-2.5 text-sm">
-        <Meta label="Planned start" value={formatOrDash(change.plannedStart)} />
-        <Meta label="Planned end" value={formatOrDash(change.plannedEnd)} />
-        {change.actualStart ? <Meta label="Actual start" value={format(change.actualStart, DISPLAY_DATE)} /> : null}
-        {change.actualEnd ? <Meta label="Actual end" value={format(change.actualEnd, DISPLAY_DATE)} /> : null}
-        <Meta label="Created" value={format(change.createdAt, DISPLAY_DATE)} />
+        <Meta label={t("window.plannedStart")} value={fmt(change.plannedStart)} />
+        <Meta label={t("window.plannedEnd")} value={fmt(change.plannedEnd)} />
+        {change.actualStart ? <Meta label={t("window.actualStart")} value={fmt(change.actualStart)} /> : null}
+        {change.actualEnd ? <Meta label={t("window.actualEnd")} value={fmt(change.actualEnd)} /> : null}
+        <Meta label={t("window.created")} value={fmt(change.createdAt)} />
       </CardContent>
     </Card>
   );

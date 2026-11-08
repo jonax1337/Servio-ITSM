@@ -6,6 +6,7 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { attachAffectedCi, detachAffectedCi } from "@/lib/actions/change-assets";
 import { ASSET_TYPE_META, ASSET_RELATION_META, type Meta } from "@/lib/constants";
 import type { OptionSearch } from "@/components/use-searched-options";
+import { getEnumT, getT } from "@/lib/i18n/server";
 
 export type AffectedCi = {
   assetId: string;
@@ -30,13 +31,9 @@ export type ChangeImpact = {
   risk: "LOW" | "MEDIUM" | "HIGH";
 };
 
-const IMPACT_RISK_META: Record<string, Meta> = {
-  LOW: { label: "Low blast radius", tone: "success" },
-  MEDIUM: { label: "Medium blast radius", tone: "warning" },
-  HIGH: { label: "High blast radius", tone: "danger" },
-};
+const IMPACT_RISK_TONES: Record<ChangeImpact["risk"], Meta["tone"]> = { LOW: "success", MEDIUM: "warning", HIGH: "danger" };
 
-export function AffectedCiPanel({
+export async function AffectedCiPanel({
   changeId,
   affected,
   impact,
@@ -50,26 +47,30 @@ export function AffectedCiPanel({
   searchAssets: OptionSearch;
   editable: boolean;
 }) {
+  const [t, tc, te] = await Promise.all([getT("changes"), getT("common"), getEnumT()]);
+  const impactRiskMeta: Record<string, Meta> = Object.fromEntries(
+    (["LOW", "MEDIUM", "HIGH"] as const).map((r) => [r, { label: t(`impact.blastRadius.${r}`), tone: IMPACT_RISK_TONES[r] }]),
+  );
   return (
     <div className="mt-8">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Server className="size-4 text-muted-foreground" />
-          Affected CIs · {affected.length}
+          {t("impact.title", { count: affected.length })}
         </h2>
         {editable ? (
           <LinkPicker
             action={attachAffectedCi}
-            triggerLabel="Add CI"
-            title="Mark a configuration item as affected"
-            description="Link an asset that this change touches. Its downstream dependencies feed the automated impact assessment below."
+            triggerLabel={t("impact.addCi")}
+            title={t("impact.addTitle")}
+            description={t("impact.addDescription")}
             hidden={{ changeId }}
             valueName="assetId"
             search={searchAssets}
-            placeholder="Choose a CI"
-            searchPlaceholder="Search by name, tag or serial…"
-            emptyText="No matching unlinked assets."
-            submitLabel="Add CI"
+            placeholder={t("impact.chooseCi")}
+            searchPlaceholder={t("form.searchCis")}
+            emptyText={t("impact.noAssets")}
+            submitLabel={t("impact.addCi")}
           />
         ) : null}
       </div>
@@ -77,7 +78,7 @@ export function AffectedCiPanel({
       {affected.length === 0 ? (
         <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
           <Boxes className="size-4" />
-          No affected CIs recorded.{editable ? " Add the assets this change touches to compute its blast radius." : ""}
+          {editable ? t("impact.emptyEditable") : t("impact.empty")}
         </div>
       ) : (
         <>
@@ -86,18 +87,18 @@ export function AffectedCiPanel({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Network className="size-4 text-primary" />
-                Automated impact assessment
+                {t("impact.assessment")}
               </div>
-              <StatusBadge map={IMPACT_RISK_META} value={impact.risk} />
+              <StatusBadge map={impactRiskMeta} value={impact.risk} />
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
               {impact.impacted.length === 0 ? (
-                <>No downstream dependencies found for the affected CIs. This change is self-contained.</>
+                <>{t("impact.noDownstream")}</>
               ) : (
-                <>
-                  <span className="font-medium text-foreground">{impact.impacted.length}</span>{" "}
-                  further configuration item{impact.impacted.length === 1 ? "" : "s"} may be impacted through the CMDB dependency graph.
-                </>
+                t.rich("impact.downstream", {
+                  count: impact.impacted.length,
+                  b: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+                })
               )}
             </p>
             {impact.impacted.length > 0 ? (
@@ -107,13 +108,13 @@ export function AffectedCiPanel({
                     key={ci.id}
                     href={`/assets/${ci.id}`}
                     className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1 text-xs hover:border-primary/40"
-                    title={ci.relation ? `via ${ASSET_RELATION_META[ci.relation]?.label ?? ci.relation}` : undefined}
+                    title={ci.relation ? t("impact.via", { relation: te(ASSET_RELATION_META, ci.relation) }) : undefined}
                   >
                     <ShieldAlert className="size-3.5 text-amber-500" />
                     {ci.name}
                     {ci.relation ? (
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {ASSET_RELATION_META[ci.relation]?.label ?? ci.relation}
+                        {te(ASSET_RELATION_META, ci.relation)}
                       </span>
                     ) : null}
                   </Link>
@@ -139,14 +140,14 @@ export function AffectedCiPanel({
                     <ConfirmButton
                       action={detachAffectedCi}
                       fields={{ changeId, assetId: ci.assetId }}
-                      title="Remove affected CI?"
-                      description={`"${ci.name}" will no longer be marked as affected by this change.`}
-                      confirmLabel="Remove"
+                      title={t("impact.removeTitle")}
+                      description={t("impact.removeDescription", { name: ci.name })}
+                      confirmLabel={tc("remove")}
                       triggerVariant="ghost"
                       triggerSize="icon-sm"
-                      triggerLabel="Remove CI"
+                      triggerLabel={t("impact.removeCi")}
                     >
-                      <span className="text-xs">Remove</span>
+                      <span className="text-xs">{tc("remove")}</span>
                     </ConfirmButton>
                   ) : null}
                 </div>

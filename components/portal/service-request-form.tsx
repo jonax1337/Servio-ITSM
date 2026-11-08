@@ -13,19 +13,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PortalAttachments } from "@/components/portal/portal-attachments";
 import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Select field for a dynamic catalog form: submits an empty value until chosen,
  * matching the previous <Select name=…> (no auto-selected first option). */
 function SelectField({ name, options }: { name: string; options: ComboOption[] }) {
   const [value, setValue] = useState("");
+  const t = useT("portal");
   return (
     <Combobox
       name={name}
       options={options}
       value={value}
       onChange={setValue}
-      placeholder="Choose…"
-      searchPlaceholder="Search…"
+      placeholder={t("choose")}
+      searchPlaceholder={t("search")}
     />
   );
 }
@@ -44,6 +46,8 @@ export function ServiceRequestForm({
 }) {
   const [state, action, pending] = useActionState<CatalogState, FormData>(createCatalogRequest, undefined);
   const submit = useFormSubmit(action);
+  const t = useT("portal");
+  const tm = useServerMessage();
   const fe = state?.fieldErrors ?? {};
 
   return (
@@ -52,14 +56,14 @@ export function ServiceRequestForm({
 
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
       {fields.length === 0 ? (
         <div className="grid gap-1.5">
-          <Label>Details</Label>
-          <Textarea name="f_details" placeholder="Describe what you need…" className="min-h-28" />
+          <Label>{t("details")}</Label>
+          <Textarea name="f_details" placeholder={t("describeNeed")} className="min-h-28" />
         </div>
       ) : (
         fields.map((f) => (
@@ -77,7 +81,7 @@ export function ServiceRequestForm({
               <div className="flex items-center gap-2 pt-1">
                 <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} />
                 <Label htmlFor={`f_${f.key}`} className="text-sm font-normal text-muted-foreground">
-                  {f.help ?? "Yes"}
+                  {f.help ?? t("yes")}
                 </Label>
               </div>
             ) : (
@@ -92,26 +96,26 @@ export function ServiceRequestForm({
             {f.help && f.type !== "checkbox" ? (
               <p className="text-xs text-muted-foreground">{f.help}</p>
             ) : null}
-            {fe[f.key] ? <p className="text-xs text-destructive">{fe[f.key]}</p> : null}
+            {fe[f.key] ? <p className="text-xs text-destructive">{tm(String(fe[f.key]))}</p> : null}
           </div>
         ))
       )}
 
       <div className="grid gap-1.5">
-        <Label>Attachments (optional)</Label>
+        <Label>{t("attachmentsOptional")}</Label>
         <PortalAttachments maxMb={maxMb} />
       </div>
 
       {requiresApproval ? (
         <p className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
-          <ShieldCheck className="size-4" /> This request needs manager approval before it&apos;s actioned.
+          <ShieldCheck className="size-4" /> {t("needsApproval")}
         </p>
       ) : null}
 
       <div className="flex justify-end border-t pt-4">
         <Button type="submit" size="lg" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          Submit request
+          {t("submitRequest")}
         </Button>
       </div>
     </form>

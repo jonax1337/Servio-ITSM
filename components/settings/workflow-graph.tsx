@@ -17,17 +17,20 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Tone } from "@/lib/constants";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 type StatusDef = { value: string; label: string; tone: Tone };
 type Transition = { from: string; to: string; requiredRole: string | null };
 type EdgeData = { role: string }; // "none" | "MANAGER" | "ADMIN"
 
-const ROLE_OPTS: ComboOption[] = [
-  { value: "none", label: "Anyone" },
-  { value: "MANAGER", label: "Manager+" },
-  { value: "ADMIN", label: "Admin only" },
+type Tr = Translator<"settings">;
+const roleOptions = (t: Tr): ComboOption[] => [
+  { value: "none", label: t("wf.anyone") },
+  { value: "MANAGER", label: t("wf.managerPlus") },
+  { value: "ADMIN", label: t("wf.adminOnly") },
 ];
-const roleLabel = (r: string) => (r === "MANAGER" ? "Manager+" : r === "ADMIN" ? "Admin only" : "");
+const roleLabel = (r: string, t: Tr) => (r === "MANAGER" ? t("wf.managerPlus") : r === "ADMIN" ? t("wf.adminOnly") : "");
 const pairKey = (from: string, to: string) => `${from}>${to}`;
 
 // A status is a rounded node with a tone badge and connect handles on each side.
@@ -47,7 +50,7 @@ type Emphasis = "normal" | "on" | "dim";
 
 /** Visual style for an edge given its role gate and whether it's emphasised.
  *  Dense lifecycles are calm by default and light up around the selected node. */
-function styleEdge(role: string, emphasis: Emphasis): Partial<Edge> {
+function styleEdge(role: string, emphasis: Emphasis, t: Tr): Partial<Edge> {
   const gated = !!role && role !== "none";
   // Token-based colours, mirroring the Recharts wrappers in charts.tsx:
   // --chart-5 is the theme's amber accent (gated transitions),
@@ -57,7 +60,7 @@ function styleEdge(role: string, emphasis: Emphasis): Partial<Edge> {
   // clicked status's transitions show — dense lifecycles read cleanly.
   const opacity = emphasis === "dim" ? 0 : emphasis === "on" ? 1 : 0.16;
   return {
-    label: gated && emphasis !== "dim" ? roleLabel(role) : undefined,
+    label: gated && emphasis !== "dim" ? roleLabel(role, t) : undefined,
     animated: gated && emphasis === "on",
     markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color },
     style: { stroke: color, strokeWidth: emphasis === "on" ? 2 : 1.5, strokeOpacity: opacity },
@@ -78,16 +81,17 @@ export function WorkflowGraph({
   transitions: Transition[];
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("settings");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <Workflow className="size-4" /> Visual builder
+        <Workflow className="size-4" /> {t("wf.visualBuilder")}
       </DialogTrigger>
       <DialogContent className="flex h-[94vh] w-[96vw] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="shrink-0 border-b px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-sm">
-            <Workflow className="size-4 text-primary" /> {entityLabel} workflow
+            <Workflow className="size-4 text-primary" /> {t("wf.graphTitle", { entity: entityLabel })}
           </DialogTitle>
         </DialogHeader>
         {/* Mount the canvas only while open so React Flow measures a real box. */}
@@ -116,6 +120,7 @@ function GraphCanvas({
   onClose: () => void;
 }) {
   const [pending, start] = useTransition();
+  const t = useT("settings");
   const [selected, setSelected] = useState<string | null>(null); // selected edge id
   const [activeNode, setActiveNode] = useState<string | null>(null); // focused node id
 
@@ -155,9 +160,9 @@ function GraphCanvas({
           : e.source === activeNode || e.target === activeNode
             ? "on"
             : "dim";
-        return { ...e, ...styleEdge(role, emphasis) };
+        return { ...e, ...styleEdge(role, emphasis, t) };
       }),
-    [edges, activeNode],
+    [edges, activeNode, t],
   );
 
   const onConnect = useCallback(
@@ -196,7 +201,7 @@ function GraphCanvas({
     }
     start(async () => {
       await action(fd);
-      toast.success(withTransitions ? "Workflow saved" : "Reset to defaults");
+      toast.success(withTransitions ? t("wf.saved") : t("wf.resetDone"));
       onClose();
     });
   }
@@ -225,7 +230,7 @@ function GraphCanvas({
         <Panel position="top-left" className="max-w-xs rounded-lg border bg-card/90 px-3 py-2 text-xs text-muted-foreground backdrop-blur">
           <div className="flex items-start gap-2">
             <Info className="mt-0.5 size-3.5 shrink-0" />
-            <span>Click a status to focus its transitions. Drag from a node&apos;s right edge to another to allow a transition. Click a line to gate it behind a role or remove it.</span>
+            <span>{t("wf.graphHint")}</span>
           </div>
         </Panel>
 
@@ -238,9 +243,9 @@ function GraphCanvas({
             </div>
             <div className="grid gap-2">
               <div className="grid gap-1">
-                <span className="text-[11px] text-muted-foreground">Who can do this</span>
+                <span className="text-[11px] text-muted-foreground">{t("wf.whoCan")}</span>
                 <Combobox
-                  options={ROLE_OPTS}
+                  options={roleOptions(t)}
                   value={(selectedEdge.data as EdgeData | undefined)?.role ?? "none"}
                   onChange={(v) => setEdgeRole(selectedEdge.id, v)}
                   size="sm"
@@ -253,7 +258,7 @@ function GraphCanvas({
                 onClick={() => removeEdge(selectedEdge.id)}
                 className="justify-start text-muted-foreground hover:text-destructive"
               >
-                <Trash2 className="size-4" /> Remove transition
+                <Trash2 className="size-4" /> {t("wf.removeTransition")}
               </Button>
             </div>
           </Panel>
@@ -268,11 +273,11 @@ function GraphCanvas({
             disabled={pending}
             onClick={() => persist(resetWorkflow, false)}
           >
-            <RotateCcw className="size-4" /> Reset
+            <RotateCcw className="size-4" /> {t("wf.reset")}
           </Button>
           <Button type="button" size="sm" disabled={pending} onClick={() => persist(saveWorkflow, true)}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            Save workflow
+            {t("wf.saveWorkflow")}
           </Button>
         </Panel>
       </ReactFlow>

@@ -284,6 +284,12 @@ Higher-level, app-specific components live directly in `components/` (not
 | `EditEntityDialog` | [`components/edit-entity-dialog.tsx`](../components/edit-entity-dialog.tsx) | Reusable inline entity-edit dialog. |
 | `charts` | [`components/charts.tsx`](../components/charts.tsx) | Dashboard chart wrappers keyed to the `--chart-1…5` tokens. |
 
+> Translated text: shared components render their built-in text (pagination, empty
+> states, dialog buttons, badge labels) in the viewer's language through
+> [`lib/i18n`](./i18n.md); text passed in as props is the caller's to translate.
+> `ToneBadge`/`StatusBadge` translate registered `*_META` labels on their own, and
+> `LocalTime` hands its `render` callback the viewer's formatter.
+
 > URL-as-state: `ListToolbar`, `PaginationBar`, and the filter comboboxes all read
 > from and write to `searchParams`, so list state is shareable and server-rendered.
 > This is the canonical list pattern — reuse it rather than inventing client-side

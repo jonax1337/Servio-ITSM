@@ -1,19 +1,12 @@
 import type { EntityTab } from "@/lib/entity-tabs";
+import { createTranslator, type Translator } from "@/lib/i18n/translate";
 
 export const CHANGE_TAB_KEYS = ["overview", "planning", "cab", "impact", "links", "discussion", "history"] as const;
 export type ChangeTabKey = (typeof CHANGE_TAB_KEYS)[number];
 
 export const DEFAULT_CHANGE_TAB: ChangeTabKey = "overview";
 
-const TAB_LABELS: Record<ChangeTabKey, string> = {
-  overview: "Overview",
-  planning: "Planning",
-  cab: "CAB & approvals",
-  impact: "Impact",
-  links: "Links",
-  discussion: "Discussion",
-  history: "History",
-};
+const EN = createTranslator("en", "changes");
 
 export type ChangeTabCounts = {
   /** CAB seats that have not decided yet. */
@@ -37,12 +30,16 @@ export function buildChangeTabs({
   status,
   submitBlockers,
   counts,
+  t = EN,
 }: {
   status: string;
   submitBlockers: readonly string[];
   counts: ChangeTabCounts;
+  /** Labels in the viewer's language (default English). */
+  t?: Translator<"changes">;
 }): EntityTab<ChangeTabKey>[] {
-  const planningWarning = status === "DRAFT" && submitBlockers.length > 0 ? `Missing: ${submitBlockers.join(", ")}` : undefined;
+  const planningWarning =
+    status === "DRAFT" && submitBlockers.length > 0 ? t("tabs.missing", { items: submitBlockers.join(", ") }) : undefined;
   const countByTab: Partial<Record<ChangeTabKey, number>> = {
     cab: counts.pendingApprovals,
     impact: counts.affectedCis,
@@ -51,7 +48,7 @@ export function buildChangeTabs({
   };
   return CHANGE_TAB_KEYS.map((key) => ({
     key,
-    label: TAB_LABELS[key],
+    label: t(`tabs.${key}`),
     ...(key === "planning" && planningWarning ? { warning: planningWarning } : {}),
     count: countByTab[key],
   }));

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bell, Check, CheckCheck, Loader2 } from "lucide-react";
 import type { Notification } from "@prisma/client";
-import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +19,7 @@ import {
   markAllRead,
   markRead,
 } from "@/lib/actions/notifications";
+import { useFormatter, useT } from "@/lib/i18n/client";
 
 const ENTITY_HREF: Record<string, string> = {
   Ticket: "/tickets",
@@ -42,6 +42,8 @@ export function NotificationsMenu({
   unreadCount: number;
 }) {
   const router = useRouter();
+  const t = useT("components");
+  const fmt = useFormatter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[] | null>(null);
   const [unread, setUnread] = useState(initialUnread);
@@ -112,7 +114,7 @@ export function NotificationsMenu({
             variant="ghost"
             size="icon"
             className="relative"
-            aria-label="Notifications"
+            aria-label={t("notifications.title")}
           />
         }
       >
@@ -129,7 +131,7 @@ export function NotificationsMenu({
       >
         <div className="flex items-center justify-between gap-2 border-b px-3 py-2.5">
           <PopoverHeader>
-            <PopoverTitle>Notifications</PopoverTitle>
+            <PopoverTitle>{t("notifications.title")}</PopoverTitle>
           </PopoverHeader>
           <Button
             variant="ghost"
@@ -137,7 +139,7 @@ export function NotificationsMenu({
             onClick={onMarkAll}
             disabled={pending || unread === 0}
           >
-            <CheckCheck className="size-3.5" /> Mark all read
+            <CheckCheck className="size-3.5" /> {t("notifications.markAllRead")}
           </Button>
         </div>
 
@@ -148,7 +150,7 @@ export function NotificationsMenu({
             </div>
           ) : !items || items.length === 0 ? (
             <div className="px-3 py-10 text-center text-sm text-muted-foreground">
-              You&apos;re all caught up.
+              {t("notifications.empty")}
             </div>
           ) : (
             <ul className="divide-y">
@@ -196,7 +198,7 @@ export function NotificationsMenu({
                         </p>
                       ) : null}
                       <p className="mt-1 text-[11px] text-muted-foreground">
-                        {formatDistanceToNow(n.createdAt, { addSuffix: true })}
+                        {fmt.relative(n.createdAt)}
                       </p>
                     </div>
 
@@ -205,7 +207,7 @@ export function NotificationsMenu({
                         variant="ghost"
                         size="icon-xs"
                         className="shrink-0"
-                        aria-label="Mark as read"
+                        aria-label={t("notifications.markRead")}
                         onClick={() => onMarkRead(n.id)}
                         disabled={pending}
                       >

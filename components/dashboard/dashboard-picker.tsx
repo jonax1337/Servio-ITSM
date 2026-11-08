@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { createDashboard } from "@/lib/actions/dashboards";
+import { useT } from "@/lib/i18n/client";
 
 export type DashboardRow = {
   id: string;
@@ -25,6 +26,7 @@ export type DashboardRow = {
 export function DashboardPicker({
   dashboards,
   activeId,
+  currentUserId,
   canManageShared,
   teams,
 }: {
@@ -35,6 +37,7 @@ export function DashboardPicker({
   teams: { value: string; label: string }[];
 }) {
   const router = useRouter();
+  const t = useT("dashboard");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [shared, setShared] = useState(false);
@@ -43,9 +46,10 @@ export function DashboardPicker({
 
   const options: ComboOption[] = dashboards.map((d) => ({
     value: d.id,
-    label: d.name,
+    // The auto-created personal dashboard keeps its stored English name; show it translated.
+    label: d.name === "My Dashboard" && !d.isShared && d.ownerId === currentUserId ? t("myDashboard") : d.name,
     icon: d.isShared ? Users : LayoutDashboard,
-    hint: d.isShared ? (d.groupId ? "Team" : "Shared") : undefined,
+    hint: d.isShared ? (d.groupId ? t("pickerTeam") : t("pickerShared")) : undefined,
   }));
 
   function submitCreate(fd: FormData) {
@@ -66,32 +70,30 @@ export function DashboardPicker({
         options={options}
         value={activeId}
         onChange={(v) => v && router.push(`/?dashboard=${v}`)}
-        placeholder="Select dashboard"
-        searchPlaceholder="Search dashboards…"
+        placeholder={t("selectDashboard")}
+        searchPlaceholder={t("searchDashboards")}
         size="sm"
         className="w-auto min-w-[13rem]"
       />
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <Plus className="size-4" /> New dashboard
+        <Plus className="size-4" /> {t("newDashboard")}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New dashboard</DialogTitle>
-            <DialogDescription>
-              Starts from the default layout — you can rearrange and configure its widgets next.
-            </DialogDescription>
+            <DialogTitle>{t("newDashboard")}</DialogTitle>
+            <DialogDescription>{t("newDashboardDescription")}</DialogDescription>
           </DialogHeader>
           <form action={submitCreate} className="grid gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="dash-name">Name</Label>
+              <Label htmlFor="dash-name">{t("name")}</Label>
               <Input
                 id="dash-name"
                 name="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Infra team overview"
+                placeholder={t("namePlaceholder")}
                 autoFocus
                 required
               />
@@ -100,22 +102,22 @@ export function DashboardPicker({
               <>
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox name="isShared" checked={shared} onCheckedChange={(v) => setShared(!!v)} />
-                  Share with a team
+                  {t("shareWithTeam")}
                 </label>
                 {shared ? (
                   <Combobox
                     name="groupId"
-                    options={[{ value: "none", label: "Everyone (all teams)" }, ...teams]}
+                    options={[{ value: "none", label: t("everyone") }, ...teams]}
                     value={team}
                     onChange={(v) => setTeam(v || "none")}
-                    placeholder="Choose a team"
-                    searchPlaceholder="Search teams…"
+                    placeholder={t("chooseTeam")}
+                    searchPlaceholder={t("searchTeams")}
                   />
                 ) : null}
               </>
             ) : null}
             <DialogFooter>
-              <Button type="submit" disabled={!name.trim() || pending}>Create dashboard</Button>
+              <Button type="submit" disabled={!name.trim() || pending}>{t("createDashboard")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

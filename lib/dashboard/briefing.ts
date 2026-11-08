@@ -7,12 +7,28 @@ import type { BusinessCalendarLike } from "@/lib/business-hours";
 import {
   BRIEFING_ITEMS_PER_SECTION,
   PRE_START_CHANGE_STATUSES,
-  ageLabel,
+  ageParts,
   changeStartWindow,
   customerRepliedLast,
-  untilLabel,
+  untilParts,
 } from "@/lib/dashboard/briefing-rules";
 import type { BriefingItem, BriefingSection, Computed } from "@/lib/dashboard/types";
+import { getT } from "@/lib/i18n/server";
+import type { Translator } from "@/lib/i18n/translate";
+
+type T = Translator<"dashboard">;
+
+/** "5h" / "5 Std." — how long ago, in the viewer's language. */
+const ageLabel = (t: T, since: Date, now: Date) => {
+  const { unit, n } = ageParts(since, now);
+  return unit === "d" ? t("daysShort", { n }) : t("hoursShort", { n });
+};
+
+/** "in 5h" / "in 5 Std." — how long until, in the viewer's language. */
+const untilLabel = (t: T, at: Date, now: Date) => {
+  const { unit, n } = untilParts(at, now);
+  return unit === "h" ? t("inHours", { n }) : t("inMinutes", { n });
+};
 
 /** Tickets scanned per section; the briefing is a glance, not a report. */
 const SCAN_LIMIT = 200;
@@ -31,7 +47,7 @@ const section = (key: BriefingSection["key"], title: string, total: number, item
 });
 
 /** The viewer's tickets whose resolve SLA is breached or in its last stretch, worst first. */
-async function slaSection(userId: string, now: Date): Promise<BriefingSection> {
+async function slaSection(userId: string, now: Date, t: T): Promise<BriefingSection> {
   const tickets = await db.ticket.findMany({
     where: {
       assigneeId: userId,
@@ -71,18 +87,18 @@ async function slaSection(userId: string, now: Date): Promise<BriefingSection> {
       breached,
       item: {
         label: `${ticketRef(ticket.id, ticket.prefix)} ${ticket.title}`,
-        detail: breached ? "SLA breached" : `SLA due ${untilLabel(dueAt!, now)}`,
+        detail: breached ? t("briefingSlaBreached") : t("briefingSlaDue", { when: untilLabel(t, dueAt!, now) }),
         href: ticketHref(ticket.id),
         tone: breached ? "danger" : "warning",
       },
     });
   }
   risky.sort((a, b) => Number(b.breached) - Number(a.breached));
-  return section("sla", "SLA at risk", risky.length, risky.map((r) => r.item));
+  return section("sla", t("briefing.sla"), risky.length, risky.map((r) => r.item));
 }
 
 /** Tickets where the customer wrote last (act now) or the clock waits on the customer. */
-async function customerSection(userId: string, now: Date): Promise<BriefingSection> {
+async function customerSection(userId: string, now: Date, t: T): Promise<BriefingSection> {
   const [candidates, waiting, waitingCount] = await Promise.all([
     db.ticket.findMany({
       where: { assigneeId: userId, status: { in: [...ACTIVE_UNPAUSED] } },
@@ -116,17 +132,17 @@ async function customerSection(userId: string, now: Date): Promise<BriefingSecti
     return [
       {
         label: `${ticketRef(ticket.id, ticket.prefix)} ${ticket.title}`,
-        detail: `Customer replied ${ageLabel(last.createdAt, now)} ago`,
+        detail: t("briefingCustomerReplied", { age: ageLabel(t, last.createdAt, now) }),
         href: ticketHref(ticket.id),
       },
     ];
   });
   const waitingItems: BriefingItem[] = waiting.map((ticket) => ({
     label: `${ticketRef(ticket.id, ticket.prefix)} ${ticket.title}`,
-    detail: `Waiting on customer for ${ageLabel(ticket.pendingSince ?? ticket.updatedAt, now)}`,
+    detail: t("briefingWaitingOnCustomer", { age: ageLabel(t, ticket.pendingSince ?? ticket.updatedAt, now) }),
     href: ticketHref(ticket.id),
   }));
-  return section("customer", "Customers", replied.length + waitingCount, [...replied, ...waitingItems]);
+  return section("customer", t("briefing.customer"), replied.length + waitingCount, [...replied, ...waitingItems]);
 }
 
 const GENERIC_APPROVAL_PATHS: Record<string, string> = {
@@ -137,7 +153,7 @@ const GENERIC_APPROVAL_PATHS: Record<string, string> = {
 };
 
 /** Approvals waiting for the viewer's decision, oldest first, across tickets, changes and generic requests. */
-async function approvalsSection(userId: string, now: Date): Promise<BriefingSection> {
+async function approvalsSection(userId: string, now: Date, t: T): Promise<BriefingSection> {
   const pending = { approverId: userId, status: "PENDING" } as const;
   const ticketWhere = { ...pending, ticket: { status: { in: [...OPEN_TICKET_STATUSES] } } };
   const changeWhere = { ...pending, change: { status: "APPROVAL" } };
@@ -167,7 +183,7 @@ async function approvalsSection(userId: string, now: Date): Promise<BriefingSect
     db.approval.count({ where: pending }),
   ]);
 
-  const waitingSince = (createdAt: Date) => `Waiting ${ageLabel(createdAt, now)}`;
+  const waitingSince = (createdAt: Date) => t("briefingWaiting", { age: ageLabel(t, createdAt, now) });
   const entries: { createdAt: Date; item: BriefingItem }[] = [
     ...tickets.map((a) => ({
       createdAt: a.createdAt,
@@ -195,11 +211,11 @@ async function approvalsSection(userId: string, now: Date): Promise<BriefingSect
     })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-  return section("approvals", "Approvals for you", ticketCount + changeCount + requestCount, entries.map((e) => e.item));
+  return section("approvals", t("briefing.approvals"), ticketCount + changeCount + requestCount, entries.map((e) => e.item));
 }
 
 /** Changes the viewer owns that start within 24 hours and are not underway yet. */
-async function changesSection(userId: string, now: Date): Promise<BriefingSection> {
+async function changesSection(userId: string, now: Date, t: T): Promise<BriefingSection> {
   const { from, to } = changeStartWindow(now);
   const where = {
     assigneeId: userId,
@@ -218,13 +234,13 @@ async function changesSection(userId: string, now: Date): Promise<BriefingSectio
 
   return section(
     "changes",
-    "Your changes starting within 24h",
+    t("briefing.changes"),
     total,
     changes.map((change) => {
       const approved = change.status === "APPROVED" || change.status === "SCHEDULED";
       return {
         label: `${changeRef(change.id)} ${change.title}`,
-        detail: `Starts ${untilLabel(change.plannedStart!, now)}${approved ? "" : ", not approved yet"}`,
+        detail: t(approved ? "briefingStarts" : "briefingStartsNotApproved", { when: untilLabel(t, change.plannedStart!, now) }),
         href: changeHref(change.id),
         tone: approved ? undefined : "warning",
       };
@@ -234,11 +250,13 @@ async function changesSection(userId: string, now: Date): Promise<BriefingSectio
 
 /** What needs the user's attention today, from the user's own queue. */
 export async function loadBriefingSections(userId: string, now: Date = new Date()): Promise<BriefingSection[]> {
+  // Per viewer and never cached, so the texts can be in the viewer's language.
+  const t = await getT("dashboard");
   return Promise.all([
-    slaSection(userId, now),
-    customerSection(userId, now),
-    approvalsSection(userId, now),
-    changesSection(userId, now),
+    slaSection(userId, now, t),
+    customerSection(userId, now, t),
+    approvalsSection(userId, now, t),
+    changesSection(userId, now, t),
   ]);
 }
 

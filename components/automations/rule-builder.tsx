@@ -19,39 +19,42 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { EnumTranslator } from "@/lib/i18n/enums";
+import type { Translator } from "@/lib/i18n/translate";
 
 type Opt = { value: string; label: string }[];
 export type AutomationOptions = {
   agents: Opt; groups: Opt; categories: Opt; services: Opt;
 };
 
-const enumOpts = (arr: readonly string[], meta: Record<string, { label: string }>): ComboOption[] =>
-  arr.map((v) => ({ value: v, label: meta[v]?.label ?? v }));
+const enumOpts = (arr: readonly string[], meta: Record<string, { label: string }>, te: EnumTranslator): ComboOption[] =>
+  arr.map((v) => ({ value: v, label: meta[v] ? te(meta[v]) : v }));
 
 const toCombo = (o: Opt): ComboOption[] => o.map((x) => ({ value: x.value, label: x.label }));
 
-function conditionValueOptions(field: string, o: AutomationOptions): ComboOption[] | "text" | "none" {
+function conditionValueOptions(field: string, o: AutomationOptions, te: EnumTranslator, tc: Translator<"common">): ComboOption[] | "text" | "none" {
   switch (field) {
-    case "type": return enumOpts(TICKET_TYPES, TICKET_TYPE_META);
-    case "status": return enumOpts(TICKET_STATUSES, TICKET_STATUS_META);
-    case "priority": return enumOpts(PRIORITIES, PRIORITY_META);
+    case "type": return enumOpts(TICKET_TYPES, TICKET_TYPE_META, te);
+    case "status": return enumOpts(TICKET_STATUSES, TICKET_STATUS_META, te);
+    case "priority": return enumOpts(PRIORITIES, PRIORITY_META, te);
     case "impact":
-    case "urgency": return enumOpts(IMPACT_URGENCY, LEVEL_META);
-    case "source": return enumOpts(TICKET_SOURCES, SOURCE_META);
+    case "urgency": return enumOpts(IMPACT_URGENCY, LEVEL_META, te);
+    case "source": return enumOpts(TICKET_SOURCES, SOURCE_META, te);
     case "categoryId": return toCombo(o.categories);
     case "groupId": return toCombo(o.groups);
     case "serviceId": return toCombo(o.services);
     case "assigneeId": return toCombo(o.agents);
-    case "requesterVip": return [{ value: "true", label: "Yes" }, { value: "false", label: "No" }];
+    case "requesterVip": return [{ value: "true", label: tc("yes") }, { value: "false", label: tc("no") }];
     case "title": return "text";
     default: return "text";
   }
 }
 
-function actionValueOptions(type: string, o: AutomationOptions): ComboOption[] | "text" | "none" {
+function actionValueOptions(type: string, o: AutomationOptions, te: EnumTranslator): ComboOption[] | "text" | "none" {
   switch (type) {
-    case "set_status": return enumOpts(TICKET_STATUSES, TICKET_STATUS_META);
-    case "set_priority": return enumOpts(PRIORITIES, PRIORITY_META);
+    case "set_status": return enumOpts(TICKET_STATUSES, TICKET_STATUS_META, te);
+    case "set_priority": return enumOpts(PRIORITIES, PRIORITY_META, te);
     case "assign":
     case "notify": return toCombo(o.agents);
     case "set_group": return toCombo(o.groups);
@@ -62,25 +65,26 @@ function actionValueOptions(type: string, o: AutomationOptions): ComboOption[] |
 }
 
 /** Placeholder for the free-text value input, per action type. */
-function actionValuePlaceholder(type: string): string {
+function actionValuePlaceholder(type: string, t: Translator<"automations">): string {
   switch (type) {
     case "webhook": return "https://example.com/hook";
-    case "internal_note": return "note text";
-    default: return "value";
+    case "internal_note": return t("notePlaceholder");
+    default: return t("value");
   }
 }
 
 /** Lower-cased trigger label for the "runs on every ..." warning. */
-function triggerLabel(trigger: string): string {
-  const label = TRIGGERS.find((t) => t.value === trigger)?.label ?? trigger;
+function triggerLabel(trigger: string, t: Translator<"automations">): string {
+  const label = t.dyn(`trigger.${trigger}`, undefined, TRIGGERS.find((x) => x.value === trigger)?.label ?? trigger);
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
 function FieldErrors({ messages }: { messages?: string[] }) {
+  const tm = useServerMessage();
   if (!messages?.length) return null;
   return (
     <ul className="grid gap-0.5 text-xs text-destructive">
-      {messages.map((m) => <li key={m}>{m}</li>)}
+      {messages.map((m) => <li key={m}>{tm(m)}</li>)}
     </ul>
   );
 }
@@ -93,10 +97,11 @@ function ValuePicker({
   onChange: (v: string) => void;
   placeholder?: string;
 }) {
+  const t = useT("automations");
   if (kind === "none") return <span className="text-xs text-muted-foreground">—</span>;
   if (kind === "text")
-    return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder ?? "value"} className="h-8" />;
-  return <Combobox options={kind} value={value} onChange={onChange} size="sm" placeholder="value" searchPlaceholder="Search…" />;
+    return <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder ?? t("value")} className="h-8" />;
+  return <Combobox options={kind} value={value} onChange={onChange} size="sm" placeholder={t("value")} searchPlaceholder={t("searchPlaceholder")} />;
 }
 
 export function RuleBuilder({
@@ -109,6 +114,10 @@ export function RuleBuilder({
   };
 }) {
   const editing = !!rule;
+  const t = useT("automations");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<RuleState, FormData>(
     editing ? updateRule : createRule,
@@ -135,14 +144,14 @@ export function RuleBuilder({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
-        render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "sm"} aria-label={editing ? "Edit rule" : undefined} />}
+        render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "sm"} aria-label={editing ? t("editRule") : undefined} />}
       >
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New rule</>}
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("newRule")}</>}
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Zap className="size-4 text-primary" /> {editing ? "Edit" : "New"} automation</DialogTitle>
-          <DialogDescription>Run actions automatically when a ticket matches your conditions.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><Zap className="size-4 text-primary" /> {editing ? t("editAutomation") : t("newAutomation")}</DialogTitle>
+          <DialogDescription>{t("builderDescription")}</DialogDescription>
         </DialogHeader>
 
         <form method="post" onSubmit={submit} className="grid gap-5">
@@ -151,37 +160,37 @@ export function RuleBuilder({
           <input type="hidden" name="actions" value={JSON.stringify(actions.filter((a) => a.type))} />
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Rule name</Label>
-              <Input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Auto-assign VPN incidents" required />
+              <Label>{t("ruleName")}</Label>
+              <Input name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("ruleNamePlaceholder")} required />
               <FieldErrors messages={fe.name} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Trigger</Label>
+              <Label>{t("trigger")}</Label>
               <input type="hidden" name="trigger" value={trig} />
-              <Combobox options={TRIGGERS.map((t) => ({ value: t.value, label: t.label }))} value={trig} onChange={setTrig} />
+              <Combobox options={TRIGGERS.map((x) => ({ value: x.value, label: t(`trigger.${x.value}`) }))} value={trig} onChange={setTrig} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Match</Label>
+              <Label>{t("match")}</Label>
               <input type="hidden" name="matchType" value={matchType} />
-              <Combobox options={MATCH_TYPES.map((t) => ({ value: t.value, label: t.label }))} value={matchType} onChange={setMatchType} />
+              <Combobox options={MATCH_TYPES.map((x) => ({ value: x.value, label: t(`match.${x.value}`) }))} value={matchType} onChange={setMatchType} />
             </div>
             <div className="grid gap-1.5 sm:col-span-2">
-              <Label>Description</Label>
-              <Input name="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
+              <Label>{tc("description")}</Label>
+              <Input name="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("descriptionPlaceholder")} />
             </div>
           </div>
 
           {/* Conditions */}
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <Label>Conditions</Label>
+              <Label>{t("conditions")}</Label>
               <Button type="button" variant="outline" size="sm" onClick={() => setConditions((c) => [...c, { field: "priority", op: "eq", value: "" }])}>
-                <Plus className="size-4" /> Add condition
+                <Plus className="size-4" /> {t("addCondition")}
               </Button>
             </div>
             <FieldErrors messages={fe.conditions} />
@@ -189,18 +198,17 @@ export function RuleBuilder({
               <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
                 <span>
-                  <strong>No conditions.</strong> This rule runs on every matching trigger ({triggerLabel(trig)}),
-                  so its actions apply to all of those tickets.
+                  {t.rich("noConditions", { trigger: triggerLabel(trig, t), b: (c) => <strong>{c}</strong> })}
                 </span>
               </p>
             ) : (
               conditions.map((c, i) => {
-                const vk = ["empty", "not_empty"].includes(c.op) ? "none" : conditionValueOptions(c.field, options);
+                const vk = ["empty", "not_empty"].includes(c.op) ? "none" : conditionValueOptions(c.field, options, te, tc);
                 return (
                   <div key={i} className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-                    <Combobox options={CONDITION_FIELDS.map((f) => ({ value: f.value, label: f.label }))} value={c.field} size="sm"
+                    <Combobox options={CONDITION_FIELDS.map((f) => ({ value: f.value, label: t(`field.${f.value}`) }))} value={c.field} size="sm"
                       onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, field: v, value: "" } : x)))} />
-                    <Combobox options={OPERATORS.map((op) => ({ value: op.value, label: op.label }))} value={c.op} size="sm"
+                    <Combobox options={OPERATORS.map((op) => ({ value: op.value, label: t(`op.${op.value}`) }))} value={c.op} size="sm"
                       onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, op: v } : x)))} />
                     <ValuePicker kind={vk} value={c.value ?? ""} onChange={(v) => setConditions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} />
                     <Button type="button" variant="ghost" size="icon-sm" onClick={() => setConditions((arr) => arr.filter((_, idx) => idx !== i))}>
@@ -215,19 +223,19 @@ export function RuleBuilder({
           {/* Actions */}
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <Label>Then do</Label>
+              <Label>{t("thenDo")}</Label>
               <Button type="button" variant="outline" size="sm" onClick={() => setActions((a) => [...a, { type: "set_status", value: "" }])}>
-                <Plus className="size-4" /> Add action
+                <Plus className="size-4" /> {t("addAction")}
               </Button>
             </div>
             <FieldErrors messages={fe.actions} />
             {actions.map((a, i) => {
-              const vk = actionValueOptions(a.type, options);
+              const vk = actionValueOptions(a.type, options, te);
               return (
                 <div key={i} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
-                  <Combobox options={ACTION_TYPES.map((t) => ({ value: t.value, label: t.label }))} value={a.type} size="sm"
+                  <Combobox options={ACTION_TYPES.map((x) => ({ value: x.value, label: t(`action.${x.value}`) }))} value={a.type} size="sm"
                     onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, type: v, value: "" } : x)))} />
-                  <ValuePicker kind={vk} value={a.value ?? ""} onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} placeholder={actionValuePlaceholder(a.type)} />
+                  <ValuePicker kind={vk} value={a.value ?? ""} onChange={(v) => setActions((arr) => arr.map((x, idx) => (idx === i ? { ...x, value: v } : x)))} placeholder={actionValuePlaceholder(a.type, t)} />
                   <Button type="button" variant="ghost" size="icon-sm" onClick={() => setActions((arr) => arr.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
@@ -239,7 +247,7 @@ export function RuleBuilder({
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save rule" : "Create rule"}
+              {editing ? t("saveRule") : t("createRule")}
             </Button>
           </DialogFooter>
         </form>

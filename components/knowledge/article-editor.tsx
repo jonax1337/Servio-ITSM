@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { ComboField } from "@/components/combo-field";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 type Action = (prev: ArticleState, formData: FormData) => Promise<ArticleState>;
 
@@ -33,12 +34,13 @@ function Field({
   children: React.ReactNode;
   hint?: string;
 }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -59,6 +61,9 @@ export function ArticleEditor({
 }) {
   const [state, formAction, pending] = useActionState<ArticleState, FormData>(action, undefined);
   const submit = useFormSubmit(formAction);
+  const t = useT("knowledge");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const fe = state?.fieldErrors ?? {};
 
   // Seed the rich editor from the existing article. Already-HTML articles pass
@@ -68,10 +73,7 @@ export function ArticleEditor({
       ? defaults.body ?? ""
       : renderMarkdown(defaults.body ?? "", defaults.bodyFormat ?? "markdown");
 
-  const visibilityOpts = Object.entries(ARTICLE_VISIBILITY_META).map(([value, m]) => ({
-    value,
-    label: m.label,
-  }));
+  const visibilityOpts = te.options(ARTICLE_VISIBILITY_META);
   const categoryOpts = categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
@@ -81,44 +83,44 @@ export function ArticleEditor({
 
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
-      <Field label="Title" error={fe.title}>
-        <Input name="title" defaultValue={defaults.title} placeholder="e.g. How to connect to the VPN" required />
+      <Field label={t("fieldTitle")} error={fe.title}>
+        <Input name="title" defaultValue={defaults.title} placeholder={t("titlePlaceholder")} required />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field
-          label="Visibility"
+          label={t("visibility")}
           error={fe.visibility}
-          hint="Public articles appear in the end-user portal. Internal stays agent-only."
+          hint={t("visibilityHint")}
         >
           <ComboField name="visibility" options={visibilityOpts} defaultValue={defaults.visibility ?? "INTERNAL"} />
         </Field>
-        <Field label="Category" error={fe.categoryId}>
-          <ComboField name="categoryId" options={categoryOpts} defaultValue={defaults.categoryId ?? undefined} includeNone noneLabel="— No category —" />
+        <Field label={t("category")} error={fe.categoryId}>
+          <ComboField name="categoryId" options={categoryOpts} defaultValue={defaults.categoryId ?? undefined} includeNone noneLabel={t("noCategory")} />
         </Field>
       </div>
 
-      <Field label="Excerpt" error={fe.excerpt} hint="A one-line summary shown in lists and search results.">
-        <Textarea name="excerpt" defaultValue={defaults.excerpt} placeholder="Short summary…" className="min-h-16" />
+      <Field label={t("excerpt")} error={fe.excerpt} hint={t("excerptHint")}>
+        <Textarea name="excerpt" defaultValue={defaults.excerpt} placeholder={t("excerptPlaceholder")} className="min-h-16" />
       </Field>
 
       <div className="grid gap-1.5">
-        <Label>Body</Label>
+        <Label>{t("body")}</Label>
         <RichTextEditor
           name="bodyHtml"
           required
-          ariaLabel="Article body"
+          ariaLabel={t("bodyAria")}
           defaultHTML={defaultHTML}
         />
-        {fe.body ? <p className="text-xs text-destructive">{fe.body[0]}</p> : null}
+        {fe.body ? <p className="text-xs text-destructive">{tm(fe.body[0])}</p> : null}
         {defaults.id ? null : (
           <p className="text-xs text-muted-foreground">
-            New articles start as a <strong>Draft</strong> — publish from the article page once ready.
-            {sourceTicket ? <> Saving also links it to <strong>{sourceTicket.ref}</strong>.</> : null}
+            {t.rich("draftHint", { b: (c) => <strong>{c}</strong> })}
+            {sourceTicket ? <> {t.rich("linksToTicket", { ref: sourceTicket.ref, b: (c) => <strong>{c}</strong> })}</> : null}
           </p>
         )}
       </div>

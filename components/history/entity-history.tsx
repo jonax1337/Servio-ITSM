@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { lowerLead } from "@/lib/utils";
 import { History } from "lucide-react";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
+import { Msg } from "@/lib/i18n/client";
 
 /** Reusable change-history timeline for any entity (reads AuditLog). */
 export async function EntityHistory({
@@ -19,9 +20,10 @@ export async function EntityHistory({
     orderBy: { createdAt: "desc" },
     take: limit,
   });
+  const [t, f] = await Promise.all([getT("tickets"), getFormatter()]);
 
   if (logs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No history recorded yet.</p>;
+    return <p className="text-sm text-muted-foreground">{t("history.none")}</p>;
   }
 
   return (
@@ -33,10 +35,10 @@ export async function EntityHistory({
           </span>
           <div className="min-w-0 pt-0.5">
             <p className="text-sm">
-              <span className="font-medium">{l.user?.name ?? "System"}</span>{" "}
+              <span className="font-medium">{l.user?.name ?? t("history.system")}</span>{" "}
               <span className="text-muted-foreground">{lowerLead(l.summary ?? l.action)}</span>
             </p>
-            <p className="text-xs text-muted-foreground">{format(l.createdAt, "PP · p")}</p>
+            <p className="text-xs text-muted-foreground">{f.date(l.createdAt)} · {f.date(l.createdAt, "time")}</p>
           </div>
         </li>
       ))}
@@ -47,7 +49,7 @@ export async function EntityHistory({
 export function HistoryHeading() {
   return (
     <span className="flex items-center gap-2">
-      <History className="size-4 text-muted-foreground" /> History
+      <History className="size-4 text-muted-foreground" /> <Msg ns="common" k="history" />
     </span>
   );
 }

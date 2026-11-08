@@ -15,14 +15,19 @@ import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { approvalTabs, changeSelfApprovalError, requestSelfApprovalError, DEFAULT_APPROVAL_TAB, tabShowsSection } from "@/lib/approval-rules";
 import type { SearchParams } from "@/lib/query";
 import { ticketRef, changeRef, CHANGE_TYPE_META, RISK_META, APPROVAL_ENTITY_META, type ApprovalEntityType } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
+import { getEnumT, getFormatter, getServerMessageT, getT } from "@/lib/i18n/server";
+import type { Formatter } from "@/lib/i18n/format";
 
-export const metadata: Metadata = { title: "Approvals" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("approvals");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const me = await requireUser();
   const sp = await searchParams;
+  const [t, tc, te, f, tm] = await Promise.all([getT("approvals"), getT("common"), getEnumT(), getFormatter(), getServerMessageT()]);
   const scope = me.role === "ADMIN" ? {} : { approverId: me.id };
   const [pending, pendingChanges, pendingAdHoc] = await Promise.all([
     db.ticketApproval.findMany({
@@ -45,21 +50,23 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   ]);
 
   const total = pending.length + pendingChanges.length + pendingAdHoc.length;
-  const tabs = approvalTabs({ changes: pendingChanges.length, requests: pending.length, other: pendingAdHoc.length });
+  const tabs = approvalTabs({ changes: pendingChanges.length, requests: pending.length, other: pendingAdHoc.length }).map(
+    (tab) => ({ ...tab, label: t.dyn(`tabs.${tab.key}`, undefined, tab.label) }),
+  );
   const activeTab = resolveTab(sp, tabs, DEFAULT_APPROVAL_TAB);
-  const nothingInTab = tabs.find((t) => t.key === activeTab)?.count === 0;
+  const nothingInTab = tabs.find((tab) => tab.key === activeTab)?.count === 0;
 
   return (
     <>
       <PageHeader
         icon={CheckSquare}
-        title="Approvals"
-        description="Requests waiting for your decision."
+        title={t("title")}
+        description={t("description")}
       >
         {total > 0 ? (
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1 text-sm font-medium tabular-nums">
             <span className="size-2 rounded-full bg-amber-500" />
-            {total} pending
+            {t("pendingCount", { count: total })}
           </span>
         ) : null}
       </PageHeader>
@@ -67,8 +74,8 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
         {total === 0 ? (
           <EmptyState
             icon={CheckSquare}
-            title="Nothing to approve"
-            description="You're all caught up — approval requests will appear here."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           />
         ) : (
           <>
@@ -78,39 +85,40 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
               defaultTab={DEFAULT_APPROVAL_TAB}
               basePath="/approvals"
               searchParams={sp}
-              label="Approval types"
+              label={t("tabsLabel")}
               className="-mb-4"
             />
             {nothingInTab ? (
               <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                Nothing of this kind is waiting for your decision.
+                {t("emptyTab")}
               </p>
             ) : null}
             {pending.length > 0 && tabShowsSection(activeTab, "requests") ? (
-              <Section icon={CheckSquare} label="Service requests" count={pending.length}>
+              <Section icon={CheckSquare} label={t("tabs.requests")} count={pending.length}>
                 {pending.map((a) => {
-                  const t = a.ticket;
-                  const fields = parseFormSchema(t.catalogItem?.formSchema);
+                  const ticket = a.ticket;
+                  const fields = parseFormSchema(ticket.catalogItem?.formSchema);
                   let answers = "";
                   try {
-                    answers = answersToText(fields, JSON.parse(t.formData ?? "{}"));
+                    answers = answersToText(fields, JSON.parse(ticket.formData ?? "{}"));
                   } catch {
                     answers = "";
                   }
-                  const selfApproval = requestSelfApprovalError(t.requesterId, me.id);
+                  const selfApproval = requestSelfApprovalError(ticket.requesterId, me.id);
                   return (
                     <ApprovalShell
                       key={a.id}
-                      refLabel={ticketRef(t.id, t.prefix)}
-                      href={`/tickets/${t.id}`}
-                      title={t.catalogItem?.name ?? t.title}
-                      requesterName={t.requester.name ?? t.requester.email}
-                      requesterEmail={t.requester.email}
-                      vip={t.requester.isVip}
+                      refLabel={ticketRef(ticket.id, ticket.prefix)}
+                      href={`/tickets/${ticket.id}`}
+                      title={ticket.catalogItem?.name ?? ticket.title}
+                      requesterName={ticket.requester.name ?? ticket.requester.email}
+                      requesterEmail={ticket.requester.email}
+                      vip={ticket.requester.isVip}
                       when={a.createdAt}
+                      f={f}
                       detail={answers}
                       decision={
-                        selfApproval ? <SelfNote message={selfApproval} /> : <ApprovalDecision approvalId={a.id} />
+                        selfApproval ? <SelfNote message={tm(selfApproval)} /> : <ApprovalDecision approvalId={a.id} />
                       }
                     />
                   );
@@ -119,7 +127,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
             ) : null}
 
             {pendingChanges.length > 0 && tabShowsSection(activeTab, "changes") ? (
-              <Section icon={GitPullRequestArrow} label="Change approvals" count={pendingChanges.length}>
+              <Section icon={GitPullRequestArrow} label={t("sections.changes")} count={pendingChanges.length}>
                 {pendingChanges.map((a) => {
                   const selfApproval = changeSelfApprovalError(a.change, me.id);
                   return (
@@ -128,9 +136,10 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                       refLabel={changeRef(a.change.id)}
                       href={`/changes/${a.change.id}`}
                       title={a.change.title}
-                      requesterName={a.change.assignee ? (a.change.assignee.name ?? a.change.assignee.email) : "Unassigned"}
+                      requesterName={a.change.assignee ? (a.change.assignee.name ?? a.change.assignee.email) : tc("unassigned")}
                       requesterEmail={a.change.assignee?.email ?? null}
                       when={a.createdAt}
+                      f={f}
                       badges={
                         <>
                           <StatusBadge map={CHANGE_TYPE_META} value={a.change.type} dot />
@@ -138,7 +147,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                         </>
                       }
                       decision={
-                        selfApproval ? <SelfNote message={selfApproval} /> : <ApprovalActions approvalId={a.id} />
+                        selfApproval ? <SelfNote message={tm(selfApproval)} /> : <ApprovalActions approvalId={a.id} />
                       }
                     />
                   );
@@ -147,21 +156,23 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
             ) : null}
 
             {pendingAdHoc.length > 0 && tabShowsSection(activeTab, "other") ? (
-              <Section icon={ShieldCheck} label="Sign-off requests" count={pendingAdHoc.length}>
+              <Section icon={ShieldCheck} label={t("sections.signOffs")} count={pendingAdHoc.length}>
                 {pendingAdHoc.map((a) => {
                   const meta = APPROVAL_ENTITY_META[a.entityType as ApprovalEntityType];
                   const selfApproval = requestSelfApprovalError(a.requestedById, me.id);
+                  const entityLabel = te(APPROVAL_ENTITY_META, a.entityType);
                   return (
                     <ApprovalShell
                       key={a.id}
-                      refLabel={`${meta.label} #${a.entityId}`}
+                      refLabel={`${entityLabel} #${a.entityId}`}
                       href={`${meta.path}/${a.entityId}`}
-                      title={a.title || `${meta.label} approval`}
-                      requesterName={a.requestedBy ? (a.requestedBy.name ?? a.requestedBy.email) : "Requested"}
+                      title={a.title || t("entityApproval", { entity: entityLabel })}
+                      requesterName={a.requestedBy ? (a.requestedBy.name ?? a.requestedBy.email) : t("requested")}
                       requesterEmail={a.requestedBy?.email ?? null}
                       when={a.createdAt}
+                      f={f}
                       decision={
-                        selfApproval ? <SelfNote message={selfApproval} /> : <EntityApprovalDecision approvalId={a.id} />
+                        selfApproval ? <SelfNote message={tm(selfApproval)} /> : <EntityApprovalDecision approvalId={a.id} />
                       }
                     />
                   );
@@ -200,7 +211,7 @@ function Section({
 }
 
 function ApprovalShell({
-  refLabel, href, title, requesterName, requesterEmail, vip, when, detail, badges, decision,
+  refLabel, href, title, requesterName, requesterEmail, vip, when, f, detail, badges, decision,
 }: {
   refLabel: string;
   href: string;
@@ -209,6 +220,7 @@ function ApprovalShell({
   requesterEmail: string | null;
   vip?: boolean;
   when: Date;
+  f: Formatter;
   detail?: string;
   badges?: React.ReactNode;
   decision: React.ReactNode;
@@ -228,7 +240,7 @@ function ApprovalShell({
             <UserAvatar name={requesterName} email={requesterEmail ?? undefined} size="sm" />
             <span className="truncate">{requesterName}</span>
             {vip ? <VipBadge label={false} /> : null}
-            <span className="shrink-0">· {formatDistanceToNow(when, { addSuffix: true })}</span>
+            <span className="shrink-0">· {f.relative(when)}</span>
           </p>
           {detail ? (
             <pre className="mt-1 whitespace-pre-wrap rounded-lg border bg-muted/40 p-3 text-xs text-foreground/90">

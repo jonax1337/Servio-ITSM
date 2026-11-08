@@ -1,6 +1,6 @@
 import { Check, X, Clock, User, Users, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 type StageStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
@@ -19,7 +19,7 @@ export type ProgressStage = {
  * each ordered stage, which one is currently live, and the outcome once decided.
  * Renders for single-stage items too (a compact one-row timeline).
  */
-export function ApprovalProgress({
+export async function ApprovalProgress({
   stages,
   state,
   className,
@@ -31,21 +31,24 @@ export function ApprovalProgress({
   // The live stage is the first non-decided one, unless the whole request settled.
   const liveIndex = stages.findIndex((s) => s.status === "PENDING");
   const settled = state !== "PENDING";
+  const [t, f] = await Promise.all([getT("portal"), getFormatter()]);
 
   const headline =
     state === "APPROVED"
-      ? "Approved"
+      ? t("approval.approved")
       : state === "REJECTED"
-        ? "Declined"
+        ? t("approval.declined")
         : state === "CANCELLED"
-          ? "Cancelled before a decision"
-          : `Awaiting approval${stages.length > 1 && liveIndex >= 0 ? ` — stage ${liveIndex + 1} of ${stages.length}` : ""}`;
+          ? t("approval.cancelled")
+          : stages.length > 1 && liveIndex >= 0
+            ? t("approval.awaitingStage", { stage: liveIndex + 1, total: stages.length })
+            : t("approval.awaiting");
 
   return (
     <div className={cn("rounded-2xl border bg-card p-6", className)}>
       <div className="mb-4 flex items-center gap-2">
         <ShieldCheck className="size-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold text-muted-foreground">Approval</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground">{t("approval")}</h2>
         <span
           className={cn(
             "ml-auto rounded-full px-2 py-0.5 text-xs font-medium",
@@ -100,24 +103,24 @@ export function ApprovalProgress({
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="flex items-center gap-1.5 text-sm font-medium">
                     <KindIcon className="size-3.5 text-muted-foreground" />
-                    {stages.length > 1 ? `Stage ${i + 1}` : "Approval"}
+                    {stages.length > 1 ? t("stage", { stage: i + 1 }) : t("approval")}
                   </span>
                   {s.approverName ? (
                     <span className="truncate text-sm text-muted-foreground">· {s.approverName}</span>
                   ) : s.kind === "group" ? (
-                    <span className="text-sm text-muted-foreground">· group approval</span>
+                    <span className="text-sm text-muted-foreground">· {t("groupApproval")}</span>
                   ) : null}
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {s.status === "APPROVED"
-                    ? `Approved${s.decidedAt ? ` · ${format(s.decidedAt, "PP")}` : ""}`
+                    ? s.decidedAt ? t("approvedOn", { date: f.date(s.decidedAt) }) : t("approval.approved")
                     : s.status === "REJECTED"
-                      ? `Declined${s.decidedAt ? ` · ${format(s.decidedAt, "PP")}` : ""}`
+                      ? s.decidedAt ? t("declinedOn", { date: f.date(s.decidedAt) }) : t("approval.declined")
                       : s.status === "CANCELLED" || settled
-                        ? "Not decided"
+                        ? t("notDecided")
                         : isLive
-                          ? "Waiting for a decision"
-                          : "Pending earlier stages"}
+                          ? t("waitingDecision")
+                          : t("pendingEarlier")}
                 </p>
                 {s.comment ? (
                   <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-muted/50 px-3 py-2 text-sm">{s.comment}</p>

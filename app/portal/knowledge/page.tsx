@@ -6,8 +6,12 @@ import { NoResultsArt } from "@/components/portal/illustrations";
 import { KnowledgeBrowser, type KbCard } from "@/components/portal/knowledge-browser";
 import type { SearchParams } from "@/lib/query";
 import { getParam } from "@/lib/query";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Knowledge base" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("portal");
+  return { title: t("kbTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function PortalKnowledge({
@@ -22,13 +26,14 @@ export default async function PortalKnowledge({
     orderBy: { views: "desc" },
     include: { category: true },
   });
+  const t = await getT("portal");
 
   const cards: KbCard[] = articles.map((a) => ({
     id: a.id,
     title: a.title,
     slug: a.slug,
     excerpt: a.excerpt ?? "",
-    category: a.category?.name ?? "General",
+    category: a.category?.name ?? t("general"),
     views: a.views,
   }));
 
@@ -40,10 +45,10 @@ export default async function PortalKnowledge({
         </span>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-            Knowledge base
+            {t("kbTitle")}
           </h1>
           <p className="mt-1 max-w-xl text-muted-foreground">
-            Guides and answers to the questions we hear most. Search or browse by category.
+            {t("kbDescription")}
           </p>
         </div>
       </header>
@@ -51,12 +56,12 @@ export default async function PortalKnowledge({
       {cards.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card py-14 text-center">
           <NoResultsArt className="h-28 w-28" />
-          <p className="font-medium">No articles yet</p>
+          <p className="font-medium">{t("noArticlesYet")}</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Check back soon, or ask us anything and we&apos;ll help directly.
+            {t("noArticlesText")}
           </p>
           <LinkButton href="/portal/new" size="sm" variant="outline" className="mt-1">
-            Ask the Service Desk
+            {t("askServiceDesk")}
           </LinkButton>
         </div>
       ) : (

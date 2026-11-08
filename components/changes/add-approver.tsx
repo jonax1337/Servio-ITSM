@@ -6,11 +6,15 @@ import { toast } from "sonner";
 import { addChangeApprover } from "@/lib/actions/changes";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 export function AddApprover({ changeId, agentOptions }: { changeId: number; agentOptions: ComboOption[] }) {
   const [value, setValue] = useState("none");
   const [pending, start] = useTransition();
-  const opts: ComboOption[] = [{ value: "none", label: "Select approver…" }, ...agentOptions];
+  const t = useT("changes");
+  const tc = useT("common");
+  const tm = useServerMessage();
+  const opts: ComboOption[] = [{ value: "none", label: t("approvers.select") }, ...agentOptions];
 
   const submit = () => {
     if (value === "none") return;
@@ -20,19 +24,19 @@ export function AddApprover({ changeId, agentOptions }: { changeId: number; agen
     start(async () => {
       const res = await addChangeApprover(fd);
       if (!res.ok) {
-        toast.error(res.error ?? "Could not add the approver.");
+        toast.error(res.error ? tm(res.error) : t("approvers.addFailed"));
         return;
       }
       setValue("none");
-      toast.success("Approver added");
+      toast.success(t("approvers.added"));
     });
   };
 
   return (
     <div className="flex items-center gap-2">
-      <Combobox options={opts} value={value} onChange={setValue} className="w-52" size="sm" searchPlaceholder="Search people…" />
+      <Combobox options={opts} value={value} onChange={setValue} className="w-52" size="sm" searchPlaceholder={t("approvers.searchPeople")} />
       <Button size="sm" variant="outline" disabled={pending || value === "none"} onClick={submit}>
-        {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Add
+        {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} {tc("add")}
       </Button>
     </div>
   );

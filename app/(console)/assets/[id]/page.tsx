@@ -26,7 +26,7 @@ import {
   SERVICE_STATUS_META,
   metaFor,
 } from "@/lib/constants";
-import { format } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export async function generateMetadata({
     where: { id },
     select: { name: true },
   });
-  return { title: a ? a.name : "Asset" };
+  return { title: a ? a.name : (await getT("assets"))("entity") };
 }
 
 export default async function AssetDetailPage({
@@ -54,6 +54,7 @@ export default async function AssetDetailPage({
   const sp = await searchParams;
 
   const me = await requireUser();
+  const [t, tc, te, f] = await Promise.all([getT("assets"), getT("common"), getEnumT(), getFormatter()]);
   const [asset, options, locations] = await Promise.all([
     db.asset.findUnique({
       where: { id },
@@ -84,7 +85,7 @@ export default async function AssetDetailPage({
     relations: asset._count.relationsFrom + asset._count.relationsTo,
     tickets: asset._count.tickets,
     changes: asset._count.changes,
-  });
+  }).map((tab) => ({ ...tab, label: t(`tab.${tab.key}`) }));
   const active = resolveTab(sp, tabs, DEFAULT_ASSET_TAB);
 
   return (
@@ -92,7 +93,7 @@ export default async function AssetDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/assets" variant="ghost" size="icon-sm" aria-label="Back to assets">
+          <LinkButton href="/assets" variant="ghost" size="icon-sm" aria-label={t("backToList")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           {asset.assetTag ? (
@@ -114,8 +115,8 @@ export default async function AssetDetailPage({
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {asset.manufacturer ? `${asset.manufacturer} · ` : ""}
-            {asset.model ?? metaFor(ASSET_TYPE_META, asset.type).label}
-            {asset.syncSource ? ` · synced from ${asset.syncSource.name}` : ""}
+            {asset.model ?? te(metaFor(ASSET_TYPE_META, asset.type))}
+            {asset.syncSource ? ` · ${t("syncedFrom", { source: asset.syncSource.name })}` : ""}
           </p>
 
           <EntityTabs
@@ -125,7 +126,7 @@ export default async function AssetDetailPage({
             defaultTab={DEFAULT_ASSET_TAB}
             basePath={`/assets/${asset.id}`}
             searchParams={sp}
-            label="Asset sections"
+            label={t("sections")}
           />
 
           <div className="mt-6">
@@ -146,7 +147,7 @@ export default async function AssetDetailPage({
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Properties</CardTitle>
+            <CardTitle className="text-sm">{tc("properties")}</CardTitle>
           </CardHeader>
           <CardContent>
             <AssetProperties asset={asset} options={options} />
@@ -155,17 +156,17 @@ export default async function AssetDetailPage({
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle className="text-sm">Ownership</CardTitle>
+            <CardTitle className="text-sm">{t("ownership")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Owner</span>
+              <span className="text-muted-foreground">{tc("owner")}</span>
               <span className="font-medium">
                 {asset.owner ? asset.owner.name ?? asset.owner.email : "—"}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Group</span>
+              <span className="text-muted-foreground">{tc("group")}</span>
               <span className="font-medium">{asset.group?.name ?? "—"}</span>
             </div>
           </CardContent>
@@ -173,26 +174,26 @@ export default async function AssetDetailPage({
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle className="text-sm">Lifecycle</CardTitle>
+            <CardTitle className="text-sm">{t("lifecycle")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
-            <Meta label="Added" value={format(asset.createdAt, "PP")} />
+            <Meta label={t("added")} value={f.date(asset.createdAt)} />
             {asset.purchaseDate ? (
-              <Meta label="Purchased" value={format(asset.purchaseDate, "PP")} />
+              <Meta label={t("purchased")} value={f.date(asset.purchaseDate)} />
             ) : null}
             {asset.lastSeenAt ? (
-              <Meta label="Last seen" value={format(asset.lastSeenAt, "PP p")} />
+              <Meta label={t("lastSeen")} value={f.date(asset.lastSeenAt, "dateTime")} />
             ) : null}
           </CardContent>
         </Card>
 
         <Card className="mt-4">
           <CardHeader>
-            <CardTitle className="text-sm">Services · {asset.services.length}</CardTitle>
+            <CardTitle className="text-sm">{t("servicesCount", { count: asset.services.length })}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2">
             {asset.services.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Not part of any service.</p>
+              <p className="text-sm text-muted-foreground">{t("noServices")}</p>
             ) : (
               asset.services.map(({ service }) => (
                 <div key={service.id} className="flex items-center gap-2">

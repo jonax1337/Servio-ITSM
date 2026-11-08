@@ -19,7 +19,7 @@ import { ApprovalProgress, type ProgressStage } from "../approval-progress";
 import {
   APPROVAL_STATUSES, TICKET_STATUS_META, PRIORITY_META, TICKET_TYPE_META, ticketRef,
 } from "@/lib/constants";
-import { format, formatDistanceToNow } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const t = await db.ticket.findUnique({ where: { id: Number(id) }, select: { title: true } });
-  return { title: t?.title ?? "Ticket" };
+  return { title: t?.title ?? (await getT("portal"))("ticket") };
 }
 
 export default async function PortalTicketDetail({
@@ -40,6 +40,7 @@ export default async function PortalTicketDetail({
 }) {
   const me = await requireUser();
   const maxUploadMb = await getMaxUploadMb();
+  const [t, te, f] = await Promise.all([getT("portal"), getEnumT(), getFormatter()]);
   const { id } = await params;
 
   const ticket = await db.ticket.findFirst({
@@ -70,7 +71,7 @@ export default async function PortalTicketDetail({
   return (
     <div className="mx-auto max-w-3xl">
       <LinkButton href="/portal/tickets" variant="ghost" size="sm" className="mb-4 -ml-2">
-        <ArrowLeft className="size-4" /> Back to my tickets
+        <ArrowLeft className="size-4" /> {t("backToMyTickets")}
       </LinkButton>
 
       <div className="overflow-hidden rounded-2xl border bg-card">
@@ -85,7 +86,7 @@ export default async function PortalTicketDetail({
           </div>
           <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight">{ticket.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Submitted {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
+            {t("submitted", { time: f.relative(ticket.createdAt) })}
             {ticket.service ? ` · ${ticket.service.name}` : ""}
           </p>
         </div>
@@ -96,17 +97,17 @@ export default async function PortalTicketDetail({
             <>
               <UserAvatar name={ticket.assignee.name} email={ticket.assignee.email} size="sm" />
               <p className="text-sm text-muted-foreground">
-                Handled by{" "}
-                <span className="font-medium text-foreground">
-                  {ticket.assignee.name ?? "the Service Desk"}
-                </span>
+                {t.rich("handledBy", {
+                  name: ticket.assignee.name ?? t("theServiceDesk"),
+                  b: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+                })}
               </p>
             </>
           ) : (
             <>
               <span className="size-2 rounded-full bg-amber-500" />
               <p className="text-sm text-muted-foreground">
-                Awaiting assignment. We&apos;ll pick this up shortly.
+                {t("awaitingAssignment")}
               </p>
             </>
           )}
@@ -134,19 +135,19 @@ export default async function PortalTicketDetail({
       {canReRequest ? (
         <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="font-medium">{wasDeclined ? "This request was declined" : "This request was cancelled"}</p>
-            <p className="text-sm text-muted-foreground">You can resubmit it with the same details to try again.</p>
+            <p className="font-medium">{wasDeclined ? t("requestDeclined") : t("requestCancelled")}</p>
+            <p className="text-sm text-muted-foreground">{t("resubmitHint")}</p>
           </div>
           <form action={reRequestCatalogItem}>
             <input type="hidden" name="ticketId" value={ticket.id} />
-            <Button type="submit" className="shrink-0"><RotateCcw className="size-4" /> Re-request</Button>
+            <Button type="submit" className="shrink-0"><RotateCcw className="size-4" /> {t("reRequest")}</Button>
           </form>
         </div>
       ) : null}
 
       {/* Description */}
       <div className="mt-6 rounded-2xl border bg-card p-6">
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Description</h2>
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t("description")}</h2>
         <div className="text-sm leading-relaxed">
           {ticket.descriptionHtml ? (
             <div
@@ -154,7 +155,7 @@ export default async function PortalTicketDetail({
               dangerouslySetInnerHTML={{ __html: sanitizeCommentHtml(ticket.descriptionHtml) }}
             />
           ) : (
-            <div className="whitespace-pre-wrap">{ticket.description || "No description provided."}</div>
+            <div className="whitespace-pre-wrap">{ticket.description || t("noDescription")}</div>
           )}
         </div>
       </div>
@@ -178,12 +179,12 @@ export default async function PortalTicketDetail({
       <div className="mt-8">
         <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
           <MessagesSquare className="size-4.5 text-muted-foreground" />
-          Conversation
+          {t("conversation")}
         </h2>
 
         {ticket.comments.length === 0 ? (
           <div className="rounded-2xl border border-dashed bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
-            No replies yet. Our team will be in touch soon.
+            {t("noReplies")}
           </div>
         ) : (
           <div className="grid gap-4">
@@ -195,9 +196,9 @@ export default async function PortalTicketDetail({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">
-                        {mine ? "You" : c.author.name ?? c.author.email}
+                        {mine ? t("you") : c.author.name ?? c.author.email}
                       </span>
-                      <span className="text-xs text-muted-foreground">{format(c.createdAt, "PP p")}</span>
+                      <span className="text-xs text-muted-foreground">{f.date(c.createdAt, "dateTime")}</span>
                     </div>
                     {c.bodyHtml ? (
                       <div
@@ -234,8 +235,10 @@ export default async function PortalTicketDetail({
           </div>
         ) : (
           <div className="mt-5 rounded-2xl border bg-muted/30 px-4 py-3 text-center text-sm text-muted-foreground">
-            This ticket is {TICKET_STATUS_META[ticket.status]?.label?.toLowerCase() ?? "closed"}. Need more help?{" "}
-            <a href="/portal/new" className="font-medium text-primary hover:underline">Open a new request</a>.
+            {t("ticketIsStatus", {
+              status: TICKET_STATUS_META[ticket.status] ? te(TICKET_STATUS_META, ticket.status).toLowerCase() : t("closed"),
+            })}{" "}
+            <a href="/portal/new" className="font-medium text-primary hover:underline">{t("openNewRequest")}</a>.
           </div>
         )}
       </div>

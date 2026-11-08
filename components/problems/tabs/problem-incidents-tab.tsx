@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { UnlinkIncidentButton } from "@/components/problems/problem-fix-changes";
 import { setTicketProblem } from "@/lib/actions/tickets";
 import { TICKET_STATUS_META, ticketRef } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 export async function ProblemIncidentsTab({
   problemId,
@@ -14,6 +15,7 @@ export async function ProblemIncidentsTab({
   problemId: number;
   isAgentUser: boolean;
 }) {
+  const t = await getT("problems");
   const [tickets, linkableTickets] = await Promise.all([
     db.ticket.findMany({
       where: { problemId },
@@ -29,47 +31,47 @@ export async function ProblemIncidentsTab({
         })
       : [],
   ]);
-  const ticketOpts = linkableTickets.map((t) => ({ value: String(t.id), label: `${ticketRef(t.id, t.prefix)} · ${t.title}` }));
+  const ticketOpts = linkableTickets.map((tk) => ({ value: String(tk.id), label: `${ticketRef(tk.id, tk.prefix)} · ${tk.title}` }));
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <TicketIcon className="size-4 text-muted-foreground" />
-          Linked incidents · {tickets.length}
+          {t("incidents.heading", { count: tickets.length })}
         </h2>
         {isAgentUser ? (
           <LinkPicker
             action={setTicketProblem}
-            triggerLabel="Link incident"
-            title="Link an incident"
-            description="Attach an existing ticket to this problem."
+            triggerLabel={t("incidents.link")}
+            title={t("incidents.linkTitle")}
+            description={t("incidents.linkDescription")}
             hidden={{ problemId }}
             valueName="ticketId"
             options={ticketOpts}
-            placeholder="Choose a ticket"
-            searchPlaceholder="Search tickets…"
-            emptyText="No unlinked tickets available."
+            placeholder={t("incidents.choose")}
+            searchPlaceholder={t("incidents.search")}
+            emptyText={t("incidents.noneAvailable")}
           />
         ) : null}
       </div>
       {tickets.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No incidents linked to this problem yet.</p>
+        <p className="text-sm text-muted-foreground">{t("incidents.empty")}</p>
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
-          {tickets.map((t) => (
+          {tickets.map((tk) => (
             <div
-              key={t.id}
+              key={tk.id}
               className="group/chip flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
             >
-              <Link href={`/tickets/${t.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+              <Link href={`/tickets/${tk.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="font-mono text-xs text-muted-foreground">
-                  {ticketRef(t.id, t.prefix)}
+                  {ticketRef(tk.id, tk.prefix)}
                 </span>
-                <span className="line-clamp-1 flex-1 text-sm font-medium">{t.title}</span>
-                <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+                <span className="line-clamp-1 flex-1 text-sm font-medium">{tk.title}</span>
+                <StatusBadge map={TICKET_STATUS_META} value={tk.status} />
               </Link>
-              {isAgentUser ? <UnlinkIncidentButton ticketId={t.id} /> : null}
+              {isAgentUser ? <UnlinkIncidentButton ticketId={tk.id} /> : null}
             </div>
           ))}
         </div>

@@ -5,6 +5,7 @@ import { abortMaintenance, cancelMaintenance, endMaintenanceNow, startMaintenanc
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { WindowLogDialog } from "@/components/maintenance/window-log-dialog";
 import { isAbortable, type UpdaterLogEntry } from "@/lib/maintenance-rules";
+import { useT } from "@/lib/i18n/client";
 
 export type ManagedWindow = {
   id: string;
@@ -18,6 +19,7 @@ export type ManagedWindow = {
 /** Row actions of a maintenance window: start early, cancel, end now (general windows), abort (stuck updates) and the updater log. */
 export function WindowActions({ window }: { window: ManagedWindow }) {
   const { id, title, kind, status } = window;
+  const t = useT("maintenance");
   return (
     <div className="flex items-center justify-end gap-1.5">
       {window.log.length > 0 || window.result ? <WindowLogDialog title={title} result={window.result} log={window.log} /> : null}
@@ -26,27 +28,27 @@ export function WindowActions({ window }: { window: ManagedWindow }) {
           <ConfirmButton
             action={startMaintenanceNow}
             fields={{ id }}
-            successMessage="Maintenance started"
-            title="Start now"
-            description={`Start "${title}" immediately? Users lose access right away${kind === "UPDATE" ? " and the update begins" : ""}.`}
-            confirmLabel="Start now"
+            successMessage={t("maintenanceStarted")}
+            title={t("startNow")}
+            description={kind === "UPDATE" ? t("startNowUpdateDescription", { title }) : t("startNowDescription", { title })}
+            confirmLabel={t("startNow")}
             confirmVariant="default"
             triggerVariant="outline"
             triggerSize="sm"
             triggerClassName="gap-1"
           >
-            <Play className="size-3.5" /> Start now
+            <Play className="size-3.5" /> {t("startNow")}
           </ConfirmButton>
           <ConfirmButton
             action={cancelMaintenance}
             fields={{ id }}
-            successMessage="Maintenance cancelled"
-            title="Cancel maintenance"
-            description={`Cancel "${title}"? Users are no longer warned about it.`}
-            confirmLabel="Cancel window"
+            successMessage={t("cancelled")}
+            title={t("cancelMaintenance")}
+            description={t("cancelDescription", { title })}
+            confirmLabel={t("cancelWindow")}
             triggerVariant="outline"
             triggerSize="icon-sm"
-            triggerLabel={`Cancel ${title}`}
+            triggerLabel={t("cancelTitle", { title })}
             triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
           >
             <Ban className="size-4" />
@@ -57,31 +59,31 @@ export function WindowActions({ window }: { window: ManagedWindow }) {
         <ConfirmButton
           action={endMaintenanceNow}
           fields={{ id }}
-          successMessage="Maintenance ended"
-          title="End maintenance"
-          description={`End "${title}" now? Users get access back.`}
-          confirmLabel="End now"
+          successMessage={t("ended")}
+          title={t("endMaintenance")}
+          description={t("endDescription", { title })}
+          confirmLabel={t("endNow")}
           confirmVariant="default"
           triggerVariant="outline"
           triggerSize="sm"
           triggerClassName="gap-1"
         >
-          <Square className="size-3.5" /> End now
+          <Square className="size-3.5" /> {t("endNow")}
         </ConfirmButton>
       ) : null}
       {isAbortable(window) ? (
         <ConfirmButton
           action={abortMaintenance}
           fields={{ id }}
-          successMessage="Update aborted"
-          title="Abort update"
-          description={`Mark "${title}" as failed and give users access back. This does not stop the updater: it may still be running and the container may be mid-switch. Check the updater's log first, and only abort when it is stuck or gone.`}
-          confirmLabel="Abort update"
+          successMessage={t("aborted")}
+          title={t("abortUpdate")}
+          description={t("abortDescription", { title })}
+          confirmLabel={t("abortUpdate")}
           triggerVariant="outline"
           triggerSize="sm"
           triggerClassName="gap-1 text-muted-foreground hover:border-destructive/40 hover:text-destructive"
         >
-          <OctagonX className="size-3.5" /> Abort
+          <OctagonX className="size-3.5" /> {t("abort")}
         </ConfirmButton>
       ) : null}
     </div>

@@ -48,6 +48,12 @@ import {
 import type { AiModelList } from "@/lib/ai-models";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { useFormatter, useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
+
+type Tr = Translator<"settings">;
+const providerText = (t: Tr, p: Provider, field: "title" | "description" | "tag", fallback: string) =>
+  t.dyn(`aiForm.provider.${p}.${field}`, undefined, fallback);
 
 type Provider = "claude-code" | "anthropic" | "openai" | "ollama";
 
@@ -143,13 +149,14 @@ function Section({
 }
 
 function ConfiguredBadge({ set }: { set: boolean }) {
+  const t = useT("settings");
   return set ? (
     <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-      Configured
+      {t("aiForm.configured")}
     </span>
   ) : (
     <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      Not set
+      {t("aiForm.notSet")}
     </span>
   );
 }
@@ -178,6 +185,7 @@ function TextField({
 
 /** A secret input: never prefilled; blank keeps the stored value. */
 function SecretField({ name, label, set, hint }: { name: string; label: string; set: boolean; hint?: string }) {
+  const t = useT("settings");
   return (
     <div className="grid gap-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -189,7 +197,7 @@ function SecretField({ name, label, set, hint }: { name: string; label: string; 
         name={name}
         type="password"
         autoComplete="new-password"
-        placeholder={set ? "•••••••• (leave blank to keep)" : undefined}
+        placeholder={set ? t("aiForm.keepPlaceholder") : undefined}
       />
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
@@ -230,16 +238,19 @@ function ModelField({ provider, defaultValue }: { provider: Provider; defaultVal
   const [model, setModel] = useState(defaultValue);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const t = useT("settings");
+  const tm = useServerMessage();
   const loading = loaded?.provider !== provider || loaded.nonce !== nonce;
 
   useEffect(() => {
     let cancelled = false;
     listAiModels(provider)
       .then((list) => !cancelled && setLoaded({ provider, nonce, list }))
-      .catch(() => !cancelled && setLoaded({ provider, nonce, list: { models: [], error: "Could not load models." } }));
+      .catch(() => !cancelled && setLoaded({ provider, nonce, list: { models: [], error: t("aiForm.couldNotLoadModels") } }));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on provider/nonce only, not on a locale switch
   }, [provider, nonce]);
 
   const list = loaded?.provider === provider ? loaded.list : null;
@@ -254,7 +265,7 @@ function ModelField({ provider, defaultValue }: { provider: Provider; defaultVal
 
   return (
     <div className="grid gap-1.5">
-      <Label>Model</Label>
+      <Label>{t("aiForm.model")}</Label>
       <input type="hidden" name="AI_MODEL" value={model} />
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
@@ -267,24 +278,24 @@ function ModelField({ provider, defaultValue }: { provider: Provider; defaultVal
             />
           }
         >
-          <span className="truncate">{model ? (selected?.label ?? model) : "Provider default"}</span>
+          <span className="truncate">{model ? (selected?.label ?? model) : t("aiForm.providerDefault")}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[var(--anchor-width)] min-w-64 rounded-md p-0">
           <Command>
-            <CommandInput placeholder="Search or type a model id…" value={search} onValueChange={setSearch} />
+            <CommandInput placeholder={t("aiForm.searchModel")} value={search} onValueChange={setSearch} />
             <CommandList>
-              <CommandEmpty>{loading ? "Loading models…" : "No matching model."}</CommandEmpty>
+              <CommandEmpty>{loading ? t("aiForm.loadingModels") : t("aiForm.noMatchingModel")}</CommandEmpty>
               {custom && !models.some((m) => m.id === custom) ? (
                 <CommandGroup>
                   <CommandItem value={`__custom ${custom}`} onSelect={() => pick(custom)}>
-                    Use “{custom}”
+                    {t("aiForm.useCustom", { id: custom })}
                   </CommandItem>
                 </CommandGroup>
               ) : null}
               <CommandGroup>
                 <CommandItem value="provider default" data-checked={model === ""} onSelect={() => pick("")}>
-                  <span className="text-muted-foreground">Provider default</span>
+                  <span className="text-muted-foreground">{t("aiForm.providerDefault")}</span>
                 </CommandItem>
                 {models.map((m) => (
                   <CommandItem
@@ -303,7 +314,7 @@ function ModelField({ provider, defaultValue }: { provider: Provider; defaultVal
               <CommandGroup>
                 <CommandItem value="__reload model list" disabled={loading} onSelect={() => setNonce((n) => n + 1)}>
                   <RefreshCw className={cn("size-4", loading && "animate-spin")} />
-                  Reload model list
+                  {t("aiForm.reloadModels")}
                 </CommandItem>
               </CommandGroup>
             </CommandList>
@@ -312,8 +323,8 @@ function ModelField({ provider, defaultValue }: { provider: Provider; defaultVal
       </Popover>
       <p className={cn("text-xs", list?.error ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
         {loading
-          ? "Loading models…"
-          : list?.error ?? `${models.length} models available. Type in the search to use any other id.`}
+          ? t("aiForm.loadingModels")
+          : list?.error ? tm(list.error) : t("aiForm.modelsAvailable", { count: models.length })}
       </p>
     </div>
   );
@@ -333,6 +344,9 @@ function StatusCard({
   const [check, setCheck] = useState<AiConnectionCheck | null>(null);
   const [pending, startTransition] = useTransition();
   const runCheck = () => startTransition(async () => setCheck(await testAiConnection()));
+  const t = useT("settings");
+  const tm = useServerMessage();
+  const f = useFormatter();
 
   return (
     <section className="grid gap-4 rounded-xl border bg-card p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
@@ -351,14 +365,14 @@ function StatusCard({
             )}
           >
             <span className={cn("size-1.5 rounded-full", configured ? "bg-emerald-500" : "bg-amber-500")} />
-            {configured ? "Ready" : "Needs setup"}
+            {configured ? t("aiForm.ready") : t("aiForm.needsSetup")}
           </span>
         </div>
         <p className="truncate text-sm text-muted-foreground">
-          {providerTitle} · {model || "provider default"}
+          {providerTitle} · {model || t("aiForm.providerDefaultLower")}
         </p>
         <p className="text-xs text-muted-foreground">
-          Isolated Claude Code agent · {skillCount} ITSM skills · live thinking &amp; tool steps
+          {t("aiForm.statusLine", { count: skillCount })}
         </p>
         {check ? (
           <p
@@ -368,14 +382,17 @@ function StatusCard({
             )}
           >
             {check.ok
-              ? `Connected in ${(check.latencyMs / 1000).toFixed(1)} s — “${check.reply}”`
-              : check.error}
+              ? t("aiForm.connectedIn", {
+                  seconds: f.number(check.latencyMs / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+                  reply: check.reply,
+                })
+              : tm(check.error)}
           </p>
         ) : null}
       </div>
       <Button type="button" variant="outline" size="sm" onClick={runCheck} disabled={pending}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <Activity className="size-4" />}
-        Test connection
+        {t("aiForm.testConnection")}
       </Button>
     </section>
   );
@@ -404,14 +421,16 @@ export function AiSettingsForm({
   const [state, formAction, pending] = useActionState(saveAiSettings, undefined);
   const submit = useFormSubmit(formAction);
   const wasPending = useRef(false);
+  const t = useT("settings");
+  const tm = useServerMessage();
 
   useEffect(() => {
     if (wasPending.current && !pending) {
-      if (state?.error) toast.error(state.error);
-      else if (state?.ok) toast.success("Settings saved");
+      if (state?.error) toast.error(tm(state.error));
+      else if (state?.ok) toast.success(t("aiForm.saved"));
     }
     wasPending.current = pending;
-  }, [pending, state]);
+  }, [pending, state, t, tm]);
 
   const selected = PROVIDERS.find((p) => p.value === provider) ?? PROVIDERS[0];
 
@@ -419,7 +438,10 @@ export function AiSettingsForm({
     <div className="grid gap-5">
       <StatusCard
         configured={configured}
-        providerTitle={PROVIDERS.find((p) => p.value === values.provider)?.title ?? values.provider}
+        providerTitle={(() => {
+          const p = PROVIDERS.find((x) => x.value === values.provider);
+          return p ? providerText(t, p.value, "title", p.title) : values.provider;
+        })()}
         model={values.model}
         skillCount={skills.filter((s) => s.enabled).length}
       />
@@ -427,8 +449,8 @@ export function AiSettingsForm({
       <form method="post" onSubmit={submit} className="grid gap-5">
         <Section
           icon={Cpu}
-          title="Model provider"
-          description={`Every provider runs through ${AI_ASSISTANT_NAME}'s isolated Claude Code harness, so all models share the same tools and agent steps.`}
+          title={t("aiForm.modelProvider")}
+          description={t("aiForm.modelProviderDescription", { name: AI_ASSISTANT_NAME })}
         >
           <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
             {PROVIDERS.map((p) => {
@@ -452,12 +474,12 @@ export function AiSettingsForm({
                   <p.icon className={cn("mt-0.5 size-4 shrink-0", active ? "text-sable" : "text-muted-foreground")} />
                   <span className="grid min-w-0 gap-0.5">
                     <span className="flex items-center gap-2 text-sm font-medium">
-                      {p.title}
+                      {providerText(t, p.value, "title", p.title)}
                       <span className="rounded-full border px-1.5 py-px text-[10px] font-normal text-muted-foreground">
-                        {p.tag}
+                        {providerText(t, p.value, "tag", p.tag)}
                       </span>
                     </span>
-                    <span className="text-xs text-muted-foreground">{p.description}</span>
+                    <span className="text-xs text-muted-foreground">{providerText(t, p.value, "description", p.description)}</span>
                   </span>
                 </label>
               );
@@ -465,44 +487,43 @@ export function AiSettingsForm({
           </div>
 
           <div className="grid gap-4 rounded-lg border border-dashed p-4">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{selected.title}</p>
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{providerText(t, selected.value, "title", selected.title)}</p>
 
             <div hidden={provider !== "claude-code"} className="grid gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm">
-                  Subscription token <ConfiguredBadge set={secrets.claudeToken} />
+                  {t("aiForm.subscriptionToken")} <ConfiguredBadge set={secrets.claudeToken} />
                 </div>
                 <ClaudeConnectDialog connected={secrets.claudeToken} />
               </div>
               <p className="text-xs text-muted-foreground">
-                Data is sent to Anthropic under your plan&apos;s terms. Using a consumer subscription for a
-                multi-user service is a grey area; prefer an API key in production.
+                {t("aiForm.subscriptionHint")}
               </p>
             </div>
 
             <div hidden={provider !== "anthropic"}>
-              <SecretField name="ANTHROPIC_API_KEY" label="Anthropic API key" set={secrets.anthropic} />
+              <SecretField name="ANTHROPIC_API_KEY" label={t("aiForm.anthropicKey")} set={secrets.anthropic} />
             </div>
 
             <div hidden={provider !== "openai"}>
               <SecretField
                 name="OPENAI_API_KEY"
-                label="API key"
+                label={t("aiForm.apiKey")}
                 set={secrets.openai}
-                hint="Requests are translated to the OpenAI format by a built-in localhost proxy. Point OPENAI_BASE_URL (env) at another compatible cloud if needed."
+                hint={t("aiForm.openaiHint")}
               />
             </div>
 
             <div hidden={provider !== "ollama"} className="grid gap-4 sm:grid-cols-2">
               <TextField
                 name="OLLAMA_BASE_URL"
-                label="Ollama base URL"
+                label={t("aiForm.ollamaUrl")}
                 defaultValue={values.ollamaUrl}
                 placeholder="http://localhost:11434/v1"
               />
               <TextField
                 name="OLLAMA_MODEL"
-                label="Ollama model"
+                label={t("aiForm.ollamaModel")}
                 defaultValue={values.ollamaModel}
                 placeholder="llama3.1"
               />
@@ -510,37 +531,37 @@ export function AiSettingsForm({
           </div>
         </Section>
 
-        <Section icon={SlidersHorizontal} title="Model & limits">
+        <Section icon={SlidersHorizontal} title={t("aiForm.modelLimits")}>
           <div className="grid gap-4 sm:grid-cols-2">
             <ModelField provider={provider} defaultValue={values.model} />
             <TextField
               name="AI_MAX_OUTPUT_TOKENS"
-              label="Max output tokens"
+              label={t("aiForm.maxTokens")}
               defaultValue={values.maxTokens}
-              placeholder="Auto (model default)"
-              hint="Leave blank for the model's own limit (recommended). A number is raised to at least 8192, since thinking shares the budget with the answer."
+              placeholder={t("aiForm.maxTokensPlaceholder")}
+              hint={t("aiForm.maxTokensHint")}
             />
           </div>
         </Section>
 
-        <Section icon={ShieldCheck} title="Privacy & behaviour">
+        <Section icon={ShieldCheck} title={t("aiForm.privacy")}>
           <div className="grid gap-2">
             <SwitchRow
               name="AI_ALLOW_EXTERNAL"
-              label="Allow external providers"
-              description="Required for the Anthropic API and OpenAI-compatible clouds. Ollama stays on-box; the Claude subscription is consent on its own."
+              label={t("aiForm.allowExternal")}
+              description={t("aiForm.allowExternalHint")}
               defaultChecked={values.allowExternal}
             />
             <SwitchRow
               name="AI_TICKET_TRIAGE"
-              label="In-ticket triage suggestions"
-              description={`${AI_ASSISTANT_NAME} suggests priority, type, team and category when a ticket is opened.`}
+              label={t("aiForm.triage")}
+              description={t("aiForm.triageHint", { name: AI_ASSISTANT_NAME })}
               defaultChecked={values.ticketTriage}
             />
             <SwitchRow
               name="AI_TEASER"
-              label="Teaser mode"
-              description="Show AI buttons as a preview while AI is not configured."
+              label={t("aiForm.teaser")}
+              description={t("aiForm.teaserHint")}
               defaultChecked={values.teaser}
             />
           </div>
@@ -548,23 +569,25 @@ export function AiSettingsForm({
 
         <Section
           icon={Globe}
-          title="Web search"
-          description="Used by the web_search tool. The search query leaves the box regardless of provider."
+          title={t("aiForm.webSearch")}
+          description={t("aiForm.webSearchDescription")}
         >
           <div className="grid gap-1.5">
-            <Label>Provider</Label>
-            <ComboField name="WEB_SEARCH_PROVIDER" options={WEB_SEARCH_OPTIONS} defaultValue={values.webSearchProvider} />
+            <Label>{t("aiForm.searchProvider")}</Label>
+            <ComboField
+              name="WEB_SEARCH_PROVIDER"
+              options={WEB_SEARCH_OPTIONS.map((o) => ({ value: o.value, label: t.dyn(`aiForm.search.${o.value}`, undefined, o.label) }))} defaultValue={values.webSearchProvider} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <SecretField name="TAVILY_API_KEY" label="Tavily API key" set={secrets.tavily} />
-            <SecretField name="BRAVE_API_KEY" label="Brave Search API key" set={secrets.brave} />
+            <SecretField name="TAVILY_API_KEY" label={t("aiForm.tavilyKey")} set={secrets.tavily} />
+            <SecretField name="BRAVE_API_KEY" label={t("aiForm.braveKey")} set={secrets.brave} />
           </div>
         </Section>
 
         <div className="sticky bottom-4 flex justify-end">
           <Button type="submit" disabled={pending} className="shadow-lg">
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            Save changes
+            {t("aiForm.saveChanges")}
           </Button>
         </div>
       </form>
@@ -572,16 +595,16 @@ export function AiSettingsForm({
       {/* Outside the form: skill changes save on their own, not with "Save changes". */}
       <Section
         icon={GraduationCap}
-        title="Agent skills"
-        description={`ITSM playbooks ${AI_ASSISTANT_NAME} loads on demand. Enable, edit or import skills; changes apply to the next chat. They show up in the chat as "Applied skill" steps.`}
+        title={t("aiForm.skills")}
+        description={t("aiForm.skillsDescription", { name: AI_ASSISTANT_NAME })}
       >
         <AiSkillsManager skills={skills} />
       </Section>
 
       <Section
         icon={Plug}
-        title="MCP servers"
-        description={`Remote tools ${AI_ASSISTANT_NAME} can use (HTTP/SSE). Each server has a safety mode and a minimum role; every call shows up live in the chat.`}
+        title={t("aiForm.mcp")}
+        description={t("aiForm.mcpDescription", { name: AI_ASSISTANT_NAME })}
       >
         <AiMcpManager servers={mcpServers} allowExternal={values.allowExternal} />
       </Section>

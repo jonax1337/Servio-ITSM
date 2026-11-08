@@ -13,12 +13,13 @@ import { Combobox } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { WidgetBody, widgetBodyOverflow } from "@/components/dashboard/widget-card";
+import { WidgetBody, widgetBodyOverflow, useWidgetTitle } from "@/components/dashboard/widget-card";
+import { useT } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import { WidgetConfigDialog, type EditorOptions } from "@/components/dashboard/widget-config-dialog";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { setDashboardLayout, updateDashboardSettings, deleteDashboard } from "@/lib/actions/dashboards";
-import { WIDGET_LABELS, type Widget, type Computed } from "@/lib/dashboard/types";
+import type { Widget, Computed } from "@/lib/dashboard/types";
 
 export function DashboardCanvas({
   dashboardId,
@@ -42,6 +43,8 @@ export function DashboardCanvas({
   options: EditorOptions;
 }) {
   const router = useRouter();
+  const t = useT("dashboard");
+  const widgetTitle = useWidgetTitle();
   const { width, containerRef, mounted } = useContainerWidth();
   const [widgets, setWidgets] = useState<Widget[]>(initialWidgets);
   // Live-computed data per widget (seeded from the server; refreshed on edit/add).
@@ -137,19 +140,19 @@ export function DashboardCanvas({
     <div className="grid gap-3">
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 px-3 py-2 backdrop-blur">
         <span className="mr-auto text-sm font-medium">
-          Editing <span className="text-muted-foreground">· {name}</span>
+          {t("editing")} <span className="text-muted-foreground">· {name}</span>
         </span>
         <Button type="button" variant="outline" size="sm" onClick={openAdd}>
-          <Plus className="size-4" /> Add widget
+          <Plus className="size-4" /> {t("addWidget")}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-          <Settings2 className="size-4" /> Settings
+          <Settings2 className="size-4" /> {t("settings")}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => router.push(`/?dashboard=${dashboardId}`)} disabled={saving}>
-          <X className="size-4" /> Cancel
+          <X className="size-4" /> {t("cancel")}
         </Button>
         <Button type="button" size="sm" onClick={save} disabled={saving}>
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Save
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("save")}
         </Button>
       </div>
 
@@ -168,15 +171,15 @@ export function DashboardCanvas({
                 <div className="flex items-center gap-1.5 border-b px-2.5 py-1.5">
                   <span className="rgl-drag-handle flex min-w-0 flex-1 cursor-move items-center gap-1.5">
                     <GripVertical className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate text-sm font-medium">{w.title}</span>
+                    <span className="truncate text-sm font-medium">{widgetTitle(w)}</span>
                     <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {WIDGET_LABELS[w.type]}
+                      {t(`widget.${w.type}`)}
                     </span>
                   </span>
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(w)} aria-label="Edit widget">
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(w)} aria-label={t("editWidget")}>
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeWidget(w.id)} aria-label="Remove widget" className="text-muted-foreground hover:text-destructive">
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeWidget(w.id)} aria-label={t("removeWidget")} className="text-muted-foreground hover:text-destructive">
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
@@ -206,25 +209,25 @@ export function DashboardCanvas({
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Dashboard settings</DialogTitle>
-            <DialogDescription>Rename this dashboard{canManageShared ? " and choose who can see it" : ""}.</DialogDescription>
+            <DialogTitle>{t("dashboardSettings")}</DialogTitle>
+            <DialogDescription>{canManageShared ? t("settingsDescriptionShared") : t("settingsDescription")}</DialogDescription>
           </DialogHeader>
           <form action={saveSettings} className="grid gap-3">
             <input type="hidden" name="id" value={dashboardId} />
             <div className="grid gap-1.5">
-              <Label htmlFor="dash-settings-name">Name</Label>
+              <Label htmlFor="dash-settings-name">{t("name")}</Label>
               <Input id="dash-settings-name" name="name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
             {canManageShared ? (
               <>
                 <input type="hidden" name="sharing" value={sharing} />
                 <div className="grid gap-1.5">
-                  <Label>Visibility</Label>
+                  <Label>{t("visibility")}</Label>
                   <Combobox
                     options={[
-                      { value: "private", label: "Private (only me)" },
-                      { value: "team", label: "Share with a team" },
-                      { value: "everyone", label: "Everyone (all teams)" },
+                      { value: "private", label: t("visibilityPrivate") },
+                      { value: "team", label: t("shareWithTeam") },
+                      { value: "everyone", label: t("everyone") },
                     ]}
                     value={sharing}
                     onChange={(v) => setSharing(v || "private")}
@@ -233,10 +236,10 @@ export function DashboardCanvas({
                 {sharing === "team" ? (
                   <Combobox
                     name="groupId"
-                    options={[{ value: "none", label: "Choose a team…" }, ...teams]}
+                    options={[{ value: "none", label: t("chooseTeamEllipsis") }, ...teams]}
                     value={team}
                     onChange={(v) => setTeam(v || "none")}
-                    searchPlaceholder="Search teams…"
+                    searchPlaceholder={t("searchTeams")}
                   />
                 ) : null}
               </>
@@ -249,17 +252,17 @@ export function DashboardCanvas({
                   router.refresh();
                 }}
                 fields={{ id: dashboardId }}
-                title="Delete this dashboard?"
-                description="This dashboard and its layout will be permanently deleted."
-                confirmLabel="Delete"
+                title={t("deleteTitle")}
+                description={t("deleteDescription")}
+                confirmLabel={t("delete")}
                 triggerVariant="ghost"
                 triggerSize="default"
                 triggerClassName="mr-auto text-muted-foreground hover:text-destructive"
               >
-                <Trash className="size-4" /> Delete
+                <Trash className="size-4" /> {t("delete")}
               </ConfirmButton>
               <Button type="submit" disabled={!name.trim() || savingSettings}>
-                {savingSettings ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
+                {savingSettings ? <Loader2 className="size-4 animate-spin" /> : null} {t("saveSettings")}
               </Button>
             </DialogFooter>
           </form>

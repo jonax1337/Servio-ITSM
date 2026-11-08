@@ -10,6 +10,7 @@ import { LinkButton } from "@/components/link-button";
 import { SableWidget } from "@/components/portal/sable-widget";
 import { PortalStatusBanner } from "@/components/portal/portal-status-banner";
 import { MaintenanceBanner } from "@/components/maintenance/maintenance-banner";
+import { getT } from "@/lib/i18n/server";
 
 export default async function PortalLayout({
   children,
@@ -19,6 +20,7 @@ export default async function PortalLayout({
   const user = await requireUser();
   const [configured, teaser] = await Promise.all([aiConfigured(), aiTeaserEnabled()]);
   const showSable = configured || teaser;
+  const t = await getT("portal");
 
   return (
     <div className="flex min-h-svh flex-col bg-muted/30">
@@ -37,7 +39,7 @@ export default async function PortalLayout({
           <div className="flex items-center justify-end gap-1.5">
             {isAgent(user.role) ? (
               <LinkButton href="/" variant="outline" size="sm" className="hidden sm:inline-flex">
-                <LayoutDashboard className="size-4" /> Agent console
+                <LayoutDashboard className="size-4" /> {t("agentConsole")}
               </LinkButton>
             ) : null}
             <ThemeToggle />
@@ -57,16 +59,16 @@ export default async function PortalLayout({
       <footer className="mt-4 border-t">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-center px-4 py-8 text-center text-sm text-muted-foreground">
           <p>
-            Can&apos;t find what you&apos;re looking for?{" "}
+            {t("footerPrompt")}{" "}
             <Link href="/portal/new" className="font-medium text-primary hover:underline">
-              Contact the Service Desk
+              {t("contactServiceDesk")}
             </Link>
           </p>
         </div>
       </footer>
 
       {showSable ? (
-        <SableWidget firstName={user.name?.split(" ")[0] ?? "there"} previewOnly={!configured} />
+        <SableWidget firstName={user.name?.split(" ")[0] ?? t("there")} previewOnly={!configured} />
       ) : null}
     </div>
   );

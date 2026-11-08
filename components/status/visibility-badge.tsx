@@ -1,11 +1,13 @@
 import { Eye, FilePen } from "lucide-react";
 import { ToneBadge } from "@/components/status-badge";
 import type { Meta } from "@/lib/constants";
-
-const PUBLIC_META: Meta = { label: "Public", tone: "info", icon: Eye };
-const DRAFT_META: Meta = { label: "Draft", tone: "warning", icon: FilePen };
+import { getT } from "@/lib/i18n/server";
 
 /** Whether portal users can see a status incident. Draft is amber so it never reads as published. */
-export function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
-  return <ToneBadge meta={isPublic ? PUBLIC_META : DRAFT_META} />;
+export async function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
+  const t = await getT("status");
+  const meta: Meta = isPublic
+    ? { label: t("public"), tone: "info", icon: Eye }
+    : { label: t("draft"), tone: "warning", icon: FilePen };
+  return <ToneBadge meta={meta} />;
 }

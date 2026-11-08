@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { createMentionExtension, type MentionUser } from "./mention-extension";
 
@@ -102,18 +103,19 @@ function Toolbar({ editor }: { editor: Editor | null }) {
   const [linkOpen, setLinkOpen] = React.useState(false);
   const [linkUrl, setLinkUrl] = React.useState("");
   const disabled = !editor;
+  const t = useT("components");
 
   return (
-    <div role="toolbar" aria-label="Formatting" className="flex flex-wrap items-center gap-0.5 rounded-lg border p-1">
-      <ToolbarButton disabled={disabled} active={editor?.isActive("paragraph")} onClick={() => editor?.chain().focus().setParagraph().run()} label="Paragraph"><Pilcrow className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("heading", { level: 2 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} label="Heading 2"><Heading2 className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("heading", { level: 3 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} label="Heading 3"><Heading3 className="size-4" /></ToolbarButton>
+    <div role="toolbar" aria-label={t("editor.formatting")} className="flex flex-wrap items-center gap-0.5 rounded-lg border p-1">
+      <ToolbarButton disabled={disabled} active={editor?.isActive("paragraph")} onClick={() => editor?.chain().focus().setParagraph().run()} label={t("editor.paragraph")}><Pilcrow className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("heading", { level: 2 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} label={t("editor.heading2")}><Heading2 className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("heading", { level: 3 })} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} label={t("editor.heading3")}><Heading3 className="size-4" /></ToolbarButton>
       <span className="mx-0.5 h-4 w-px bg-border" />
-      <ToolbarButton disabled={disabled} active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()} label="Bold"><Bold className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()} label="Italic"><Italic className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()} label="Underline"><Underline className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()} label="Bullet list"><List className="size-4" /></ToolbarButton>
-      <ToolbarButton disabled={disabled} active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()} label="Numbered list"><ListOrdered className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("bold")} onClick={() => editor?.chain().focus().toggleBold().run()} label={t("editor.bold")}><Bold className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()} label={t("editor.italic")}><Italic className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("underline")} onClick={() => editor?.chain().focus().toggleUnderline().run()} label={t("editor.underline")}><Underline className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("bulletList")} onClick={() => editor?.chain().focus().toggleBulletList().run()} label={t("editor.bulletList")}><List className="size-4" /></ToolbarButton>
+      <ToolbarButton disabled={disabled} active={editor?.isActive("orderedList")} onClick={() => editor?.chain().focus().toggleOrderedList().run()} label={t("editor.numberedList")}><ListOrdered className="size-4" /></ToolbarButton>
       <Popover
         open={linkOpen}
         onOpenChange={(o) => { setLinkOpen(o); if (o) setLinkUrl((editor?.getAttributes("link").href as string) ?? ""); }}
@@ -124,7 +126,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Link"
+              aria-label={t("editor.link")}
               aria-pressed={!!editor?.isActive("link")}
               disabled={disabled}
               className={cn(editor?.isActive("link") && "bg-muted text-foreground")}
@@ -137,7 +139,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
           <div className="grid gap-2">
             <Input type="url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://…" className="h-8" />
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={() => { editor?.chain().focus().extendMarkRange("link").unsetLink().run(); setLinkOpen(false); }}>Remove</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => { editor?.chain().focus().extendMarkRange("link").unsetLink().run(); setLinkOpen(false); }}>{t("editor.removeLink")}</Button>
               <Button
                 type="button"
                 size="sm"
@@ -148,7 +150,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
                   setLinkOpen(false);
                 }}
               >
-                Add
+                {t("editor.addLink")}
               </Button>
             </div>
           </div>

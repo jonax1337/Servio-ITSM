@@ -8,16 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { ToneBadge } from "@/components/status-badge";
 import type { Tone } from "@/lib/constants";
+import { useT } from "@/lib/i18n/client";
 
 type StatusDef = { value: string; label: string; tone: Tone };
 type Transition = { from: string; to: string; requiredRole: string | null };
 type Row = { from: string; to: string; role: string }; // role: none|MANAGER|ADMIN
-
-const ROLE_OPTS: ComboOption[] = [
-  { value: "none", label: "Anyone" },
-  { value: "MANAGER", label: "Manager+" },
-  { value: "ADMIN", label: "Admin only" },
-];
 
 function Badge({ status, meta }: { status: string; meta: Map<string, StatusDef> }) {
   const m = meta.get(status);
@@ -39,6 +34,12 @@ export function WorkflowList({
   const [addFrom, setAddFrom] = useState("none");
   const [addTo, setAddTo] = useState("none");
   const [pending, start] = useTransition();
+  const tr = useT("settings");
+  const roleOpts: ComboOption[] = [
+    { value: "none", label: tr("wf.anyone") },
+    { value: "MANAGER", label: tr("wf.managerPlus") },
+    { value: "ADMIN", label: tr("wf.adminOnly") },
+  ];
 
   const meta = new Map(statuses.map((s) => [s.value, s]));
   const order = new Map(statuses.map((s, i) => [s.value, i]));
@@ -49,7 +50,7 @@ export function WorkflowList({
   function add() {
     if (addFrom === "none" || addTo === "none" || addFrom === addTo) return;
     if (has(addFrom, addTo)) {
-      toast.error("That transition is already allowed.");
+      toast.error(tr("wf.alreadyAllowed"));
       return;
     }
     setRows((r) => [...r, { from: addFrom, to: addTo, role: "none" }]);
@@ -84,26 +85,26 @@ export function WorkflowList({
       {/* Add a transition — pick any two statuses (freehand). */}
       <div className="flex flex-wrap items-end gap-2 rounded-lg border bg-card/40 p-3">
         <div className="grid gap-1">
-          <span className="text-[11px] text-muted-foreground">From</span>
+          <span className="text-[11px] text-muted-foreground">{tr("wf.from")}</span>
           <div className="w-40">
-            <Combobox options={statusOpts} value={addFrom} onChange={setAddFrom} placeholder="Status…" size="sm" />
+            <Combobox options={statusOpts} value={addFrom} onChange={setAddFrom} placeholder={tr("wf.statusPlaceholder")} size="sm" />
           </div>
         </div>
         <ArrowRight className="mb-1.5 size-4 text-muted-foreground" />
         <div className="grid gap-1">
-          <span className="text-[11px] text-muted-foreground">To</span>
+          <span className="text-[11px] text-muted-foreground">{tr("wf.to")}</span>
           <div className="w-40">
-            <Combobox options={statusOpts} value={addTo} onChange={setAddTo} placeholder="Status…" size="sm" />
+            <Combobox options={statusOpts} value={addTo} onChange={setAddTo} placeholder={tr("wf.statusPlaceholder")} size="sm" />
           </div>
         </div>
         <Button type="button" size="sm" variant="outline" onClick={add} disabled={addFrom === "none" || addTo === "none" || addFrom === addTo}>
-          <Plus className="size-4" /> Add transition
+          <Plus className="size-4" /> {tr("wf.addTransition")}
         </Button>
       </div>
 
       {/* Allowed transitions */}
       {sorted.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No transitions yet — add one above.</p>
+        <p className="text-sm text-muted-foreground">{tr("wf.empty")}</p>
       ) : (
         <div className="grid gap-1.5">
           {sorted.map((r) => (
@@ -114,13 +115,13 @@ export function WorkflowList({
                 <Badge status={r.to} meta={meta} />
               </div>
               <div className="w-40 shrink-0">
-                <Combobox options={ROLE_OPTS} value={r.role} onChange={(v) => setRole(r.from, r.to, v)} size="sm" />
+                <Combobox options={roleOpts} value={r.role} onChange={(v) => setRole(r.from, r.to, v)} size="sm" />
               </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Remove transition"
+                aria-label={tr("wf.removeTransition")}
                 onClick={() => remove(r.from, r.to)}
                 className="text-muted-foreground hover:text-destructive"
               >
@@ -132,12 +133,12 @@ export function WorkflowList({
       )}
 
       <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={pending} onClick={() => persist(resetWorkflow, false, "Reset to defaults")}>
-          <RotateCcw className="size-4" /> Reset to defaults
+        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={pending} onClick={() => persist(resetWorkflow, false, tr("wf.resetDone"))}>
+          <RotateCcw className="size-4" /> {tr("wf.resetToDefaults")}
         </Button>
-        <Button type="button" size="sm" disabled={pending} onClick={() => persist(saveWorkflow, true, "Workflow saved")}>
+        <Button type="button" size="sm" disabled={pending} onClick={() => persist(saveWorkflow, true, tr("wf.saved"))}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          Save changes
+          {tr("wf.saveChanges")}
         </Button>
       </div>
     </div>

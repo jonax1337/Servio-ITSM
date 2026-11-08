@@ -16,6 +16,7 @@ import type { ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 type Person = {
   id: string;
@@ -35,19 +36,16 @@ function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const tm = useServerMessage();
   return (
     <div className={`grid gap-1.5 ${className ?? ""}`}>
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {errors?.[0] ? <p className="text-xs text-destructive">{errors[0]}</p> : null}
+      {errors?.[0] ? <p className="text-xs text-destructive">{tm(errors[0])}</p> : null}
     </div>
   );
 }
-
-const roleOptions: ComboOption[] = ROLES.map((r) => ({
-  value: r, label: ROLE_META[r].label, tone: ROLE_META[r].tone,
-}));
 
 /** Create a person (no `person`) or edit one's profile. Admin-only; enforced server-side. */
 export function PersonDialog({
@@ -66,7 +64,13 @@ export function PersonDialog({
     undefined,
   );
   const submit = useFormSubmit(action);
+  const t = useT("people");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const fe = state?.fieldErrors ?? {};
+  const roleOptions: ComboOption[] = ROLES.map((r) => ({
+    value: r, label: te(ROLE_META[r]), tone: ROLE_META[r].tone,
+  }));
 
   // Close once, when a new successful result arrives.
   const [seenState, setSeenState] = useState(state);
@@ -76,19 +80,19 @@ export function PersonDialog({
   }
   // The toast is a side effect, so it runs after commit rather than during render.
   useEffect(() => {
-    if (state?.ok) toast.success(editing ? "Person updated" : "Person created");
-  }, [state, editing]);
+    if (state?.ok) toast.success(editing ? t("personUpdated") : t("personCreated"));
+  }, [state, editing, t]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size="sm" />}>
-        {editing ? <><Pencil className="size-4" /> Edit</> : <><Plus className="size-4" /> New person</>}
+        {editing ? <><Pencil className="size-4" /> {t("edit")}</> : <><Plus className="size-4" /> {t("newPerson")}</>}
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{editing ? "Edit person" : "New person"}</DialogTitle>
+          <DialogTitle>{editing ? t("editPerson") : t("newPerson")}</DialogTitle>
           <DialogDescription>
-            {editing ? "Update contact and job details." : "Add a person who can raise or work on tickets."}
+            {editing ? t("editDescription") : t("newDescription")}
           </DialogDescription>
         </DialogHeader>
         <form method="post" onSubmit={submit} className="grid gap-4">
@@ -98,47 +102,46 @@ export function PersonDialog({
             <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
               <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                This person is managed by the sync source <strong>{syncSourceName}</strong>. Fields it provides
-                (name, email, phone, job title, department) may be overwritten on its next run.
+                {t.rich("syncManaged", { source: syncSourceName, b: (chunks) => <strong>{chunks}</strong> })}
               </span>
             </p>
           ) : null}
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Name" errors={fe.name} className="sm:col-span-2">
+            <Field label={t("name")} errors={fe.name} className="sm:col-span-2">
               <Input name="name" defaultValue={person?.name ?? ""} required />
             </Field>
-            <Field label="Email" errors={fe.email} className="sm:col-span-2">
+            <Field label={t("email")} errors={fe.email} className="sm:col-span-2">
               <Input name="email" type="email" defaultValue={person?.email} required />
             </Field>
             {editing ? null : (
-              <Field label="Role" errors={fe.role}>
+              <Field label={t("role")} errors={fe.role}>
                 <ComboField name="role" options={roleOptions} defaultValue="USER" />
               </Field>
             )}
-            <Field label="Phone" errors={fe.phone}>
+            <Field label={t("phone")} errors={fe.phone}>
               <Input name="phone" defaultValue={person?.phone ?? ""} />
             </Field>
-            <Field label="Job title" errors={fe.jobTitle}>
+            <Field label={t("jobTitle")} errors={fe.jobTitle}>
               <Input name="jobTitle" defaultValue={person?.jobTitle ?? ""} />
             </Field>
-            <Field label="Department" errors={fe.department}>
+            <Field label={t("department")} errors={fe.department}>
               <Input name="department" defaultValue={person?.department ?? ""} />
             </Field>
             {editing || groups.length === 0 ? null : (
-              <Field label="Groups" errors={fe.groupIds} className="sm:col-span-2">
-                <MultiCombobox name="groupIds" options={groups} placeholder="Add to groups…" searchPlaceholder="Search groups…" />
+              <Field label={t("groups")} errors={fe.groupIds} className="sm:col-span-2">
+                <MultiCombobox name="groupIds" options={groups} placeholder={t("addToGroups")} searchPlaceholder={t("searchGroups")} />
               </Field>
             )}
             {editing ? null : (
               <Field
-                label="Initial password (optional)"
+                label={t("initialPassword")}
                 errors={fe.password}
-                hint={`At least ${MIN_PASSWORD_LENGTH} characters. Leave empty if this person signs in through SSO or a directory.`}
+                hint={t("passwordHint", { min: MIN_PASSWORD_LENGTH })}
                 className="sm:col-span-2"
               >
                 <Input name="password" type="password" autoComplete="new-password" />
@@ -149,7 +152,7 @@ export function PersonDialog({
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save person" : "Create person"}
+              {editing ? t("savePerson") : t("createPerson")}
             </Button>
           </DialogFooter>
         </form>

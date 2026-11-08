@@ -15,6 +15,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { createSavedView, deleteSavedView } from "@/lib/actions/saved-views";
+import { useT } from "@/lib/i18n/client";
 
 export type SavedViewRow = {
   id: string;
@@ -49,6 +50,7 @@ export function SavedViewsBar({
   teams: { value: string; label: string }[];
 }) {
   const sp = useSearchParams();
+  const t = useT("components");
 
   // Current filter params (only the keys that define a view).
   const current: Record<string, string> = {};
@@ -94,7 +96,7 @@ export function SavedViewsBar({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Link href={basePath} className={chip(activeId === "__all__")}>
-        <Bookmark className="size-3.5" /> All
+        <Bookmark className="size-3.5" /> {t("views.all")}
       </Link>
 
       {parsed.map((v) => (
@@ -107,12 +109,12 @@ export function SavedViewsBar({
             <ConfirmButton
               action={deleteSavedView}
               fields={{ id: v.id }}
-              title="Delete view?"
-              description={`The saved view "${v.name}" will be permanently deleted.`}
+              title={t("views.deleteTitle")}
+              description={t("views.deleteDescription", { name: v.name })}
               triggerVariant="ghost"
               triggerSize="icon-xs"
               triggerClassName="-ml-1 size-5 rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/view:opacity-100"
-              triggerLabel={`Delete view ${v.name}`}
+              triggerLabel={t("views.deleteLabel", { name: v.name })}
             >
               <X className="size-3" />
             </ConfirmButton>
@@ -148,6 +150,7 @@ function SaveViewButton({
   const [name, setName] = useState("");
   const [shared, setShared] = useState(false);
   const [team, setTeam] = useState("none");
+  const t = useT("components");
 
   return (
     <>
@@ -158,17 +161,15 @@ function SaveViewButton({
         className="h-7 gap-1.5 text-xs text-muted-foreground"
         onClick={() => setOpen(true)}
         disabled={!hasFilters}
-        title={hasFilters ? "Save the current filters as a view" : "Apply a filter first"}
+        title={hasFilters ? t("views.saveHint") : t("views.applyFilterFirst")}
       >
-        <BookmarkPlus className="size-3.5" /> Save view
+        <BookmarkPlus className="size-3.5" /> {t("views.save")}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Save view</DialogTitle>
-            <DialogDescription>
-              Save the current filters as a named view for quick access.
-            </DialogDescription>
+            <DialogTitle>{t("views.save")}</DialogTitle>
+            <DialogDescription>{t("views.saveDescription")}</DialogDescription>
           </DialogHeader>
           <form
             action={async (fd) => {
@@ -183,13 +184,13 @@ function SaveViewButton({
             <input type="hidden" name="entity" value={entity} />
             <input type="hidden" name="filters" value={JSON.stringify(filters)} />
             <div className="grid gap-1.5">
-              <Label htmlFor="view-name">Name</Label>
+              <Label htmlFor="view-name">{t("views.name")}</Label>
               <Input
                 id="view-name"
                 name="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. My open criticals"
+                placeholder={t("views.namePlaceholder")}
                 autoFocus
                 required
               />
@@ -198,22 +199,22 @@ function SaveViewButton({
               <>
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox name="isShared" checked={shared} onCheckedChange={(v) => setShared(!!v)} />
-                  Share with a team
+                  {t("views.shareWithTeam")}
                 </label>
                 {shared ? (
                   <Combobox
                     name="groupId"
-                    options={[{ value: "none", label: "Everyone (all teams)" }, ...teams]}
+                    options={[{ value: "none", label: t("views.everyone") }, ...teams]}
                     value={team}
                     onChange={(v) => setTeam(v || "none")}
-                    placeholder="Choose a team"
-                    searchPlaceholder="Search teams…"
+                    placeholder={t("views.chooseTeam")}
+                    searchPlaceholder={t("views.searchTeams")}
                   />
                 ) : null}
               </>
             ) : null}
             <DialogFooter>
-              <Button type="submit" disabled={!name.trim()}>Save view</Button>
+              <Button type="submit" disabled={!name.trim()}>{t("views.save")}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

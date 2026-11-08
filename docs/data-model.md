@@ -57,7 +57,7 @@ Standard [`@auth/prisma-adapter`](https://authjs.dev) models plus a credentials 
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `User` | Person (agent or end-user); credentials + OAuth account holder | `email` (unique), `passwordHash` (bcrypt, for credentials login), `role`, `isVip`, `jobTitle`, `phone`, `department`, `timezone`, `locale`, `signature` (sanitized HTML) + `signatureEnabled` (appended to replies/emails), `isActive`, `syncSourceId`/`externalId` (link to import source, unique together), `lastLoginAt`; the hub of most relations |
+| `User` | Person (agent or end-user); credentials + OAuth account holder | `email` (unique), `passwordHash` (bcrypt, for credentials login), `role`, `isVip`, `jobTitle`, `phone`, `department`, `timezone`, `locale` (UI language: `auto` = instance default, the default for new users, or `en`/`de` — see [i18n.md](./i18n.md)), `signature` (sanitized HTML) + `signatureEnabled` (appended to replies/emails), `isActive`, `syncSourceId`/`externalId` (link to import source, unique together), `lastLoginAt`; the hub of most relations |
 | `Account` | OAuth provider account linked to a user | `provider` + `providerAccountId` (unique), tokens; `onDelete: Cascade` |
 | `Session` | Database session token | `sessionToken` (unique), `expires` |
 | `VerificationToken` | Email verification / magic-link tokens | `identifier` + `token` |
@@ -316,6 +316,12 @@ Every "enum" is a `String` column whose allowed values are declared as a `readon
 `tone`, and (often) a Lucide icon, so a value renders consistently everywhere. `TONE_CLASSES` maps each tone to its
 badge classes; the derived `TONE_BANNER_CLASSES` / `TONE_TEXT_CLASSES` reuse the same palette for full-width status
 banner tints and standalone accent text/icons, so call sites never hand-pick raw palette utilities.
+
+The `label` in a `*_META` map is the English source text. Other languages translate it at render time
+(`te(TICKET_STATUS_META[s])`, `ToneBadge`/`StatusBadge` do it on their own); every map is registered in
+`ENUM_MAPS` ([`lib/i18n/enums.ts`](../lib/i18n/enums.ts)) and its German labels live in
+[`messages/de/enums.ts`](../messages/de/enums.ts). A unit test fails when a new map or value has no translation.
+See [i18n.md](./i18n.md#enum-labels-_meta).
 
 | Constant | Backs | Allowed values |
 | --- | --- | --- |

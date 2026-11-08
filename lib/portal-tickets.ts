@@ -123,7 +123,7 @@ export async function createPortalTicketFor(
     summary: input.source === "SABLE" ? "Created via the Sable assistant" : "Submitted via self-service portal",
   });
   if (me.email) {
-    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(me), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   await runAutomations("TICKET_CREATED", ticket.id);
   await autoAssignTicket(ticket.id);
@@ -233,7 +233,7 @@ export async function createCatalogRequestFor(
   }
 
   if (me.email) {
-    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
+    await sendMail({ to: me.email, toName: me.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketReceived(ticket, await mailBrand(me), { requesterName: me.name ?? "", messageHtml: ticket.description ? quoteHtml(textToHtmlParagraphs(ticket.description)) : "" })) });
   }
   if (!needsApproval) {
     await runAutomations("TICKET_CREATED", ticket.id);

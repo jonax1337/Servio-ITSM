@@ -17,6 +17,7 @@ import { SyntaxHighlighter } from "@/components/shiki-highlighter";
 import { ToneBadge } from "@/components/status-badge";
 import { inlineBadgeMeta, recordRefHref, remarkStateBadges } from "@/lib/inline-badge";
 import { TooltipIconButton } from "@/components/tooltip-icon-button";
+import { useT } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
@@ -34,6 +35,7 @@ export const MarkdownText = memo(MarkdownTextImpl);
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
+  const t = useT("assistant");
   const onCopy = () => {
     if (!code || isCopied) return;
     copyToClipboard(code);
@@ -44,7 +46,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
       <span className="aui-code-header-language text-muted-foreground font-medium lowercase">
         {language}
       </span>
-      <TooltipIconButton tooltip="Copy" onClick={onCopy}>
+      <TooltipIconButton tooltip={t("thread.copy")} onClick={onCopy}>
         {!isCopied && (
           <CopyIcon className="animate-in zoom-in-75 fade-in duration-150" />
         )}

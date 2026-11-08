@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { TypingDots } from "@/components/assistant/typing-dots";
 import { SableMark } from "@/components/sable-mark";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
@@ -275,17 +276,19 @@ const ThreadMessage: FC = () => {
 };
 
 const ThreadScrollToBottom: FC = () => {
+  const t = useT("assistant");
   return (
-    <ThreadPrimitive.ScrollToBottom render={<TooltipIconButton tooltip="Scroll to bottom" variant="outline" className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible" />}><ArrowDownIcon /></ThreadPrimitive.ScrollToBottom>
+    <ThreadPrimitive.ScrollToBottom render={<TooltipIconButton tooltip={t("thread.scrollToBottom")} variant="outline" className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible" />}><ArrowDownIcon /></ThreadPrimitive.ScrollToBottom>
   );
 };
 
 const ThreadWelcome: FC = () => {
+  const t = useT("assistant");
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col items-center gap-4 px-4 text-center">
       <SableMark className="size-12 text-sable" />
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-semibold duration-200">
-        How can I help you today?
+        {t("thread.welcome")}
       </h1>
     </div>
   );
@@ -320,6 +323,7 @@ const ThreadSuggestions: FC = () => {
 };
 
 const Composer: FC = () => {
+  const t = useT("assistant");
   const chip = useContext(ComposerChipContext);
   const onStop = useContext(StopContext);
   const running = useAuiState((s) => s.thread.isRunning);
@@ -336,12 +340,13 @@ const Composer: FC = () => {
                           <div className="flex px-0.5 pt-0.5">{chip}</div>
                         </AuiIf>
                       ) : null}<ComposerAttachments /><ComposerPrimitive.Input
-                        placeholder="Send a message..."
+                        data-sable-composer=""
+                        placeholder={t("thread.placeholder")}
                         className="aui-composer-input caret-sable placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
                         rows={1}
                         autoFocus
                         enterKeyHint="send"
-                        aria-label="Message input"
+                        aria-label={t("thread.messageInput")}
                       /><ComposerAction /></ComposerPrimitive.AttachmentDropzone>
         <ComposerCommands />
       </ComposerPrimitive.Root>
@@ -350,6 +355,7 @@ const Composer: FC = () => {
 };
 
 const ComposerAction: FC = () => {
+  const t = useT("assistant");
   const onStop = useContext(StopContext);
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
@@ -357,18 +363,18 @@ const ComposerAction: FC = () => {
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
-            <ComposerPrimitive.Dictate render={<TooltipIconButton tooltip="Voice input" side="bottom" type="button" variant="ghost" size="icon" className="aui-composer-dictate size-7 rounded-full" aria-label="Start voice input" />}><MicIcon className="aui-composer-dictate-icon size-4" /></ComposerPrimitive.Dictate>
+            <ComposerPrimitive.Dictate render={<TooltipIconButton tooltip={t("thread.voiceInput")} side="bottom" type="button" variant="ghost" size="icon" className="aui-composer-dictate size-7 rounded-full" aria-label={t("thread.startVoiceInput")} />}><MicIcon className="aui-composer-dictate-icon size-4" /></ComposerPrimitive.Dictate>
           </AuiIf>
           <AuiIf condition={(s) => s.composer.dictation != null}>
-            <ComposerPrimitive.StopDictation render={<TooltipIconButton tooltip="Stop dictation" side="bottom" type="button" variant="ghost" size="icon" className="aui-composer-stop-dictation text-destructive size-7 rounded-full" aria-label="Stop voice input" />}><SquareIcon className="aui-composer-stop-dictation-icon size-3.5 animate-pulse fill-current" /></ComposerPrimitive.StopDictation>
+            <ComposerPrimitive.StopDictation render={<TooltipIconButton tooltip={t("thread.stopDictation")} side="bottom" type="button" variant="ghost" size="icon" className="aui-composer-stop-dictation text-destructive size-7 rounded-full" aria-label={t("thread.stopVoiceInput")} />}><SquareIcon className="aui-composer-stop-dictation-icon size-3.5 animate-pulse fill-current" /></ComposerPrimitive.StopDictation>
           </AuiIf>
         </AuiIf>
         <AuiIf condition={(s) => !s.thread.isRunning}>
-          <ComposerPrimitive.Send render={<TooltipIconButton tooltip="Send message" side="bottom" type="button" variant="default" size="icon" className="aui-composer-send size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label="Send message" />}><ArrowUpIcon className="aui-composer-send-icon size-4.5" /></ComposerPrimitive.Send>
+          <ComposerPrimitive.Send render={<TooltipIconButton tooltip={t("thread.send")} side="bottom" type="button" variant="default" size="icon" className="aui-composer-send size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label={t("thread.send")} />}><ArrowUpIcon className="aui-composer-send-icon size-4.5" /></ComposerPrimitive.Send>
         </AuiIf>
         <AuiIf condition={(s) => s.thread.isRunning}>
           <span className="contents" onClickCapture={onStop}>
-            <ComposerPrimitive.Cancel render={<Button type="button" variant="default" size="icon" className="aui-composer-cancel size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label="Stop generating" />}><SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" /></ComposerPrimitive.Cancel>
+            <ComposerPrimitive.Cancel render={<Button type="button" variant="default" size="icon" className="aui-composer-cancel size-7 rounded-full bg-sable text-sable-foreground hover:bg-sable/90" aria-label={t("thread.stop")} />}><SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" /></ComposerPrimitive.Cancel>
           </span>
         </AuiIf>
       </div>
@@ -394,16 +400,17 @@ const MessageError: FC = () => {
  */
 const WorkingIndicator: FC = () => {
   const { stalled } = unstable_useMessageStallDetection({ thresholdMs: 3000 });
+  const t = useT("assistant");
   return (
     <span
       data-slot="aui_assistant-message-indicator"
       className="inline-flex items-center gap-2 py-1"
-      aria-label="Assistant is working"
+      aria-label={t("thread.working")}
     >
       <TypingDots />
       {stalled ? (
         <span className="text-muted-foreground animate-in fade-in text-xs duration-300">
-          Still working…
+          {t("thread.stillWorking")}
         </span>
       ) : null}
     </span>
@@ -550,7 +557,8 @@ const AgentChain: FC<PropsWithChildren<{ steps: number; running: boolean }>> = (
   children,
 }) => {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const label = running ? "Working" : `${steps} ${steps === 1 ? "step" : "steps"}`;
+  const t = useT("assistant");
+  const label = running ? t("thread.workingLabel") : t("thread.steps", { count: steps });
   return (
     <ToolGroupRoot
       variant="ghost"
@@ -594,6 +602,7 @@ const ChainItem: FC<PropsWithChildren> = ({ children }) =>
 const ChainThought: FC<PropsWithChildren<{ running: boolean }>> = ({ running, children }) => {
   const [expanded, setExpanded] = useState(false);
   const open = expanded || running;
+  const t = useT("assistant");
   return (
     <ChainStep>
       <div className="text-muted-foreground flex flex-col items-start text-xs">
@@ -604,7 +613,7 @@ const ChainThought: FC<PropsWithChildren<{ running: boolean }>> = ({ running, ch
           aria-expanded={open}
         >
           <BrainIcon className={cn("text-sable size-3.5 shrink-0", running && "animate-pulse")} />
-          Thought
+          {t("thread.thought")}
         </button>
         <div
           className={cn(
@@ -621,29 +630,30 @@ const ChainThought: FC<PropsWithChildren<{ running: boolean }>> = ({ running, ch
 
 const AssistantActionBar: FC = () => {
   const editable = useContext(ThreadEditableContext);
+  const t = useT("assistant");
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
       className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in col-start-3 row-start-2 -ms-1 flex gap-1 duration-200"
     >
-      <ActionBarPrimitive.Copy render={<TooltipIconButton tooltip="Copy" />}><AuiIf condition={(s) => s.message.isCopied}>
+      <ActionBarPrimitive.Copy render={<TooltipIconButton tooltip={t("thread.copy")} />}><AuiIf condition={(s) => s.message.isCopied}>
                       <CheckIcon className="animate-in zoom-in-50 fade-in duration-200 ease-out" />
                     </AuiIf><AuiIf condition={(s) => !s.message.isCopied}>
                       <CopyIcon className="animate-in zoom-in-75 fade-in duration-150" />
                     </AuiIf></ActionBarPrimitive.Copy>
       {editable ? (
-        <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip="Refresh" />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
+        <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip={t("thread.refresh")} />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
       ) : null}
       <ActionBarMorePrimitive.Root>
-        <ActionBarMorePrimitive.Trigger render={<TooltipIconButton tooltip="More" className="data-[state=open]:bg-accent" />}><MoreHorizontalIcon /></ActionBarMorePrimitive.Trigger>
+        <ActionBarMorePrimitive.Trigger render={<TooltipIconButton tooltip={t("thread.more")} className="data-[state=open]:bg-accent" />}><MoreHorizontalIcon /></ActionBarMorePrimitive.Trigger>
         <ActionBarMorePrimitive.Content
           side="bottom"
           align="start"
           sideOffset={6}
           className="aui-action-bar-more-content bg-popover/95 text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1.5 shadow-lg backdrop-blur-sm"
         >
-          <ActionBarPrimitive.ExportMarkdown render={<ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none" />}><DownloadIcon className="size-4" />Export as Markdown
+          <ActionBarPrimitive.ExportMarkdown render={<ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none" />}><DownloadIcon className="size-4" />{t("thread.exportMarkdown")}
                               </ActionBarPrimitive.ExportMarkdown>
         </ActionBarMorePrimitive.Content>
       </ActionBarMorePrimitive.Root>
@@ -679,6 +689,7 @@ const UserMessage: FC = () => {
 
 const UserActionBar: FC = () => {
   const editable = useContext(ThreadEditableContext);
+  const t = useT("assistant");
   if (!editable) return null;
   return (
     <ActionBarPrimitive.Root
@@ -686,12 +697,13 @@ const UserActionBar: FC = () => {
       autohide="not-last"
       className="aui-user-action-bar-root flex flex-col items-end"
     >
-      <ActionBarPrimitive.Edit render={<TooltipIconButton tooltip="Edit" className="aui-user-action-edit" />}><PencilIcon /></ActionBarPrimitive.Edit>
+      <ActionBarPrimitive.Edit render={<TooltipIconButton tooltip={t("thread.edit")} className="aui-user-action-edit" />}><PencilIcon /></ActionBarPrimitive.Edit>
     </ActionBarPrimitive.Root>
   );
 };
 
 const EditComposer: FC = () => {
+  const t = useT("assistant");
   return (
     <MessagePrimitive.Root
       data-slot="aui_edit-composer-wrapper"
@@ -703,9 +715,9 @@ const EditComposer: FC = () => {
           autoFocus
         />
         <div className="aui-edit-composer-footer mx-2.5 mb-2.5 flex items-center gap-1.5 self-end">
-          <ComposerPrimitive.Cancel render={<Button variant="ghost" size="sm" className="h-8 rounded-full px-3.5" />}>Cancel
+          <ComposerPrimitive.Cancel render={<Button variant="ghost" size="sm" className="h-8 rounded-full px-3.5" />}>{t("thread.cancel")}
                               </ComposerPrimitive.Cancel>
-          <ComposerPrimitive.Send render={<Button size="sm" className="h-8 rounded-full px-3.5" />}>Update
+          <ComposerPrimitive.Send render={<Button size="sm" className="h-8 rounded-full px-3.5" />}>{t("thread.update")}
                               </ComposerPrimitive.Send>
         </div>
       </ComposerPrimitive.Root>
@@ -718,6 +730,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
   ...rest
 }) => {
   const editable = useContext(ThreadEditableContext);
+  const t = useT("assistant");
   if (!editable) return null;
   return (
     <BranchPickerPrimitive.Root
@@ -728,11 +741,11 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
       )}
       {...rest}
     >
-      <BranchPickerPrimitive.Previous render={<TooltipIconButton tooltip="Previous" />}><ChevronLeftIcon /></BranchPickerPrimitive.Previous>
+      <BranchPickerPrimitive.Previous render={<TooltipIconButton tooltip={t("thread.previous")} />}><ChevronLeftIcon /></BranchPickerPrimitive.Previous>
       <span className="aui-branch-picker-state font-medium">
         <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
       </span>
-      <BranchPickerPrimitive.Next render={<TooltipIconButton tooltip="Next" />}><ChevronRightIcon /></BranchPickerPrimitive.Next>
+      <BranchPickerPrimitive.Next render={<TooltipIconButton tooltip={t("thread.next")} />}><ChevronRightIcon /></BranchPickerPrimitive.Next>
     </BranchPickerPrimitive.Root>
   );
 };

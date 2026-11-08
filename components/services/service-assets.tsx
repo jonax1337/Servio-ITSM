@@ -9,6 +9,7 @@ import { UnlinkButton } from "@/components/linked-records";
 import { linkServiceAsset, unlinkServiceAsset } from "@/lib/actions/services";
 import { ASSET_STATUS_META } from "@/lib/constants";
 import type { ComboOption } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 export type ServiceAssetRow = { id: string; name: string; status: string };
 
@@ -24,27 +25,29 @@ export function ServiceAssets({
   options: ComboOption[];
   canEdit: boolean;
 }) {
+  const t = useT("services");
+  const tc = useT("common");
   return (
     <Card className="mt-8">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <HardDrive className="size-4 text-muted-foreground" />
-          Supporting CIs · {assets.length}
+          {t("supportingCis", { count: assets.length })}
           {canEdit ? (
             <span className="ml-auto">
               <LinkPicker
                 action={linkServiceAsset}
-                triggerLabel="Add CI"
-                title="Add a supporting CI"
-                description="Configuration items this service depends on."
+                triggerLabel={t("addCi")}
+                title={t("addCiTitle")}
+                description={t("addCiDescription")}
                 hidden={{ serviceId }}
                 valueName="assetId"
                 options={options}
-                placeholder="Choose an asset"
-                searchPlaceholder="Search assets…"
-                emptyText="No more assets available."
-                submitLabel="Add"
-                successMessage="Supporting CI added"
+                placeholder={t("chooseAsset")}
+                searchPlaceholder={t("searchAssets")}
+                emptyText={t("noMoreAssets")}
+                submitLabel={tc("add")}
+                successMessage={t("ciAdded")}
               />
             </span>
           ) : null}
@@ -52,7 +55,7 @@ export function ServiceAssets({
       </CardHeader>
       <CardContent className="grid gap-2">
         {assets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No configuration items are linked to this service.</p>
+          <p className="text-sm text-muted-foreground">{t("noCis")}</p>
         ) : (
           assets.map((a) => (
             <div key={a.id} className="flex items-center gap-2">
@@ -64,7 +67,7 @@ export function ServiceAssets({
                 <UnlinkButton
                   action={unlinkServiceAsset}
                   fields={{ serviceId, assetId: a.id }}
-                  successMessage="Supporting CI removed"
+                  successMessage={t("ciRemoved")}
                 />
               ) : null}
             </div>

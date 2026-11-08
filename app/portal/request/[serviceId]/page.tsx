@@ -9,6 +9,7 @@ import { LinkButton } from "@/components/link-button";
 import { getMaxUploadMb } from "@/lib/settings";
 import { Card, CardContent } from "@/components/ui/card";
 import { ServiceRequestForm } from "@/components/portal/service-request-form";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { serviceId } = await params;
   const it = await db.catalogItem.findUnique({ where: { id: serviceId }, select: { name: true } });
-  return { title: it ? `Request ${it.name}` : "Request" };
+  const t = await getT("portal");
+  return { title: it ? t("requestTitle", { name: it.name }) : t("request") };
 }
 
 export default async function CatalogRequestPage({
@@ -33,12 +35,13 @@ export default async function CatalogRequestPage({
   if (!item || !item.isPublished) notFound();
 
   const maxUploadMb = await getMaxUploadMb();
+  const t = await getT("portal");
   const fields = parseFormSchema(item.formSchema);
 
   return (
     <div className="mx-auto max-w-2xl">
       <LinkButton href="/portal/catalog" variant="ghost" size="sm" className="mb-4 -ml-2">
-        <ArrowLeft className="size-4" /> Back to catalog
+        <ArrowLeft className="size-4" /> {t("backToCatalog")}
       </LinkButton>
 
       <div className="mb-6 flex items-start gap-3.5">
@@ -50,7 +53,7 @@ export default async function CatalogRequestPage({
           <p className="mt-0.5 text-sm text-muted-foreground">{item.description ?? item.shortDescription}</p>
           {item.estimatedDays != null ? (
             <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="size-3.5" /> Usually delivered in ~{item.estimatedDays} day{item.estimatedDays === 1 ? "" : "s"}
+              <Clock className="size-3.5" /> {t("deliveredIn", { count: item.estimatedDays })}
             </p>
           ) : null}
         </div>

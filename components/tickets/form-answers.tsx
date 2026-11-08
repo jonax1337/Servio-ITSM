@@ -1,6 +1,7 @@
 import { ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { parseFormSchema } from "@/lib/service-forms";
+import { getT } from "@/lib/i18n/server";
 
 function humanize(key: string) {
   const s = key.replace(/[_-]+/g, " ").trim();
@@ -16,8 +17,8 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Render catalog-form answers as a structured form (not a text dump). */
-export function FormAnswers({
+/** Render catalog-form answers as a structured form (not a text dump). Server Component (console + portal). */
+export async function FormAnswers({
   formSchema, formData, className,
 }: {
   formSchema: string | null | undefined;
@@ -34,6 +35,8 @@ export function FormAnswers({
     return null;
   }
 
+  const [t, tc] = await Promise.all([getT("tickets"), getT("common")]);
+  const yesNo = (v: unknown) => (v ? tc("yes") : tc("no"));
   const fields = parseFormSchema(formSchema);
   // Fallback: no schema (item deleted / legacy ticket) → show raw key/value pairs
   // rather than silently dropping the answers.
@@ -41,9 +44,9 @@ export function FormAnswers({
     fields.length > 0
       ? fields.map((f) => {
           const v = values[f.key];
-          return { label: f.label, value: f.type === "checkbox" ? (v ? "Yes" : "No") : v == null || v === "" ? "—" : String(v) };
+          return { label: f.label, value: f.type === "checkbox" ? yesNo(v) : v == null || v === "" ? "—" : String(v) };
         })
-      : Object.entries(values).map(([k, v]) => ({ label: humanize(k), value: typeof v === "boolean" ? (v ? "Yes" : "No") : v == null || v === "" ? "—" : String(v) }));
+      : Object.entries(values).map(([k, v]) => ({ label: humanize(k), value: typeof v === "boolean" ? yesNo(v) : v == null || v === "" ? "—" : String(v) }));
 
   if (rows.length === 0) return null;
 
@@ -52,7 +55,7 @@ export function FormAnswers({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <ClipboardList className="size-4 text-muted-foreground" />
-          Request details
+          {t("formAnswers.title")}
         </CardTitle>
       </CardHeader>
       <CardContent className="grid divide-y py-0 text-sm">

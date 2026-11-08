@@ -1,13 +1,14 @@
-import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
 import { STATUS_INCIDENT_STATE_META, TONE_TEXT_CLASSES, metaFor } from "@/lib/constants";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export type TimelineEntry = { id: string; state: string; body: string; createdAt: Date; author?: string | null };
 
 /** Status updates, newest first, as a vertical timeline. Used by the console and the portal. */
-export function IncidentTimeline({ updates }: { updates: TimelineEntry[] }) {
-  if (updates.length === 0) return <p className="text-sm text-muted-foreground">No updates posted yet.</p>;
+export async function IncidentTimeline({ updates }: { updates: TimelineEntry[] }) {
+  const [t, f] = await Promise.all([getT("status"), getFormatter()]);
+  if (updates.length === 0) return <p className="text-sm text-muted-foreground">{t("noUpdates")}</p>;
   return (
     <ol className="grid">
       {updates.map((u, index) => {
@@ -23,8 +24,8 @@ export function IncidentTimeline({ updates }: { updates: TimelineEntry[] }) {
             <div className={cn("grid min-w-0 gap-1", isLast ? null : "pb-4")}>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <StatusBadge map={STATUS_INCIDENT_STATE_META} value={u.state} />
-                <time dateTime={u.createdAt.toISOString()}>{format(u.createdAt, "MMM d, HH:mm")}</time>
-                {u.author ? <span>by {u.author}</span> : null}
+                <time dateTime={u.createdAt.toISOString()}>{f.pattern(u.createdAt, f.locale === "de" ? "d. MMM, HH:mm" : "MMM d, HH:mm")}</time>
+                {u.author ? <span>{t("byAuthor", { name: u.author })}</span> : null}
               </div>
               <p className="whitespace-pre-wrap text-sm">{u.body}</p>
             </div>

@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { CHANGE_STATUS_META, CHANGE_STATUSES, RISK_META, RISKS } from "@/lib/constants";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 const FILTER_KEYS = ["team", "risk", "status"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -16,6 +17,9 @@ export function CalendarFilters({ teams }: { teams: { id: string; name: string }
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
+  const t = useT("changes");
+  const tc = useT("common");
+  const te = useEnumT();
 
   const navigate = (params: URLSearchParams) =>
     startTransition(() => router.push(params.size > 0 ? `${pathname}?${params.toString()}` : pathname));
@@ -34,9 +38,9 @@ export function CalendarFilters({ teams }: { teams: { id: string; name: string }
   };
 
   const filters: { key: FilterKey; label: string; allLabel: string; options: ComboOption[] }[] = [
-    { key: "team", label: "Team", allLabel: "All teams", options: teams.map((t) => ({ value: t.id, label: t.name })) },
-    { key: "risk", label: "Risk", allLabel: "All risks", options: RISKS.map((r) => ({ value: r, label: RISK_META[r].label })) },
-    { key: "status", label: "Status", allLabel: "All statuses", options: CHANGE_STATUSES.map((s) => ({ value: s, label: CHANGE_STATUS_META[s].label })) },
+    { key: "team", label: t("calendar.team"), allLabel: t("calendar.allTeams"), options: teams.map((team) => ({ value: team.id, label: team.name })) },
+    { key: "risk", label: tc("risk"), allLabel: t("calendar.allRisks"), options: te.options(RISK_META, RISKS) },
+    { key: "status", label: tc("status"), allLabel: t("calendar.allStatuses"), options: te.options(CHANGE_STATUS_META, CHANGE_STATUSES) },
   ];
   const hasFilters = FILTER_KEYS.some((key) => searchParams.get(key));
 
@@ -49,14 +53,14 @@ export function CalendarFilters({ teams }: { teams: { id: string; name: string }
           value={searchParams.get(filter.key) ?? "all"}
           onChange={(value) => setFilter(filter.key, value || "all")}
           placeholder={filter.label}
-          searchPlaceholder={`Search ${filter.label.toLowerCase()}…`}
+          searchPlaceholder={t("props.searchField", { field: filter.label.toLowerCase() })}
           size="sm"
           className="w-auto min-w-[9rem]"
         />
       ))}
       {hasFilters ? (
         <Button variant="ghost" size="sm" onClick={clearFilters}>
-          <X className="size-4" /> Clear
+          <X className="size-4" /> {tc("clear")}
         </Button>
       ) : null}
     </div>

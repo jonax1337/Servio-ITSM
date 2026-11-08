@@ -26,7 +26,7 @@ See also: [development.md](development.md) for the local dev loop, and
 
 > **Admin Settings override `.env`.** Most application-level config can be managed
 > from the UI under **Settings** (ADMIN only) and is stored in the `AppSetting`
-> table: **General** (`APP_NAME`, `APP_URL`), **Email** (`SMTP_*`), **Inbound**
+> table: **General** (`APP_NAME`, `APP_URL`, `APP_LOCALE`), **Email** (`SMTP_*`), **Inbound**
 > (`IMAP_*`, `MAIL_PLUS_ADDRESSING`), **Sable (AI assistant)** (provider, model, keys,
 > web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`) and
 > **Updates** (`UPDATE_*`). Precedence for every key is **DB row (non-empty) →
@@ -73,6 +73,7 @@ file. The sample file is a starting point, not the full list.
 | `AUTH_OIDC_ROLE_SYNC` | No | `login` | `login` = re-apply the mapping on every SSO sign-in (IdP is the source of truth); `signup` = only on the first sign-in. |
 | `APP_NAME` | No | `Servio` | Application display name used in outgoing mail and in Sable's context. Overridable in Settings › General. |
 | `APP_URL` | No | _empty_ | Public origin for absolute mail/CSAT links and build-time social image URLs. Overridable in Settings › General, which wins for runtime mail/survey links; static share metadata uses the build environment and requires a rebuild when the origin changes. `docker-compose.yml` forwards this value as a build argument (the Dockerfile `APP_URL` arg defaults to `http://localhost:3000`). |
+| `APP_LOCALE` | No | `en` | Default UI language of the instance (`en` or `de`) for the console, the portal and the sign-in page. Users on the default **Instance default** (`User.locale = "auto"`) follow it; a user who picks a language in *Account settings* keeps theirs. Overridable in Settings › General › Default language. See [i18n.md](i18n.md). |
 | `SMTP_HOST` | No | _empty_ | SMTP server host. **Leaving it empty enables outbox mode** — see [Email / SMTP](#email--smtp). Overridable in Settings › Email (as are the other `SMTP_*`). |
 | `SMTP_PORT` | No | `587` | SMTP port. Together with `SMTP_HOST` it forms the "SMTP configured" check in [`../lib/mail.ts`](../lib/mail.ts): both must resolve to a non-empty value (the `587` fallback applies only when sending). |
 | `SMTP_SECURE` | No | `false` | `"true"` to use an implicit TLS connection (typically port 465); any other value uses STARTTLS. |

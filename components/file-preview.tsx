@@ -11,6 +11,11 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogPortal, DialogOverlay } from "@/components/ui/dialog";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { formatBytes, iconForMime } from "@/lib/attachments-ui";
+import { useT } from "@/lib/i18n/client";
+
+/** English source of the preview errors; DocumentView shows them translated. */
+const NO_INLINE_PREVIEW = "No inline preview for this file";
+const LOAD_FAILED = "Failed to load preview";
 
 export type PreviewFile = {
   id: string;
@@ -115,12 +120,12 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
               html: null,
               pdfUrl: null,
               fallbackText: fallback,
-              error: fallback ? null : "No inline preview for this file",
+              error: fallback ? null : NO_INLINE_PREVIEW,
             });
           }
           return;
         }
-        if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+        if (!res.ok) throw new Error(LOAD_FAILED);
         const data = (await res.json()) as { html?: string; pdf?: string };
         if (!cancelled) {
           setState({
@@ -138,7 +143,7 @@ function useDocumentHtml(file: PreviewFile, kind: PreviewKind, open: boolean): D
             html: null,
             pdfUrl: null,
             fallbackText: fallback,
-            error: e instanceof Error ? e.message : "Failed to load preview",
+            error: e instanceof Error ? e.message : LOAD_FAILED,
           });
         }
       }
@@ -177,6 +182,8 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
     [files, index, onNavigate],
   );
 
+  const t = useT("tickets");
+  const tc = useT("common");
   const kind = file ? classify(file) : "none";
   const doc = useDocumentHtml(file ?? { id: "", name: "", mime: "" }, kind, open && !!file);
 
@@ -195,10 +202,10 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
             {file ? <MimeIcon mime={file.mime} className="size-4.5 shrink-0 text-sable" /> : null}
             <div className="min-w-0 flex-1">
               <DialogPrimitive.Title className="truncate font-heading text-sm font-medium leading-tight">
-                {file?.name ?? "Preview"}
+                {file?.name ?? t("preview.title")}
               </DialogPrimitive.Title>
               <p className="truncate text-xs text-muted-foreground">
-                {file?.mime || "unknown"}
+                {file?.mime || t("preview.unknown")}
                 {file?.size != null ? ` · ${formatBytes(file.size)}` : ""}
                 {hasNav ? ` · ${index + 1} / ${files!.length}` : ""}
               </p>
@@ -209,7 +216,7 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => go(-1)}
-                  aria-label="Previous file"
+                  aria-label={t("preview.previousFile")}
                 >
                   <ChevronLeft />
                 </Button>
@@ -217,7 +224,7 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => go(1)}
-                  aria-label="Next file"
+                  aria-label={t("preview.nextFile")}
                 >
                   <ChevronRight />
                 </Button>
@@ -230,11 +237,11 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
               >
                 <Download />
-                <span className="hidden sm:inline">Download</span>
+                <span className="hidden sm:inline">{tc("download")}</span>
               </a>
             )}
             <DialogPrimitive.Close
-              render={<Button variant="ghost" size="icon-sm" aria-label="Close" />}
+              render={<Button variant="ghost" size="icon-sm" aria-label={tc("close")} />}
             >
               <X />
             </DialogPrimitive.Close>
@@ -289,10 +296,11 @@ export function FilePreview({ open, onOpenChange, file, files, onNavigate }: Fil
 // prose container. Falls back to the extracted-text <pre> when the rich preview is
 // unavailable, and to a friendly download prompt when there's nothing to show.
 function DocumentView({ state, file }: { state: DocState; file: PreviewFile }) {
+  const t = useT("tickets");
   if (state.loading) {
     return (
       <div className="flex h-[calc(90vh-3.25rem)] items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 size-4 animate-spin" /> Loading preview…
+        <Loader2 className="mr-2 size-4 animate-spin" /> {t("preview.loading")}
       </div>
     );
   }
@@ -301,7 +309,7 @@ function DocumentView({ state, file }: { state: DocState; file: PreviewFile }) {
     return (
       <iframe
         src={state.pdfUrl}
-        title={`Preview of ${file.name}`}
+        title={t("preview.of", { name: file.name })}
         className="h-[calc(90vh-3.25rem)] w-full bg-background"
       />
     );
@@ -323,7 +331,7 @@ function DocumentView({ state, file }: { state: DocState; file: PreviewFile }) {
   if (state.error) {
     return (
       <div className="flex h-[calc(90vh-3.25rem)] items-center justify-center text-sm text-destructive">
-        {state.error}
+        {state.error === NO_INLINE_PREVIEW ? t("preview.noInlineFile") : state.error === LOAD_FAILED ? t("preview.loadFailed") : state.error}
       </div>
     );
   }
@@ -331,10 +339,11 @@ function DocumentView({ state, file }: { state: DocState; file: PreviewFile }) {
 }
 
 function ExtractedView({ text }: { text: string }) {
+  const t = useT("tickets");
   return (
     <div className="flex h-[calc(90vh-3.25rem)] flex-col">
       <p className="border-b bg-background/60 px-4 py-1.5 text-xs text-muted-foreground">
-        Extracted text preview
+        {t("preview.extracted")}
       </p>
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
@@ -346,16 +355,17 @@ function ExtractedView({ text }: { text: string }) {
 }
 
 function NoPreview({ file }: { file: PreviewFile }) {
+  const t = useT("tickets");
   return (
     <div className="flex h-[calc(90vh-3.25rem)] flex-col items-center justify-center gap-4 p-8 text-center">
       <MimeIcon mime={file.mime} className="size-12 text-muted-foreground/70" />
       <div className="space-y-1">
-        <p className="font-medium">No inline preview for this type</p>
-        <p className="text-sm text-muted-foreground">{file.mime || "unknown type"}</p>
+        <p className="font-medium">{t("preview.noInlineType")}</p>
+        <p className="text-sm text-muted-foreground">{file.mime || t("preview.unknownType")}</p>
       </div>
       <a href={downloadUrl(file.id)} download className={cn(buttonVariants())}>
         <Download />
-        Download file
+        {t("preview.downloadFile")}
       </a>
     </div>
   );

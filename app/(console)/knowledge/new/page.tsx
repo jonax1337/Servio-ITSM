@@ -11,11 +11,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArticleEditor } from "@/components/knowledge/article-editor";
 import { createArticle } from "@/lib/actions/knowledge";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New article" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("knowledge");
+  return { title: t("newTitle") };
+}
 export const dynamic = "force-dynamic";
-
-const SOURCE_UNAVAILABLE = "The ticket this link points to isn't available to you, so the editor starts empty.";
 
 /**
  * The ticket named by `?fromTicket=`: what the editor is prefilled from, and what saving links the article to.
@@ -43,6 +45,7 @@ async function loadSourceTicket(sp: SearchParams, me: { id: string; role: string
 
 export default async function NewArticlePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const me = await requireRole("AGENT");
+  const t = await getT("knowledge");
   const [categories, source] = await Promise.all([
     db.category.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     searchParams.then((sp) => loadSourceTicket(sp, me)),
@@ -52,13 +55,13 @@ export default async function NewArticlePage({ searchParams }: { searchParams: P
     <>
       <PageHeader
         icon={BookOpen}
-        title="New article"
-        description="Draft a knowledge base article. It starts as a draft until you publish it."
+        title={t("newTitle")}
+        description={t("newDescription")}
       />
       <PageBody>
         {source?.unavailable ? (
           <Alert className="mx-auto mb-4 max-w-5xl">
-            <AlertDescription>{SOURCE_UNAVAILABLE}</AlertDescription>
+            <AlertDescription>{t("sourceUnavailable")}</AlertDescription>
           </Alert>
         ) : null}
         <Card className="mx-auto max-w-5xl">
@@ -66,7 +69,7 @@ export default async function NewArticlePage({ searchParams }: { searchParams: P
             <ArticleEditor
               action={createArticle}
               categories={categories}
-              submitLabel="Create article"
+              submitLabel={t("createArticle")}
               defaults={source && !source.unavailable ? { title: source.draft.title, body: source.draft.bodyHtml, bodyFormat: "html" } : undefined}
               sourceTicket={source && !source.unavailable ? source.link : undefined}
             />

@@ -9,6 +9,7 @@ import {
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { CategoryForm, type CategoryData, type ParentOption, type TeamOption } from "@/components/categories/category-form";
 import { setCategoryArchived, deleteCategory } from "@/lib/actions/categories";
+import { useT } from "@/lib/i18n/client";
 
 export function CategoryRowActions({
   category,
@@ -24,18 +25,19 @@ export function CategoryRowActions({
   deletable: boolean;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+  const t = useT("categories");
 
   return (
     <div className="flex items-center gap-1">
       {/* Edit */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Edit category" />}>
+        <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t("edit.title")} />}>
           <Pencil className="size-4 text-muted-foreground" />
         </DialogTrigger>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit category</DialogTitle>
-            <DialogDescription>Update this classification, its team, or where it&apos;s nested.</DialogDescription>
+            <DialogTitle>{t("edit.title")}</DialogTitle>
+            <DialogDescription>{t("edit.description")}</DialogDescription>
           </DialogHeader>
           <CategoryForm parents={parents} teams={teams} category={category} />
         </DialogContent>
@@ -45,7 +47,7 @@ export function CategoryRowActions({
       <form action={setCategoryArchived}>
         <input type="hidden" name="id" value={category.id} />
         <input type="hidden" name="archived" value={archived ? "false" : "true"} />
-        <Button type="submit" variant="ghost" size="icon-sm" aria-label={archived ? "Restore category" : "Archive category"}>
+        <Button type="submit" variant="ghost" size="icon-sm" aria-label={archived ? t("restore") : t("archive")}>
           {archived ? (
             <ArchiveRestore className="size-4 text-muted-foreground" />
           ) : (
@@ -59,10 +61,10 @@ export function CategoryRowActions({
         <ConfirmButton
           action={deleteCategory}
           fields={{ id: category.id }}
-          title="Delete category?"
-          description={`"${category.name}" will be permanently removed. This can't be undone.`}
+          title={t("delete.title")}
+          description={t("delete.description", { name: category.name })}
           triggerVariant="ghost"
-          triggerLabel="Delete category"
+          triggerLabel={t("delete.label")}
         >
           <Trash2 className="size-4 text-muted-foreground" />
         </ConfirmButton>

@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
 import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
+import type { Locale } from "@/lib/i18n/config";
+import { emailTemplatesDe, surveyCtaDe } from "@/messages/emails/de";
 
 /**
  * Admin-editable email templates. Each is a SUBJECT + a BODY (HTML) with
@@ -66,15 +68,31 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
   },
 };
 
+/**
+ * Built-in defaults per language. English is DEFAULT_TEMPLATES; a language without its own
+ * set falls back to English. An admin override (EmailTemplate row) is used as written for
+ * every recipient. German lives in messages/emails/de.ts.
+ */
+export const DEFAULT_TEMPLATES_BY_LOCALE: Record<Locale, Record<TemplateKey, { subject: string; bodyHtml: string }>> = {
+  en: DEFAULT_TEMPLATES,
+  de: emailTemplatesDe,
+};
+
+const SURVEY_CTA: Record<Locale, { question: string; link: string }> = {
+  en: { question: "How did we do?", link: "Rate our support" },
+  de: surveyCtaDe,
+};
+
 const HTML_KEYS = new Set(["message", "signature", "quote", "resolution", "survey"]);
 
 /** A small "Rate our support" CTA block for the resolved email (empty string if no link). */
-export function surveyCtaHtml(url?: string | null): string {
+export function surveyCtaHtml(url?: string | null, locale: Locale = "en"): string {
   if (!url) return "";
   const safe = escapeHtml(url);
+  const cta = SURVEY_CTA[locale] ?? SURVEY_CTA.en;
   return (
-    `<p style="margin:16px 0 0;">How did we do? ` +
-    `<a href="${safe}" style="color:#3559E8;text-decoration:underline;">Rate our support</a>` +
+    `<p style="margin:16px 0 0;">${cta.question} ` +
+    `<a href="${safe}" style="color:#3559E8;text-decoration:underline;">${cta.link}</a>` +
     `</p>`
   );
 }
@@ -94,21 +112,21 @@ function substitute(tpl: string, vars: Record<string, string | undefined>, mode:
   });
 }
 
-export async function getTemplate(key: TemplateKey): Promise<{ subject: string; bodyHtml: string }> {
+export async function getTemplate(key: TemplateKey, locale: Locale = "en"): Promise<{ subject: string; bodyHtml: string }> {
   try {
     const row = await db.emailTemplate.findUnique({ where: { key } });
     if (row && row.enabled && row.subject && row.bodyHtml) return { subject: row.subject, bodyHtml: row.bodyHtml };
   } catch {
     // table missing (pre-migration) → default
   }
-  return DEFAULT_TEMPLATES[key];
+  return (DEFAULT_TEMPLATES_BY_LOCALE[locale] ?? DEFAULT_TEMPLATES)[key];
 }
 
 export type RenderCtx = { brand?: MailBrand; vars: Record<string, string | undefined> };
 
 /** Resolve a template (DB or default) and render the plain HTML email. */
 export async function renderTicketEmail(key: TemplateKey, ctx: RenderCtx) {
-  const tpl = await getTemplate(key);
+  const tpl = await getTemplate(key, ctx.brand?.locale);
   const subject = substitute(tpl.subject, ctx.vars, "text");
   const contentHtml = substitute(tpl.bodyHtml, ctx.vars, "html");
   return { template: key, subject, body: htmlToText(contentHtml), html: renderEmailHtml({ contentHtml }) };
@@ -136,7 +154,7 @@ export function renderTicketResolvedEmail(ctx: {
       title: ctx.title,
       requesterName: ctx.requesterName ?? "",
       resolution: ctx.resolutionNote ? quoteHtml(textToHtmlParagraphs(ctx.resolutionNote)) : "",
-      survey: surveyCtaHtml(ctx.surveyUrl),
+      survey: surveyCtaHtml(ctx.surveyUrl, ctx.brand?.locale),
     },
   });
 }

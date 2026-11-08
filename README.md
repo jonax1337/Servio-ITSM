@@ -177,6 +177,7 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
   your tickets; report issues or request services with **screenshot/file attachments**; track and
   reply to tickets; and **Ask Sable**.
 - **SSO** — OIDC (Keycloak, Authentik, Azure AD, Okta, Google…) plus email/password.
+- **English & German UI** — console, portal, sign-in page and the built-in emails in each user's language (account setting, instance default `APP_LOCALE`); see [docs/i18n.md](docs/i18n.md).
 - **RBAC** — Admin / Manager / Agent / User, enforced in `proxy.ts` and every server action.
 - **Self-update & maintenance windows** — admins schedule an update to a newer release from
   **Settings › Updates**; users get a banner and a maintenance page, the updater sidecar backs up

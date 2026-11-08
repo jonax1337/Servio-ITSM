@@ -8,6 +8,7 @@ import { writeAudit } from "@/lib/audit";
 import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
 import { listModels, type AiModelList } from "@/lib/ai-models";
 import { checkForUpdates, updateChecksEnabled } from "@/lib/updates";
+import { normalizeLocale } from "@/lib/i18n/config";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -74,15 +75,20 @@ export async function saveGeneralSettings(
 ): Promise<ActionState> {
   const me = await requireAdmin();
   if (!me) return { error: "Not authorised" };
-  return persist(
+  const result = await persist(
     me.id,
     [
       { key: "APP_NAME", value: str(fd, "APP_NAME") },
       { key: "APP_URL", value: str(fd, "APP_URL") },
+      // Unsupported/blank → "" = fall back to env APP_LOCALE, then English.
+      { key: "APP_LOCALE", value: normalizeLocale(str(fd, "APP_LOCALE")) ?? "" },
     ],
     "Updated general settings",
     "/settings/general",
   );
+  // The default language changes every page for users on "auto".
+  if (result?.ok) revalidatePath("/", "layout");
+  return result;
 }
 
 export async function saveEmailSettings(

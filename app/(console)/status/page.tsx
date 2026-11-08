@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { Activity, ExternalLink, Plus } from "lucide-react";
-import { format } from "date-fns";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
@@ -23,18 +22,22 @@ import {
   STATUS_INCIDENT_STATE_META,
   ticketRef,
 } from "@/lib/constants";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Status" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("status");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
-
-const VISIBILITY_OPTIONS = [
-  { value: "public", label: "Public" },
-  { value: "draft", label: "Draft" },
-];
 
 export default async function StatusIncidentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   await requireRole("AGENT");
   const sp = await searchParams;
+  const [t, tc, te, f] = await Promise.all([getT("status"), getT("common"), getEnumT(), getFormatter()]);
+  const VISIBILITY_OPTIONS = [
+    { value: "public", label: t("public") },
+    { value: "draft", label: t("draft") },
+  ];
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const state = getParam(sp, "state");
@@ -79,39 +82,39 @@ export default async function StatusIncidentsPage({ searchParams }: { searchPara
   ]);
 
   const filters: FilterDef[] = [
-    { key: "state", label: "State", options: STATUS_INCIDENT_STATES.map((s) => ({ value: s, label: STATUS_INCIDENT_STATE_META[s].label })) },
-    { key: "impact", label: "Impact", options: STATUS_INCIDENT_IMPACTS.map((i) => ({ value: i, label: STATUS_INCIDENT_IMPACT_META[i].label })) },
-    { key: "visibility", label: "Visibility", options: VISIBILITY_OPTIONS },
+    { key: "state", label: t("state"), options: te.options(STATUS_INCIDENT_STATE_META, STATUS_INCIDENT_STATES) },
+    { key: "impact", label: tc("impact"), options: te.options(STATUS_INCIDENT_IMPACT_META, STATUS_INCIDENT_IMPACTS) },
+    { key: "visibility", label: t("visibility"), options: VISIBILITY_OPTIONS },
   ];
 
   return (
     <>
-      <PageHeader icon={Activity} title="Status" description="Tell portal users what is broken and when it is fixed.">
+      <PageHeader icon={Activity} title={t("title")} description={t("description")}>
         <LinkButton href="/portal/status" variant="outline">
-          <ExternalLink className="size-4" /> Portal status page
+          <ExternalLink className="size-4" /> {t("portalStatusPage")}
         </LinkButton>
         <LinkButton href="/status/new">
-          <Plus className="size-4" /> New incident
+          <Plus className="size-4" /> {t("newIncident")}
         </LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
         <ScheduledMaintenance />
-        <ListToolbar filters={filters} searchPlaceholder="Search incidents…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {incidents.length === 0 ? (
           <EmptyState
             icon={Activity}
-            title={filtered ? "No incidents match" : "No status incidents"}
+            title={filtered ? t("noMatchTitle") : t("emptyTitle")}
             description={
               filtered
-                ? "Try adjusting your filters."
-                : "Declaring a major incident on a ticket drafts one for you, or create one yourself."
+                ? t("noMatchDescription")
+                : t("emptyDescription")
             }
           >
             {filtered ? null : (
               <LinkButton href="/status/new" size="sm">
-                <Plus className="size-4" /> New incident
+                <Plus className="size-4" /> {t("newIncident")}
               </LinkButton>
             )}
           </EmptyState>
@@ -120,13 +123,13 @@ export default async function StatusIncidentsPage({ searchParams }: { searchPara
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="title" label="Incident" sort={sort} dir={dir} />
-                  <SortableHead k="state" label="State" sort={sort} dir={dir} />
-                  <TableHead>Impact</TableHead>
-                  <TableHead>Visibility</TableHead>
-                  <TableHead className="hidden lg:table-cell">Services</TableHead>
-                  <TableHead className="hidden md:table-cell">Ticket</TableHead>
-                  <SortableHead k="startedAt" label="Started" sort={sort} dir={dir} numeric className="text-right" />
+                  <SortableHead k="title" label={t("colIncident")} sort={sort} dir={dir} />
+                  <SortableHead k="state" label={t("state")} sort={sort} dir={dir} />
+                  <TableHead>{tc("impact")}</TableHead>
+                  <TableHead>{t("visibility")}</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("colServices")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("colTicket")}</TableHead>
+                  <SortableHead k="startedAt" label={t("colStarted")} sort={sort} dir={dir} numeric className="text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -159,7 +162,7 @@ export default async function StatusIncidentsPage({ searchParams }: { searchPara
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right text-xs text-muted-foreground tabular-nums">
-                      {format(i.startedAt, "MMM d, HH:mm")}
+                      {f.pattern(i.startedAt, f.locale === "de" ? "d. MMM, HH:mm" : "MMM d, HH:mm")}
                     </TableCell>
                   </TableRow>
                 ))}

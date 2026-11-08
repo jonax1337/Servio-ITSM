@@ -22,9 +22,13 @@ import {
 } from "@/components/ui/table";
 import { PaginationBar } from "@/components/pagination-bar";
 import { AuditToolbar } from "./audit-toolbar";
+import { getT } from "@/lib/i18n/server";
 import { format } from "date-fns";
 
-export const metadata: Metadata = { title: "Audit log" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("audit");
+  return { title: t("metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 /** Actor-picker lookback window (see the bounded distinct below). */
@@ -51,6 +55,9 @@ export default async function AuditPage({
   searchParams: Promise<SearchParams>;
 }) {
   await requireRole("ADMIN");
+  const t = await getT("audit");
+  const actionLabel = (a: string) => t.dyn(`action.${a}`, undefined, a);
+  const entityLabel = (e: string) => t.dyn(`entity.${e}`, undefined, e);
 
   const sp = await searchParams;
   const page = getPage(sp);
@@ -94,15 +101,15 @@ export default async function AuditPage({
   ]);
 
   const actorOptions = actorUsers.map((u) => ({ value: u.id, label: u.name ?? u.email }));
-  const entityOptions = entities.map((e) => ({ value: e, label: e }));
-  const actionOptions = actions.map((a) => ({ value: a, label: a }));
+  const entityOptions = entities.map((e) => ({ value: e, label: entityLabel(e) }));
+  const actionOptions = actions.map((a) => ({ value: a, label: actionLabel(a) }));
 
   return (
     <>
       <PageHeader
         icon={ScrollText}
-        title="Audit log"
-        description="Every create, update, delete and sign-in across Servio. Filter and export for compliance."
+        title={t("title")}
+        description={t("description")}
       />
 
       <PageBody className="grid gap-4">
@@ -111,20 +118,20 @@ export default async function AuditPage({
         {rows.length === 0 ? (
           <EmptyState
             icon={ScrollText}
-            title="No audit events"
-            description="Try adjusting your filters or widening the date range."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           />
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>When</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead className="hidden md:table-cell">Summary</TableHead>
-                  <TableHead className="hidden xl:table-cell">IP</TableHead>
+                  <TableHead>{t("colWhen")}</TableHead>
+                  <TableHead>{t("colActor")}</TableHead>
+                  <TableHead>{t("colAction")}</TableHead>
+                  <TableHead>{t("colEntity")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("colSummary")}</TableHead>
+                  <TableHead className="hidden xl:table-cell">{t("colIp")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -142,7 +149,7 @@ export default async function AuditPage({
                           </span>
                         </span>
                       ) : (
-                        <span className="text-sm text-muted-foreground">System</span>
+                        <span className="text-sm text-muted-foreground">{t("system")}</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -153,11 +160,11 @@ export default async function AuditPage({
                             "bg-muted text-muted-foreground border-transparent")
                         }
                       >
-                        {r.action}
+                        {actionLabel(r.action)}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm">
-                      <span className="font-medium">{r.entity}</span>
+                      <span className="font-medium">{entityLabel(r.entity)}</span>
                       <span className="ml-1 text-xs text-muted-foreground">#{r.entityId}</span>
                     </TableCell>
                     <TableCell className="hidden md:table-cell max-w-md text-sm text-muted-foreground">

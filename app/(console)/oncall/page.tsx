@@ -12,10 +12,16 @@ import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { EmptyState } from "@/components/empty-state";
 import { ToneBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
-import { INACTIVE_META, cadenceLabel, formatInZone } from "@/components/oncall/format";
+import { activityMeta, cadenceLabel, formatInZone } from "@/components/oncall/format";
+import { getT } from "@/lib/i18n/server";
+import { INTL_LOCALE } from "@/lib/i18n/config";
+import type { Translator } from "@/lib/i18n/translate";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-export const metadata: Metadata = { title: "On-call" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("oncall");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 const LOOKAHEAD_MS = 14 * 24 * 3_600_000;
@@ -35,16 +41,16 @@ function shiftOf(schedule: LoadedSchedule, now: Date, horizon: Date): Shift {
   return { holder: onCallPersonAt(schedule, now), until: current?.end ?? horizon, next };
 }
 
-function Holder({ shift, timezone }: { shift: Shift; timezone: string }) {
-  if (!shift.holder) return <span className="text-sm font-medium text-destructive">Nobody on call</span>;
+function Holder({ shift, timezone, t }: { shift: Shift; timezone: string; t: Translator<"oncall"> }) {
+  if (!shift.holder) return <span className="text-sm font-medium text-destructive">{t("nobodyOnCall")}</span>;
   return (
     <div className="flex min-w-0 items-center gap-2">
       <UserAvatar name={shift.holder.name} email={shift.holder.email} size="sm" />
       <div className="min-w-0">
         <div className="truncate text-sm font-medium">{shift.holder.name ?? shift.holder.email}</div>
         <div className="truncate text-xs text-muted-foreground">
-          until {formatInZone(shift.until, timezone)}
-          {shift.next ? ` · then ${shift.next.name ?? shift.next.email}` : ""}
+          {t("until", { date: formatInZone(shift.until, timezone, INTL_LOCALE[t.locale]) })}
+          {shift.next ? t("thenNext", { name: shift.next.name ?? shift.next.email }) : ""}
         </div>
       </div>
     </div>
@@ -63,6 +69,7 @@ function matches(schedule: LoadedSchedule, q: string | undefined, team: string |
 export default async function OnCallPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const me = await requireRole("AGENT");
+  const [t, tc] = await Promise.all([getT("oncall"), getT("common")]);
   const canManage = hasRole(me.role, "MANAGER");
   const now = new Date();
   const horizon = new Date(now.getTime() + LOOKAHEAD_MS);
@@ -76,16 +83,16 @@ export default async function OnCallPage({ searchParams }: { searchParams: Promi
 
   const teams = new Map(all.map((s) => [s.group.id, s.group.name]));
   const filters: FilterDef[] = [
-    { key: "team", label: "Teams", options: [...teams].map(([value, label]) => ({ value, label })) },
-    { key: "state", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
+    { key: "team", label: t("teams"), options: [...teams].map(([value, label]) => ({ value, label })) },
+    { key: "state", label: tc("status"), options: [{ value: "active", label: tc("active") }, { value: "inactive", label: tc("inactive") }] },
   ];
 
   return (
     <>
-      <PageHeader icon={PhoneCall} title="On-call" description="Who is on call for each team right now, and who is next.">
+      <PageHeader icon={PhoneCall} title={t("title")} description={t("description")}>
         {canManage ? (
           <LinkButton href="/oncall/new">
-            <Plus className="size-4" /> New schedule
+            <Plus className="size-4" /> {t("newSchedule")}
           </LinkButton>
         ) : null}
       </PageHeader>
@@ -94,35 +101,31 @@ export default async function OnCallPage({ searchParams }: { searchParams: Promi
         {all.length === 0 ? (
           <EmptyState
             icon={PhoneCall}
-            title="No on-call schedules yet"
-            description={
-              canManage
-                ? "A schedule is a rotation of agents who take turns being on call for a team. Create one so SLA escalations reach the right person."
-                : "A manager can set up a rotation so SLA escalations reach the right person."
-            }
+            title={t("emptyTitle")}
+            description={canManage ? t("emptyManager") : t("emptyAgent")}
           >
             {canManage ? (
               <LinkButton href="/oncall/new" size="sm">
-                <Plus className="size-4" /> New schedule
+                <Plus className="size-4" /> {t("newSchedule")}
               </LinkButton>
             ) : null}
           </EmptyState>
         ) : (
           <>
-            <ListToolbar filters={filters} searchPlaceholder="Search schedules…" />
+            <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
             {schedules.length === 0 ? (
-              <EmptyState icon={PhoneCall} title="No schedules found" description="Try adjusting your search or filters." />
+              <EmptyState icon={PhoneCall} title={t("noneFoundTitle")} description={t("noneFoundDescription")} />
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Schedule</TableHead>
-                      <TableHead className="hidden sm:table-cell">Team</TableHead>
-                      <TableHead className="hidden lg:table-cell">Rotation</TableHead>
-                      <TableHead>On call now</TableHead>
-                      <TableHead className="hidden text-right md:table-cell">Members</TableHead>
+                      <TableHead>{t("colSchedule")}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t("colTeam")}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t("colRotation")}</TableHead>
+                      <TableHead>{t("colOnCallNow")}</TableHead>
+                      <TableHead className="hidden text-right md:table-cell">{t("colMembers")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -132,7 +135,7 @@ export default async function OnCallPage({ searchParams }: { searchParams: Promi
                           <Link href={`/oncall/${s.id}`} className="block">
                             <span className="flex items-center gap-2">
                               <span className="truncate font-medium group-hover:text-primary">{s.name}</span>
-                              {s.isActive ? null : <ToneBadge meta={INACTIVE_META} icon={false} />}
+                              {s.isActive ? null : <ToneBadge meta={activityMeta(false, tc)} icon={false} />}
                             </span>
                             <span className="line-clamp-1 text-xs text-muted-foreground sm:hidden">{s.group.name}</span>
                           </Link>
@@ -146,11 +149,11 @@ export default async function OnCallPage({ searchParams }: { searchParams: Promi
                         <TableCell className="hidden lg:table-cell">
                           <span className="inline-flex items-center gap-2 text-sm">
                             <ToneBadge meta={ONCALL_ROTATION_META[s.rotationType as OnCallRotationType] ?? ONCALL_ROTATION_META.CUSTOM} icon={false} />
-                            <span className="text-muted-foreground">{cadenceLabel(s.rotationType, s.customIntervalHours)} · {s.timezone}</span>
+                            <span className="text-muted-foreground">{cadenceLabel(s.rotationType, s.customIntervalHours, t)} · {s.timezone}</span>
                           </span>
                         </TableCell>
                         <TableCell>
-                          {s.isActive ? <Holder shift={shifts.get(s.id)!} timezone={s.timezone} /> : <span className="text-sm text-muted-foreground">—</span>}
+                          {s.isActive ? <Holder shift={shifts.get(s.id)!} timezone={s.timezone} t={t} /> : <span className="text-sm text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="hidden text-right tabular-nums md:table-cell">
                           <span className="inline-flex items-center gap-1.5"><Users className="size-3.5 text-muted-foreground" />{s.members.length}</span>

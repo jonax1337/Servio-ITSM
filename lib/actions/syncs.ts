@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { encryptionAvailable, encryptSecret } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
+import { getT } from "@/lib/i18n/server";
 import { getConnector, getConfigSchema } from "@/lib/connectors";
 import { executeSyncRun } from "@/lib/sync-runner";
 import { getSpec, fieldsFor, CONFIGURABLE_TYPES } from "@/lib/connectors/spec";
@@ -47,13 +48,15 @@ export async function runSync(
   revalidatePath("/syncs");
   revalidatePath(`/syncs/${sourceId}`);
 
-  const summary = `${result.created} created, ${result.updated} updated${result.failed ? `, ${result.failed} failed` : ""}`;
+  const t = await getT("syncs");
+  const counts = { created: result.created, updated: result.updated, failed: result.failed };
+  const summary = result.failed ? t("runSummaryFailed", counts) : t("runSummary", counts);
   return {
     ok: result.status !== "FAILED",
     message:
       result.status === "FAILED"
-        ? `Sync failed: ${result.log.split("\n").pop() ?? "see run log"}`
-        : `Sync ${result.status === "PARTIAL" ? "completed with warnings" : "completed"} — ${summary}.`,
+        ? t("runFailed", { detail: result.log.split("\n").pop() ?? t("runFailedFallback") })
+        : t(result.status === "PARTIAL" ? "runPartial" : "runDone", { summary }),
   };
 }
 
@@ -318,7 +321,7 @@ export async function testSyncConnection(
   if (!source) return { error: "Sync source not found." };
 
   const connector = getConnector(source.type);
-  if (!connector) return { error: `No connector implemented for type "${source.type}".` };
+  if (!connector) return { error: (await getT("syncs"))("noConnector", { type: source.type }) };
 
   const res = await connector.test(source);
   return res.ok ? { ok: true, message: res.message } : { error: res.message };

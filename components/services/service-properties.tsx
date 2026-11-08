@@ -10,6 +10,7 @@ import {
   CRITICALITY_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 type Field = "status" | "criticality" | "categoryId" | "ownerId" | "slaId" | "groupId";
 
@@ -29,6 +30,8 @@ function Prop({
   placeholder?: string;
 }) {
   const [pending, start] = useTransition();
+  const t = useT("services");
+  const fieldName = t.locale === "en" ? label.toLowerCase() : label;
   return (
     <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -37,7 +40,7 @@ function Prop({
         value={value ?? "none"}
         pending={pending}
         placeholder={placeholder}
-        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        searchPlaceholder={searchable ? t("searchField", { field: fieldName }) : t("filterPlaceholder")}
         onChange={(v) => {
           const fd = new FormData();
           fd.set("id", serviceId);
@@ -65,29 +68,32 @@ export function ServiceProperties({
   };
   options: FormOptions;
 }) {
+  const t = useT("services");
+  const tc = useT("common");
+  const te = useEnumT();
   const statusOpts: ComboOption[] = SERVICE_STATUSES.map((s) => ({
-    value: s, label: SERVICE_STATUS_META[s].label, tone: SERVICE_STATUS_META[s].tone, icon: SERVICE_STATUS_META[s].icon,
+    value: s, label: te(SERVICE_STATUS_META[s]), tone: SERVICE_STATUS_META[s].tone, icon: SERVICE_STATUS_META[s].icon,
   }));
   const critOpts: ComboOption[] = CRITICALITIES.map((c) => ({
-    value: c, label: CRITICALITY_META[c].label, tone: CRITICALITY_META[c].tone, icon: CRITICALITY_META[c].icon,
+    value: c, label: te(CRITICALITY_META[c]), tone: CRITICALITY_META[c].tone, icon: CRITICALITY_META[c].icon,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
   const ownerOpts: ComboOption[] = [
-    none("No owner"),
+    none(t("noOwner")),
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
-  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
-  const teamOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
-  const slaOpts: ComboOption[] = [none("No SLA"), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
+  const catOpts: ComboOption[] = [none(t("noCategory")), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
+  const teamOpts: ComboOption[] = [none(t("noGroup")), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const slaOpts: ComboOption[] = [none(t("noSlaOption")), ...options.slas.map((s) => ({ value: s.id, label: s.name }))];
 
   return (
     <div className="grid gap-3">
-      <Prop label="Status" serviceId={service.id} field="status" value={service.status} options={statusOpts} />
-      <Prop label="Criticality" serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
-      <Prop label="Owner" serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder="No owner" />
-      <Prop label="Category" serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder="No category" />
-      <Prop label="Group" serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder="No group" />
-      <Prop label="SLA" serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder="No SLA" />
+      <Prop label={tc("status")} serviceId={service.id} field="status" value={service.status} options={statusOpts} />
+      <Prop label={t("criticality")} serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
+      <Prop label={tc("owner")} serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder={t("noOwner")} />
+      <Prop label={tc("category")} serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder={t("noCategory")} />
+      <Prop label={tc("group")} serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder={t("noGroup")} />
+      <Prop label={t("sla")} serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder={t("noSlaOption")} />
     </div>
   );
 }

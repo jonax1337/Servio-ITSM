@@ -15,6 +15,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { WEEKDAY_KEYS, type WeekdayKey } from "@/lib/business-hours";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 export type CalendarRow = {
   id: string;
@@ -22,10 +24,6 @@ export type CalendarRow = {
   timezone: string;
   weeklyHours: string; // JSON
   holidays: { id: string; name: string; date: Date | string }[];
-};
-
-const DAY_LABELS: Record<WeekdayKey, string> = {
-  sun: "Sunday", mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday",
 };
 
 type DayState = { enabled: boolean; open: string; close: string };
@@ -72,6 +70,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function CalendarDialog({ calendar }: { calendar?: CalendarRow }) {
   const editing = !!calendar;
+  const t = useT("settings");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
@@ -91,40 +91,40 @@ function CalendarDialog({ calendar }: { calendar?: CalendarRow }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? "Edit calendar" : undefined} />}>
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New calendar</>}
+      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? t("cal.editCalendar") : undefined} />}>
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("cal.newCalendar")}</>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><CalendarDays className="size-4 text-primary" /> {editing ? "Edit calendar" : "New calendar"}</DialogTitle>
-          <DialogDescription>Working hours drive SLA deadlines: only time inside an open window (and not on a holiday) counts against the clock.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><CalendarDays className="size-4 text-primary" /> {editing ? t("cal.editCalendar") : t("cal.newCalendar")}</DialogTitle>
+          <DialogDescription>{t("cal.dialogDescription")}</DialogDescription>
         </DialogHeader>
 
         <form action={submit} className="grid gap-4">
           {editing ? <input type="hidden" name="id" value={calendar.id} /> : null}
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Name">
-              <Input name="name" defaultValue={calendar?.name} placeholder="e.g. Business hours" required />
+            <Field label={t("cal.name")}>
+              <Input name="name" defaultValue={calendar?.name} placeholder={t("cal.namePlaceholder")} required />
             </Field>
-            <Field label="Timezone">
-              <Input name="timezone" defaultValue={calendar?.timezone ?? "UTC"} placeholder="e.g. Europe/Berlin" required />
+            <Field label={t("cal.timezone")}>
+              <Input name="timezone" defaultValue={calendar?.timezone ?? "UTC"} placeholder={t("cal.timezonePlaceholder")} required />
             </Field>
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Weekly hours</Label>
+            <Label>{t("cal.weeklyHours")}</Label>
             <div className="divide-y rounded-lg border">
               {WEEKDAY_KEYS.map((key) => {
                 const d = days[key];
                 return (
                   <div key={key} className="flex items-center gap-3 px-3 py-2 text-sm">
                     <Switch checked={d.enabled} onCheckedChange={(v) => setDay(key, { enabled: v })} />
-                    <span className="w-20 text-muted-foreground">{DAY_LABELS[key]}</span>
+                    <span className="w-20 text-muted-foreground">{t(`cal.day.${key}`)}</span>
                     {d.enabled ? (
                       <div className="ml-auto flex items-center gap-2">
                         <Input type="time" value={d.open} onChange={(e) => setDay(key, { open: e.target.value })} className="h-8 w-28" />
@@ -132,19 +132,19 @@ function CalendarDialog({ calendar }: { calendar?: CalendarRow }) {
                         <Input type="time" value={d.close} onChange={(e) => setDay(key, { close: e.target.value })} className="h-8 w-28" />
                       </div>
                     ) : (
-                      <span className="ml-auto text-xs text-muted-foreground">Closed</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{t("cal.closed")}</span>
                     )}
                   </div>
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground">Times are wall-clock in the calendar’s timezone.</p>
+            <p className="text-xs text-muted-foreground">{t("cal.wallClockHint")}</p>
           </div>
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save calendar" : "Create calendar"}
+              {editing ? t("cal.saveCalendar") : t("cal.createCalendar")}
             </Button>
           </DialogFooter>
         </form>
@@ -154,6 +154,8 @@ function CalendarDialog({ calendar }: { calendar?: CalendarRow }) {
 }
 
 function HolidayDialog({ calendarId }: { calendarId: string }) {
+  const t = useT("settings");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<SlaState>(undefined);
   const [pending, startTransition] = useTransition();
@@ -169,27 +171,27 @@ function HolidayDialog({ calendarId }: { calendarId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-        <CalendarPlus className="size-4" /> Add holiday
+        <CalendarPlus className="size-4" /> {t("cal.addHoliday")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add holiday</DialogTitle>
-          <DialogDescription>A whole closed day — the SLA clock pauses on it.</DialogDescription>
+          <DialogTitle>{t("cal.addHoliday")}</DialogTitle>
+          <DialogDescription>{t("cal.holidayDescription")}</DialogDescription>
         </DialogHeader>
         <form action={submit} className="grid gap-4">
           <input type="hidden" name="calendarId" value={calendarId} />
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
-          <Field label="Name">
-            <Input name="name" placeholder="e.g. New Year’s Day" required />
+          <Field label={t("cal.name")}>
+            <Input name="name" placeholder={t("cal.holidayPlaceholder")} required />
           </Field>
-          <Field label="Date">
+          <Field label={t("cal.date")}>
             <Input name="date" type="date" required />
           </Field>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Add
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} {t("cal.add")}
             </Button>
           </DialogFooter>
         </form>
@@ -198,26 +200,27 @@ function HolidayDialog({ calendarId }: { calendarId: string }) {
   );
 }
 
-function summarizeWeek(json: string): string {
+function summarizeWeek(json: string, t: Translator<"settings">): string {
   const days = parseWeekly(json);
   const openDays = WEEKDAY_KEYS.filter((k) => days[k].enabled);
-  if (openDays.length === 0) return "No open hours";
-  return `${openDays.length} open day${openDays.length === 1 ? "" : "s"}`;
+  if (openDays.length === 0) return t("cal.noOpenHours");
+  return t("cal.openDays", { count: openDays.length });
 }
 
 export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
+  const t = useT("settings");
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {calendars.length} calendar{calendars.length === 1 ? "" : "s"} · working hours + holidays used by SLA deadlines.
+          {t("cal.summary", { count: calendars.length })}
         </p>
         <CalendarDialog />
       </div>
 
       {calendars.length === 0 ? (
         <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No calendars yet. Create one to make SLAs honour working hours instead of running 24/7.
+          {t("cal.empty")}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -227,15 +230,15 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
                 <span className="grid size-9 place-items-center rounded-lg border text-primary"><CalendarDays className="size-4.5" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{c.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">{c.timezone} · {summarizeWeek(c.weeklyHours)}</div>
+                  <div className="truncate text-xs text-muted-foreground">{c.timezone} · {summarizeWeek(c.weeklyHours, t)}</div>
                 </div>
                 <CalendarDialog calendar={c} />
                 <ConfirmButton
                   action={deleteCalendar}
                   fields={{ id: c.id }}
-                  title="Delete calendar?"
-                  description={`"${c.name}" will be removed and unlinked from any SLAs (they revert to 24/7). This can't be undone.`}
-                  triggerLabel="Delete calendar"
+                  title={t("cal.deleteTitle")}
+                  description={t("cal.deleteDescription", { name: c.name })}
+                  triggerLabel={t("cal.deleteCalendar")}
                 >
                   <Trash2 className="size-4" />
                 </ConfirmButton>
@@ -243,11 +246,11 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
 
               <div className="border-t px-4 py-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">Holidays ({c.holidays.length})</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("cal.holidays", { count: c.holidays.length })}</span>
                   <HolidayDialog calendarId={c.id} />
                 </div>
                 {c.holidays.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No holidays.</p>
+                  <p className="text-xs text-muted-foreground">{t("cal.noHolidays")}</p>
                 ) : (
                   <ul className="flex flex-wrap gap-2">
                     {c.holidays.map((h) => (
@@ -257,13 +260,13 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
                         <ConfirmButton
                           action={deleteHoliday}
                           fields={{ id: h.id }}
-                          title="Remove holiday?"
-                          description={`"${h.name}" will be removed from this calendar.`}
-                          confirmLabel="Remove"
+                          title={t("cal.removeHolidayTitle")}
+                          description={t("cal.removeHolidayDescription", { name: h.name })}
+                          confirmLabel={t("cal.remove")}
                           triggerVariant="ghost"
                           triggerSize="icon-xs"
                           triggerClassName="size-4 text-muted-foreground hover:text-destructive"
-                          triggerLabel="Remove holiday"
+                          triggerLabel={t("cal.removeHoliday")}
                         >
                           <Trash2 className="size-3" />
                         </ConfirmButton>

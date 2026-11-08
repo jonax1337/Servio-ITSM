@@ -23,6 +23,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 import { Button } from "@/components/ui/button";
 
 const ANIMATION_DURATION = 200;
@@ -139,7 +141,8 @@ function ToolFallbackTrigger({
     status?.type === "incomplete" && status.reason === "cancelled";
 
   const Icon = statusIconMap[statusType];
-  const label = isCancelled ? "Cancelled tool" : "Used tool";
+  const t = useT("assistant");
+  const label = isCancelled ? t("tool.cancelled") : t("tool.used");
 
   return (
     <CollapsibleTrigger
@@ -257,6 +260,7 @@ function ToolFallbackResult({
 }: React.ComponentProps<"div"> & {
   result?: unknown;
 }) {
+  const t = useT("assistant");
   if (result === undefined) return null;
 
   return (
@@ -266,7 +270,7 @@ function ToolFallbackResult({
       {...props}
     >
       <p className="aui-tool-fallback-result-header text-muted-foreground text-xs font-medium">
-        Result:
+        {t("tool.result")}
       </p>
       <pre className="aui-tool-fallback-result-content bg-muted/50 text-foreground/90 mt-1 rounded-md p-2.5 text-xs whitespace-pre-wrap">
         {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
@@ -282,6 +286,7 @@ function ToolFallbackError({
 }: React.ComponentProps<"div"> & {
   status?: ToolCallMessagePartStatus;
 }) {
+  const t = useT("assistant");
   if (status?.type !== "incomplete") return null;
 
   const error = status.error;
@@ -294,7 +299,7 @@ function ToolFallbackError({
   if (!errorText) return null;
 
   const isCancelled = status.reason === "cancelled";
-  const headerText = isCancelled ? "Cancelled reason:" : "Error:";
+  const headerText = isCancelled ? t("tool.cancelledReason") : t("tool.error");
 
   return (
     <div
@@ -315,20 +320,21 @@ function ToolFallbackError({
 const APPROVED_RESULT = "Approved by user";
 const DENIED_RESULT = "User denied tool execution";
 
-const APPROVAL_OPTION_DEFAULT_LABELS: Record<string, string> = {
-  "allow-once": "Allow",
-  "allow-always": "Always allow",
-  "reject-once": "Deny",
-  "reject-always": "Always deny",
-};
+// The model-facing results above stay English; the button labels follow the viewer.
+const APPROVAL_OPTION_DEFAULT_LABELS = {
+  "allow-once": "tool.allow",
+  "allow-always": "tool.alwaysAllow",
+  "reject-once": "tool.deny",
+  "reject-always": "tool.alwaysDeny",
+} as const satisfies Record<string, string>;
 
 const isAllowKind = (kind: string) =>
   kind === "allow-once" || kind === "allow-always";
 
-const approvalOptionLabel = (option: ToolApprovalOption) =>
+const approvalOptionLabel = (option: ToolApprovalOption, t: Translator<"assistant">) =>
   option.label ??
   (Object.hasOwn(APPROVAL_OPTION_DEFAULT_LABELS, option.kind)
-    ? APPROVAL_OPTION_DEFAULT_LABELS[option.kind]
+    ? t(APPROVAL_OPTION_DEFAULT_LABELS[option.kind as keyof typeof APPROVAL_OPTION_DEFAULT_LABELS])
     : undefined) ??
   option.id;
 
@@ -347,6 +353,7 @@ function ToolFallbackApproval({
     interrupt?: ToolCallMessagePart["interrupt"];
     approval?: ToolCallMessagePart["approval"];
   }) {
+  const t = useT("assistant");
   const [submitted, setSubmitted] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
@@ -416,7 +423,7 @@ function ToolFallbackApproval({
         {...props}
       >
         <p className="aui-tool-fallback-approval-confirm-title font-semibold">
-          {confirmMeta?.title ?? `${approvalOptionLabel(confirming)}?`}
+          {confirmMeta?.title ?? t("tool.confirmOption", { option: approvalOptionLabel(confirming, t) })}
         </p>
         {confirmDescription && (
           <p className="aui-tool-fallback-approval-confirm-description text-muted-foreground">
@@ -441,7 +448,7 @@ function ToolFallbackApproval({
             onClick={() => respondWithOption(confirming)}
             disabled={submitted}
           >
-            Confirm
+            {t("tool.confirm")}
           </Button>
           <Button
             size="sm"
@@ -450,7 +457,7 @@ function ToolFallbackApproval({
             onClick={() => setConfirmingId(null)}
             disabled={submitted}
           >
-            Back
+            {t("tool.back")}
           </Button>
         </div>
       </div>
@@ -478,7 +485,7 @@ function ToolFallbackApproval({
             onClick={() => handleOption(option)}
             disabled={submitted}
           >
-            {approvalOptionLabel(option)}
+            {approvalOptionLabel(option, t)}
           </Button>
         ))}
         {rejectOptions.length === 0 && (
@@ -489,7 +496,7 @@ function ToolFallbackApproval({
             onClick={() => respond(false)}
             disabled={submitted}
           >
-            Deny
+            {t("tool.deny")}
           </Button>
         )}
       </div>
@@ -511,7 +518,7 @@ function ToolFallbackApproval({
         onClick={() => respond(true)}
         disabled={submitted}
       >
-        Allow
+        {t("tool.allow")}
       </Button>
       <Button
         size="sm"
@@ -520,7 +527,7 @@ function ToolFallbackApproval({
         onClick={() => respond(false)}
         disabled={submitted}
       >
-        Deny
+        {t("tool.deny")}
       </Button>
     </div>
   );

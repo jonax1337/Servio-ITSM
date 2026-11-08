@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemChangePicker, UnlinkChangeButton } from "@/components/problems/problem-fix-changes";
 import { CHANGE_STATUS_META, changeRef } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 export async function ProblemChangesTab({
   problemId,
@@ -12,6 +13,7 @@ export async function ProblemChangesTab({
   problemId: number;
   isAgentUser: boolean;
 }) {
+  const t = await getT("problems");
   const [changes, linkableChanges] = await Promise.all([
     db.change.findMany({
       where: { problemId },
@@ -34,12 +36,12 @@ export async function ProblemChangesTab({
       <div className="mb-4 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <GitPullRequestArrow className="size-4 text-muted-foreground" />
-          Fix changes · {changes.length}
+          {t("changes.heading", { count: changes.length })}
         </h2>
         {isAgentUser ? <ProblemChangePicker problemId={problemId} options={changeOpts} /> : null}
       </div>
       {changes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No changes fix this problem yet.</p>
+        <p className="text-sm text-muted-foreground">{t("changes.empty")}</p>
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
           {changes.map((c) => (

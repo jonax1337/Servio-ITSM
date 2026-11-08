@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 // One editable custom-field control. On change it fires the server action via a
 // transition so the value persists without a full form submit.
@@ -25,6 +26,7 @@ export function CustomFieldInput({
   disabled?: boolean;
 }) {
   const [pending, start] = useTransition();
+  const t = useT("settings");
   const [draft, setDraft] = useState(value);
   const type = def.type as CustomFieldType;
 
@@ -89,7 +91,7 @@ export function CustomFieldInput({
           size="sm"
           disabled={disabled}
           pending={pending}
-          placeholder={def.placeholder ?? "Select…"}
+          placeholder={def.placeholder ?? t("cfInput.select")}
           onChange={(v) => {
             setDraft(v);
             persist(v);

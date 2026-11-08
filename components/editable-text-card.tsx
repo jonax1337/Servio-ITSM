@@ -8,6 +8,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 /**
  * A titled card whose free-text body (e.g. a problem's root cause, a change's
@@ -39,6 +40,11 @@ export function EditableTextCard({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const t = useT("components");
+  const tc = useT("common");
+  const locale = useLocale();
+  // English lowers the label mid-sentence ("Edit root cause"); German keeps its capitals.
+  const editLabel = t("edit.title", { entity: locale === "en" ? label.toLowerCase() : label });
 
   return (
     <Card>
@@ -53,8 +59,8 @@ export function EditableTextCard({
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label={`Edit ${label.toLowerCase()}`}
-              title={`Edit ${label.toLowerCase()}`}
+              aria-label={editLabel}
+              title={editLabel}
               onClick={() => setOpen(true)}
             >
               <Pencil className="size-3.5" />
@@ -70,7 +76,7 @@ export function EditableTextCard({
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Edit {label.toLowerCase()}</DialogTitle>
+              <DialogTitle>{editLabel}</DialogTitle>
             </DialogHeader>
             <form
               action={(fd) => start(async () => { await action(fd); setOpen(false); })}
@@ -86,11 +92,11 @@ export function EditableTextCard({
               />
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
-                  Cancel
+                  {tc("cancel")}
                 </Button>
                 <Button type="submit" disabled={pending}>
                   {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Save
+                  {tc("save")}
                 </Button>
               </DialogFooter>
             </form>

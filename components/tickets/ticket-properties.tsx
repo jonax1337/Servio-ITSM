@@ -12,7 +12,9 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import { PendingReasonDialog, type PendingPayload } from "@/components/tickets/pending-reason-dialog";
 import { ResolutionDialog, type ResolutionPayload } from "@/components/tickets/resolution-dialog";
 import { DueDatePicker } from "@/components/tickets/due-date-picker";
-import { childResolutionMessage, refusedChildrenDetail, type RefusedChild } from "@/lib/ticket-hierarchy-rules";
+import type { RefusedChild } from "@/lib/ticket-hierarchy-rules";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 import {
   PROPERTY_KEYS, UNDO_WINDOW_MS, applyPropertyEdit, changesBetween, undoBlocker, undoChanges, withChanges,
   type FieldChange, type PropertyKey, type PropertyValues, type UndoBlocker,
@@ -30,13 +32,14 @@ import {
 import type { FormOptions } from "@/lib/data/options";
 
 /** The refusal message of a ticket action result, or null when it went through. */
-const errorOf = (res: { ok: boolean; error?: string }) => (res.ok ? null : res.error ?? "Could not save changes.");
+const errorOf = (res: { ok: boolean; error?: string }) => (res.ok ? null : res.error ?? SAVE_FAILED);
 
+/** English source of the generic save failure; translated where it is shown (server catalog). */
 const SAVE_FAILED = "Could not save changes.";
 
-const UNDO_BLOCKED: Record<UndoBlocker, string> = {
-  changed: "This field changed since — not undone.",
-  workflow: "The workflow doesn't allow going back to that status.",
+const UNDO_BLOCKED: Record<UndoBlocker, "props.undoBlockedChanged" | "props.undoBlockedWorkflow"> = {
+  changed: "props.undoBlockedChanged",
+  workflow: "props.undoBlockedWorkflow",
 };
 
 /** An edit whose Undo is on offer in a toast. */
@@ -63,6 +66,7 @@ function EditProp({
   onApply: () => void;
   onDismiss: () => void;
 }) {
+  const t = useT("tickets");
   return (
     <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -71,7 +75,7 @@ function EditProp({
         value={value}
         pending={pending}
         placeholder={placeholder}
-        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        searchPlaceholder={searchable ? t("props.searchField", { field: label }) : t("props.filter")}
         onChange={onChange}
         className={cn(suggestion && "border-sable/40 ring-2 ring-sable/30")}
       />
@@ -79,9 +83,9 @@ function EditProp({
         <div className="sable-accent-border flex items-center gap-1 rounded-md border bg-sable-muted/50 px-2 py-1">
           <SableMark className="size-3.5 shrink-0 text-sable" />
           <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{suggestion.label}</span>
-          <Button type="button" size="xs" className="h-5 shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>Apply</Button>
+          <Button type="button" size="xs" className="h-5 shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>{t("props.apply")}</Button>
           <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
-            Dismiss
+            {t("props.dismiss")}
           </Button>
         </div>
       ) : null}
@@ -89,10 +93,19 @@ function EditProp({
   );
 }
 
-const FIELD_LABELS: Record<PropertyKey, string> = {
-  status: "Status", type: "Type", priority: "Priority", impact: "Impact", urgency: "Urgency",
-  assigneeId: "Assignee", groupId: "Group", categoryId: "Category", serviceId: "Service",
+/** Field label keys in the "common" namespace. */
+const FIELD_LABELS: Record<PropertyKey, "status" | "type" | "priority" | "impact" | "urgency" | "assignee" | "group" | "category" | "service"> = {
+  status: "status", type: "type", priority: "priority", impact: "impact", urgency: "urgency",
+  assigneeId: "assignee", groupId: "group", categoryId: "category", serviceId: "service",
 };
+
+/** "resolved 2 child tickets, 1 child ticket could not be resolved" — null when no children were involved. */
+function childNoteOf(t: Translator<"tickets">, resolved: number, refused: number): string | null {
+  const parts: string[] = [];
+  if (resolved > 0) parts.push(t("props.childrenResolved", { count: resolved }));
+  if (refused > 0) parts.push(t("props.childrenRefused", { count: refused }));
+  return parts.length ? parts.join(", ") : null;
+}
 
 type TicketValues = {
   status: string; type: string; priority: string; impact: string; urgency: string;
@@ -134,24 +147,29 @@ export function TicketProperties({
   openChildCount?: number;
 }) {
   const router = useRouter();
+  const t = useT("tickets");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
+  const fieldLabel = (k: PropertyKey) => tc(FIELD_LABELS[k]);
   // ── Options ──
   const allowedSet = allowedStatuses ? new Set(allowedStatuses) : null;
   const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
-    value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
+    value: s, label: te(TICKET_STATUS_META, s), tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
     disabled: allowedSet ? !allowedSet.has(s) : false,
-    disabledReason: "Not allowed from the current status by the workflow.",
+    disabledReason: t("props.notAllowedByWorkflow"),
   }));
   const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({
-    value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
+    value: p, label: te(PRIORITY_META, p), tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
   }));
-  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
-  const typeOpts: ComboOption[] = TICKET_TYPES.map((t) => ({
-    value: t, label: TICKET_TYPE_META[t].label, tone: TICKET_TYPE_META[t].tone, icon: TICKET_TYPE_META[t].icon,
+  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: te(LEVEL_META, l), tone: LEVEL_META[l].tone }));
+  const typeOpts: ComboOption[] = TICKET_TYPES.map((v) => ({
+    value: v, label: te(TICKET_TYPE_META, v), tone: TICKET_TYPE_META[v].tone, icon: TICKET_TYPE_META[v].icon,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
-  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
-  const catOpts: ComboOption[] = [none("No category"), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
-  const svcOpts: ComboOption[] = [none("No service"), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
+  const groupOpts: ComboOption[] = [none(t("form.noGroup")), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const catOpts: ComboOption[] = [none(t("form.noCategory")), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
+  const svcOpts: ComboOption[] = [none(t("form.noService")), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
   const catName = (id: string) => options.categories.find((c) => c.id === id)?.name ?? id;
   const svcName = (id: string) => options.services.find((s) => s.id === id)?.name ?? id;
@@ -181,7 +199,7 @@ export function TicketProperties({
   // group). The currently-selected assignee is always kept so it still shows.
   const memberIds = values.groupId !== "none" ? new Set(options.groupMembers[values.groupId] ?? []) : null;
   const assigneeOpts: ComboOption[] = [
-    none("Unassigned"),
+    none(tc("unassigned")),
     ...options.agents
       .filter((a) => !memberIds || memberIds.has(a.id) || a.id === values.assigneeId)
       .map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
@@ -232,7 +250,7 @@ export function TicketProperties({
     offers.current.delete(toastId);
     const blocker = undoBlocker(latest.current.values, before, after, latest.current.allowedStatuses);
     if (blocker) {
-      toast.info(UNDO_BLOCKED[blocker]);
+      toast.info(t(UNDO_BLOCKED[blocker]));
       return;
     }
     const reverts = undoChanges(before, after);
@@ -240,26 +258,26 @@ export function TicketProperties({
     const refusal = await saveChanges(reverts);
     if (refusal) {
       setValues((v) => withChanges(v, changesBetween(before, after)));
-      toast.error(`Could not undo: ${refusal}`);
+      toast.error(t("props.undoFailed", { reason: tm(refusal) }));
       router.refresh();
       return;
     }
-    toast.success("Change undone");
+    toast.success(t("props.changeUndone"));
   }
 
   async function saveEdit(edit: FieldChange, before: PropertyValues, after: PropertyValues) {
     const refusal = await saveChanges([edit]);
     if (refusal) {
       setValues((v) => withChanges(v, changesBetween(after, before)));
-      toast.error(refusal);
+      toast.error(tm(refusal));
       return;
     }
     const toastId = `undo-${ticket.id}-${++offerCount.current}`;
     offers.current.set(toastId, { before, after });
-    toast.success(`${FIELD_LABELS[edit.field]} updated`, {
+    toast.success(t("props.fieldUpdated", { field: fieldLabel(edit.field) }), {
       id: toastId,
       duration: UNDO_WINDOW_MS,
-      action: { label: "Undo", onClick: () => void undoEdit(toastId, { before, after }) },
+      action: { label: t("props.undo"), onClick: () => void undoEdit(toastId, { before, after }) },
       onDismiss: () => offers.current.delete(toastId),
       onAutoClose: () => offers.current.delete(toastId),
     });
@@ -298,13 +316,13 @@ export function TicketProperties({
     }
     if (outcome.refusal) {
       setValues((v) => withChanges(v, [{ field: "status", value: previous }]));
-      toast.error(outcome.refusal);
+      toast.error(tm(outcome.refusal));
       return false;
     }
-    const message = `Status set to ${TICKET_STATUS_META[status].label}${outcome.childNote ? ` · ${outcome.childNote}` : ""}`;
+    const message = `${t("props.statusSet", { status: te(TICKET_STATUS_META, status) })}${outcome.childNote ? ` · ${outcome.childNote}` : ""}`;
     const refused = outcome.refusedChildren ?? [];
     // A child the workflow refused stays open, so the result is not a plain success.
-    if (refused.length > 0) toast.warning(message, { description: refusedChildrenDetail(refused) });
+    if (refused.length > 0) toast.warning(message, { description: refused.map((c) => `${c.ref}: ${tm(c.error)}`).join("\n") });
     else toast.success(message);
     return true;
   }
@@ -334,7 +352,7 @@ export function TicketProperties({
       return {
         refusal: errorOf(res),
         refusedChildren,
-        childNote: childResolutionMessage(res.childrenResolved ?? 0, refusedChildren.length),
+        childNote: childNoteOf(t, res.childrenResolved ?? 0, refusedChildren.length),
       };
     });
 
@@ -357,22 +375,22 @@ export function TicketProperties({
     const flagged = sugg.flagged ?? [];
     if (k === "priority") {
       if (values.priority === sugg.priority) return null;
-      if (values.priority === "MEDIUM" || flagged.includes("priority")) return { value: sugg.priority, label: PRIORITY_META[sugg.priority].label };
+      if (values.priority === "MEDIUM" || flagged.includes("priority")) return { value: sugg.priority, label: te(PRIORITY_META, sugg.priority) };
       return null;
     }
     if (k === "type") {
       if (values.type === sugg.type) return null;
-      if (values.type === "INCIDENT" || flagged.includes("type")) return { value: sugg.type, label: TICKET_TYPE_META[sugg.type].label };
+      if (values.type === "INCIDENT" || flagged.includes("type")) return { value: sugg.type, label: te(TICKET_TYPE_META, sugg.type) };
       return null;
     }
     if (k === "impact") {
       if (values.impact === sugg.impact) return null;
-      if (values.impact === "MEDIUM" || flagged.includes("impact")) return { value: sugg.impact, label: LEVEL_META[sugg.impact].label };
+      if (values.impact === "MEDIUM" || flagged.includes("impact")) return { value: sugg.impact, label: te(LEVEL_META, sugg.impact) };
       return null;
     }
     if (k === "urgency") {
       if (values.urgency === sugg.urgency) return null;
-      if (values.urgency === "MEDIUM" || flagged.includes("urgency")) return { value: sugg.urgency, label: LEVEL_META[sugg.urgency].label };
+      if (values.urgency === "MEDIUM" || flagged.includes("urgency")) return { value: sugg.urgency, label: te(LEVEL_META, sugg.urgency) };
       return null;
     }
     if (k === "groupId") {
@@ -397,7 +415,7 @@ export function TicketProperties({
     const suggestion = suggestionFor(k);
     return (
       <EditProp
-        label={FIELD_LABELS[k]}
+        label={fieldLabel(k)}
         value={values[k]}
         options={opts}
         searchable={searchable}
@@ -430,8 +448,8 @@ export function TicketProperties({
 
       {/* Who owns it */}
       <div className="grid gap-3 border-t pt-3">
-        {prop("assigneeId", assigneeOpts, true, "Unassigned")}
-        {prop("groupId", groupOpts, true, "No group")}
+        {prop("assigneeId", assigneeOpts, true, tc("unassigned"))}
+        {prop("groupId", groupOpts, true, t("form.noGroup"))}
       </div>
 
       {/* How severe it is */}
@@ -446,13 +464,13 @@ export function TicketProperties({
       {/* How it is classified */}
       <div className="grid gap-3 border-t pt-3">
         {prop("type", typeOpts)}
-        {prop("categoryId", catOpts, true, "No category")}
-        {prop("serviceId", svcOpts, true, "No service")}
+        {prop("categoryId", catOpts, true, t("form.noCategory"))}
+        {prop("serviceId", svcOpts, true, t("form.noService"))}
       </div>
 
       {/* Due date — lives with the rest of the properties */}
       <div className="grid gap-1.5 border-t pt-3">
-        <span className="text-xs font-medium text-muted-foreground">Due date</span>
+        <span className="text-xs font-medium text-muted-foreground">{t("props.dueDate")}</span>
         <DueDatePicker ticketId={ticket.id} dueDate={ticket.dueDate} />
       </div>
     </div>

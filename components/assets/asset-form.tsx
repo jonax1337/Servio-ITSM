@@ -16,6 +16,7 @@ import {
   ASSET_STATUS_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 function Field({
   label,
@@ -28,12 +29,13 @@ function Field({
   children: React.ReactNode;
   hint?: string;
 }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -52,9 +54,13 @@ export function AssetForm({
   );
   const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
+  const t = useT("assets");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
 
-  const typeOpts: ComboOption[] = ASSET_TYPES.map((t) => ({ value: t, label: ASSET_TYPE_META[t].label, tone: ASSET_TYPE_META[t].tone, icon: ASSET_TYPE_META[t].icon }));
-  const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({ value: s, label: ASSET_STATUS_META[s].label, tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon }));
+  const typeOpts: ComboOption[] = ASSET_TYPES.map((ty) => ({ value: ty, label: te(ASSET_TYPE_META[ty]), tone: ASSET_TYPE_META[ty].tone, icon: ASSET_TYPE_META[ty].icon }));
+  const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({ value: s, label: te(ASSET_STATUS_META[s]), tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon }));
   const ownerOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
   const locationOpts: ComboOption[] = locations.map((l) => ({ value: l.value, label: l.label }));
@@ -63,53 +69,53 @@ export function AssetForm({
     <form method="post" onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
-      <Field label="Name" error={fe.name}>
-        <Input name="name" placeholder="e.g. web-prod-01" required />
+      <Field label={tc("name")} error={fe.name}>
+        <Input name="name" placeholder={t("form.namePlaceholder")} required />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Type" error={fe.type}>
-          <ComboField name="type" defaultValue="SERVER" options={typeOpts} placeholder="Type" />
+        <Field label={tc("type")} error={fe.type}>
+          <ComboField name="type" defaultValue="SERVER" options={typeOpts} placeholder={tc("type")} />
         </Field>
-        <Field label="Status" error={fe.status}>
-          <ComboField name="status" defaultValue="IN_USE" options={statusOpts} placeholder="Status" />
+        <Field label={tc("status")} error={fe.status}>
+          <ComboField name="status" defaultValue="IN_USE" options={statusOpts} placeholder={tc("status")} />
         </Field>
-        <Field label="Asset tag" error={fe.assetTag}>
-          <Input name="assetTag" placeholder="e.g. AST-0001" />
+        <Field label={t("field.assetTag")} error={fe.assetTag}>
+          <Input name="assetTag" placeholder={t("form.assetTagPlaceholder")} />
         </Field>
-        <Field label="Serial" error={fe.serial}>
-          <Input name="serial" placeholder="Serial number" />
+        <Field label={t("field.serial")} error={fe.serial}>
+          <Input name="serial" placeholder={t("form.serialPlaceholder")} />
         </Field>
-        <Field label="Model" error={fe.model}>
-          <Input name="model" placeholder="e.g. PowerEdge R740" />
+        <Field label={t("field.model")} error={fe.model}>
+          <Input name="model" placeholder={t("form.modelPlaceholder")} />
         </Field>
-        <Field label="Manufacturer" error={fe.manufacturer}>
-          <Input name="manufacturer" placeholder="e.g. Dell" />
+        <Field label={t("field.manufacturer")} error={fe.manufacturer}>
+          <Input name="manufacturer" placeholder={t("form.manufacturerPlaceholder")} />
         </Field>
-        <Field label="Location" error={fe.locationId}>
-          <ComboField name="locationId" options={locationOpts} includeNone noneLabel="No location" placeholder="No location" />
+        <Field label={tc("location")} error={fe.locationId}>
+          <ComboField name="locationId" options={locationOpts} includeNone noneLabel={t("noLocation")} placeholder={t("noLocation")} />
         </Field>
-        <Field label="Location note" error={fe.location}>
-          <Input name="location" placeholder="e.g. Rack 3 / U12" />
+        <Field label={t("field.locationNote")} error={fe.location}>
+          <Input name="location" placeholder={t("form.locationNotePlaceholder")} />
         </Field>
-        <Field label="IP address" error={fe.ipAddress}>
-          <Input name="ipAddress" placeholder="e.g. 10.0.4.21" />
+        <Field label={t("field.ipAddress")} error={fe.ipAddress}>
+          <Input name="ipAddress" placeholder={t("form.ipPlaceholder")} />
         </Field>
-        <Field label="Operating system" error={fe.os}>
-          <Input name="os" placeholder="e.g. Ubuntu 22.04 LTS" />
+        <Field label={t("field.os")} error={fe.os}>
+          <Input name="os" placeholder={t("form.osPlaceholder")} />
         </Field>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Owner">
-          <ComboField name="ownerId" options={ownerOpts} includeNone noneLabel="No owner" placeholder="Unassigned" />
+        <Field label={tc("owner")}>
+          <ComboField name="ownerId" options={ownerOpts} includeNone noneLabel={t("noOwner")} placeholder={tc("unassigned")} />
         </Field>
-        <Field label="Group">
-          <ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" placeholder="No group" />
+        <Field label={tc("group")}>
+          <ComboField name="groupId" options={groupOpts} includeNone noneLabel={t("noGroup")} placeholder={t("noGroup")} />
         </Field>
       </div>
 
@@ -120,7 +126,7 @@ export function AssetForm({
           ) : (
             <Plus className="size-4" />
           )}
-          Create asset
+          {t("form.create")}
         </Button>
       </div>
     </form>

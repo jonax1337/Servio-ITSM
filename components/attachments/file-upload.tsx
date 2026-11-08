@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Paperclip, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** The single form field naming the upload's parent (see app/api/files/upload). */
 function targetField(target: AttachmentTarget): [string, string] {
@@ -13,7 +14,7 @@ function targetField(target: AttachmentTarget): [string, string] {
 }
 
 export function FileUpload({
-  target, disabled, accept = UPLOAD_ACCEPT, label = "Attach file", maxMb = DEFAULT_MAX_UPLOAD_MB,
+  target, disabled, accept = UPLOAD_ACCEPT, label, maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   target: AttachmentTarget;
   disabled?: boolean;
@@ -24,6 +25,8 @@ export function FileUpload({
 }) {
   const maxBytes = maxUploadBytes(maxMb);
   const router = useRouter();
+  const t = useT("tickets");
+  const tm = useServerMessage();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -45,14 +48,15 @@ export function FileUpload({
           resolve();
         } else {
           try {
-            setError(JSON.parse(xhr.responseText)?.error ?? "Upload failed.");
+            const err = JSON.parse(xhr.responseText)?.error;
+            setError(err ? tm(err) : t("attachments.uploadFailed"));
           } catch {
-            setError("Upload failed.");
+            setError(t("attachments.uploadFailed"));
           }
           resolve();
         }
       };
-      xhr.onerror = () => { setError("Network error during upload."); resolve(); };
+      xhr.onerror = () => { setError(t("attachments.networkError")); resolve(); };
       xhr.send(fd);
     });
 
@@ -62,7 +66,7 @@ export function FileUpload({
     setBusy(true);
     for (const file of Array.from(files)) {
       if (file.size > maxBytes) {
-        setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`);
+        setError(t("attachments.tooLarge", { name: file.name, max: formatBytes(maxBytes) }));
         continue;
       }
       setProgress(0);
@@ -92,7 +96,7 @@ export function FileUpload({
         onClick={() => inputRef.current?.click()}
       >
         {busy ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
-        {busy ? `Uploading… ${progress}%` : label}
+        {busy ? t("attachments.uploading", { progress }) : (label ?? t("attachments.attachFile"))}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

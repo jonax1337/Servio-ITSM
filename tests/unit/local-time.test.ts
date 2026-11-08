@@ -22,3 +22,10 @@ describe("timeAgo", () => {
     expect(timeAgo(new Date(Date.now() - 5 * 60_000))).toBe("5 minutes ago");
   });
 });
+
+describe("timeAgo (localized)", () => {
+  it("phrases a past time in the viewer's locale", async () => {
+    const { createFormatter } = await import("@/lib/i18n/format");
+    expect(timeAgo(new Date(Date.now() - 5 * 60_000), createFormatter("de"))).toBe("vor 5 Minuten");
+  });
+});

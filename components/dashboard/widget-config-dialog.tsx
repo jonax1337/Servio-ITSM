@@ -14,24 +14,10 @@ import {
 } from "@/lib/constants";
 import { Plus, Trash2 } from "lucide-react";
 import { WIDGET_LABELS, type Widget, type WidgetType, type TicketFilters, type BreakdownField, type Tone, type Threshold } from "@/lib/dashboard/types";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
-const ACCENT_OPTS: ComboOption[] = [
-  { value: "", label: "No accent" },
-  { value: "primary", label: "Primary" },
-  { value: "success", label: "Green" },
-  { value: "warning", label: "Amber" },
-  { value: "danger", label: "Red" },
-  { value: "info", label: "Blue" },
-  { value: "neutral", label: "Grey" },
-];
-const TONE_OPTS: ComboOption[] = ACCENT_OPTS.slice(1);
-const OP_OPTS: ComboOption[] = [
-  { value: "lt", label: "< less than" },
-  { value: "lte", label: "≤ at most" },
-  { value: "gt", label: "> greater than" },
-  { value: "gte", label: "≥ at least" },
-  { value: "eq", label: "= equals" },
-];
+const TONES: Tone[] = ["primary", "success", "warning", "danger", "info", "neutral"];
+const OPS: Threshold["op"][] = ["lt", "lte", "gt", "gte", "eq"];
 
 export type EditorOptions = {
   agents: { value: string; label: string }[];
@@ -51,32 +37,10 @@ const DEFAULT_SIZE: Record<WidgetType, { w: number; h: number }> = {
   briefing: { w: 6, h: 3 },
 };
 
-const TYPE_OPTS: ComboOption[] = (Object.keys(WIDGET_LABELS) as WidgetType[]).map((t) => ({
-  value: t,
-  label: WIDGET_LABELS[t],
-}));
+const WIDGET_TYPE_LIST = Object.keys(WIDGET_LABELS) as WidgetType[];
 
-const GROUPBY_LABELS: Record<BreakdownField, string> = {
-  priority: "Priority",
-  status: "Status",
-  type: "Type",
-  assignee: "Assignee",
-  group: "Team",
-  category: "Category",
-  service: "Service",
-  source: "Source",
-  impact: "Impact",
-  urgency: "Urgency",
-};
-const GROUPBY_OPTS: ComboOption[] = (Object.keys(GROUPBY_LABELS) as BreakdownField[]).map((g) => ({
-  value: g,
-  label: GROUPBY_LABELS[g],
-}));
-
-const DAYS_OPTS: ComboOption[] = [
-  { value: "7", label: "Last 7 days" },
-  { value: "14", label: "Last 14 days" },
-  { value: "30", label: "Last 30 days" },
+const GROUPBY_FIELDS: BreakdownField[] = [
+  "priority", "status", "type", "assignee", "group", "category", "service", "source", "impact", "urgency",
 ];
 
 function newId() {
@@ -97,6 +61,21 @@ export function WidgetConfigDialog({
   options: EditorOptions;
   onSave: (w: Widget) => void;
 }) {
+  const t = useT("dashboard");
+  const te = useEnumT();
+  const ACCENT_OPTS: ComboOption[] = [
+    { value: "", label: t("accent.none") },
+    ...TONES.map((tone) => ({ value: tone, label: t(`accent.${tone}`) })),
+  ];
+  const TONE_OPTS: ComboOption[] = ACCENT_OPTS.slice(1);
+  const OP_OPTS: ComboOption[] = OPS.map((op) => ({ value: op, label: t(`op.${op}`) }));
+  const TYPE_OPTS: ComboOption[] = WIDGET_TYPE_LIST.map((wt) => ({ value: wt, label: t(`widget.${wt}`) }));
+  const GROUPBY_OPTS: ComboOption[] = GROUPBY_FIELDS.map((g) => ({ value: g, label: t(`groupBy.${g}`) }));
+  const DAYS_OPTS: ComboOption[] = [
+    { value: "7", label: t("last7") },
+    { value: "14", label: t("last14") },
+    { value: "30", label: t("last30") },
+  ];
   const [type, setType] = useState<WidgetType>("stat");
   const [title, setTitle] = useState("");
   const [groupBy, setGroupBy] = useState<BreakdownField>("priority");
@@ -136,20 +115,20 @@ export function WidgetConfigDialog({
     });
 
   const statusOpts: ComboOption[] = [
-    { value: "", label: "Any status" },
-    { value: "open", label: "Open (active)" },
-    ...TICKET_STATUSES.map((s) => ({ value: s, label: TICKET_STATUS_META[s].label })),
+    { value: "", label: t("anyStatus") },
+    { value: "open", label: t("openActive") },
+    ...te.options(TICKET_STATUS_META, TICKET_STATUSES),
   ];
-  const prioOpts: ComboOption[] = [{ value: "", label: "Any priority" }, ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label }))];
-  const typeOpts: ComboOption[] = [{ value: "", label: "Any type" }, ...TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label }))];
-  const teamOpts: ComboOption[] = [{ value: "", label: "Any team" }, ...options.groups];
-  const agentOpts: ComboOption[] = [{ value: "", label: "Any assignee" }, { value: "unassigned", label: "Unassigned" }, ...options.agents];
-  const catOpts: ComboOption[] = [{ value: "", label: "Any category" }, ...options.categories];
-  const svcOpts: ComboOption[] = [{ value: "", label: "Any service" }, ...options.services];
-  const impactOpts: ComboOption[] = [{ value: "", label: "Any impact" }, ...IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))];
-  const urgencyOpts: ComboOption[] = [{ value: "", label: "Any urgency" }, ...IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label }))];
-  const sourceOpts: ComboOption[] = [{ value: "", label: "Any source" }, ...TICKET_SOURCES.map((s) => ({ value: s, label: SOURCE_META[s]?.label ?? s }))];
-  const yesAny = (any: string): ComboOption[] => [{ value: "", label: any }, { value: "true", label: "Yes" }];
+  const prioOpts: ComboOption[] = [{ value: "", label: t("anyPriority") }, ...te.options(PRIORITY_META, PRIORITIES)];
+  const typeOpts: ComboOption[] = [{ value: "", label: t("anyType") }, ...te.options(TICKET_TYPE_META, TICKET_TYPES)];
+  const teamOpts: ComboOption[] = [{ value: "", label: t("anyTeam") }, ...options.groups];
+  const agentOpts: ComboOption[] = [{ value: "", label: t("anyAssignee") }, { value: "unassigned", label: t("unassigned") }, ...options.agents];
+  const catOpts: ComboOption[] = [{ value: "", label: t("anyCategory") }, ...options.categories];
+  const svcOpts: ComboOption[] = [{ value: "", label: t("anyService") }, ...options.services];
+  const impactOpts: ComboOption[] = [{ value: "", label: t("anyImpact") }, ...te.options(LEVEL_META, IMPACT_URGENCY)];
+  const urgencyOpts: ComboOption[] = [{ value: "", label: t("anyUrgency") }, ...te.options(LEVEL_META, IMPACT_URGENCY)];
+  const sourceOpts: ComboOption[] = [{ value: "", label: t("anySource") }, ...te.options(SOURCE_META, TICKET_SOURCES)];
+  const yesAny = (any: string): ComboOption[] => [{ value: "", label: any }, { value: "true", label: t("yes") }];
 
   const isTimeBased = type === "volume" || type === "sla";
 
@@ -165,7 +144,7 @@ export function WidgetConfigDialog({
     const widget: Widget = {
       id: initial?.id ?? newId(),
       type,
-      title: title.trim() || WIDGET_LABELS[type],
+      title: title.trim() || t(`widget.${type}`),
       filters: type === "briefing" ? {} : filters,
       x: initial?.x ?? 0,
       y: initial?.y ?? Infinity, // Infinity → RGL drops it at the bottom
@@ -181,23 +160,23 @@ export function WidgetConfigDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{initial ? "Edit widget" : "Add widget"}</DialogTitle>
-          <DialogDescription>Pick a metric, give it a title, and scope it with filters.</DialogDescription>
+          <DialogTitle>{initial ? t("editWidget") : t("addWidget")}</DialogTitle>
+          <DialogDescription>{t("widgetDialogDescription")}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>Type</Label>
+              <Label>{t("type")}</Label>
               <Combobox options={TYPE_OPTS} value={type} onChange={(v) => setType((v as WidgetType) || "stat")} />
             </div>
             {type === "breakdown" ? (
               <div className="grid gap-1.5">
-                <Label>Group by</Label>
+                <Label>{t("groupBy")}</Label>
                 <Combobox options={GROUPBY_OPTS} value={groupBy} onChange={(v) => setGroupBy((v as BreakdownField) || "priority")} />
               </div>
             ) : isTimeBased ? (
               <div className="grid gap-1.5">
-                <Label>Range</Label>
+                <Label>{t("range")}</Label>
                 <Combobox options={DAYS_OPTS} value={filters.days ?? "14"} onChange={(v) => setF("days", v || "14")} />
               </div>
             ) : (
@@ -207,9 +186,9 @@ export function WidgetConfigDialog({
 
           {type === "breakdown" ? (
             <div className="grid gap-1.5">
-              <Label>Chart type</Label>
+              <Label>{t("chartType")}</Label>
               <Combobox
-                options={[{ value: "bar", label: "Bar" }, { value: "donut", label: "Donut" }]}
+                options={[{ value: "bar", label: t("chartBar") }, { value: "donut", label: t("chartDonut") }]}
                 value={chartType}
                 onChange={(v) => setChartType((v as "bar" | "donut") || "bar")}
               />
@@ -217,39 +196,39 @@ export function WidgetConfigDialog({
           ) : null}
 
           <div className="grid gap-1.5">
-            <Label htmlFor="w-title">Title</Label>
-            <Input id="w-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={WIDGET_LABELS[type]} />
+            <Label htmlFor="w-title">{t("widgetTitle")}</Label>
+            <Input id="w-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t(`widget.${type}`)} />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Accent colour</Label>
+            <Label>{t("accentColour")}</Label>
             <Combobox options={ACCENT_OPTS} value={accent} onChange={setAccent} />
           </div>
 
           {type === "stat" ? (
             <div className="grid gap-2 rounded-lg border p-2.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Colour thresholds (first match wins)</Label>
+                <Label className="text-xs text-muted-foreground">{t("thresholds")}</Label>
                 <Button type="button" variant="ghost" size="xs" onClick={addThreshold} disabled={thresholds.length >= 5}>
-                  <Plus className="size-3.5" /> Add
+                  <Plus className="size-3.5" /> {t("add")}
                 </Button>
               </div>
               {thresholds.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No thresholds — the card uses the accent colour.</p>
+                <p className="text-xs text-muted-foreground">{t("noThresholds")}</p>
               ) : null}
-              {thresholds.map((t, i) => (
+              {thresholds.map((th, i) => (
                 <div key={i} className="flex items-center gap-1.5">
-                  <span className="shrink-0 text-xs text-muted-foreground">value</span>
-                  <Combobox options={OP_OPTS} value={t.op} onChange={(v) => updateThreshold(i, { op: (v || "lt") as Threshold["op"] })} size="sm" className="w-auto min-w-[8rem]" />
+                  <span className="shrink-0 text-xs text-muted-foreground">{t("thresholdValue")}</span>
+                  <Combobox options={OP_OPTS} value={th.op} onChange={(v) => updateThreshold(i, { op: (v || "lt") as Threshold["op"] })} size="sm" className="w-auto min-w-[8rem]" />
                   <Input
                     type="number"
-                    value={String(t.value)}
+                    value={String(th.value)}
                     onChange={(e) => updateThreshold(i, { value: Number(e.target.value) })}
                     className="h-8 w-20"
                   />
                   <span className="shrink-0 text-xs text-muted-foreground">→</span>
-                  <Combobox options={TONE_OPTS} value={t.tone} onChange={(v) => updateThreshold(i, { tone: (v || "danger") as Tone })} size="sm" className="w-auto min-w-[7rem]" />
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeThreshold(i)} aria-label="Remove threshold">
+                  <Combobox options={TONE_OPTS} value={th.tone} onChange={(v) => updateThreshold(i, { tone: (v || "danger") as Tone })} size="sm" className="w-auto min-w-[7rem]" />
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeThreshold(i)} aria-label={t("removeThreshold")}>
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
@@ -259,29 +238,29 @@ export function WidgetConfigDialog({
 
           {type === "briefing" ? (
             <p className="border-t pt-3 text-xs text-muted-foreground">
-              The briefing always lists your own queue, so it has no filters.
+              {t("briefingNoFilters")}
             </p>
           ) : (
           <div className="grid grid-cols-2 gap-3 border-t pt-3">
-            <Field label="Status"><Combobox options={statusOpts} value={filters.status ?? ""} onChange={(v) => setF("status", v)} /></Field>
-            <Field label="Priority"><Combobox options={prioOpts} value={filters.priority ?? ""} onChange={(v) => setF("priority", v)} /></Field>
-            <Field label="Type"><Combobox options={typeOpts} value={filters.type ?? ""} onChange={(v) => setF("type", v)} /></Field>
-            <Field label="Team"><Combobox options={teamOpts} value={filters.group ?? ""} onChange={(v) => setF("group", v)} searchPlaceholder="Search teams…" /></Field>
-            <Field label="Assignee"><Combobox options={agentOpts} value={filters.assignee ?? ""} onChange={(v) => setF("assignee", v)} searchPlaceholder="Search agents…" /></Field>
-            <Field label="Category"><Combobox options={catOpts} value={filters.category ?? ""} onChange={(v) => setF("category", v)} searchPlaceholder="Search categories…" /></Field>
-            <Field label="Service"><Combobox options={svcOpts} value={filters.service ?? ""} onChange={(v) => setF("service", v)} searchPlaceholder="Search services…" /></Field>
-            <Field label="Impact"><Combobox options={impactOpts} value={filters.impact ?? ""} onChange={(v) => setF("impact", v)} /></Field>
-            <Field label="Urgency"><Combobox options={urgencyOpts} value={filters.urgency ?? ""} onChange={(v) => setF("urgency", v)} /></Field>
-            <Field label="Source"><Combobox options={sourceOpts} value={filters.source ?? ""} onChange={(v) => setF("source", v)} /></Field>
-            <Field label="Major incident"><Combobox options={yesAny("Any")} value={filters.major ?? ""} onChange={(v) => setF("major", v)} /></Field>
-            <Field label="VIP requester"><Combobox options={yesAny("Any")} value={filters.vip ?? ""} onChange={(v) => setF("vip", v)} /></Field>
-            <Field label="SLA breached"><Combobox options={yesAny("Any")} value={filters.breached ?? ""} onChange={(v) => setF("breached", v)} /></Field>
+            <Field label={t("filterStatus")}><Combobox options={statusOpts} value={filters.status ?? ""} onChange={(v) => setF("status", v)} /></Field>
+            <Field label={t("filterPriority")}><Combobox options={prioOpts} value={filters.priority ?? ""} onChange={(v) => setF("priority", v)} /></Field>
+            <Field label={t("filterType")}><Combobox options={typeOpts} value={filters.type ?? ""} onChange={(v) => setF("type", v)} /></Field>
+            <Field label={t("filterTeam")}><Combobox options={teamOpts} value={filters.group ?? ""} onChange={(v) => setF("group", v)} searchPlaceholder={t("searchTeams")} /></Field>
+            <Field label={t("filterAssignee")}><Combobox options={agentOpts} value={filters.assignee ?? ""} onChange={(v) => setF("assignee", v)} searchPlaceholder={t("searchAgents")} /></Field>
+            <Field label={t("filterCategory")}><Combobox options={catOpts} value={filters.category ?? ""} onChange={(v) => setF("category", v)} searchPlaceholder={t("searchCategories")} /></Field>
+            <Field label={t("filterService")}><Combobox options={svcOpts} value={filters.service ?? ""} onChange={(v) => setF("service", v)} searchPlaceholder={t("searchServices")} /></Field>
+            <Field label={t("filterImpact")}><Combobox options={impactOpts} value={filters.impact ?? ""} onChange={(v) => setF("impact", v)} /></Field>
+            <Field label={t("filterUrgency")}><Combobox options={urgencyOpts} value={filters.urgency ?? ""} onChange={(v) => setF("urgency", v)} /></Field>
+            <Field label={t("filterSource")}><Combobox options={sourceOpts} value={filters.source ?? ""} onChange={(v) => setF("source", v)} /></Field>
+            <Field label={t("filterMajor")}><Combobox options={yesAny(t("any"))} value={filters.major ?? ""} onChange={(v) => setF("major", v)} /></Field>
+            <Field label={t("filterVip")}><Combobox options={yesAny(t("any"))} value={filters.vip ?? ""} onChange={(v) => setF("vip", v)} /></Field>
+            <Field label={t("filterBreached")}><Combobox options={yesAny(t("any"))} value={filters.breached ?? ""} onChange={(v) => setF("breached", v)} /></Field>
           </div>
           )}
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" onClick={save}>{initial ? "Save widget" : "Add widget"}</Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("cancel")}</Button>
+          <Button type="button" onClick={save}>{initial ? t("saveWidget") : t("addWidget")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
