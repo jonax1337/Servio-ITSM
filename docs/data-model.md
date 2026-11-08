@@ -269,6 +269,7 @@ Added by migration `20261107000000_itsm_ops_sable` (the history also has `202611
 | `LicenseAssignment` | A used seat | `licenseId` (`Cascade`), `userId` and/or `assetId` (`Cascade`), `assignedAt`. At least one target must be set and duplicates are rejected in the action (NULLs defeat a DB unique); used seats = number of rows |
 | `AiInsight` | A pattern Sable detected | `kind` (`AI_INSIGHT_KINDS`), `status` (`AI_INSIGHT_STATUSES`), `dedupeKey` (**unique**, at-most-once creation), `title`, `summary`, `payload` (JSON as TEXT), `problemId`/`articleId` (`SetNull`: what was created from it), `dismissedById`/`dismissedAt` |
 | `AiInsightTicket` | Tickets behind an insight | composite id `(insightId, ticketId)`, both `Cascade` |
+| `RecurringTicket` | A ticket created on a schedule (GLPI "recurrent items"; migration `20261112000000_recurring_tickets`) | `name`, `isActive`; **template** `title`, `description`, `type`, `priority`, `impact`, `urgency`, `requesterId` (null = `createdById`), `assigneeId`, `groupId`, `categoryId`, `serviceId` (all `SetNull`); **recurrence** `frequency` (`RECURRENCE_FREQUENCIES`), `interval` (every N units), `timezone` (IANA), `firstDueAt` (occurrence 0, UTC), `createBeforeDays` (lead time, 0–365 days; may span several steps, at most 31 occurrences open at once); **state** `nextDueAt` (next occurrence still to create, the claim marker), `lastCreatedFor` (due time of the last created occurrence), `lastTicketId` (plain Int, the ticket may be deleted), `lastError`; `importRef` (unique, history import), `createdById` (`SetNull`). Indexed `(isActive, nextDueAt)` |
 
 New columns on existing models: `Ticket.slaNudgedAt` (at-most-once SLA nudge marker), `Change.releaseId`
 (`SetNull`), `Change.templateId` (`SetNull`) and an index on `Change(plannedStart, plannedEnd)` for calendar and
@@ -277,7 +278,15 @@ the current on-call of the ticket's team). A change has no service column; its s
 (`ChangeAsset` → `ServiceAsset`).
 
 At-most-once markers in this group: `Ticket.slaNudgedAt`, `Contract.renewalNotifiedFor`,
-`SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`.
+`SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`,
+`RecurringTicket.nextDueAt` (compare-and-set before the occurrence's ticket is created).
+
+Recurring-ticket occurrences are computed from the anchor, never stepped from the previous one
+([`lib/recurring-ticket-rules.ts`](../lib/recurring-ticket-rules.ts)): occurrence n is `firstDueAt` + n ×
+`interval` units on the same wall-clock time in `timezone` (DST-correct; a time inside a spring-forward gap
+moves forward by the gap), and monthly/yearly dates past a month's end clamp to its last day without drifting
+(Jan 31 → Feb 28/29 → Mar 31). The ticket of an occurrence is created `createBeforeDays` local days before it is
+due and carries the due time as `Ticket.dueDate` and `source = RECURRING`.
 
 ### Maintenance windows
 
@@ -319,7 +328,7 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `RESOLUTION_CODES` | `Ticket.resolutionCode` | `FIXED`, `WORKAROUND`, `NOT_REPRODUCIBLE`, `DUPLICATE`, `NO_ACTION` |
 | `PRIORITIES` | `*.priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `IMPACT_URGENCY` | `*.impact`, `*.urgency` | `LOW`, `MEDIUM`, `HIGH` |
-| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT` |
+| `TICKET_SOURCES` | `Ticket.source` | `PORTAL`, `SABLE`, `EMAIL`, `PHONE`, `API`, `AGENT`, `RECURRING` |
 | `PROBLEM_STATUSES` | `Problem.status` | `NEW`, `INVESTIGATING`, `KNOWN_ERROR`, `RESOLVED`, `CLOSED` |
 | `CHANGE_TYPES` | `Change.type` | `STANDARD`, `NORMAL`, `EMERGENCY` |
 | `CHANGE_STATUSES` | `Change.status` | `DRAFT`, `APPROVAL`, `APPROVED`, `SCHEDULED`, `IN_PROGRESS`, `REVIEW`, `CLOSED`, `REJECTED`, `FAILED`, `CANCELLED` |
@@ -355,6 +364,7 @@ banner tints and standalone accent text/icons, so call sites never hand-pick raw
 | `CONTRACT_TYPES` | `Contract.type` | `SUPPORT`, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`, `WARRANTY`, `SERVICE`, `OTHER` |
 | `CONTRACT_STATUSES` | `Contract.status` | `DRAFT`, `ACTIVE`, `EXPIRED`, `TERMINATED` |
 | `LICENSE_TYPES` | `SoftwareLicense.licenseType` | `PER_USER`, `PER_DEVICE`, `SITE`, `CONCURRENT`, `SUBSCRIPTION` |
+| `RECURRENCE_FREQUENCIES` | `RecurringTicket.frequency` | `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` |
 | `AI_SCOPES` | `AiConversation.scope` | `GENERAL`, `ADMIN` |
 | `AI_MCP_TRANSPORTS` | `AiMcpServer.transport` | `http`, `sse` |
 | `AI_MCP_MODES` | `AiMcpServer.mode` | `READ_ONLY`, `APPROVAL`, `TRUSTED` |
@@ -423,6 +433,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261107000000_itsm_ops_sable` | the Operations & planning models (freeze windows, on-call, status page, releases, change templates, vendors/contracts/licenses, Sable insights) |
 | `20261108000000_maintenance_windows` | `MaintenanceWindow` |
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
+| `20261112000000_recurring_tickets` | `RecurringTicket` |
 | `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
 | `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
 

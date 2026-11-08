@@ -226,6 +226,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `read` / `write` |
 | `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `write` |
 | `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `write` |
+| `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `read` / `write` |
+| `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `read` / `write` |
 | `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
 | `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
 | `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
@@ -253,7 +255,8 @@ Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; t
 | `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `admin` + ADMIN owner |
 
 There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
-records (only for relations, license seats and attachments).
+records except recurring ticket schedules (only for relations, license seats and
+attachments otherwise).
 
 ### Tickets
 
@@ -470,6 +473,52 @@ the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and s
   are allowed and show as `over_allocated`. `DELETE
   /licenses/{id}/assignments/{assignment_id}` releases one.
 
+### Recurring tickets
+
+Schedules that create a ticket per occurrence (GLPI "recurrent items"; see the
+Recurring tickets module in [modules.md](./modules.md)). Agent tokens only; writes
+need a token owned by a **MANAGER or above** (else `403`) and run the console's
+actions in `lib/actions/recurring-tickets.ts` as the token owner, so validation,
+audit rows and `next_due_at` recomputation are the console's. Bodies are
+snake_case and strict ([`lib/recurring-ticket-input.ts`](../lib/recurring-ticket-input.ts)).
+
+- `GET /recurring-tickets` (`active` = `true` / `false`, `q` on name and title,
+  `import_ref`), ordered by `next_due_at`.
+- `POST /recurring-tickets` `{ name, title, frequency (DAILY | WEEKLY | MONTHLY |
+  YEARLY), first_due_at, description?, type? (default REQUEST), priority?, impact?,
+  urgency? (default MEDIUM), requester_id? (default: the token owner), assignee_id?,
+  group_id?, category_id?, service_id?, interval? (default 1), timezone? (IANA,
+  default UTC), create_before_days? (default 0), active? (default true),
+  import_ref?, last_created_for? }` → `201`.
+  - `first_due_at` is the due time of the first occurrence: wall-clock time in
+    `timezone` (`2027-01-31T09:00`) or an ISO time with offset. Later occurrences
+    keep that wall-clock time across DST; monthly/yearly dates past a month's end
+    clamp to its last day (Jan 31 → Feb 28/29 → Mar 31).
+  - `create_before_days` is `0`–`365`. It may be longer than one step (a weekly
+    check created 30 days ahead): every occurrence whose window is open gets its
+    own ticket. At most 31 occurrences may be open at once, so short steps are
+    capped (every day: `30`; every week: `216`); else `422` on `create_before_days`.
+  - **History import:** `import_ref` (e.g. `glpi:ticketrecurrent:7`, unique) makes
+    re-runs idempotent: an existing ref answers `200` with `meta.created: false`
+    and changes nothing. `last_created_for` (ISO with offset) is the due time of the
+    last occurrence the source system already created, so it is not created again.
+  - The first `next_due_at` is the first occurrence that is not due yet (and after
+    `last_created_for`); occurrences in the past are never created retroactively.
+- `GET /recurring-tickets/{id}`; `PATCH /recurring-tickets/{id}` (any field above
+  except `import_ref` / `last_created_for`; left-out fields keep their value, `null`
+  clears an id, `requester_id: null` = the schedule's creator). A changed recurrence
+  (`frequency`, `interval`, `timezone`, `first_due_at`, `create_before_days`) or
+  `active: true` after a pause recomputes `next_due_at`; `active: false` pauses.
+  When only `timezone` changes, `first_due_at` keeps its wall-clock time.
+- `DELETE /recurring-tickets/{id}` → `{ id, deleted: true }`; tickets the schedule
+  already created stay.
+
+A schedule serializes its template and recurrence plus `next_due_at` (next
+occurrence still to create), `next_create_at` (when its ticket will be created),
+`last_created_for`, `last_ticket_id`, `last_error` (why the last attempt failed),
+`import_ref`, `created_by_id`. Generated tickets have `source = RECURRING` and the
+occurrence's due time as their due date.
+
 ### Services
 
 `GET /services` returns all services (no pagination), each with its SLA and category:
@@ -494,7 +543,7 @@ the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and s
 
 ### How the ITSM endpoints enforce the console's rules
 
-Changes, problems and ticket links do not re-implement their business rules.
+Changes, problems, ticket links and recurring tickets do not re-implement their business rules.
 The handlers run the console's own server actions (`lib/actions/changes.ts`,
 `lib/actions/problems.ts`, `lib/actions/tickets.ts`) **as the token's owner**:
 [`lib/api-actor.ts`](../lib/api-actor.ts) puts the owner's id in an
