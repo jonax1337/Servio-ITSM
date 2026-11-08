@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { CalendarRange, Snowflake } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
@@ -12,20 +11,20 @@ import { EmptyState } from "@/components/empty-state";
 import { FreezeWindowDialog } from "@/components/changes/calendar/freeze-window-dialog";
 import { DeleteFreezeButton } from "@/components/changes/calendar/delete-freeze-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Change freeze windows" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("changes");
+  return { title: t("freeze.title") };
+}
 export const dynamic = "force-dynamic";
 
-const STATE_META: Record<FreezeState, Meta> = {
-  active: { label: "Active", tone: "danger" },
-  upcoming: { label: "Upcoming", tone: "info" },
-  past: { label: "Past", tone: "neutral" },
-};
-
-const DISPLAY_DATE = "PP p";
+const STATE_TONES: Record<FreezeState, Meta["tone"]> = { active: "danger", upcoming: "info", past: "neutral" };
 
 export default async function ChangeFreezePage() {
   await requireRole("MANAGER");
+  const [t, tc, f] = await Promise.all([getT("changes"), getT("common"), getFormatter()]);
+  const stateMeta = (state: FreezeState): Meta => ({ label: t(`freeze.state.${state}`), tone: STATE_TONES[state] });
   const [freezes, services, teams] = await Promise.all([
     db.changeFreezeWindow.findMany({
       include: { service: { select: { name: true } }, group: { select: { name: true } } },
@@ -35,18 +34,18 @@ export default async function ChangeFreezePage() {
     db.group.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const serviceOptions = services.map((s) => ({ value: s.id, label: s.name }));
-  const teamOptions = teams.map((t) => ({ value: t.id, label: t.name }));
+  const teamOptions = teams.map((team) => ({ value: team.id, label: team.name }));
   const now = new Date();
 
   return (
     <>
       <PageHeader
         icon={Snowflake}
-        title="Change freeze windows"
-        description="Periods in which planned changes are held back. Emergency changes may override a freeze with a justification."
+        title={t("freeze.title")}
+        description={t("freeze.description")}
       >
         <LinkButton href="/changes/calendar" variant="outline">
-          <CalendarRange className="size-4" /> Change calendar
+          <CalendarRange className="size-4" /> {t("freeze.calendar")}
         </LinkButton>
         <FreezeWindowDialog services={serviceOptions} teams={teamOptions} />
       </PageHeader>
@@ -55,19 +54,19 @@ export default async function ChangeFreezePage() {
         {freezes.length === 0 ? (
           <EmptyState
             icon={Snowflake}
-            title="No freeze windows"
-            description="Create one to hold back changes during year-end, audits or other sensitive periods."
+            title={t("freeze.emptyTitle")}
+            description={t("freeze.emptyDescription")}
           />
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Name</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Window</TableHead>
-                  <TableHead className="hidden md:table-cell">Applies to</TableHead>
-                  <TableHead className="w-[1%]"><span className="sr-only">Actions</span></TableHead>
+                  <TableHead>{tc("name")}</TableHead>
+                  <TableHead>{t("freeze.stateHead")}</TableHead>
+                  <TableHead>{t("freeze.window")}</TableHead>
+                  <TableHead className="hidden md:table-cell">{t("freeze.appliesTo")}</TableHead>
+                  <TableHead className="w-[1%]"><span className="sr-only">{tc("actions")}</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -80,13 +79,13 @@ export default async function ChangeFreezePage() {
                       {freeze.reason ? <span className="block text-xs text-muted-foreground">{freeze.reason}</span> : null}
                     </TableCell>
                     <TableCell>
-                      <ToneBadge meta={STATE_META[state]} dot />
+                      <ToneBadge meta={stateMeta(state)} dot />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground tabular-nums">
-                      {format(freeze.startsAt, DISPLAY_DATE)} – {format(freeze.endsAt, DISPLAY_DATE)}
+                      {f.date(freeze.startsAt, "dateTime")} – {f.date(freeze.endsAt, "dateTime")}
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      {[freeze.service?.name, freeze.group?.name].filter(Boolean).join(" · ") || "All changes"}
+                      {[freeze.service?.name, freeze.group?.name].filter(Boolean).join(" · ") || t("freeze.allChanges")}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">

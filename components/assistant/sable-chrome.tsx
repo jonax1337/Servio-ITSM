@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import { SableMark } from "@/components/sable-mark";
 import { BrandName } from "@/components/brand";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Shared Sable window chrome, so the console min-card and the self-service
@@ -14,6 +15,7 @@ import { BrandName } from "@/components/brand";
 
 /** A small "Beta" tag shown on the console (agent-backend) Sable surfaces. */
 export function SableBetaBadge({ className }: { className?: string }) {
+  const t = useT("assistant");
   return (
     <span
       className={cn(
@@ -21,7 +23,7 @@ export function SableBetaBadge({ className }: { className?: string }) {
         className,
       )}
     >
-      Beta
+      {t("beta")}
     </span>
   );
 }
@@ -46,10 +48,11 @@ export function SableFab({
   ariaLabel?: string;
   beta?: boolean;
 }) {
+  const t = useT("assistant");
   return (
     <button
       type="button"
-      aria-label={ariaLabel ?? `Open ${AI_ASSISTANT_NAME}${beta ? " (Beta)" : ""}`}
+      aria-label={ariaLabel ?? t(beta ? "openSableBeta" : "openSable", { name: AI_ASSISTANT_NAME })}
       onClick={onClick}
       className={cn(
         "sable-glow fixed bottom-4 right-4 z-40 grid size-12 place-items-center rounded-xl",
@@ -61,7 +64,7 @@ export function SableFab({
       <SableMark className="size-7" />
       {beta ? (
         <span className="bg-background text-sable border-border absolute -right-1.5 -top-1.5 rounded-full border px-1 py-px text-[8px] font-semibold uppercase leading-none tracking-wide shadow-sm">
-          Beta
+          {t("beta")}
         </span>
       ) : null}
     </button>

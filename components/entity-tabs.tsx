@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { TONE_TEXT_CLASSES } from "@/lib/constants";
 import { tabHref, type EntityTab } from "@/lib/entity-tabs";
 import type { SearchParams } from "@/lib/query";
+import { Msg } from "@/lib/i18n/client";
 
 export { resolveTab, type EntityTab } from "@/lib/entity-tabs";
 
@@ -65,7 +66,7 @@ export function EntityTabs<K extends string>({
                     <>
                       <TriangleAlert aria-hidden className={cn("size-3.5", TONE_TEXT_CLASSES.warning)} />
                       <span className="sr-only">
-                        {typeof tab.warning === "string" ? tab.warning : "Needs attention"}
+                        {typeof tab.warning === "string" ? tab.warning : <Msg ns="components" k="tabs.needsAttention" />}
                       </span>
                     </>
                   ) : null}

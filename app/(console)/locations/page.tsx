@@ -8,8 +8,12 @@ import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { LocationDialog } from "@/components/locations/location-dialog";
 import { LOCATION_TYPE_META } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Locations" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("locations");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 type Node = {
@@ -43,6 +47,7 @@ function Tree({ nodes, depth = 0 }: { nodes: Node[]; depth?: number }) {
 }
 
 export default async function LocationsPage() {
+  const t = await getT("locations");
   const locations = await db.location.findMany({
     orderBy: [{ type: "asc" }, { name: "asc" }],
     include: { _count: { select: { assets: true } } },
@@ -64,15 +69,15 @@ export default async function LocationsPage() {
     <>
       <PageHeader
         icon={MapPin}
-        title="Locations"
-        description="Sites, buildings, floors, rooms and datacenter racks — where your assets live."
+        title={t("title")}
+        description={t("description")}
       >
         <LocationDialog parents={parents} />
       </PageHeader>
 
       <PageBody>
         {roots.length === 0 ? (
-          <EmptyState icon={MapPin} title="No locations yet" description="Create your first site or datacenter to organise assets by location.">
+          <EmptyState icon={MapPin} title={t("emptyTitle")} description={t("emptyDescription")}>
             <LocationDialog parents={parents} size="sm" />
           </EmptyState>
         ) : (

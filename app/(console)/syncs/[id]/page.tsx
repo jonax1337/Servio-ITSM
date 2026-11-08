@@ -18,21 +18,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SYNC_TYPE_META, SYNC_RUN_STATUS_META } from "@/lib/constants";
-import { format, formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
-const DIRECTION_LABEL: Record<string, string> = {
-  IMPORT: "Import",
-  EXPORT: "Export",
-  BIDIRECTIONAL: "Bidirectional",
-};
-const SCOPE_LABEL: Record<string, string> = {
-  USERS: "Users",
-  ASSETS: "Assets",
-  TICKETS: "Tickets",
-  ALL: "All records",
-};
 
 export async function generateMetadata({
   params,
@@ -44,7 +33,7 @@ export async function generateMetadata({
     where: { id },
     select: { name: true },
   });
-  return { title: s ? s.name : "Sync source" };
+  return { title: s ? s.name : (await getT("syncs"))("detailMetaFallback") };
 }
 
 function parseConfig(raw: string): { entries: [string, string][]; error: boolean } {
@@ -91,6 +80,7 @@ export default async function SyncDetailPage({
 }) {
   const me = await requireRole("MANAGER");
   const { id } = await params;
+  const [t, f] = await Promise.all([getT("syncs"), getFormatter()]);
 
   const source = await db.syncSource.findUnique({
     where: { id },
@@ -103,7 +93,7 @@ export default async function SyncDetailPage({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/syncs" variant="ghost" size="icon-sm" aria-label="Back to syncs">
+        <LinkButton href="/syncs" variant="ghost" size="icon-sm" aria-label={t("backToSyncs")}>
           <ArrowLeft className="size-4" />
         </LinkButton>
         <StatusBadge map={SYNC_TYPE_META} value={source.type} dot={false} />
@@ -112,8 +102,8 @@ export default async function SyncDetailPage({
             {source.name}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {DIRECTION_LABEL[source.direction] ?? source.direction} ·{" "}
-            {SCOPE_LABEL[source.scope] ?? source.scope}
+            {t.dyn(`direction.${source.direction}`, undefined, source.direction)} ·{" "}
+            {t.dyn(`scope.${source.scope}`, undefined, source.scope)}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-3">
@@ -127,7 +117,7 @@ export default async function SyncDetailPage({
           {hasRole(me.role, "ADMIN") ? (
             <LinkButton href={`/syncs/${source.id}/edit`} variant="outline" size="sm">
               <Pencil className="size-4" />
-              Edit
+              {t("edit")}
             </LinkButton>
           ) : null}
           <RunButton sourceId={source.id} />
@@ -141,17 +131,17 @@ export default async function SyncDetailPage({
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Settings2 className="size-4 text-muted-foreground" />
-                Configuration
+                {t("configuration")}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2.5 text-sm">
               {config.error ? (
                 <p className="text-sm text-muted-foreground">
-                  Configuration could not be parsed (invalid JSON).
+                  {t("configInvalid")}
                 </p>
               ) : config.entries.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No configuration set.
+                  {t("configEmpty")}
                 </p>
               ) : (
                 config.entries.map(([k, v]) => (
@@ -173,27 +163,27 @@ export default async function SyncDetailPage({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Schedule & status</CardTitle>
+              <CardTitle className="text-sm">{t("scheduleStatus")}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Schedule</span>
+                <span className="text-muted-foreground">{t("schedule")}</span>
                 <span className="font-mono text-xs">
                   {source.schedule ?? "—"}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Active</span>
+                <span className="text-muted-foreground">{t("active")}</span>
                 <span className="font-medium">
-                  {source.isActive ? "Yes" : "Paused"}
+                  {source.isActive ? t("yes") : t("paused")}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Last run</span>
+                <span className="text-muted-foreground">{t("lastRun")}</span>
                 <span className="font-medium">
                   {source.lastRunAt
-                    ? formatDistanceToNow(source.lastRunAt, { addSuffix: true })
-                    : "Never"}
+                    ? f.relative(source.lastRunAt)
+                    : t("never")}
                 </span>
               </div>
             </CardContent>
@@ -204,13 +194,13 @@ export default async function SyncDetailPage({
         <div className="grid gap-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <Clock className="size-4 text-muted-foreground" />
-            Run history · {source.runs.length}
+            {t("runHistory", { count: source.runs.length })}
           </h2>
           {source.runs.length === 0 ? (
             <EmptyState
               icon={RefreshCw}
-              title="No runs yet"
-              description="Trigger a sync to see run results and history here."
+              title={t("noRunsTitle")}
+              description={t("noRunsDescription")}
             >
               <RunButton sourceId={source.id} />
             </EmptyState>
@@ -219,17 +209,17 @@ export default async function SyncDetailPage({
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t("colStatus")}</TableHead>
                     <TableHead className="hidden sm:table-cell">
-                      Trigger
+                      {t("colTrigger")}
                     </TableHead>
-                    <TableHead className="text-right">Created</TableHead>
-                    <TableHead className="text-right">Updated</TableHead>
-                    <TableHead className="text-right">Failed</TableHead>
+                    <TableHead className="text-right">{t("colCreated")}</TableHead>
+                    <TableHead className="text-right">{t("colUpdated")}</TableHead>
+                    <TableHead className="text-right">{t("colFailed")}</TableHead>
                     <TableHead className="hidden md:table-cell text-right">
-                      Started
+                      {t("colStarted")}
                     </TableHead>
-                    <TableHead className="text-right">Duration</TableHead>
+                    <TableHead className="text-right">{t("colDuration")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -242,7 +232,7 @@ export default async function SyncDetailPage({
                         />
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                        {r.trigger}
+                        {t.dyn(`trigger.${r.trigger}`, undefined, r.trigger)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {r.created}
@@ -261,9 +251,9 @@ export default async function SyncDetailPage({
                       </TableCell>
                       <TableCell
                         className="hidden md:table-cell text-right text-xs text-muted-foreground"
-                        title={format(r.startedAt, "PP p")}
+                        title={f.date(r.startedAt, "dateTime")}
                       >
-                        {formatDistanceToNow(r.startedAt, { addSuffix: true })}
+                        {f.relative(r.startedAt)}
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
                         {duration(r.startedAt, r.finishedAt)}

@@ -6,6 +6,7 @@ import {
   Search, Loader2, CornerDownLeft, BookOpen, ShoppingBag, Ticket, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 type Result = { group: string; href: string; title: string; sub: string };
 
@@ -17,7 +18,7 @@ const GROUP_ICON: Record<string, typeof Search> = {
 
 export function PortalSearch({
   className,
-  placeholder = "Search for answers, services, or your requests…",
+  placeholder,
   autoFocus = false,
 }: {
   className?: string;
@@ -25,6 +26,7 @@ export function PortalSearch({
   autoFocus?: boolean;
 }) {
   const router = useRouter();
+  const t = useT("portal");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,7 @@ export function PortalSearch({
   useEffect(() => {
     const q = query.trim();
     const id = ++reqId.current;
-    const t = setTimeout(
+    const timer = setTimeout(
       async () => {
         if (!q) {
           if (id === reqId.current) {
@@ -65,7 +67,7 @@ export function PortalSearch({
       },
       q ? 200 : 0,
     );
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [query]);
 
   // Dismiss on outside click.
@@ -135,7 +137,7 @@ export function PortalSearch({
           aria-autocomplete="list"
           autoFocus={autoFocus}
           value={query}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t("searchPlaceholder")}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
@@ -145,7 +147,7 @@ export function PortalSearch({
           className="h-14 w-full bg-transparent text-base outline-none placeholder:text-muted-foreground"
         />
         <kbd className="pointer-events-none hidden select-none items-center gap-1 rounded-md border bg-muted/60 px-1.5 py-1 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
-          <CornerDownLeft className="size-3" /> to search
+          <CornerDownLeft className="size-3" /> {t("toSearch")}
         </kbd>
       </div>
 
@@ -158,13 +160,16 @@ export function PortalSearch({
           <div className="max-h-[22rem] overflow-y-auto p-2">
             {loading && results.length === 0 ? (
               <div className="flex items-center gap-2 px-3 py-8 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Searching…
+                <Loader2 className="size-4 animate-spin" /> {t("searching")}
               </div>
             ) : results.length === 0 ? (
               <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                No matches for <span className="font-medium text-foreground">“{q}”</span>.
+                {t.rich("noMatchesFor", {
+                  query: q,
+                  q: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+                })}
                 <br />
-                Try different words, or start a new request.
+                {t("tryDifferentWords")}
               </div>
             ) : (
               Object.entries(grouped).map(([group, items]) => {
@@ -172,7 +177,7 @@ export function PortalSearch({
                 return (
                   <div key={group} className="mb-1 last:mb-0">
                     <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {group}
+                      {t.dyn(`searchGroup.${group}`, undefined, group)}
                     </p>
                     {items.map((r) => {
                       flat += 1;
@@ -212,7 +217,7 @@ export function PortalSearch({
             className="flex w-full items-center gap-2 border-t bg-muted/30 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-muted/60"
           >
             <Search className="size-4" />
-            Search the knowledge base for “{q}”
+            {t("searchKbFor", { query: q })}
           </button>
         </div>
       ) : null}

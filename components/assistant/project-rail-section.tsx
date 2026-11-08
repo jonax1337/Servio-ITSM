@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NameDialog } from "./name-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 import {
   listProjects,
   createProject,
@@ -73,6 +74,8 @@ export function ProjectRailSection({
   onProjectsLoaded?: (projects: ProjectSummary[]) => void;
   refreshKey: number;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -91,7 +94,7 @@ export function ProjectRailSection({
     setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, archived } : p)));
     const res = await archiveProject(id, archived);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not update");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotUpdate"));
       apply(await listProjects());
     } else {
       onProjectsChanged?.();
@@ -116,7 +119,7 @@ export function ProjectRailSection({
   async function onCreate(name: string) {
     const res = await createProject(name);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not create project");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotCreateProject"));
       return;
     }
     setProjects((p) => [res.project, ...p]);
@@ -154,14 +157,14 @@ export function ProjectRailSection({
     <section className="space-y-0.5">
       <div className="flex items-center justify-between px-1.5 pb-0.5">
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Projects
+          {t("projects.title")}
         </span>
         <Button
           type="button"
           size="icon-xs"
           variant="ghost"
           onClick={() => setCreateOpen(true)}
-          aria-label="New project"
+          aria-label={t("projects.new")}
           className="text-muted-foreground hover:text-foreground"
         >
           <Plus className="size-3.5" />
@@ -171,10 +174,10 @@ export function ProjectRailSection({
       <NameDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New project"
-        label="Project name"
-        placeholder="e.g. Q3 migration"
-        submitLabel="Create project"
+        title={t("projects.new")}
+        label={t("projects.name")}
+        placeholder={t("projects.namePlaceholder")}
+        submitLabel={t("projects.create")}
         onSubmit={onCreate}
       />
 
@@ -189,9 +192,9 @@ export function ProjectRailSection({
           className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-sable/25 bg-sable-muted/20 px-3 py-4 text-center transition-colors hover:bg-sable-muted/40"
         >
           <Boxes className="size-4 text-sable/70" />
-          <span className="text-xs font-medium">Create a project</span>
+          <span className="text-xs font-medium">{t("projects.createOne")}</span>
           <span className="text-[11px] text-muted-foreground">
-            Group chats, files and instructions.
+            {t("projects.createHint")}
           </span>
         </button>
       ) : (
@@ -205,7 +208,7 @@ export function ProjectRailSection({
                 className="flex w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ChevronDown className={cn("size-3 transition-transform", !showArchived && "-rotate-90")} />
-                Archived
+                {t("projects.archived")}
                 <span className="tracking-normal">{archivedProjects.length}</span>
               </button>
               {showArchived ? archivedProjects.map(projectRow) : null}
@@ -243,6 +246,7 @@ function ProjectRow({
   onArchive: (archived: boolean) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `project:${project.id}` });
+  const t = useT("assistant");
 
   // The "+" opens the project overview (its own composer starts the chat) rather
   // than eagerly creating an empty "New chat" row.
@@ -261,21 +265,21 @@ function ProjectRow({
           isActive ? "bg-muted" : "hover:bg-muted/60",
         )}
       >
-        <button type="button" onClick={onToggle} className="flex shrink-0 items-center" aria-label={open ? "Collapse" : "Expand"}>
+        <button type="button" onClick={onToggle} className="flex shrink-0 items-center" aria-label={open ? t("collapse") : t("expand")}>
           <ChevronRight className={cn("size-3 text-muted-foreground transition-transform", open && "rotate-90")} />
         </button>
         <button
           type="button"
           onClick={() => onOpenProject(project.id, project.name)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          title={`Open ${project.name}`}
+          title={t("projects.open", { name: project.name })}
         >
           <Boxes className={cn("size-3.5 shrink-0", isActive ? "text-sable" : "text-muted-foreground")} />
           <span className={cn("min-w-0 flex-1 truncate text-sm", isActive ? "font-medium" : "text-foreground/90")}>
             {project.name}
           </span>
           {project.isShared ? (
-            <Users className="size-3 shrink-0 text-muted-foreground" aria-label="Shared" />
+            <Users className="size-3 shrink-0 text-muted-foreground" aria-label={t("projects.shared")} />
           ) : null}
         </button>
         <Button
@@ -283,7 +287,7 @@ function ProjectRow({
           size="icon-xs"
           variant="ghost"
           onClick={newChatInProject}
-          aria-label="New chat in project"
+          aria-label={t("projects.newChatIn")}
           className="shrink-0 opacity-0 transition-opacity group-hover/project:opacity-100"
         >
           <Plus className="size-3.5" />
@@ -295,7 +299,7 @@ function ProjectRow({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Project options"
+                aria-label={t("projects.options")}
                 className="shrink-0 opacity-0 transition-opacity group-hover/project:opacity-100 aria-expanded:opacity-100"
               />
             }
@@ -305,9 +309,9 @@ function ProjectRow({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onArchive(!project.archived)}>
               {project.archived ? (
-                <><ArchiveRestore className="size-3.5" /> Unarchive</>
+                <><ArchiveRestore className="size-3.5" /> {t("projects.unarchive")}</>
               ) : (
-                <><Archive className="size-3.5" /> Archive</>
+                <><Archive className="size-3.5" /> {t("rail.archive")}</>
               )}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -324,7 +328,7 @@ function ProjectRow({
               )}
             >
               <MessageSquare className="size-3.5 text-muted-foreground/50" />
-              <span className="text-[11px] text-muted-foreground">Drop a chat here to pin it</span>
+              <span className="text-[11px] text-muted-foreground">{t("projects.dropToPin")}</span>
             </div>
           ) : (
             chats.map((c) => (
@@ -355,6 +359,8 @@ function ProjectChatRow({
   onChanged: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: conv.id });
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -362,12 +368,12 @@ function ProjectChatRow({
     if (next === conv.title) return;
     const res = await renameConversation(conv.id, next);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not rename");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotRename"));
   }
   async function remove() {
     const res = await deleteConversation(conv.id);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not delete");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
   }
 
   return (
@@ -400,7 +406,7 @@ function ProjectChatRow({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Chat options"
+                aria-label={t("rail.chatOptions")}
                 className="shrink-0 opacity-0 transition-opacity group-hover/prow:opacity-100 aria-expanded:opacity-100"
               />
             }
@@ -409,10 +415,10 @@ function ProjectChatRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setRenaming(true)}>
-              <Pencil className="size-3.5" /> Rename
+              <Pencil className="size-3.5" /> {t("rail.rename")}
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="size-3.5" /> Delete
+              <Trash2 className="size-3.5" /> {t("rail.delete")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -421,17 +427,17 @@ function ProjectChatRow({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         onConfirm={remove}
-        title="Delete chat?"
-        description="This permanently deletes the conversation and all its messages. This cannot be undone."
-        confirmLabel="Delete chat"
+        title={t("rail.deleteChatTitle")}
+        description={t("rail.deleteChatDescription")}
+        confirmLabel={t("rail.deleteChat")}
       />
       <NameDialog
         open={renaming}
         onOpenChange={setRenaming}
-        title="Rename chat"
-        label="Chat name"
+        title={t("rail.renameChat")}
+        label={t("rail.chatName")}
         initialValue={conv.title}
-        submitLabel="Rename"
+        submitLabel={t("rail.rename")}
         onSubmit={rename}
       />
     </>

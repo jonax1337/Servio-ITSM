@@ -45,7 +45,7 @@ import {
   ticketRef,
   TONE_BANNER_CLASSES, TONE_TEXT_CLASSES,
 } from "@/lib/constants";
-import { format, formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +57,8 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const t = await db.ticket.findUnique({ where: { id: Number(id) }, select: { title: true } });
-  return { title: t ? t.title : "Ticket" };
+  const ticket = await db.ticket.findUnique({ where: { id: Number(id) }, select: { title: true } });
+  return { title: ticket ? ticket.title : "Ticket" };
 }
 
 export default async function TicketDetailPage({
@@ -74,6 +74,7 @@ export default async function TicketDetailPage({
   if (!Number.isFinite(ticketId)) notFound();
 
   const me = await requireUser();
+  const [t, tc, f] = await Promise.all([getT("tickets"), getT("common"), getFormatter()]);
   const isAgentUser = !!me && isAgent(me.role as Role);
   const viewer: TicketViewer = {
     id: me?.id,
@@ -139,6 +140,7 @@ export default async function TicketDetailPage({
       details: ticket._count.attachments + ticket._count.participants,
     },
     isAgentUser,
+    (key) => t(`tab.${key}`),
   );
   const activeTab = resolveTab(sp, tabs, DEFAULT_TICKET_TAB);
 
@@ -177,7 +179,7 @@ export default async function TicketDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/tickets" variant="ghost" size="icon-sm" aria-label="Back to tickets">
+          <LinkButton href="/tickets" variant="ghost" size="icon-sm" aria-label={t("detail.backToTickets")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
@@ -195,7 +197,7 @@ export default async function TicketDetailPage({
               title={ticket.title}
               description={ticket.description}
               descriptionHtml={ticket.descriptionHtml}
-              entityLabel="ticket"
+              entityLabel={t("detail.entityLabel")}
             />
             <TicketActions
               ticketId={ticket.id}
@@ -214,15 +216,15 @@ export default async function TicketDetailPage({
 
         {ticket.isMajorIncident ? (
           <div className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive sm:px-6">
-            <Flame className="size-4" /> Major Incident — all hands. Stakeholders are being notified.
+            <Flame className="size-4" /> {t("detail.majorIncidentBanner")}
             {statusIncident ? (
               <span className="ml-auto font-normal">
-                Status page: {statusIncident.isPublic ? "Public" : "Draft"} ·{" "}
-                <Link href={`/status/${statusIncident.id}`} className="font-medium underline">Open</Link>
+                {t("detail.statusPage", { state: statusIncident.isPublic ? t("detail.statusPublic") : t("detail.statusDraft") })} ·{" "}
+                <Link href={`/status/${statusIncident.id}`} className="font-medium underline">{tc("open")}</Link>
               </span>
             ) : isAgentUser ? (
               <Link href={`/status/new?ticket=${ticketId}`} className="ml-auto font-medium underline">
-                Create status incident
+                {t("detail.createStatusIncident")}
               </Link>
             ) : null}
           </div>
@@ -231,8 +233,8 @@ export default async function TicketDetailPage({
         {statusIncident && !ticket.isMajorIncident ? (
           <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm sm:px-6">
             <Activity className="size-4 text-muted-foreground" />
-            Status page: {statusIncident.isPublic ? "Public" : "Draft"} ·{" "}
-            <Link href={`/status/${statusIncident.id}`} className="font-medium text-primary hover:underline">Open</Link>
+            {t("detail.statusPage", { state: statusIncident.isPublic ? t("detail.statusPublic") : t("detail.statusDraft") })} ·{" "}
+            <Link href={`/status/${statusIncident.id}`} className="font-medium text-primary hover:underline">{tc("open")}</Link>
           </div>
         ) : null}
 
@@ -258,26 +260,28 @@ export default async function TicketDetailPage({
           <div className="flex flex-wrap items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
             <GitMerge className="size-4 text-muted-foreground" />
             <span>
-              This ticket was merged into{" "}
-              <Link href={`/tickets/${ticket.mergedInto.id}`} className="font-medium text-primary hover:underline">
-                {ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)}
-              </Link>
-              .
+              {t.rich("detail.mergedInto", {
+                ref: (
+                  <Link href={`/tickets/${ticket.mergedInto.id}`} className="font-medium text-primary hover:underline">
+                    {ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)}
+                  </Link>
+                ),
+              })}
             </span>
             {isAgentUser ? (
               <ConfirmButton
                 action={unmergeTicket}
                 fields={{ id: ticket.id }}
-                title="Undo merge?"
-                description={`This ticket is restored as it was before the merge, and what the merge carried over to ${ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix)} is removed again.`}
-                confirmLabel="Undo merge"
+                title={t("detail.undoMergeTitle")}
+                description={t("detail.undoMergeDescription", { ref: ticketRef(ticket.mergedInto.id, ticket.mergedInto.prefix) })}
+                confirmLabel={t("detail.undoMerge")}
                 confirmVariant="default"
                 triggerVariant="outline"
                 triggerSize="sm"
                 triggerClassName="ml-auto"
-                successMessage="Merge undone"
+                successMessage={t("detail.mergeUndone")}
               >
-                Undo merge
+                {t("detail.undoMerge")}
               </ConfirmButton>
             ) : null}
           </div>
@@ -286,11 +290,14 @@ export default async function TicketDetailPage({
         {ticket.parent ? (
           <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2.5 text-sm sm:px-6">
             <Network className="size-4 text-muted-foreground" />
-            Part of{" "}
-            <Link href={`/tickets/${ticket.parent.id}`} className="font-medium text-primary hover:underline">
-              {ticketRef(ticket.parent.id, ticket.parent.prefix)}
-            </Link>
-            (parent) &middot; {ticket.parent.title}
+            {t.rich("detail.partOf", {
+              ref: (
+                <Link href={`/tickets/${ticket.parent.id}`} className="font-medium text-primary hover:underline">
+                  {ticketRef(ticket.parent.id, ticket.parent.prefix)}
+                </Link>
+              ),
+            })}{" "}
+            &middot; {ticket.parent.title}
           </div>
         ) : null}
 
@@ -299,9 +306,9 @@ export default async function TicketDetailPage({
             {ticket.title}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
-            <span>Opened by {ticket.requester.name ?? ticket.requester.email}</span>
+            <span>{t("detail.openedBy", { name: ticket.requester.name ?? ticket.requester.email })}</span>
             {ticket.requester.isVip ? <VipBadge className="align-middle" /> : null}
-            <span>· {formatDistanceToNow(ticket.createdAt, { addSuffix: true })} · via</span>
+            <span>· {f.relative(ticket.createdAt)} · {t("detail.via")}</span>
             <StatusBadge map={SOURCE_META} value={ticket.source} />
           </p>
 
@@ -314,7 +321,7 @@ export default async function TicketDetailPage({
             ) : ticket.description ? (
               <div className="whitespace-pre-wrap wrap-anywhere">{ticket.description}</div>
             ) : (
-              <span className="text-muted-foreground">No description provided.</span>
+              <span className="text-muted-foreground">{t("detail.noDescription")}</span>
             )}
           </div>
 
@@ -330,7 +337,7 @@ export default async function TicketDetailPage({
             defaultTab={DEFAULT_TICKET_TAB}
             basePath={`/tickets/${ticket.id}`}
             searchParams={sp}
-            label="Ticket sections"
+            label={t("detail.sections")}
           />
 
           <div className="mt-5">
@@ -352,23 +359,23 @@ export default async function TicketDetailPage({
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         {/* SLA first — the clock is the most time-sensitive thing to see */}
         <Card>
-          <CardHeader><CardTitle className="text-sm">Timeline & SLA</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("detail.timelineSla")}</CardTitle></CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">SLA status</span>
+              <span className="text-muted-foreground">{t("detail.slaStatus")}</span>
               <SlaBadge ticket={ticket} state={slaState} />
             </div>
-            <Meta label="Created" value={format(ticket.createdAt, "PP p")} />
-            {ticket.responseDueAt && !ticket.firstResponseAt ? <Meta label="Respond by" value={format(ticket.responseDueAt, "PP p")} /> : null}
-            {ticket.dueAt ? <Meta label="Resolve by" value={format(ticket.dueAt, "PP p")} /> : null}
-            {ticket.firstResponseAt ? <Meta label="First response" value={format(ticket.firstResponseAt, "PP p")} /> : null}
-            {ticket.resolvedAt ? <Meta label="Resolved" value={format(ticket.resolvedAt, "PP p")} /> : null}
+            <Meta label={tc("created")} value={f.date(ticket.createdAt, "dateTime")} />
+            {ticket.responseDueAt && !ticket.firstResponseAt ? <Meta label={t("detail.respondBy")} value={f.date(ticket.responseDueAt, "dateTime")} /> : null}
+            {ticket.dueAt ? <Meta label={t("detail.resolveBy")} value={f.date(ticket.dueAt, "dateTime")} /> : null}
+            {ticket.firstResponseAt ? <Meta label={t("detail.firstResponse")} value={f.date(ticket.firstResponseAt, "dateTime")} /> : null}
+            {ticket.resolvedAt ? <Meta label={t("detail.resolved")} value={f.date(ticket.resolvedAt, "dateTime")} /> : null}
             {ticket.sla ? <Meta label="SLA" value={ticket.sla.name} /> : null}
           </CardContent>
         </Card>
 
         <Card className="mt-4">
-          <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{tc("properties")}</CardTitle></CardHeader>
           <CardContent>
             <TicketProperties ticket={ticket} options={options} openChildCount={openChildren(ticket.children).length} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
@@ -377,7 +384,7 @@ export default async function TicketDetailPage({
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}
         <Card className="mt-4">
-          <CardHeader><CardTitle className="text-sm">Requester</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{tc("requester")}</CardTitle></CardHeader>
           <CardContent>
             <Link
               href={`/people/${ticket.requesterId}`}
@@ -394,7 +401,7 @@ export default async function TicketDetailPage({
                 <span className="block truncate text-xs text-muted-foreground">{ticket.requester.email}</span>
               </span>
               <span className="shrink-0 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                View →
+                {t("detail.viewArrow")}
               </span>
             </Link>
             {ticket.requestedBy ? (
@@ -404,7 +411,7 @@ export default async function TicketDetailPage({
               >
                 <UserAvatar name={ticket.requestedBy.name} email={ticket.requestedBy.email} image={ticket.requestedBy.image} size="sm" />
                 <span className="min-w-0 flex-1 truncate">
-                  Raised by {ticket.requestedBy.name ?? ticket.requestedBy.email} on their behalf
+                  {t("detail.raisedOnBehalf", { name: ticket.requestedBy.name ?? ticket.requestedBy.email })}
                 </span>
               </Link>
             ) : null}

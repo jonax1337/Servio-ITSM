@@ -17,6 +17,8 @@ import {
   STATUS_INCIDENT_STATES,
   STATUS_INCIDENT_STATE_META,
 } from "@/lib/constants";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
+import type { EnumTranslator } from "@/lib/i18n/enums";
 
 export type IncidentFormDefaults = {
   id: string;
@@ -27,11 +29,8 @@ export type IncidentFormDefaults = {
   serviceIds: string[];
 };
 
-const toOptions = (values: readonly string[], meta: typeof STATUS_INCIDENT_STATE_META): ComboOption[] =>
-  values.map((v) => ({ value: v, label: meta[v].label, tone: meta[v].tone, icon: meta[v].icon }));
-
-const STATE_OPTIONS = toOptions(STATUS_INCIDENT_STATES, STATUS_INCIDENT_STATE_META);
-const IMPACT_OPTIONS = toOptions(STATUS_INCIDENT_IMPACTS, STATUS_INCIDENT_IMPACT_META);
+const toOptions = (values: readonly string[], meta: typeof STATUS_INCIDENT_STATE_META, te: EnumTranslator): ComboOption[] =>
+  values.map((v) => ({ value: v, label: te(meta[v]), tone: meta[v].tone, icon: meta[v].icon }));
 
 function Field({
   label,
@@ -79,12 +78,18 @@ export function IncidentForm({
   onDone?: () => void;
 }) {
   const router = useRouter();
+  const t = useT("status");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
+  const STATE_OPTIONS = toOptions(STATUS_INCIDENT_STATES, STATUS_INCIDENT_STATE_META, te);
+  const IMPACT_OPTIONS = toOptions(STATUS_INCIDENT_IMPACTS, STATUS_INCIDENT_IMPACT_META, te);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const editing = !!incident;
   const fieldId = useId();
   const initialTicket = incident?.ticketId ? String(incident.ticketId) : defaultTicketId;
-  const ticketValue = tickets.some((t) => t.value === initialTicket) ? initialTicket : undefined;
+  const ticketValue = tickets.some((o) => o.value === initialTicket) ? initialTicket : undefined;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -92,12 +97,12 @@ export function IncidentForm({
     startTransition(async () => {
       const result = await (editing ? updateStatusIncident : createStatusIncident)(formData);
       if (!result.ok) {
-        setError(result.error ?? "Something went wrong.");
+        setError(result.error ? tm(result.error) : tc("somethingWentWrong"));
         return;
       }
       setError(null);
       if (editing) {
-        toast.success("Status incident saved.");
+        toast.success(t("incidentSaved"));
         onDone?.();
         router.refresh();
       } else {
@@ -116,46 +121,46 @@ export function IncidentForm({
       {incident ? <input type="hidden" name="id" value={incident.id} /> : null}
       {copyLocked ? (
         <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-          This incident is public. Only a manager can change its title, summary or impact; post an update to inform readers.
+          {t("copyLocked")}
         </p>
       ) : null}
 
       <Field
-        label="Title"
+        label={t("fieldTitle")}
         htmlFor={`${fieldId}-title`}
-        hint="Shown to everyone on the portal once published. Say what is affected, not what is broken internally."
+        hint={t("titleHint")}
       >
-        <Input id={`${fieldId}-title`} name="title" defaultValue={incident?.title} placeholder="e.g. Email delivery delays" required readOnly={copyLocked} />
+        <Input id={`${fieldId}-title`} name="title" defaultValue={incident?.title} placeholder={t("titlePlaceholder")} required readOnly={copyLocked} />
       </Field>
 
-      <Field label="Summary" htmlFor={`${fieldId}-summary`} hint="Plain-language description for portal users. Leave out internal details.">
+      <Field label={t("summary")} htmlFor={`${fieldId}-summary`} hint={t("summaryHint")}>
         <Textarea id={`${fieldId}-summary`} name="summary" defaultValue={incident?.summary ?? ""} rows={3} readOnly={copyLocked} />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Impact">
+        <Field label={tc("impact")}>
           <ComboField name="impact" options={IMPACT_OPTIONS} defaultValue={incident?.impact ?? "MINOR"} disabled={copyLocked} />
         </Field>
         {editing ? null : (
-          <Field label="State">
+          <Field label={t("state")}>
             <ComboField name="state" options={STATE_OPTIONS} defaultValue="INVESTIGATING" />
           </Field>
         )}
       </div>
 
-      <Field label="Linked ticket" hint="The major-incident ticket. Portal users who say they are affected are noted on it.">
+      <Field label={t("linkedTicket")} hint={t("linkedTicketHint")}>
         <ComboField
           name="ticketId"
           options={tickets}
           defaultValue={ticketValue}
           includeNone
-          noneLabel="No linked ticket"
+          noneLabel={t("noLinkedTicket")}
         />
       </Field>
 
-      <Field label="Affected services">
+      <Field label={t("affectedServices")}>
         {services.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No services exist yet.</p>
+          <p className="text-sm text-muted-foreground">{t("noServices")}</p>
         ) : (
           <div className="grid max-h-48 gap-1.5 overflow-y-auto rounded-md border p-3 sm:grid-cols-2">
             {services.map((s) => (
@@ -176,22 +181,22 @@ export function IncidentForm({
 
       {editing ? null : (
         <>
-          <Field label="First update" htmlFor={`${fieldId}-update`} hint="Optional. Becomes the first entry in the timeline.">
-            <Textarea id={`${fieldId}-update`} name="updateBody" rows={3} placeholder="What do we know so far?" />
+          <Field label={t("firstUpdate")} htmlFor={`${fieldId}-update`} hint={t("firstUpdateHint")}>
+            <Textarea id={`${fieldId}-update`} name="updateBody" rows={3} placeholder={t("firstUpdatePlaceholder")} />
           </Field>
           {canPublish ? (
             <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
               <input type="checkbox" name="isPublic" className="mt-0.5 size-4 accent-primary" />
               <span>
-                <span className="font-medium">Publish immediately</span>
+                <span className="font-medium">{t("publishImmediately")}</span>
                 <span className="block text-xs text-muted-foreground">
-                  Otherwise it is saved as a draft that only staff can see.
+                  {t("publishImmediatelyHint")}
                 </span>
               </span>
             </label>
           ) : (
             <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-              Saved as a draft that only staff can see. A manager publishes it.
+              {t("savedAsDraft")}
             </p>
           )}
         </>
@@ -200,7 +205,7 @@ export function IncidentForm({
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-          {editing ? "Save changes" : "Create incident"}
+          {editing ? tc("saveChanges") : t("createIncident")}
         </Button>
       </div>
     </form>

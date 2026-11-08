@@ -62,6 +62,7 @@ import {
   type ProjectFolderSummary,
   type ProjectFileSummary,
 } from "@/lib/actions/ai-project-files";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -97,6 +98,9 @@ type TreeCtx = {
  * mutations are access-checked server-side.
  */
 export function ProjectFileBrowser({ projectId }: { projectId: string }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
+  const tc = useT("common");
   const [folders, setFolders] = useState<ProjectFolderSummary[]>([]);
   const [files, setFiles] = useState<ProjectFileSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,18 +198,18 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
         if (!res.ok) {
           failed++;
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          toast.error(body?.error ?? `Could not upload ${file.name}`);
+          toast.error(body?.error ? tm(body.error) : t("files.couldNotUpload", { name: file.name }));
         }
       } catch {
         failed++;
-        toast.error(`Could not upload ${file.name}`);
+        toast.error(t("files.couldNotUpload", { name: file.name }));
       }
       done++;
     }
     setUploading(false);
     setProgress(null);
     await reload();
-    if (failed === 0) toast.success(arr.length > 1 ? `Uploaded ${arr.length} files` : "File uploaded");
+    if (failed === 0) toast.success(arr.length > 1 ? t("files.uploadedMany", { count: arr.length }) : t("files.uploadedOne"));
   }
 
   // Upload a whole folder: recreate its folder structure (deduped) under the given
@@ -258,8 +262,8 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
       return next;
     });
     await reload();
-    if (failed === 0) toast.success(`Uploaded folder (${arr.length} files)`);
-    else toast.error(`${failed} of ${arr.length} files failed to upload`);
+    if (failed === 0) toast.success(t("files.uploadedFolder", { count: arr.length }));
+    else toast.error(t("files.uploadFailed", { failed, total: arr.length }));
   }
 
   function onDragStart(e: DragStartEvent) {
@@ -276,7 +280,7 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
     setFiles((fs) => fs.map((f) => (f.id === fileId ? { ...f, folderId: target } : f)));
     const res = await moveProjectFile(fileId, target);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not move");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotMove"));
       void reload();
     } else if (target) {
       setExpanded((s) => ({ ...s, [target]: true }));
@@ -286,7 +290,7 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
   async function onCreateFolder(name: string) {
     const res = await createProjectFolder(projectId, undefined, name);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not create folder");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotCreateFolder"));
       return;
     }
     setFolders((f) => [...f, res.folder]);
@@ -308,9 +312,9 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
     if (res.ok) {
       clearSelection();
       await reload();
-      toast.success(`Moved ${res.count ?? ids.length} file${(res.count ?? ids.length) === 1 ? "" : "s"}`);
+      toast.success(t("files.moved", { count: res.count ?? ids.length }));
     } else {
-      toast.error(res.error ?? "Could not move");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotMove"));
     }
   }
   async function bulkDelete() {
@@ -321,7 +325,7 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
       clearSelection();
       await reload();
     } else {
-      toast.error(res.error ?? "Could not delete");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
     }
   }
 
@@ -368,17 +372,17 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
       <NameDialog
         open={createFolderOpen}
         onOpenChange={setCreateFolderOpen}
-        title="New folder"
-        label="Folder name"
-        placeholder="e.g. Runbooks"
-        submitLabel="Create folder"
+        title={t("rail.newFolder")}
+        label={t("rail.folderName")}
+        placeholder={t("files.folderPlaceholder")}
+        submitLabel={t("rail.createFolder")}
         onSubmit={onCreateFolder}
       />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <FolderOpen className="size-4 text-muted-foreground" /> Files
+            <FolderOpen className="size-4 text-muted-foreground" /> {t("files.title")}
           </h2>
           <div className="flex items-center gap-1">
             <Button
@@ -388,22 +392,22 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
               onClick={() => setCreateFolderOpen(true)}
               className="text-muted-foreground hover:text-foreground"
             >
-              <FolderPlus className="size-3.5" /> New folder
+              <FolderPlus className="size-3.5" /> {t("rail.newFolder")}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button type="button" size="xs" variant="outline" disabled={uploading} />}
               >
                 {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-                Upload
+                {t("files.upload")}
                 <ChevronDown className="size-3 opacity-60" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <FileUp className="size-3.5" /> Files
+                  <FileUp className="size-3.5" /> {t("files.files")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => folderInputRef.current?.click()}>
-                  <FolderUp className="size-3.5" /> Folder
+                  <FolderUp className="size-3.5" /> {t("files.folder")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -413,22 +417,22 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
         {/* Bulk-selection bar */}
         {selected.size > 0 ? (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sable/25 bg-sable-muted/30 px-2.5 py-1.5 text-xs">
-            <span className="font-medium">{selected.size} selected</span>
+            <span className="font-medium">{t("files.selected", { count: selected.size })}</span>
             <div className="ml-auto flex items-center gap-1">
               <DropdownMenu>
                 <DropdownMenuTrigger render={<Button type="button" size="xs" variant="ghost" />}>
-                  <FolderInput className="size-3.5" /> Move to <ChevronDown className="size-3 opacity-60" />
+                  <FolderInput className="size-3.5" /> {t("rail.moveTo")} <ChevronDown className="size-3 opacity-60" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => void bulkMove(null)}>
-                    <FolderOpen className="size-3.5" /> Project root
+                    <FolderOpen className="size-3.5" /> {t("files.projectRoot")}
                   </DropdownMenuItem>
                   {folders.map((f) => (
                     <DropdownMenuItem key={f.id} onClick={() => void bulkMove(f.id)}>
                       <Folder className="size-3.5" /> {f.name}
                     </DropdownMenuItem>
                   ))}
-                  {folders.length === 0 ? <DropdownMenuItem disabled>No folders</DropdownMenuItem> : null}
+                  {folders.length === 0 ? <DropdownMenuItem disabled>{t("files.noFolders")}</DropdownMenuItem> : null}
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
@@ -438,9 +442,9 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
                 onClick={() => setBulkDeleteOpen(true)}
                 className="text-destructive hover:text-destructive"
               >
-                <Trash2 className="size-3.5" /> Delete
+                <Trash2 className="size-3.5" /> {tc("delete")}
               </Button>
-              <Button type="button" size="icon-xs" variant="ghost" onClick={clearSelection} aria-label="Clear selection">
+              <Button type="button" size="icon-xs" variant="ghost" onClick={clearSelection} aria-label={t("files.clearSelection")}>
                 <X className="size-3.5" />
               </Button>
             </div>
@@ -453,7 +457,7 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                 <Loader2 className="size-3.5 shrink-0 animate-spin text-sable" />
-                <span className="truncate">Uploading {progress.name}…</span>
+                <span className="truncate">{t("files.uploading", { name: progress.name })}</span>
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {progress.done}/{progress.total}
@@ -481,9 +485,9 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
               className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-sable/30 bg-sable-muted/20 px-3 py-6 text-center transition-colors hover:bg-sable-muted/40"
             >
               <Upload className="size-5 text-sable" />
-              <span className="text-sm font-medium">Drop files or click to upload</span>
+              <span className="text-sm font-medium">{t("files.dropOrClick")}</span>
               <span className="text-xs text-muted-foreground">
-                Files and folders — Sable indexes them to ground answers in this project.
+                {t("files.dropHint")}
               </span>
             </button>
           ) : (
@@ -521,9 +525,9 @@ export function ProjectFileBrowser({ projectId }: { projectId: string }) {
         open={bulkDeleteOpen}
         onOpenChange={setBulkDeleteOpen}
         onConfirm={bulkDelete}
-        title={`Delete ${selected.size} file${selected.size === 1 ? "" : "s"}?`}
-        description="The selected files and their indexed content are permanently removed."
-        confirmLabel="Delete files"
+        title={t("files.bulkDeleteTitle", { count: selected.size })}
+        description={t("files.bulkDeleteDescription")}
+        confirmLabel={t("files.deleteFiles")}
       />
     </DndContext>
   );
@@ -584,6 +588,9 @@ function FolderNode({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [alsoFiles, setAlsoFiles] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const t = useT("assistant");
+  const tm = useServerMessage();
+  const tc = useT("common");
 
   const files = ctx.byFolder[folder.id] ?? [];
   const children = ctx.allFolders.filter((f) => f.parentId === folder.id);
@@ -611,14 +618,14 @@ function FolderNode({
     setDeleting(false);
     setConfirmDelete(false);
     if (res.ok) ctx.onChanged();
-    else toast.error(res.error ?? "Could not delete");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
   }
 
   async function rename(next: string) {
     if (next === folder.name) return;
     const res = await renameProjectFolder(folder.id, next);
     if (res.ok) ctx.onChanged();
-    else toast.error(res.error ?? "Could not rename");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotRename"));
   }
 
   return (
@@ -650,7 +657,7 @@ function FolderNode({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Folder options"
+                aria-label={t("rail.folderOptions")}
                 className="shrink-0 opacity-0 transition-opacity group-hover/folder:opacity-100 aria-expanded:opacity-100"
               />
             }
@@ -659,7 +666,7 @@ function FolderNode({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setRenaming(true)}>
-              <Pencil className="size-3.5" /> Rename
+              <Pencil className="size-3.5" /> {t("rail.rename")}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -668,7 +675,7 @@ function FolderNode({
                 setConfirmDelete(true);
               }}
             >
-              <Trash2 className="size-3.5" /> Delete folder
+              <Trash2 className="size-3.5" /> {t("rail.deleteFolder")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -677,38 +684,38 @@ function FolderNode({
       <NameDialog
         open={renaming}
         onOpenChange={setRenaming}
-        title="Rename folder"
-        label="Folder name"
+        title={t("rail.renameFolder")}
+        label={t("rail.folderName")}
         initialValue={folder.name}
-        submitLabel="Rename"
+        submitLabel={t("rail.rename")}
         onSubmit={rename}
       />
 
       <Dialog open={confirmDelete} onOpenChange={(v) => { if (!deleting) setConfirmDelete(v); }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete folder?</DialogTitle>
+            <DialogTitle>{t("files.deleteFolderTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {subtreeFileCount > 0
-                ? `"${folder.name}" contains ${subtreeFileCount} file${subtreeFileCount === 1 ? "" : "s"}. By default they move to the project root.`
-                : `Delete the folder "${folder.name}"?`}
+                ? t("files.folderContains", { name: folder.name, count: subtreeFileCount })
+                : t("files.deleteFolderQuestion", { name: folder.name })}
             </p>
             {subtreeFileCount > 0 ? (
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <Checkbox checked={alsoFiles} onCheckedChange={(v) => setAlsoFiles(v === true)} />
-                Also delete the {subtreeFileCount} file{subtreeFileCount === 1 ? "" : "s"} inside
+                {t("files.alsoDelete", { count: subtreeFileCount })}
               </label>
             ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button type="button" variant="destructive" onClick={removeFolder} disabled={deleting}>
               {deleting ? <Loader2 className="size-4 animate-spin" /> : null}
-              {alsoFiles && subtreeFileCount > 0 ? "Delete folder + files" : "Delete folder"}
+              {alsoFiles && subtreeFileCount > 0 ? t("files.deleteFolderAndFiles") : t("rail.deleteFolder")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -727,7 +734,7 @@ function FolderNode({
               )}
             >
               <Upload className="size-3.5 text-muted-foreground/50" />
-              <span className="text-[11px] text-muted-foreground">Drop files here</span>
+              <span className="text-[11px] text-muted-foreground">{t("files.dropFilesHere")}</span>
             </div>
           ) : (
             files.map((file) => (
@@ -761,6 +768,9 @@ function FileRow({
   onToggleSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: file.id });
+  const t = useT("assistant");
+  const tm = useServerMessage();
+  const tc = useT("common");
 
   return (
     <div
@@ -778,7 +788,7 @@ function FileRow({
           selected ? "opacity-100" : "opacity-0 group-hover/file:opacity-100",
         )}
       >
-        <Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} aria-label={`Select ${file.name}`} />
+        <Checkbox checked={selected} onCheckedChange={() => onToggleSelect()} aria-label={t("files.select", { name: file.name })} />
       </span>
       {/*
         The drag listeners live on this button, but the PointerSensor's 6px
@@ -802,7 +812,7 @@ function FileRow({
           </span>
         ) : null}
         {file.indexedAt ? (
-          <SableMark className="size-3.5 shrink-0 text-sable" aria-label="Indexed" />
+          <SableMark className="size-3.5 shrink-0 text-sable" aria-label={t("files.indexed")} />
         ) : null}
         <span className="shrink-0 text-[11px] text-muted-foreground">{humanSize(file.size)}</span>
       </button>
@@ -810,15 +820,15 @@ function FileRow({
         action={async () => {
           const res = await deleteProjectFile(file.id);
           if (res.ok) onChanged();
-          else toast.error(res.error ?? "Could not delete");
+          else toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
         }}
-        title="Delete file?"
-        description={`"${file.name}" will be removed from this project, including its indexed content.`}
-        confirmLabel="Delete"
+        title={t("files.deleteFileTitle")}
+        description={t("files.deleteFileDescription", { name: file.name })}
+        confirmLabel={tc("delete")}
         triggerVariant="ghost"
         triggerSize="icon-xs"
         triggerClassName="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/file:opacity-100"
-        triggerLabel="Delete file"
+        triggerLabel={t("files.deleteFile")}
       >
         <Trash2 className="size-3.5" />
       </ConfirmButton>

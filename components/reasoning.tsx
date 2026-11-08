@@ -25,6 +25,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 const ANIMATION_DURATION = 200;
 
@@ -180,6 +181,7 @@ function ReasoningTrigger({
   active?: boolean;
   duration?: number;
 }) {
+  const t = useT("assistant");
   const durationText = duration ? ` (${duration}s)` : "";
 
   return (
@@ -199,14 +201,14 @@ function ReasoningTrigger({
         data-slot="reasoning-trigger-label"
         className="aui-reasoning-trigger-label-wrapper relative inline-block leading-none tabular-nums"
       >
-        <span>Reasoning{durationText}</span>
+        <span>{t("reasoning.label")}{durationText}</span>
         {active ? (
           <span
             aria-hidden
             data-slot="reasoning-trigger-shimmer"
             className="aui-reasoning-trigger-shimmer shimmer pointer-events-none absolute inset-0 motion-reduce:animate-none"
           >
-            Reasoning{durationText}
+            {t("reasoning.label")}{durationText}
           </span>
         ) : null}
       </span>

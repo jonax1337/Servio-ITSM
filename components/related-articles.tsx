@@ -10,6 +10,7 @@ import { UnlinkButton } from "@/components/linked-records";
 import { linkArticle, unlinkArticle } from "@/lib/actions/article-links";
 import { ARTICLE_STATUS_META, type ArticleLinkEntityType } from "@/lib/constants";
 import type { ArticleOption, LinkedArticle } from "@/lib/data/related-articles";
+import { useT } from "@/lib/i18n/client";
 
 /** Knowledge articles attached to a ticket, problem or change, with a picker to attach more. */
 export function RelatedArticles({
@@ -28,33 +29,34 @@ export function RelatedArticles({
   actions?: ReactNode;
   className?: string;
 }) {
+  const t = useT("tickets");
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <BookOpen className="size-4 text-muted-foreground" />
-          Related articles · {linked.length}
+          {t("related.title", { count: linked.length })}
           <span className="ml-auto flex items-center gap-1.5">
             {actions}
             <LinkPicker
               action={linkArticle}
-              triggerLabel="Link"
-              title="Link an article"
-              description="Published articles and your own drafts."
+              triggerLabel={t("related.link")}
+              title={t("related.linkTitle")}
+              description={t("related.linkDescription")}
               hidden={{ entityType, entityId }}
               valueName="articleId"
               options={options}
-              placeholder="Choose an article"
-              searchPlaceholder="Search articles…"
-              emptyText="No articles available to link."
-              successMessage="Article linked"
+              placeholder={t("related.choose")}
+              searchPlaceholder={t("related.search")}
+              emptyText={t("related.noOptions")}
+              successMessage={t("related.linked")}
             />
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-2">
         {linked.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No articles linked yet.</p>
+          <p className="text-sm text-muted-foreground">{t("related.none")}</p>
         ) : (
           linked.map((a) => (
             <div key={a.linkId} className="flex items-center gap-2">
@@ -62,7 +64,7 @@ export function RelatedArticles({
                 {a.title}
               </Link>
               <StatusBadge map={ARTICLE_STATUS_META} value={a.status} />
-              <UnlinkButton action={unlinkArticle} fields={{ id: a.linkId }} successMessage="Article unlinked" />
+              <UnlinkButton action={unlinkArticle} fields={{ id: a.linkId }} successMessage={t("related.unlinked")} />
             </div>
           ))
         )}

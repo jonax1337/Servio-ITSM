@@ -7,6 +7,7 @@ import { updateChangeWindow } from "@/lib/actions/changes";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 const DATETIME_LOCAL = "yyyy-MM-dd'T'HH:mm";
 
@@ -29,6 +30,8 @@ export function ChangeWindowEditor({
 }) {
   const [pending, setPending] = useState(false);
   const [needsJustification, setNeedsJustification] = useState(false);
+  const t = useT("changes");
+  const tm = useServerMessage();
 
   const onSubmit = useFormSubmit(async (formData) => {
     setPending(true);
@@ -36,10 +39,10 @@ export function ChangeWindowEditor({
     setPending(false);
     if (res.ok) {
       setNeedsJustification(false);
-      toast.success("Planned window updated");
+      toast.success(t("windowEditor.updated"));
     } else {
       setNeedsJustification(res.needsJustification === true);
-      toast.error(res.error);
+      toast.error(tm(res.error));
     }
   });
 
@@ -47,27 +50,27 @@ export function ChangeWindowEditor({
     <form method="post" onSubmit={onSubmit} className="grid gap-2">
       <input type="hidden" name="id" value={changeId} />
       <label className="grid gap-1 text-xs text-muted-foreground">
-        Planned start
+        {t("window.plannedStart")}
         <Input type="datetime-local" name="plannedStart" defaultValue={toInputValue(plannedStart)} />
       </label>
       <label className="grid gap-1 text-xs text-muted-foreground">
-        Planned end
+        {t("window.plannedEnd")}
         <Input type="datetime-local" name="plannedEnd" defaultValue={toInputValue(plannedEnd)} />
       </label>
       {requiresReason ? (
         <label className="grid gap-1 text-xs text-muted-foreground">
-          Reason for rescheduling
-          <Input name="reason" placeholder="Only needed when the dates change" />
+          {t("windowEditor.reason")}
+          <Input name="reason" placeholder={t("windowEditor.reasonPlaceholder")} />
         </label>
       ) : null}
       {needsJustification ? (
         <label className="grid gap-1 text-xs text-muted-foreground">
-          Justification for overriding the change freeze
-          <Input name="justification" required placeholder="Why can this emergency change not wait?" />
+          {t("windowEditor.justification")}
+          <Input name="justification" required placeholder={t("submit.justificationPlaceholder")} />
         </label>
       ) : null}
       <Button type="submit" size="sm" variant="outline" disabled={pending} className="justify-self-start">
-        {requiresReason ? "Reschedule" : "Save window"}
+        {requiresReason ? t("windowEditor.reschedule") : t("windowEditor.save")}
       </Button>
     </form>
   );

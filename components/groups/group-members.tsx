@@ -9,6 +9,7 @@ import {
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { UserAvatar } from "@/components/user-avatar";
 import { ConfirmButton } from "@/components/confirm-dialog";
+import { useT } from "@/lib/i18n/client";
 
 const initials = (s: string) => s.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -30,6 +31,7 @@ export function GroupMembers({
   candidates: { id: string; name: string | null; email: string }[];
 }) {
   const [pending, start] = useTransition();
+  const t = useT("groups");
 
   const candidateOpts: ComboOption[] = candidates.map((c) => ({
     value: c.id,
@@ -46,7 +48,7 @@ export function GroupMembers({
     fd.set("role", "MEMBER");
     start(async () => {
       await addGroupMember(fd);
-      toast.success("Member added");
+      toast.success(t("memberAdded"));
     });
   }
 
@@ -57,7 +59,7 @@ export function GroupMembers({
     fd.set("role", next);
     start(async () => {
       await setGroupMemberRole(fd);
-      toast.success(next === "LEAD" ? "Promoted to lead" : "Set as member");
+      toast.success(next === "LEAD" ? t("promoted") : t("setAsMember"));
     });
   }
 
@@ -69,16 +71,16 @@ export function GroupMembers({
             options={candidateOpts}
             value="none"
             pending={pending}
-            placeholder="Add a member…"
-            searchPlaceholder="Search agents…"
-            emptyText={candidateOpts.length === 0 ? "Everyone's already a member." : "No matches."}
+            placeholder={t("addMember")}
+            searchPlaceholder={t("searchAgents")}
+            emptyText={candidateOpts.length === 0 ? t("everyoneMember") : t("noMatches")}
             onChange={add}
           />
         </div>
       </div>
 
       {members.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No members yet — add one above.</p>
+        <p className="text-sm text-muted-foreground">{t("noMembersAddAbove")}</p>
       ) : (
         <div className="grid gap-1">
           {members.map((m) => (
@@ -92,7 +94,7 @@ export function GroupMembers({
                 type="button"
                 onClick={() => toggleRole(m.id, m.role)}
                 disabled={pending}
-                title={m.role === "LEAD" ? "Demote to member" : "Promote to lead"}
+                title={m.role === "LEAD" ? t("demote") : t("promote")}
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50 ${
                   m.role === "LEAD"
                     ? "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20"
@@ -100,17 +102,17 @@ export function GroupMembers({
                 }`}
               >
                 {pending ? <Loader2 className="size-3 animate-spin" /> : <ArrowUpDown className="size-3" />}
-                {m.role === "LEAD" ? "Lead" : "Member"}
+                {m.role === "LEAD" ? t("lead") : t("member")}
               </button>
               <ConfirmButton
                 action={removeGroupMember}
                 fields={{ memberId: m.id }}
-                title="Remove member"
-                description={`Remove ${m.user.name ?? m.user.email} from this group?`}
-                confirmLabel="Remove"
+                title={t("removeMember")}
+                description={t("removeMemberText", { name: m.user.name ?? m.user.email })}
+                confirmLabel={t("remove")}
                 triggerVariant="outline"
                 triggerSize="icon-sm"
-                triggerLabel="Remove member"
+                triggerLabel={t("removeMember")}
                 triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
               >
                 <Trash2 className="size-4" />

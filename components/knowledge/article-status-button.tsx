@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { setArticleStatus } from "@/lib/actions/knowledge";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** One article lifecycle button: runs the status change and toasts the outcome. */
 export function ArticleStatusButton({
@@ -21,6 +22,8 @@ export function ArticleStatusButton({
   children: React.ReactNode;
 }) {
   const [pending, startTransition] = useTransition();
+  const t = useT("knowledge");
+  const tm = useServerMessage();
 
   const move = () => {
     const formData = new FormData();
@@ -29,7 +32,7 @@ export function ArticleStatusButton({
     startTransition(async () => {
       const result = await setArticleStatus(formData);
       if (result.ok) toast.success(successMessage);
-      else toast.error(result.error || "Could not change the article status.");
+      else toast.error(result.error ? tm(result.error) : t("statusChangeFailed"));
     });
   };
 

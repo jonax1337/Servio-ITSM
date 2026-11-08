@@ -31,9 +31,12 @@ import {
   RISKS,
   changeRef,
 } from "@/lib/constants";
-import { format } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Changes" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("changes");
+  return { title: t("list.title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function ChangesPage({
@@ -43,6 +46,7 @@ export default async function ChangesPage({
 }) {
   const sp = await searchParams;
   const me = await requireUser();
+  const [t, tc, te, f] = await Promise.all([getT("changes"), getT("common"), getEnumT(), getFormatter()]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
@@ -81,18 +85,18 @@ export default async function ChangesPage({
   const filters: FilterDef[] = [
     {
       key: "status",
-      label: "Status",
-      options: CHANGE_STATUSES.map((s) => ({ value: s, label: CHANGE_STATUS_META[s].label })),
+      label: tc("status"),
+      options: te.options(CHANGE_STATUS_META, CHANGE_STATUSES),
     },
     {
       key: "type",
-      label: "Type",
-      options: CHANGE_TYPES.map((t) => ({ value: t, label: CHANGE_TYPE_META[t].label })),
+      label: tc("type"),
+      options: te.options(CHANGE_TYPE_META, CHANGE_TYPES),
     },
     {
       key: "risk",
-      label: "Risk",
-      options: RISKS.map((r) => ({ value: r, label: RISK_META[r].label })),
+      label: tc("risk"),
+      options: te.options(RISK_META, RISKS),
     },
   ];
 
@@ -100,33 +104,33 @@ export default async function ChangesPage({
     <>
       <PageHeader
         icon={GitPullRequestArrow}
-        title="Changes"
-        description="Standard, normal and emergency changes moving through approval."
+        title={t("list.title")}
+        description={t("list.description")}
       >
         <LinkButton href="/changes/calendar" variant="outline">
-          <CalendarRange className="size-4" /> Calendar
+          <CalendarRange className="size-4" /> {t("list.calendar")}
         </LinkButton>
         {hasRole(me.role, "MANAGER") ? (
           <LinkButton href="/changes/templates" variant="outline">
-            <FileStack className="size-4" /> Templates
+            <FileStack className="size-4" /> {t("list.templates")}
           </LinkButton>
         ) : null}
         <LinkButton href="/changes/new">
-          <Plus className="size-4" /> New change
+          <Plus className="size-4" /> {t("list.newChange")}
         </LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search changes…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("list.searchPlaceholder")} />
 
         {changes.length === 0 ? (
           <EmptyState
             icon={GitPullRequestArrow}
-            title="No changes found"
-            description="Try adjusting your filters, or raise a new change to get started."
+            title={t("list.emptyTitle")}
+            description={t("list.emptyDescription")}
           >
             <LinkButton href="/changes/new" size="sm">
-              <Plus className="size-4" /> New change
+              <Plus className="size-4" /> {t("list.newChange")}
             </LinkButton>
           </EmptyState>
         ) : (
@@ -134,13 +138,13 @@ export default async function ChangesPage({
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="id" label="Ref" sort={sort} dir={dir} numeric className="w-[96px]" />
-                  <SortableHead k="title" label="Title" sort={sort} dir={dir} />
-                  <TableHead>Type</TableHead>
-                  <SortableHead k="status" label="Status" sort={sort} dir={dir} />
-                  <TableHead>Risk</TableHead>
-                  <SortableHead k="plannedStart" label="Planned start" sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
-                  <SortableHead k="assignee" label="Assignee" sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="id" label={t("list.ref")} sort={sort} dir={dir} numeric className="w-[96px]" />
+                  <SortableHead k="title" label={tc("title")} sort={sort} dir={dir} />
+                  <TableHead>{tc("type")}</TableHead>
+                  <SortableHead k="status" label={tc("status")} sort={sort} dir={dir} />
+                  <TableHead>{tc("risk")}</TableHead>
+                  <SortableHead k="plannedStart" label={t("list.plannedStart")} sort={sort} dir={dir} numeric className="hidden lg:table-cell text-right" />
+                  <SortableHead k="assignee" label={tc("assignee")} sort={sort} dir={dir} className="hidden md:table-cell" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -169,7 +173,7 @@ export default async function ChangesPage({
                       <StatusBadge map={RISK_META} value={c.risk} dot />
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-right text-xs text-muted-foreground tabular-nums">
-                      {c.plannedStart ? format(c.plannedStart, "PP") : "—"}
+                      {f.date(c.plannedStart)}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {c.assignee ? (

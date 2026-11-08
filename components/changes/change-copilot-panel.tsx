@@ -8,7 +8,9 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { SableMark } from "@/components/sable-mark";
 import { draftChangePlan, type ChangeDraft } from "@/lib/actions/change-copilot";
 import { updateChangeText } from "@/lib/actions/changes";
-import { AI_TEASER_MESSAGE } from "@/lib/constants";
+import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 type TextField = "reason" | "implementationPlan" | "rollbackPlan";
 
@@ -24,16 +26,16 @@ type DraftField = {
   appliesTo?: string;
 };
 
-const DRAFT_FIELDS: DraftField[] = [
-  { key: "implementationPlan", label: "Implementation plan", target: "implementationPlan", applyLabel: "Apply" },
-  { key: "rollbackPlan", label: "Rollback plan", target: "rollbackPlan", applyLabel: "Apply" },
-  { key: "riskRationale", label: "Risk rationale", target: "reason", applyLabel: "Add to reason", appliesTo: "Added to the end of the reason for change (Overview tab)." },
+const draftFields = (t: Translator<"changes">): DraftField[] => [
+  { key: "implementationPlan", label: t("planning.implementationPlan"), target: "implementationPlan", applyLabel: t("copilot.apply") },
+  { key: "rollbackPlan", label: t("planning.rollbackPlan"), target: "rollbackPlan", applyLabel: t("copilot.apply") },
+  { key: "riskRationale", label: t("copilot.riskRationale"), target: "reason", applyLabel: t("copilot.addToReason"), appliesTo: t("copilot.appliesToReason") },
 ];
 
 /** What the target field holds once the draft is applied: plans replace, the rationale is appended to the reason. */
-function valueToApply(field: DraftField, draft: string, current: Current): string {
+function valueToApply(field: DraftField, draft: string, current: Current, t: Translator<"changes">): string {
   if (field.key !== "riskRationale") return draft;
-  return [current.reason?.trim(), `Risk assessment: ${draft}`].filter(Boolean).join("\n\n");
+  return [current.reason?.trim(), t("copilot.riskAssessmentPrefix", { text: draft })].filter(Boolean).join("\n\n");
 }
 
 export function ChangeCopilotPanel({
@@ -48,12 +50,15 @@ export function ChangeCopilotPanel({
   const [draft, setDraft] = useState<ChangeDraft | null>(null);
   const [applied, setApplied] = useState<ReadonlySet<keyof ChangeDraft>>(new Set());
   const [pending, startTransition] = useTransition();
+  const t = useT("changes");
+  const tm = useServerMessage();
+  const DRAFT_FIELDS = draftFields(t);
 
   function generate() {
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    if (teaser) return void toast.info(t("aiTeaser"));
     startTransition(async () => {
       const result = await draftChangePlan(changeId);
-      if (!result.ok) return void toast.error(result.error);
+      if (!result.ok) return void toast.error(tm(result.error));
       setDraft(result.draft);
       setApplied(new Set());
     });
@@ -71,33 +76,33 @@ export function ChangeCopilotPanel({
 
   async function applyAndReport(field: DraftField, value: string) {
     const result = await apply(field, value);
-    if (result.ok) toast.success(`${field.label} updated`);
-    else toast.error(result.error);
+    if (result.ok) toast.success(t("props.updated", { field: field.label }));
+    else toast.error(tm(result.error));
   }
 
   return (
     <section className="rounded-xl border border-sable/25 bg-sable-muted/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <SableMark className="size-4" />
-        <h3 className="flex-1 text-sm font-medium">Sable copilot</h3>
+        <h3 className="flex-1 text-sm font-medium">{t("copilot.title", { name: AI_ASSISTANT_NAME })}</h3>
         <Button type="button" variant="outline" size="sm" onClick={generate} disabled={pending}>
           {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          {draft ? "Draft again" : "Draft plans"}
+          {draft ? t("copilot.draftAgain") : t("copilot.draft")}
         </Button>
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
         {draft
-          ? "AI-generated draft: check it against what you know before applying. Nothing is saved until you click Apply."
+          ? t("copilot.draftHint")
           : pending
-            ? "Drafting from the change and its affected CIs. This can take up to a minute."
-            : "Drafts an implementation plan, a rollback plan and a risk rationale from the affected CIs and their impact. Nothing is saved until you apply it."}
+            ? t("copilot.drafting")
+            : t("copilot.intro")}
       </p>
 
       {draft ? (
         <div className="mt-3 grid gap-3">
           {DRAFT_FIELDS.map((field) => {
             const text = draft[field.key];
-            const value = valueToApply(field, text, current);
+            const value = valueToApply(field, text, current, t);
             const replaces = field.key !== "riskRationale" && Boolean(current[field.target]?.trim());
             return (
               <div key={field.key} className="rounded-lg border bg-card p-3">
@@ -105,18 +110,18 @@ export function ChangeCopilotPanel({
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{field.label}</h4>
                   {applied.has(field.key) ? (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Check className="size-3.5" /> Applied
+                      <Check className="size-3.5" /> {t("copilot.applied")}
                     </span>
                   ) : replaces ? (
                     <ConfirmButton
                       action={() => apply(field, value)}
-                      title={`Replace the ${field.label.toLowerCase()}?`}
-                      description="The current text is overwritten with this draft."
-                      confirmLabel="Replace"
+                      title={t("copilot.replaceTitle", { field: field.label })}
+                      description={t("copilot.replaceDescription")}
+                      confirmLabel={t("copilot.replace")}
                       confirmVariant="default"
                       triggerVariant="outline"
                       triggerSize="xs"
-                      successMessage={`${field.label} updated`}
+                      successMessage={t("props.updated", { field: field.label })}
                     >
                       {field.applyLabel}
                     </ConfirmButton>

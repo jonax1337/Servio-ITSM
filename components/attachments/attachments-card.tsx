@@ -5,8 +5,10 @@ import { FileUpload } from "@/components/attachments/file-upload";
 import type { AttachmentRow, AttachmentTarget } from "@/lib/attachments-ui";
 import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
 import { cn } from "@/lib/utils";
+import { getT } from "@/lib/i18n/server";
 
-export function AttachmentsCard({
+/** Server Component. */
+export async function AttachmentsCard({
   attachments, target, canUpload, canDeleteAll = false, currentUserId, maxMb = DEFAULT_MAX_UPLOAD_MB, className,
 }: {
   attachments: AttachmentRow[];
@@ -19,12 +21,13 @@ export function AttachmentsCard({
   maxMb?: number;
   className?: string;
 }) {
+  const tc = await getT("common");
   return (
     <Card className={cn(className)}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-sm">
           <Paperclip className="size-4 text-muted-foreground" />
-          Attachments
+          {tc("attachments")}
           {attachments.length > 0 ? (
             <span className="rounded-full bg-muted px-1.5 text-xs font-medium text-muted-foreground">{attachments.length}</span>
           ) : null}

@@ -1,4 +1,32 @@
+/** Categories module (app/(console)/categories, components/categories). */
 const categories = {
+  title: "Categories",
+  description: "Your classification taxonomy — nest categories, assign a handling team, and archive ones you no longer use.",
+  emptyTitle: "No categories yet",
+  emptyDescription: "Create a top-level category (e.g. Hardware) and nest subcategories under it.",
+  archived: "Archived",
+  ticketCount: "{count, plural, one {# ticket} other {# tickets}}",
+  "new.title": "New category",
+  "new.description": "Add a classification for tickets, problems, changes or assets.",
+  "edit.title": "Edit category",
+  "edit.description": "Update this classification, its team, or where it's nested.",
+  archive: "Archive category",
+  restore: "Restore category",
+  "delete.title": "Delete category?",
+  "delete.label": "Delete category",
+  "delete.description": "\"{name}\" will be permanently removed. This can't be undone.",
+  "form.namePlaceholder": "e.g. Network, Laptop, Access",
+  "form.parent": "Parent category",
+  "form.parentHint": "Nest under an existing category, or leave as a top-level category.",
+  "form.topLevel": "— Top level —",
+  "form.color": "Color",
+  "form.colorHint": "Hex color for the category dot.",
+  "form.icon": "Icon",
+  "form.team": "Handled by (team)",
+  "form.teamHint": "Optional. Recorded so Sable knows who owns this category — it does not auto-route tickets.",
+  "form.noGroup": "— No group —",
+  "form.descriptionPlaceholder": "Optional context describing when to use this category…",
+  "form.create": "Create category",
 };
 
 export default categories;

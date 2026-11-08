@@ -9,6 +9,7 @@ import { Combobox, type ComboOption } from "@/components/combobox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Opt = { value: string; label: string }[];
 
@@ -33,6 +34,9 @@ export function ApprovalStagesEditor({
   groups: Opt;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("catalog");
+  const tc = useT("common");
+  const tm = useServerMessage();
   const [state, action, pending] = useActionState<CatalogAdminState, FormData>(updateApprovalStages, undefined);
   const [rows, setRows] = useState<EditorStage[]>(
     stages.length > 0 ? toEditorStages(stages) : [{ mode: "user", approverId: "", groupId: "" }],
@@ -59,18 +63,16 @@ export function ApprovalStagesEditor({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="icon-sm" aria-label="Approval stages" />}>
+      <DialogTrigger render={<Button variant="outline" size="icon-sm" aria-label={t("approvalStages")} />}>
         <ListChecks className="size-4" />
       </DialogTrigger>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ListChecks className="size-4 text-primary" /> Approval stages
+            <ListChecks className="size-4 text-primary" /> {t("approvalStages")}
           </DialogTitle>
           <DialogDescription>
-            Ordered approvals for <span className="font-medium text-foreground">{itemName}</span>. Each stage is a
-            single approver or a group (any active agent in the group may decide). Requests walk the stages in order;
-            the last one approving releases the request. Leave empty to use the item&apos;s single approver.
+            {t.rich("stagesDescription", { name: itemName, b: (c) => <span className="font-medium text-foreground">{c}</span> })}
           </DialogDescription>
         </DialogHeader>
 
@@ -79,13 +81,13 @@ export function ApprovalStagesEditor({
           <input type="hidden" name="approvalStages" value={JSON.stringify(payload)} />
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
           <div className="grid gap-2">
             {rows.length === 0 ? (
               <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                No stages — falls back to the item&apos;s single approver.
+                {t("noStages")}
               </p>
             ) : (
               rows.map((r, i) => (
@@ -93,13 +95,13 @@ export function ApprovalStagesEditor({
                   <div className="flex items-center gap-2">
                     <span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary/10 text-xs font-semibold text-primary tabular-nums">{i + 1}</span>
                     <div className="ml-auto flex items-center gap-0.5">
-                      <Button type="button" variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("moveUp")} disabled={i === 0} onClick={() => move(i, -1)}>
                         <ChevronUp className="size-4 text-muted-foreground" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("moveDown")} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
                         <ChevronDown className="size-4 text-muted-foreground" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove stage" onClick={() => setRows((arr) => arr.filter((_, idx) => idx !== i))}>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("removeStage")} onClick={() => setRows((arr) => arr.filter((_, idx) => idx !== i))}>
                         <Trash2 className="size-4 text-muted-foreground" />
                       </Button>
                     </div>
@@ -110,33 +112,33 @@ export function ApprovalStagesEditor({
                       onClick={() => setRow(i, { mode: "user" })}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1 ${r.mode === "user" ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
                     >
-                      <User className="size-3.5" /> Person
+                      <User className="size-3.5" /> {t("person")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setRow(i, { mode: "group" })}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1 ${r.mode === "group" ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
                     >
-                      <Users className="size-3.5" /> Group
+                      <Users className="size-3.5" /> {tc("group")}
                     </button>
                   </div>
                   {r.mode === "user" ? (
-                    <Combobox options={agentOpts} value={r.approverId} onChange={(v) => setRow(i, { approverId: v })} placeholder="Choose an approver…" searchPlaceholder="Search people…" />
+                    <Combobox options={agentOpts} value={r.approverId} onChange={(v) => setRow(i, { approverId: v })} placeholder={t("chooseApprover")} searchPlaceholder={t("searchPeople")} />
                   ) : (
-                    <Combobox options={groupOpts} value={r.groupId} onChange={(v) => setRow(i, { groupId: v })} placeholder="Choose a group…" searchPlaceholder="Search groups…" />
+                    <Combobox options={groupOpts} value={r.groupId} onChange={(v) => setRow(i, { groupId: v })} placeholder={t("chooseGroup")} searchPlaceholder={t("searchGroups")} />
                   )}
                 </div>
               ))
             )}
             <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={() => setRows((r) => [...r, { mode: "user", approverId: "", groupId: "" }])}>
-              <Plus className="size-4" /> Add stage
+              <Plus className="size-4" /> {t("addStage")}
             </Button>
           </div>
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              Save stages
+              {t("saveStages")}
             </Button>
           </DialogFooter>
         </form>

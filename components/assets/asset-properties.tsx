@@ -5,6 +5,7 @@ import { updateAssetField } from "@/lib/actions/assets";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { ASSET_STATUSES, ASSET_STATUS_META } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 type Field = "status" | "ownerId" | "groupId";
 
@@ -24,6 +25,7 @@ function Prop({
   placeholder?: string;
 }) {
   const [pending, start] = useTransition();
+  const t = useT("assets");
   return (
     <div className="grid gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -32,7 +34,7 @@ function Prop({
         value={value ?? "none"}
         pending={pending}
         placeholder={placeholder}
-        searchPlaceholder={searchable ? `Search ${label.toLowerCase()}…` : "Filter…"}
+        searchPlaceholder={searchable ? t("props.searchField", { field: label }) : t("props.filter")}
         onChange={(v) => {
           const fd = new FormData();
           fd.set("id", assetId);
@@ -57,21 +59,24 @@ export function AssetProperties({
   };
   options: FormOptions;
 }) {
+  const t = useT("assets");
+  const tc = useT("common");
+  const te = useEnumT();
   const statusOpts: ComboOption[] = ASSET_STATUSES.map((s) => ({
-    value: s, label: ASSET_STATUS_META[s].label, tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon,
+    value: s, label: te(ASSET_STATUS_META[s]), tone: ASSET_STATUS_META[s].tone, icon: ASSET_STATUS_META[s].icon,
   }));
   const none = (label: string): ComboOption => ({ value: "none", label });
   const ownerOpts: ComboOption[] = [
-    none("Unassigned"),
+    none(tc("unassigned")),
     ...options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email })),
   ];
-  const groupOpts: ComboOption[] = [none("No group"), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
+  const groupOpts: ComboOption[] = [none(t("noGroup")), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
 
   return (
     <div className="grid gap-3">
-      <Prop label="Status" assetId={asset.id} field="status" value={asset.status} options={statusOpts} />
-      <Prop label="Owner" assetId={asset.id} field="ownerId" value={asset.ownerId} options={ownerOpts} searchable placeholder="Unassigned" />
-      <Prop label="Group" assetId={asset.id} field="groupId" value={asset.groupId} options={groupOpts} searchable placeholder="No group" />
+      <Prop label={tc("status")} assetId={asset.id} field="status" value={asset.status} options={statusOpts} />
+      <Prop label={tc("owner")} assetId={asset.id} field="ownerId" value={asset.ownerId} options={ownerOpts} searchable placeholder={tc("unassigned")} />
+      <Prop label={tc("group")} assetId={asset.id} field="groupId" value={asset.groupId} options={groupOpts} searchable placeholder={t("noGroup")} />
     </div>
   );
 }

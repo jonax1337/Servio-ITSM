@@ -18,6 +18,7 @@ See also: [data-model.md](./data-model.md) · [rest-api.md](./rest-api.md) ·
 | One app, three surfaces | A single Next.js app serves the **agent console** (`app/(console)`), the **self-service portal** (`app/portal`), and a **REST API** (`app/api/v1`). |
 | Server-first | Pages are React Server Components that query the database directly through Prisma. There is no client-side data-fetching layer. |
 | Mutations are Server Actions | The app's own writes go through `"use server"` functions in `lib/actions/*`, invoked from forms. The public API is a separate, token-authenticated surface. |
+| Translated UI, English source | Every user-facing string lives in typed per-namespace catalogs (`messages/en`, `messages/de`), read with `getT()` on the server and `useT()` in client components; enum labels are translated at render time. See [i18n.md](./i18n.md). |
 | Single source of truth for enums | Status/type/priority values are plain strings validated against `lib/constants.ts` (SQLite has no native enums). See [data-model.md](./data-model.md). |
 | One schema, two databases | The same Prisma schema runs on SQLite for local dev and PostgreSQL for production — no code changes, only `provider` + `DATABASE_URL`. |
 | Least-privilege access | Roles are enforced in three layers: the edge gate in `proxy.ts`, server-side helpers in `lib/session.ts`, and token scopes in `lib/api.ts`. |
@@ -159,7 +160,10 @@ Three layouts define the three surfaces:
 
 - **`app/layout.tsx`** — root layout. Loads local Manrope display type, Inter,
   JetBrains Mono, `ThemeProvider`, and the `Toaster`. Defines application/share
-  metadata and browser theme colours. No auth logic. File-based icons and share
+  metadata and browser theme colours. Resolves the request's UI language
+  (`getLocale()`: the user's `User.locale`, the `servio-locale` cookie when signed
+  out, the instance default `APP_LOCALE`, then English), sets `<html lang>` and
+  wraps everything in `<I18nProvider>` — see [i18n.md](./i18n.md). No auth gating. File-based icons and share
   images live in `app/`; static `/brand/*` icons and manifests are public before
   login through the shared route policy. See [branding.md](./branding.md).
 - **`app/(console)/layout.tsx`** — the agent console. Calls

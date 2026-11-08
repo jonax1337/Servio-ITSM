@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { WindowActions } from "@/components/maintenance/window-actions";
 import { LocalPeriod } from "@/components/maintenance/local-period";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getT } from "@/lib/i18n/server";
 
 export type WindowRow = {
   id: string;
@@ -26,13 +27,14 @@ function versionLabel(window: WindowRow): string {
 }
 
 /** Upcoming, running and recently finished maintenance windows with their row actions. */
-export function WindowsTable({ windows }: { windows: WindowRow[] }) {
+export async function WindowsTable({ windows }: { windows: WindowRow[] }) {
+  const [t, tc] = await Promise.all([getT("maintenance"), getT("common")]);
   if (windows.length === 0) {
     return (
       <EmptyState
         icon={Wrench}
-        title="No maintenance windows"
-        description="Plan maintenance or schedule an update to warn your users ahead of time."
+        title={t("noWindows")}
+        description={t("noWindowsDescription")}
       />
     );
   }
@@ -41,10 +43,10 @@ export function WindowsTable({ windows }: { windows: WindowRow[] }) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Window</TableHead>
-            <TableHead>When</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{t("colWindow")}</TableHead>
+            <TableHead>{t("colWhen")}</TableHead>
+            <TableHead>{tc("status")}</TableHead>
+            <TableHead className="text-right">{tc("actions")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

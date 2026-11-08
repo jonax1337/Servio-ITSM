@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** A labelled form row with optional helper text; `htmlFor` ties the label to a text control by id. */
 export function Field({
@@ -75,6 +76,8 @@ export function SaveDialog({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const t = useT("contracts");
+  const tm = useServerMessage();
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -82,7 +85,7 @@ export function SaveDialog({
     startTransition(async () => {
       const result = await action(formData);
       if (!result.ok) {
-        setError(result.error ?? "Could not save.");
+        setError(result.error ? tm(result.error) : t("couldNotSave"));
         return;
       }
       setError(null);

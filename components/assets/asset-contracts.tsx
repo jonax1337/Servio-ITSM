@@ -3,7 +3,9 @@ import { FileSignature, KeyRound } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole, isAgent } from "@/lib/session";
 import { CONTRACT_STATUS_META } from "@/lib/constants";
-import { formatDay, licenseCompliance } from "@/lib/contract-rules";
+import { licenseCompliance } from "@/lib/contract-rules";
+import { getT } from "@/lib/i18n/server";
+import { formatDayIn } from "@/components/contracts/contract-format";
 import { linkContractAsset, unlinkContractAsset, assignLicense, unassignLicense } from "@/lib/actions/contracts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
@@ -63,6 +65,8 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
     : [];
 
   const now = new Date();
+  const t = await getT("assets");
+  const tk = await getT("contracts");
 
   return (
     <div className="grid gap-4">
@@ -70,22 +74,22 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             <FileSignature className="size-4 text-muted-foreground" />
-            Contracts · {covering.length}
+            {tk("contractsCount", { count: covering.length })}
             {editable ? (
               <span className="ml-auto">
                 <LinkPicker
                   action={linkContractAsset}
-                  triggerLabel="Add contract"
-                  title="Cover this asset with a contract"
-                  description="Records that this asset is covered by the contract, for example its support or warranty."
+                  triggerLabel={t("contracts.add")}
+                  title={t("contracts.addTitle")}
+                  description={t("contracts.addDescription")}
                   hidden={{ assetId }}
                   valueName="contractId"
                   options={linkableContracts.map((c) => ({ value: c.id, label: c.name }))}
-                  placeholder="Choose a contract"
-                  searchPlaceholder="Search contracts…"
-                  emptyText="No more contracts available."
-                  submitLabel="Add"
-                  successMessage="Contract added"
+                  placeholder={t("contracts.choose")}
+                  searchPlaceholder={tk("searchContracts")}
+                  emptyText={t("contracts.noneAvailable")}
+                  submitLabel={tk("addShort")}
+                  successMessage={t("contracts.added")}
                 />
               </span>
             ) : null}
@@ -94,9 +98,7 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
         <CardContent className="grid gap-2">
           {covering.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {editable
-                ? "No contract covers this asset. Add its support, warranty or lease contract so renewals are not missed."
-                : "No contract covers this asset."}
+              {editable ? t("contracts.emptyEditable") : t("contracts.empty")}
             </p>
           ) : (
             covering.map(({ contract }) => (
@@ -105,11 +107,11 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
                   {contract.name}
                   {contract.vendor ? <span className="font-normal text-muted-foreground"> · {contract.vendor.name}</span> : null}
                 </Link>
-                {contract.endDate ? <span className="text-xs tabular-nums text-muted-foreground">ends {formatDay(contract.endDate)}</span> : null}
+                {contract.endDate ? <span className="text-xs tabular-nums text-muted-foreground">{tk("endsOn", { date: formatDayIn(tk.locale, contract.endDate) })}</span> : null}
                 <ContractExpiryBadge contract={contract} now={now} />
                 <StatusBadge map={CONTRACT_STATUS_META} value={contract.status} />
                 {editable ? (
-                  <UnlinkButton action={unlinkContractAsset} fields={{ contractId: contract.id, assetId }} successMessage="Contract removed" />
+                  <UnlinkButton action={unlinkContractAsset} fields={{ contractId: contract.id, assetId }} successMessage={t("contracts.removed")} />
                 ) : null}
               </div>
             ))
@@ -121,22 +123,22 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             <KeyRound className="size-4 text-muted-foreground" />
-            Licenses · {seats.length}
+            {tk("licensesCount", { count: seats.length })}
             {editable ? (
               <span className="ml-auto">
                 <LinkPicker
                   action={assignLicense}
-                  triggerLabel="Assign license"
-                  title="Assign a license seat"
-                  description="Uses one seat of the chosen license for this asset."
+                  triggerLabel={t("licenses.assign")}
+                  title={t("licenses.assignTitle")}
+                  description={t("licenses.assignDescription")}
                   hidden={{ assetId }}
                   valueName="licenseId"
                   options={assignableLicenses.map((l) => ({ value: l.id, label: l.name }))}
-                  placeholder="Choose a license"
-                  searchPlaceholder="Search licenses…"
-                  emptyText="No more licenses available."
-                  submitLabel="Assign"
-                  successMessage="Seat assigned"
+                  placeholder={t("licenses.choose")}
+                  searchPlaceholder={tk("searchLicenses")}
+                  emptyText={t("licenses.noneAvailable")}
+                  submitLabel={tk("seats.assign")}
+                  successMessage={tk("seats.assignedToast")}
                 />
               </span>
             ) : null}
@@ -145,9 +147,7 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
         <CardContent className="grid gap-2">
           {seats.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {editable
-                ? "No software license seat is assigned to this asset. Assign one to count it against the license."
-                : "No software license seat is assigned to this asset."}
+              {editable ? t("licenses.emptyEditable") : t("licenses.empty")}
             </p>
           ) : (
             seats.map((seat) => (
@@ -157,7 +157,7 @@ export async function AssetContracts({ assetId, canEdit }: AssetContractsProps) 
                   {seat.user ? <span className="font-normal text-muted-foreground"> · {seat.user.name ?? seat.user.email}</span> : null}
                 </Link>
                 <LicenseComplianceBadge compliance={licenseCompliance(seat.license.seats, seat.license._count.assignments)} />
-                {editable ? <UnlinkButton action={unassignLicense} fields={{ assignmentId: seat.id }} successMessage="Seat released" /> : null}
+                {editable ? <UnlinkButton action={unassignLicense} fields={{ assignmentId: seat.id }} successMessage={tk("seats.released")} /> : null}
               </div>
             ))
           )}

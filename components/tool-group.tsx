@@ -17,6 +17,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 const ANIMATION_DURATION = 200;
 
@@ -95,7 +96,7 @@ function ToolGroupRoot({
 function ToolGroupTrigger({
   count,
   active = false,
-  label = `${count} tool ${count === 1 ? "call" : "calls"}`,
+  label: labelProp,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
@@ -103,6 +104,8 @@ function ToolGroupTrigger({
   active?: boolean;
   label?: string;
 }) {
+  const t = useT("assistant");
+  const label = labelProp ?? t("toolGroup.calls", { count });
 
   return (
     <CollapsibleTrigger

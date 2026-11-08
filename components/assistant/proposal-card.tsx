@@ -17,6 +17,8 @@ import { inlineBadgeMeta } from "@/lib/inline-badge";
 import { cn } from "@/lib/utils";
 import { useSable } from "./sable-provider";
 import { applyAssistantProposal, type AssistantProposal } from "@/lib/actions/ai-assistant";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 export type ProposalStatus = {
   status: "idle" | "applying" | "applied" | "error" | "dismissed";
@@ -38,14 +40,17 @@ const humanizeKey = (key: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
-const displayValue = (v: unknown): string =>
-  typeof v === "string" ? v : typeof v === "boolean" ? (v ? "Yes" : "No") : JSON.stringify(v);
+/** An argument's label: a translated field name, else the humanized key. */
+const argLabel = (key: string, t: Translator<"assistant">) => t.dyn(`arg.${key}`, undefined, humanizeKey(key));
+
+const displayValue = (v: unknown, t: Translator<"assistant">): string =>
+  typeof v === "string" ? v : typeof v === "boolean" ? (v ? t("proposal.yes") : t("proposal.no")) : JSON.stringify(v);
 
 /** The proposal's arguments that will actually be written, as [key, value] rows. */
-function visibleArgs(p: AssistantProposal): [string, string][] {
+function visibleArgs(p: AssistantProposal, t: Translator<"assistant">): [string, string][] {
   return Object.entries(p.args ?? {})
     .filter(([k, v]) => !HIDDEN_ARGS.has(k) && v !== undefined && v !== null && String(v).trim() !== "")
-    .map(([k, v]) => [k, displayValue(v)] as [string, string]);
+    .map(([k, v]) => [k, displayValue(v, t)] as [string, string]);
 }
 
 type Preview = { fields: string[]; text: string; isHtml: boolean };
@@ -55,13 +60,13 @@ type Preview = { fields: string[]; text: string; isHtml: boolean };
  * rollback plans, a KB body…) as one document for the canvas preview, so the
  * reviewer sees the whole record before approving it, not just the first field.
  */
-function previewable(args: [string, string][]): Preview | null {
+function previewable(args: [string, string][], t: Translator<"assistant">): Preview | null {
   const long = args.filter(([, v]) => v.trim().length >= LONG_TEXT_CHARS);
   if (!long.length) return null;
   if (long.length === 1) return { fields: [long[0][0]], text: long[0][1], isHtml: isHtmlText(long[0][1]) };
   const html = long.some(([, v]) => isHtmlText(v));
   const text = long
-    .map(([k, v]) => (html ? `<h2>${humanizeKey(k)}</h2>${isHtmlText(v) ? v : `<p>${v}</p>`}` : `## ${humanizeKey(k)}\n\n${v}`))
+    .map(([k, v]) => (html ? `<h2>${argLabel(k, t)}</h2>${isHtmlText(v) ? v : `<p>${v}</p>`}` : `## ${argLabel(k, t)}\n\n${v}`))
     .join(html ? "" : "\n\n");
   return { fields: long.map(([k]) => k), text, isHtml: html };
 }
@@ -71,6 +76,20 @@ function badgeNamespace(entity: string, key: string): string {
   if (key === "status") return entity === "change" || entity === "problem" ? entity : "status";
   if (key === "type" && entity === "change") return "change-type";
   return key;
+}
+
+/**
+ * The card title in the viewer's language: `op.<operationId>` from the catalog with the
+ * proposal's args as variables, else the server-built English label (operations whose label
+ * needs code logic, MCP calls, or an unknown operation).
+ */
+function proposalLabel(p: AssistantProposal, t: Translator<"assistant">): string {
+  const key = `op.${p.operationId}`;
+  if (t.locale === "en" || !t.has(key)) return p.label;
+  const vars = Object.fromEntries(
+    Object.entries(p.args ?? {}).map(([k, v]) => [k, typeof v === "string" || typeof v === "number" ? v : v == null ? "" : String(v)]),
+  );
+  return t.dyn(key, vars, p.label);
 }
 
 /** How many files this proposal will link to its ticket (0 if none). */
@@ -110,14 +129,17 @@ export function ProposalCard({
   onStatusChange: (next: ProposalStatus) => void;
 }) {
   const { openCanvas } = useSable();
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [, startApply] = useTransition();
   const st = status.status;
   const msg = status.msg;
-  const args = visibleArgs(proposal);
-  const preview = previewable(args);
+  const args = visibleArgs(proposal, t);
+  const preview = previewable(args, t);
   const entries = args.filter(([k]) => !preview?.fields.includes(k));
   const entity = opTag(proposal.operationId);
   const attachments = attachmentCount(proposal);
+  const label = proposalLabel(proposal, t);
   const applied = st === "applied";
   const busy = st === "applying";
 
@@ -128,14 +150,14 @@ export function ProposalCard({
         const res = await applyAssistantProposal({ conversationId, proposal });
         if (res.ok) {
           onStatusChange({ status: "applied", msg: res.applied });
-          toast.success(res.applied ?? "Applied");
+          toast.success(res.applied ? tm(res.applied) : t("proposal.applied"));
         } else {
           onStatusChange({ status: "error", msg: res.error });
-          toast.error(res.error ?? "Could not apply");
+          toast.error(res.error ? tm(res.error) : t("proposal.couldNotApply"));
         }
       } catch {
-        onStatusChange({ status: "error", msg: "Could not reach the server. Check the record before retrying." });
-        toast.error("Could not apply");
+        onStatusChange({ status: "error", msg: t("proposal.unreachable") });
+        toast.error(t("proposal.couldNotApply"));
       }
     });
   }
@@ -143,7 +165,7 @@ export function ProposalCard({
   function openPreview() {
     if (!preview) return;
     openCanvas({
-      title: proposal.label,
+      title: label,
       markdown: preview.isHtml ? "" : preview.text,
       html: preview.isHtml ? preview.text : undefined,
       preview: true,
@@ -180,12 +202,12 @@ export function ProposalCard({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {applied ? "Applied" : "Approval required"}
+            {applied ? t("proposal.applied") : t("proposal.approvalRequired")}
           </p>
-          <p className="truncate font-medium leading-tight text-foreground">{proposal.label}</p>
+          <p className="truncate font-medium leading-tight text-foreground">{label}</p>
         </div>
         <span className="shrink-0 rounded-md bg-background/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          {entity}
+          {t.dyn(`entity.${entity}`, undefined, entity)}
         </span>
       </div>
 
@@ -197,7 +219,7 @@ export function ProposalCard({
                 const badge = inlineBadgeMeta(`${badgeNamespace(entity, k)}:${v}`);
                 return (
                   <div key={k} className="flex items-center gap-2">
-                    <dt className="w-24 shrink-0 truncate text-muted-foreground">{humanizeKey(k)}</dt>
+                    <dt className="w-24 shrink-0 truncate text-muted-foreground">{argLabel(k, t)}</dt>
                     <dd className="min-w-0 flex-1 truncate font-medium text-foreground">
                       {badge ? <ToneBadge meta={badge} dot /> : v}
                     </dd>
@@ -218,7 +240,7 @@ export function ProposalCard({
               </span>
               <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 font-medium text-sable">
                 <PanelRightOpen className="size-3.5" />
-                Preview
+                {t("proposal.preview")}
               </span>
             </button>
           ) : null}
@@ -226,14 +248,14 @@ export function ProposalCard({
           {attachments > 0 ? (
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Paperclip className="size-3.5" />
-              {attachments} {attachments === 1 ? "attachment" : "attachments"} will be added
+              {t("proposal.attachments", { count: attachments })}
             </p>
           ) : null}
 
           {st === "error" && msg ? (
             <p className="flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span className="min-w-0">{msg}</span>
+              <span className="min-w-0">{tm(msg)}</span>
             </p>
           ) : null}
 
@@ -246,7 +268,7 @@ export function ProposalCard({
               className="h-8 flex-1 gap-1.5 bg-sable text-sable-foreground hover:bg-sable/90"
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-              {st === "error" ? "Retry approve" : "Approve"}
+              {st === "error" ? t("proposal.retryApprove") : t("proposal.approve")}
             </Button>
             {preview ? (
               <Button
@@ -258,7 +280,7 @@ export function ProposalCard({
                 onClick={openPreview}
               >
                 <PanelRightOpen className="size-3.5" />
-                Preview
+                {t("proposal.preview")}
               </Button>
             ) : null}
             <Button
@@ -270,13 +292,13 @@ export function ProposalCard({
               onClick={() => onStatusChange({ status: "dismissed" })}
             >
               <X className="size-3.5" />
-              Dismiss
+              {t("proposal.dismiss")}
             </Button>
           </div>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          <Check className="size-3.5" /> {msg ?? "Applied"}
+          <Check className="size-3.5" /> {msg ? tm(msg) : t("proposal.applied")}
         </div>
       )}
     </div>

@@ -5,7 +5,7 @@ import { ArrowLeft, Eye, LifeBuoy } from "lucide-react";
 import { db } from "@/lib/db";
 import { LinkButton } from "@/components/link-button";
 import { renderMarkdown, sanitizeCommentHtml } from "@/lib/markdown";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const a = await db.article.findUnique({ where: { slug }, select: { title: true } });
-  return { title: a?.title ?? "Article" };
+  return { title: a?.title ?? (await getT("portal"))("article") };
 }
 
 export default async function PortalArticle({
@@ -33,6 +33,7 @@ export default async function PortalArticle({
   if (!article || article.status !== "PUBLISHED" || article.visibility !== "PUBLIC") notFound();
 
   await db.article.update({ where: { id: article.id }, data: { views: { increment: 1 } } });
+  const [t, f] = await Promise.all([getT("portal"), getFormatter()]);
   const html =
     article.bodyFormat === "html"
       ? sanitizeCommentHtml(article.body)
@@ -41,21 +42,21 @@ export default async function PortalArticle({
   return (
     <article className="mx-auto max-w-2xl">
       <LinkButton href="/portal/knowledge" variant="ghost" size="sm" className="mb-6 -ml-2">
-        <ArrowLeft className="size-4" /> Back to knowledge base
+        <ArrowLeft className="size-4" /> {t("backToKb")}
       </LinkButton>
 
       <header className="border-b pb-6">
         <p className="text-xs font-medium uppercase tracking-wide text-primary">
-          {article.category?.name ?? "General"}
+          {article.category?.name ?? t("general")}
         </p>
         <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">{article.title}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{article.author?.name ?? "Servio Team"}</span>
+          <span>{article.author?.name ?? t("servioTeam")}</span>
           <span aria-hidden>·</span>
-          <span>{format(article.createdAt, "PP")}</span>
+          <span>{f.date(article.createdAt)}</span>
           <span aria-hidden>·</span>
           <span className="flex items-center gap-1">
-            <Eye className="size-3.5" /> {article.views + 1} views
+            <Eye className="size-3.5" /> {t("viewCount", { count: article.views + 1 })}
           </span>
         </div>
       </header>
@@ -71,14 +72,14 @@ export default async function PortalArticle({
             <LifeBuoy className="size-5" />
           </span>
           <div>
-            <p className="text-sm font-medium">Still need a hand?</p>
+            <p className="text-sm font-medium">{t("stillNeedHand")}</p>
             <p className="text-sm text-muted-foreground">
-              If this didn&apos;t solve it, our team is ready to help.
+              {t("stillNeedHandText")}
             </p>
           </div>
         </div>
         <LinkButton href="/portal/new" size="sm" className="shrink-0">
-          Contact the Service Desk
+          {t("contactServiceDesk")}
         </LinkButton>
       </aside>
 
@@ -87,7 +88,7 @@ export default async function PortalArticle({
           href="/portal/knowledge"
           className="text-sm font-medium text-primary transition-opacity hover:opacity-80"
         >
-          Browse more articles
+          {t("browseMoreArticles")}
         </Link>
       </div>
     </article>

@@ -5,7 +5,9 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getPage, getParam, PAGE_SIZE, type SearchParams } from "@/lib/query";
 import { LICENSE_TYPES, LICENSE_TYPE_META } from "@/lib/constants";
-import { formatDay, licenseCompliance } from "@/lib/contract-rules";
+import { licenseCompliance } from "@/lib/contract-rules";
+import { getEnumT, getT } from "@/lib/i18n/server";
+import { formatDayIn } from "./contract-format";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { SortableHead } from "@/components/sort-header";
 import { PaginationBar } from "@/components/pagination-bar";
@@ -14,13 +16,13 @@ import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LicenseComplianceBadge, LicenseExpiryBadge } from "./contract-badges";
 
-const filters: FilterDef[] = [
-  { key: "type", label: "Type", options: LICENSE_TYPES.map((t) => ({ value: t, label: LICENSE_TYPE_META[t].label })) },
-];
-
 /** The Licenses tab of /contracts: filterable, sortable, paginated, with seat compliance per license. */
 export async function LicenseList({ sp, createAction }: { sp: SearchParams; createAction: ReactNode }) {
   const now = new Date();
+  const [t, tc, te] = await Promise.all([getT("contracts"), getT("common"), getEnumT()]);
+  const filters: FilterDef[] = [
+    { key: "type", label: tc("type"), options: te.options(LICENSE_TYPE_META, LICENSE_TYPES) },
+  ];
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const type = getParam(sp, "type");
@@ -56,17 +58,13 @@ export async function LicenseList({ sp, createAction }: { sp: SearchParams; crea
 
   return (
     <div className="grid gap-4">
-      <ListToolbar filters={filters} searchPlaceholder="Search licenses…" />
+      <ListToolbar filters={filters} searchPlaceholder={t("searchLicenses")} />
 
       {licenses.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title={isFiltered ? "No licenses match" : "No licenses yet"}
-          description={
-            isFiltered
-              ? "Try adjusting your search or filters."
-              : "Add a software license to count its seats and assign them to users and assets."
-          }
+          title={isFiltered ? t("licenses.noMatch") : t("licenses.none")}
+          description={isFiltered ? t("adjustFilters") : t("licenses.noneHint")}
         >
           {isFiltered ? null : createAction}
         </EmptyState>
@@ -75,12 +73,12 @@ export async function LicenseList({ sp, createAction }: { sp: SearchParams; crea
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead k="name" label="License" sort={sort} dir={dir} />
-                <SortableHead k="vendor" label="Vendor" sort={sort} dir={dir} className="hidden md:table-cell" />
-                <TableHead>Type</TableHead>
-                <SortableHead k="seats" label="Seats" sort={sort} dir={dir} numeric />
-                <SortableHead k="expiresAt" label="Expires" sort={sort} dir={dir} className="hidden md:table-cell" />
-                <TableHead className="hidden lg:table-cell">Owner</TableHead>
+                <SortableHead k="name" label={t("col.license")} sort={sort} dir={dir} />
+                <SortableHead k="vendor" label={t("col.vendor")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                <TableHead>{tc("type")}</TableHead>
+                <SortableHead k="seats" label={t("col.seats")} sort={sort} dir={dir} numeric />
+                <SortableHead k="expiresAt" label={t("col.expires")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                <TableHead className="hidden lg:table-cell">{tc("owner")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -96,7 +94,7 @@ export async function LicenseList({ sp, createAction }: { sp: SearchParams; crea
                   <TableCell><LicenseComplianceBadge compliance={licenseCompliance(l.seats, l._count.assignments)} /></TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm tabular-nums">{l.expiresAt ? formatDay(l.expiresAt) : "Never"}</span>
+                      <span className="text-sm tabular-nums">{l.expiresAt ? formatDayIn(t.locale, l.expiresAt) : tc("never")}</span>
                       <LicenseExpiryBadge expiresAt={l.expiresAt} now={now} />
                     </div>
                   </TableCell>

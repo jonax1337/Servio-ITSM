@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 const DATETIME_LOCAL = "yyyy-MM-dd'T'HH:mm";
 const DEFAULT_DURATION_MINUTES = 15;
@@ -23,14 +25,14 @@ type StartMode = "now" | "later";
 
 export type WindowTarget = { kind: "GENERAL" } | { kind: "UPDATE"; version: string };
 
-function defaultsFor(target: WindowTarget) {
+function defaultsFor(target: WindowTarget, t: Translator<"maintenance">) {
   if (target.kind === "UPDATE") {
     return {
-      title: `Update to ${target.version}`,
-      message: `Servio is being updated to ${target.version}. This takes a few minutes.`,
+      title: t("updateTo", { version: target.version }),
+      message: t("updateMessage", { version: target.version }),
     };
   }
-  return { title: "Planned maintenance", message: "We are carrying out planned maintenance." };
+  return { title: t("plannedMaintenance"), message: t("plannedMessage") };
 }
 
 /** The browser's datetime-local value has no time zone; send the instant it means in the admin's zone. */
@@ -49,11 +51,14 @@ export function ScheduleWindowDialog({
   /** Why scheduling is not possible right now (e.g. no updater); shown instead of opening the dialog. */
   disabledReason?: string | null;
 }) {
+  const t = useT("maintenance");
+  const tc = useT("common");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [startMode, setStartMode] = useState<StartMode>("later");
   const [startsAt, setStartsAt] = useState("");
-  const defaults = defaultsFor(target);
+  const defaults = defaultsFor(target, t);
   const isUpdate = target.kind === "UPDATE";
 
   const onSubmit = useFormSubmit(async (formData) => {
@@ -61,10 +66,10 @@ export function ScheduleWindowDialog({
     const res = await scheduleMaintenance(withIsoStart(formData));
     setPending(false);
     if (res.ok) {
-      toast.success(startMode === "now" ? "Maintenance started" : "Maintenance scheduled");
+      toast.success(startMode === "now" ? t("maintenanceStarted") : t("maintenanceScheduled"));
       setOpen(false);
     } else {
-      toast.error(res.error ?? "Could not schedule the maintenance window.");
+      toast.error(res.error ? tm(res.error) : t("scheduleFailed"));
     }
   });
 
@@ -74,11 +79,11 @@ export function ScheduleWindowDialog({
     setOpen(next);
   };
 
-  const label = isUpdate ? "Schedule update" : "Plan maintenance";
+  const label = isUpdate ? t("scheduleUpdate") : t("planMaintenance");
   const Icon = isUpdate ? CalendarPlus : Wrench;
   if (disabledReason) {
     return (
-      <Button variant="outline" size={isUpdate ? "sm" : "default"} disabled title={disabledReason}>
+      <Button variant="outline" size={isUpdate ? "sm" : "default"} disabled title={tm(disabledReason)}>
         <Icon className="size-4" /> {label}
       </Button>
     );
@@ -91,24 +96,24 @@ export function ScheduleWindowDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isUpdate ? `Schedule update to ${target.version}` : "Plan maintenance"}</DialogTitle>
+          <DialogTitle>{isUpdate ? t("scheduleUpdateTo", { version: target.version }) : t("planMaintenance")}</DialogTitle>
           <DialogDescription>
-            Users are warned ahead of time. While the window runs, non-admins see the maintenance page.
+            {t("dialogDescription")}
           </DialogDescription>
         </DialogHeader>
         <form method="post" onSubmit={onSubmit} className="grid gap-3">
           <input type="hidden" name="kind" value={target.kind} />
           {isUpdate ? <input type="hidden" name="targetVersion" value={target.version} /> : null}
           <label className="grid gap-1 text-xs text-muted-foreground">
-            Title
+            {t("title")}
             <Input name="title" required defaultValue={defaults.title} />
           </label>
           <label className="grid gap-1 text-xs text-muted-foreground">
-            Message to users
+            {t("messageToUsers")}
             <Textarea name="message" defaultValue={defaults.message} />
           </label>
           <fieldset className="grid gap-2 text-xs text-muted-foreground">
-            <legend className="mb-1">Start</legend>
+            <legend className="mb-1">{t("start")}</legend>
             <div className="flex flex-wrap items-center gap-4 text-sm text-foreground">
               {(["now", "later"] as const).map((mode) => (
                 <label key={mode} className="flex items-center gap-2">
@@ -119,38 +124,38 @@ export function ScheduleWindowDialog({
                     checked={startMode === mode}
                     onChange={() => setStartMode(mode)}
                   />
-                  {mode === "now" ? "Right now" : "At a set time"}
+                  {mode === "now" ? t("rightNow") : t("atSetTime")}
                 </label>
               ))}
             </div>
             {startMode === "later" ? (
-              <Input type="datetime-local" name="startsAt" required defaultValue={startsAt} aria-label="Start date and time" />
+              <Input type="datetime-local" name="startsAt" required defaultValue={startsAt} aria-label={t("startDateTime")} />
             ) : null}
           </fieldset>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-xs text-muted-foreground">
-              Duration (minutes)
+              {t("duration")}
               <Input type="number" name="durationMinutes" min={1} max={1440} required defaultValue={DEFAULT_DURATION_MINUTES} />
             </label>
             <label className="grid gap-1 text-xs text-muted-foreground">
-              Announce (hours ahead)
+              {t("announce")}
               <Input type="number" name="announceHours" min={0} max={336} required defaultValue={DEFAULT_ANNOUNCE_HOURS} />
             </label>
           </div>
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>
-              Block access for non-admins
-              <span className="block text-xs text-muted-foreground">Users see the maintenance page while the window runs.</span>
+              {t("blockAccess")}
+              <span className="block text-xs text-muted-foreground">{t("blockAccessHint")}</span>
             </span>
             <Switch name="blockAccess" defaultChecked />
           </label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-              {startMode === "now" ? "Start now" : "Schedule"}
+              {startMode === "now" ? t("startNow") : t("schedule")}
             </Button>
           </DialogFooter>
         </form>

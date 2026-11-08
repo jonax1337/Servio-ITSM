@@ -7,12 +7,17 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { ProblemForm } from "@/components/problems/problem-form";
 import type { CustomFieldDef } from "@/lib/custom-fields";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New problem" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("problems");
+  return { title: t("new.title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NewProblemPage() {
   const me = await requireUser();
+  const t = await getT("problems");
   const [options, customFieldDefs] = await Promise.all([
     getFormOptions(),
     db.customFieldDef.findMany({
@@ -25,8 +30,8 @@ export default async function NewProblemPage() {
     <>
       <PageHeader
         icon={AlertTriangle}
-        title="New problem"
-        description="Open a problem record to investigate root cause."
+        title={t("new.title")}
+        description={t("new.description")}
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format, isSameDay, isSameMonth } from "date-fns";
+import { isSameDay, isSameMonth } from "date-fns";
 import { Snowflake, TriangleAlert, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CHANGE_STATUS_META, RISK_META, TONE_CLASSES, changeRef, metaFor } from "@/lib/constants";
@@ -13,6 +13,12 @@ import {
   type TimeWindow,
 } from "@/lib/change-schedule-rules";
 import type { FreezeWindowRow, MaintenanceWindowRow } from "@/lib/change-schedule";
+import { getFormatter, getT } from "@/lib/i18n/server";
+import type { Formatter } from "@/lib/i18n/format";
+import type { Translator } from "@/lib/i18n/translate";
+
+type I18n = { t: Translator<"changes">; f: Formatter };
+const span = (start: Date, end: Date, f: Formatter) => `${f.date(start, "dateTime")} – ${f.date(end, "dateTime")}`;
 
 export type CalendarColorBy = "status" | "risk";
 
@@ -24,13 +30,14 @@ function chipClass(change: ScheduledChange, colorBy: CalendarColorBy): string {
   return TONE_CLASSES[meta.tone];
 }
 
-function ChangeChip({ change, colorBy, hasConflict, showTime }: {
+function ChangeChip({ change, colorBy, hasConflict, showTime, i18n: { t, f } }: {
   change: ScheduledChange;
   colorBy: CalendarColorBy;
   hasConflict: boolean;
   showTime: boolean;
+  i18n: I18n;
 }) {
-  const title = `${changeRef(change.id)} ${change.title} · ${format(change.plannedStart, "PP p")} – ${format(change.plannedEnd, "PP p")}`;
+  const title = `${changeRef(change.id)} ${change.title} · ${span(change.plannedStart, change.plannedEnd, f)}`;
   return (
     <Link
       href={`/changes/${change.id}`}
@@ -40,18 +47,18 @@ function ChangeChip({ change, colorBy, hasConflict, showTime }: {
         chipClass(change, colorBy),
       )}
     >
-      {hasConflict ? <TriangleAlert className="size-3 shrink-0" aria-label="Schedule conflict" /> : null}
-      {showTime ? <span className="shrink-0 tabular-nums opacity-80">{format(change.plannedStart, "HH:mm")}</span> : null}
+      {hasConflict ? <TriangleAlert className="size-3 shrink-0" aria-label={t("calendar.conflict")} /> : null}
+      {showTime ? <span className="shrink-0 tabular-nums opacity-80">{f.date(change.plannedStart, "time")}</span> : null}
       <span className="truncate font-medium">{change.title}</span>
     </Link>
   );
 }
 
-function FreezeLabel({ freeze }: { freeze: FreezeWindowRow }) {
+function FreezeLabel({ freeze, f }: { freeze: FreezeWindowRow; f: Formatter }) {
   const scope = [freeze.serviceName, freeze.groupName].filter(Boolean).join(" · ");
   return (
     <span
-      title={`${freeze.name}${scope ? ` (${scope})` : ""} · ${format(freeze.startsAt, "PP p")} – ${format(freeze.endsAt, "PP p")}`}
+      title={`${freeze.name}${scope ? ` (${scope})` : ""} · ${span(freeze.startsAt, freeze.endsAt, f)}`}
       className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400"
     >
       <Snowflake className="size-3 shrink-0" aria-hidden />
@@ -61,7 +68,7 @@ function FreezeLabel({ freeze }: { freeze: FreezeWindowRow }) {
 }
 
 /** A maintenance window on a day it covers; links to the admin page that manages it. */
-function MaintenanceLabel({ window, href }: { window: MaintenanceWindowRow; href: string | null }) {
+function MaintenanceLabel({ window, href, i18n: { t, f } }: { window: MaintenanceWindowRow; href: string | null; i18n: I18n }) {
   const label = (
     <>
       <Wrench className="size-3 shrink-0" aria-hidden />
@@ -69,7 +76,7 @@ function MaintenanceLabel({ window, href }: { window: MaintenanceWindowRow; href
     </>
   );
   const className = "flex min-w-0 items-center gap-1 text-[11px] font-medium text-sky-600 dark:text-sky-400";
-  const title = `Maintenance: ${window.title} · ${format(window.startsAt, "PP p")} – ${format(window.endsAt, "PP p")}`;
+  const title = t("calendar.maintenanceTitle", { title: window.title, window: span(window.startsAt, window.endsAt, f) });
   return href ? (
     <Link href={href} title={title} className={cn(className, "hover:underline")}>
       {label}
@@ -82,7 +89,7 @@ function MaintenanceLabel({ window, href }: { window: MaintenanceWindowRow; href
 }
 
 /** Month or week grid of planned change windows, with freeze and maintenance windows marking the days they cover. */
-export function ChangeCalendarGrid({
+export async function ChangeCalendarGrid({
   view, anchor, range, changes, freezes, maintenance, maintenanceHref, conflictedIds, colorBy, weekHref,
 }: {
   view: CalendarView;
@@ -98,6 +105,8 @@ export function ChangeCalendarGrid({
   /** Link to the week view containing a day (the "+N more" target in month view). */
   weekHref: (day: Date) => string;
 }) {
+  const [t, f] = await Promise.all([getT("changes"), getFormatter()]);
+  const i18n: I18n = { t, f };
   const days = daysInRange(range);
   const today = new Date();
   const isWeek = view === "week";
@@ -107,14 +116,14 @@ export function ChangeCalendarGrid({
       <div className="min-w-[44rem]">
         <div className="grid grid-cols-7 border-b bg-muted/40 text-xs font-medium text-muted-foreground">
           {days.slice(0, WEEKDAY_COUNT).map((day) => (
-            <div key={day.getDay()} className="px-2 py-1.5">{format(day, "EEE")}</div>
+            <div key={day.getDay()} className="px-2 py-1.5">{f.pattern(day, "EEE")}</div>
           ))}
         </div>
         <div className="grid grid-cols-7">
           {days.map((day) => {
             const slot = dayWindow(day);
             const dayChanges = changes.filter((c) => windowsOverlap(scheduledWindow(c), slot));
-            const dayFreezes = freezes.filter((f) => windowsOverlap({ start: f.startsAt, end: f.endsAt }, slot));
+            const dayFreezes = freezes.filter((fr) => windowsOverlap({ start: fr.startsAt, end: fr.endsAt }, slot));
             const dayMaintenance = maintenance.filter((m) => windowsOverlap({ start: m.startsAt, end: m.endsAt }, slot));
             const shown = isWeek ? dayChanges : dayChanges.slice(0, MONTH_CELL_CHANGE_LIMIT);
             const hidden = dayChanges.length - shown.length;
@@ -136,10 +145,10 @@ export function ChangeCalendarGrid({
                     isSameDay(day, today) && "grid size-5 place-items-center rounded-full bg-primary font-semibold text-primary-foreground",
                   )}
                 >
-                  {format(day, "d")}
+                  {f.pattern(day, "d")}
                 </span>
-                {dayFreezes.map((freeze) => <FreezeLabel key={freeze.id} freeze={freeze} />)}
-                {dayMaintenance.map((window) => <MaintenanceLabel key={window.id} window={window} href={maintenanceHref} />)}
+                {dayFreezes.map((freeze) => <FreezeLabel key={freeze.id} freeze={freeze} f={f} />)}
+                {dayMaintenance.map((window) => <MaintenanceLabel key={window.id} window={window} href={maintenanceHref} i18n={i18n} />)}
                 {shown.map((change) => (
                   <ChangeChip
                     key={change.id}
@@ -147,11 +156,12 @@ export function ChangeCalendarGrid({
                     colorBy={colorBy}
                     hasConflict={conflictedIds.has(change.id)}
                     showTime={isWeek}
+                    i18n={i18n}
                   />
                 ))}
                 {hidden > 0 ? (
                   <Link href={weekHref(day)} className="px-1 text-xs text-muted-foreground hover:text-foreground">
-                    +{hidden} more
+                    {t("calendar.more", { count: hidden })}
                   </Link>
                 ) : null}
               </div>

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { PRIORITIES, PRIORITY_META, TICKET_STATUSES, TICKET_STATUS_META } from "@/lib/constants";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 export type MacroRow = {
   id: string;
@@ -48,14 +49,6 @@ const ACTION_LABEL: Record<MacroActionType, string> = {
   add_comment: "Add internal note",
 };
 
-const ACTION_OPTS: ComboOption[] = MACRO_ACTION_TYPES.map((t) => ({ value: t, label: ACTION_LABEL[t] }));
-
-const STATUS_OPTS: ComboOption[] = TICKET_STATUSES.map((s) => ({
-  value: s, label: TICKET_STATUS_META[s].label, tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
-}));
-const PRIORITY_OPTS: ComboOption[] = PRIORITIES.map((p) => ({
-  value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
-}));
 
 function safeParse(json: string): MacroAction[] {
   try {
@@ -68,12 +61,13 @@ function safeParse(json: string): MacroAction[] {
 }
 
 function Field({ label, error, children, hint }: { label: string; error?: string[]; children: React.ReactNode; hint?: string }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -91,47 +85,56 @@ function ActionRow({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
 }) {
+  const t = useT("settings");
+  const te = useEnumT();
+  const actionOpts: ComboOption[] = MACRO_ACTION_TYPES.map((ty) => ({ value: ty, label: t.dyn(`macro.action.${ty}`, undefined, ACTION_LABEL[ty]) }));
+  const statusOpts: ComboOption[] = TICKET_STATUSES.map((s) => ({
+    value: s, label: te(TICKET_STATUS_META[s]), tone: TICKET_STATUS_META[s].tone, icon: TICKET_STATUS_META[s].icon,
+  }));
+  const priorityOpts: ComboOption[] = PRIORITIES.map((p) => ({
+    value: p, label: te(PRIORITY_META[p]), tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon,
+  }));
   const setType = (type: string) => onChange({ type: (type || "set_status") as MacroActionType, value: "" });
   const setValue = (value: string) => onChange({ ...action, value });
 
   const agentOpts: ComboOption[] = [
-    { value: "", label: "Unassigned" },
+    { value: "", label: t("macro.unassigned") },
     ...agents.map((a) => ({ value: a.value, label: a.label, hint: a.hint, avatar: (a.label || "?").slice(0, 2) })),
   ];
-  const groupOpts: ComboOption[] = [{ value: "", label: "No group" }, ...groups];
+  const groupOpts: ComboOption[] = [{ value: "", label: t("macro.noGroup") }, ...groups];
 
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="flex items-center gap-2">
         <GripVertical className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <Combobox options={ACTION_OPTS} value={action.type} onChange={setType} placeholder="Choose an action" searchPlaceholder="Search actions…" />
+          <Combobox options={actionOpts} value={action.type} onChange={setType} placeholder={t("macro.chooseAction")} searchPlaceholder={t("macro.searchActions")} />
         </div>
-        <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0} onClick={() => onMove(-1)} aria-label="Move up">
+        <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0} onClick={() => onMove(-1)} aria-label={t("macro.moveUp")}>
           <ArrowUp className="size-4" />
         </Button>
-        <Button type="button" variant="ghost" size="icon-sm" disabled={index === count - 1} onClick={() => onMove(1)} aria-label="Move down">
+        <Button type="button" variant="ghost" size="icon-sm" disabled={index === count - 1} onClick={() => onMove(1)} aria-label={t("macro.moveDown")}>
           <ArrowDown className="size-4" />
         </Button>
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onRemove} aria-label="Remove action">
+        <Button type="button" variant="ghost" size="icon-sm" onClick={onRemove} aria-label={t("macro.removeAction")}>
           <X className="size-4" />
         </Button>
       </div>
 
       <div className="mt-2 pl-6">
         {action.type === "set_status" ? (
-          <Combobox options={STATUS_OPTS} value={action.value} onChange={setValue} placeholder="Choose a status" searchPlaceholder="Search statuses…" />
+          <Combobox options={statusOpts} value={action.value} onChange={setValue} placeholder={t("macro.chooseStatus")} searchPlaceholder={t("macro.searchStatuses")} />
         ) : action.type === "set_priority" ? (
-          <Combobox options={PRIORITY_OPTS} value={action.value} onChange={setValue} placeholder="Choose a priority" searchPlaceholder="Search priorities…" />
+          <Combobox options={priorityOpts} value={action.value} onChange={setValue} placeholder={t("macro.choosePriority")} searchPlaceholder={t("macro.searchPriorities")} />
         ) : action.type === "assign" ? (
-          <Combobox options={agentOpts} value={action.value} onChange={setValue} placeholder="Choose an agent" searchPlaceholder="Search agents…" />
+          <Combobox options={agentOpts} value={action.value} onChange={setValue} placeholder={t("macro.chooseAgent")} searchPlaceholder={t("macro.searchAgents")} />
         ) : action.type === "set_group" ? (
-          <Combobox options={groupOpts} value={action.value} onChange={setValue} placeholder="Choose a group" searchPlaceholder="Search groups…" />
+          <Combobox options={groupOpts} value={action.value} onChange={setValue} placeholder={t("macro.chooseGroup")} searchPlaceholder={t("macro.searchGroups")} />
         ) : (
           <Textarea
             value={action.value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={action.type === "add_reply" ? "Reply the requester will see…" : "Private note for agents…"}
+            placeholder={action.type === "add_reply" ? t("macro.replyPlaceholder") : t("macro.notePlaceholder")}
             className="min-h-20"
           />
         )}
@@ -149,6 +152,8 @@ function MacroDialog({
   groups: Opt[];
 }) {
   const editing = !!macro;
+  const t = useT("settings");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<MacroState>(undefined);
   const [pending, startTransition] = useTransition();
@@ -198,43 +203,43 @@ function MacroDialog({
         if (v) reset();
       }}
     >
-      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? "Edit macro" : undefined} />}>
-        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> New macro</>}
+      <DialogTrigger render={<Button variant={editing ? "outline" : "default"} size={editing ? "icon-sm" : "default"} aria-label={editing ? t("macro.editMacro") : undefined} />}>
+        {editing ? <Pencil className="size-4" /> : <><Plus className="size-4" /> {t("macro.newMacro")}</>}
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <MessageSquareText className="size-4 text-primary" /> {editing ? "Edit macro" : "New macro"}
+            <MessageSquareText className="size-4 text-primary" /> {editing ? t("macro.editMacro") : t("macro.newMacro")}
           </DialogTitle>
-          <DialogDescription>Actions run top-to-bottom when an agent applies the macro to a ticket.</DialogDescription>
+          <DialogDescription>{t("macro.dialogDescription")}</DialogDescription>
         </DialogHeader>
 
         <form action={submit} className="grid max-h-[70vh] gap-4 overflow-y-auto px-0.5">
           {editing ? <input type="hidden" name="id" value={macro.id} /> : null}
 
           {state?.error ? (
-            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{state.error}</p>
+            <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p>
           ) : null}
 
-          <Field label="Name" error={fe.name}>
-            <Input name="name" defaultValue={macro?.name} placeholder="e.g. Ask for more info" required />
+          <Field label={t("macro.name")} error={fe.name}>
+            <Input name="name" defaultValue={macro?.name} placeholder={t("macro.namePlaceholder")} required />
           </Field>
 
-          <Field label="Description" error={fe.description}>
-            <Input name="description" defaultValue={macro?.description ?? ""} placeholder="When should an agent reach for this?" />
+          <Field label={t("macro.description")} error={fe.description}>
+            <Input name="description" defaultValue={macro?.description ?? ""} placeholder={t("macro.descriptionPlaceholder")} />
           </Field>
 
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <Label>Actions</Label>
+              <Label>{t("macro.actions")}</Label>
               <Button type="button" variant="outline" size="sm" onClick={addAction}>
-                <Plus className="size-4" /> Add action
+                <Plus className="size-4" /> {t("macro.addAction")}
               </Button>
             </div>
-            {fe.actions ? <p className="text-xs text-destructive">{fe.actions[0]}</p> : null}
+            {fe.actions ? <p className="text-xs text-destructive">{tm(fe.actions[0])}</p> : null}
             {actions.length === 0 ? (
               <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                No actions yet. Add one to get started.
+                {t("macro.noActions")}
               </p>
             ) : (
               <div className="grid gap-2">
@@ -260,8 +265,8 @@ function MacroDialog({
               <span className="flex items-center gap-2">
                 <Share2 className="size-4 text-muted-foreground" />
                 <span>
-                  Shared macro
-                  <span className="block text-xs text-muted-foreground">Available to every agent. Off = only you.</span>
+                  {t("macro.sharedMacro")}
+                  <span className="block text-xs text-muted-foreground">{t("macro.sharedHint")}</span>
                 </span>
               </span>
               <Switch checked={isShared} onCheckedChange={setIsShared} />
@@ -271,7 +276,7 @@ function MacroDialog({
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {editing ? "Save macro" : "Create macro"}
+              {editing ? t("macro.saveMacro") : t("macro.createMacro")}
             </Button>
           </DialogFooter>
         </form>
@@ -288,18 +293,19 @@ export function MacroManager({
   agents: Opt[];
   groups: Opt[];
 }) {
+  const t = useT("settings");
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {macros.length} macro{macros.length === 1 ? "" : "s"} · applied from the ticket detail toolbar.
+          {t("macro.summary", { count: macros.length })}
         </p>
         <MacroDialog canShare={canShare} agents={agents} groups={groups} />
       </div>
 
       {macros.length === 0 ? (
         <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No macros yet. Create one to bundle common ticket actions into a single click.
+          {t("macro.empty")}
         </div>
       ) : (
         <div className="divide-y overflow-hidden rounded-xl border">
@@ -315,16 +321,16 @@ export function MacroManager({
                     <span className="truncate font-medium">{m.name}</span>
                     {m.isShared ? (
                       <span className="inline-flex items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium text-muted-foreground">
-                        <Share2 className="size-3" /> Shared
+                        <Share2 className="size-3" /> {t("macro.shared")}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium text-muted-foreground">
-                        <UserIcon className="size-3" /> Personal{m.ownerName ? ` · ${m.ownerName}` : ""}
+                        <UserIcon className="size-3" /> {t("macro.personal")}{m.ownerName ? ` · ${m.ownerName}` : ""}
                       </span>
                     )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {m.description || `${acts.length} action${acts.length === 1 ? "" : "s"}: ${acts.map((a) => ACTION_LABEL[a.type] ?? a.type).join(", ")}`}
+                    {m.description || t("macro.actionSummary", { count: acts.length, list: acts.map((a) => t.dyn(`macro.action.${a.type}`, undefined, ACTION_LABEL[a.type] ?? a.type)).join(", ") })}
                   </div>
                 </div>
 
@@ -334,15 +340,15 @@ export function MacroManager({
                     <ConfirmButton
                       action={deleteMacro}
                       fields={{ id: m.id }}
-                      title="Delete macro?"
-                      description={`"${m.name}" will be removed. This can't be undone.`}
-                      triggerLabel="Delete macro"
+                      title={t("macro.deleteTitle")}
+                      description={t("macro.deleteDescription", { name: m.name })}
+                      triggerLabel={t("macro.deleteMacro")}
                     >
                       <Trash2 className="size-4" />
                     </ConfirmButton>
                   </div>
                 ) : (
-                  <span className="text-xs text-muted-foreground">Read-only</span>
+                  <span className="text-xs text-muted-foreground">{t("macro.readOnly")}</span>
                 )}
               </div>
             );

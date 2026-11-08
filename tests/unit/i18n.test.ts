@@ -131,3 +131,17 @@ describe("formatter", () => {
     expect(typeof node === "string" || isValidElement(node)).toBe(true);
   });
 });
+
+describe("server message patterns", () => {
+  it("translates messages with variable parts", () => {
+    expect(translateServerMessage("de", "Ticket hierarchies can be at most 3 levels deep.")).toBe(
+      "Ticket-Hierarchien dürfen höchstens 3 Ebenen tief sein.",
+    );
+    expect(translateServerMessage("de", "In use by 1 record — archive it instead of deleting.")).toBe(
+      "Wird von 1 Datensatz verwendet — bitte archivieren statt löschen.",
+    );
+    expect(translateServerMessage("de", 'The MCP server "Docs" is no longer available.')).toBe(
+      "Der MCP-Server „Docs“ ist nicht mehr verfügbar.",
+    );
+  });
+});

@@ -7,8 +7,13 @@ import { LinkButton } from "@/components/link-button";
 import { requiredRoleFor } from "@/lib/route-guard";
 import type { SearchParams } from "@/lib/query";
 import { getParam } from "@/lib/query";
+import { ROLE_META } from "@/lib/constants";
+import { getEnumT, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "No access" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("errors");
+  return { title: t("noAccessTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NoAccessPage({
@@ -21,23 +26,25 @@ export default async function NoAccessPage({
   const sp = await searchParams;
   const from = getParam(sp, "from");
   const required = from ? requiredRoleFor(from) : null;
+  const [t, te] = await Promise.all([getT("errors"), getEnumT()]);
+  const roleLabel = (role: string) => te(ROLE_META as Record<string, { label: string }>, role);
 
   return (
     <>
       <PageHeader
         icon={ShieldAlert}
-        title="Access restricted"
-        description="You don't have permission to view this area."
+        title={t("accessRestricted")}
+        description={t("accessRestrictedText")}
       />
 
       <PageBody>
         <EmptyState
           icon={ShieldAlert}
-          title="You can't access this area"
+          title={t("cantAccess")}
           description={
             required
-              ? `This area is limited to ${required} and above. Your current role is ${user.role}. Ask an administrator if you need access.`
-              : `Your current role (${user.role}) doesn't have permission to view this area. Ask an administrator if you need access.`
+              ? t("limitedToRole", { required: roleLabel(required), role: roleLabel(user.role) })
+              : t("roleNoPermission", { role: roleLabel(user.role) })
           }
         >
           {from ? (
@@ -47,7 +54,7 @@ export default async function NoAccessPage({
           ) : null}
           <LinkButton href="/" variant="outline" size="sm" className="mt-1">
             <LayoutDashboard className="size-4" />
-            Back to dashboard
+            {t("backToDashboard")}
           </LinkButton>
         </EmptyState>
       </PageBody>

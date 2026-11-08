@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { buildHref, type SearchParams } from "@/lib/query";
 import { cn } from "@/lib/utils";
+import { Msg } from "@/lib/i18n/client";
 
 export function PaginationBar({
   pathname,
@@ -36,14 +37,14 @@ export function PaginationBar({
   return (
     <div className="flex items-center justify-between px-1 py-3 text-sm text-muted-foreground">
       <span className="tabular-nums">
-        {from}–{to} of {total}
+        <Msg ns="components" k="pagination.range" vars={{ from, to, total }} />
       </span>
       <div className="flex items-center gap-1.5">
-        {link(page - 1, page <= 1, <><ChevronLeft className="size-4" /> Prev</>)}
+        {link(page - 1, page <= 1, <><ChevronLeft className="size-4" /> <Msg ns="components" k="pagination.prev" /></>)}
         <span className="px-2 tabular-nums">
           {page} / {pages}
         </span>
-        {link(page + 1, page >= pages, <>Next <ChevronRight className="size-4" /></>)}
+        {link(page + 1, page >= pages, <><Msg ns="components" k="pagination.next" /> <ChevronRight className="size-4" /></>)}
       </div>
     </div>
   );

@@ -4,8 +4,7 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { deleteLocation } from "@/lib/actions/locations";
 import { ConfirmButton } from "@/components/confirm-dialog";
-
-const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+import { useT } from "@/lib/i18n/client";
 
 /** Deletes a location behind a confirmation that spells out what gets detached. */
 export function DeleteLocationButton({
@@ -17,9 +16,10 @@ export function DeleteLocationButton({
   childCount: number;
 }) {
   const router = useRouter();
+  const t = useT("locations");
   const consequences = [
-    assetCount > 0 ? `${plural(assetCount, "asset")} will lose their location` : null,
-    childCount > 0 ? `${plural(childCount, "sub-location")} will move to the top level` : null,
+    assetCount > 0 ? t("delete.assetsLose", { count: assetCount }) : null,
+    childCount > 0 ? t("delete.childrenMove", { count: childCount }) : null,
   ].filter(Boolean);
 
   return (
@@ -30,9 +30,12 @@ export function DeleteLocationButton({
         return res;
       }}
       fields={{ id }}
-      title="Delete location"
-      description={`Delete "${name}"? ${consequences.length > 0 ? `${consequences.join(" and ")}. ` : ""}This can't be undone.`}
-      triggerLabel="Delete location"
+      title={t("delete.title")}
+      description={t("delete.description", {
+        name,
+        consequences: consequences.length > 0 ? `${consequences.join(t("delete.and"))}. ` : "",
+      })}
+      triggerLabel={t("delete.title")}
       triggerVariant="outline"
       triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
     >

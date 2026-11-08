@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 import { LocalTime, useHydrated } from "@/components/local-time";
+import { useT } from "@/lib/i18n/client";
 
 export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate: Date | null }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const t = useT("tickets");
 
   const submit = (d: Date | null) => {
     const fd = new FormData();
@@ -41,9 +42,9 @@ export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate
       >
         <CalendarDays className={cn("size-4", overdue ? "text-destructive" : "text-muted-foreground")} />
         {dueDate ? (
-          <span className={overdue ? "font-medium text-destructive" : undefined}><LocalTime date={dueDate} render={(d) => format(d, "PP")} /></span>
+          <span className={overdue ? "font-medium text-destructive" : undefined}><LocalTime date={dueDate} render={(d, f) => f.date(d)} /></span>
         ) : (
-          <span className="text-muted-foreground">Set due date…</span>
+          <span className="text-muted-foreground">{t("due.set")}</span>
         )}
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -51,7 +52,7 @@ export function DueDatePicker({ ticketId, dueDate }: { ticketId: number; dueDate
         {dueDate ? (
           <div className="border-t p-2">
             <Button variant="ghost" size="sm" className="w-full" onClick={() => submit(null)}>
-              <X className="size-3.5" /> Clear due date
+              <X className="size-3.5" /> {t("due.clear")}
             </Button>
           </div>
         ) : null}

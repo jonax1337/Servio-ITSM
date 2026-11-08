@@ -10,6 +10,7 @@ import { ChangeCabBrief } from "@/components/changes/change-cab-brief";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import type { ComboOption } from "@/components/combobox";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
+import { getT } from "@/lib/i18n/server";
 
 export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: ChangeTabContext) {
   const [approvals, adHocApprovals, options, eligibleApprovers] = await Promise.all([
@@ -27,6 +28,7 @@ export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: Ch
     }),
   ]);
 
+  const t = await getT("changes");
   const eligibleIds = new Set(eligibleApprovers.map((u) => u.id));
   const seatedIds = new Set(approvals.map((a) => a.approverId));
   const agentOptions: ComboOption[] = options.agents
@@ -75,14 +77,13 @@ export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: Ch
 
       <div className="grid gap-4">
         <p className="rounded-lg border border-dashed bg-card/50 px-3 py-2 text-xs text-muted-foreground">
-          The sign-offs below are manual requests to individuals, separate from the CAB above.
-          They do not decide whether this change is approved.
+          {t("cab.adHocNote")}
         </p>
         <EntityApprovals
           entityType="CHANGE"
           entityId={String(change.id)}
           entityTitle={change.title}
-          heading="Ad-hoc sign-offs"
+          heading={t("cab.adHocHeading")}
           approvals={adHocApprovals}
           currentUserId={userId}
           isAdmin={isAdmin}

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { format } from "date-fns";
 import { CalendarRange, ChevronLeft, ChevronRight, Plus, Snowflake, TriangleAlert, Wrench } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
@@ -24,19 +23,21 @@ import { StatusBadge, ToneBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { CalendarFilters } from "@/components/changes/calendar/calendar-filters";
 import { ChangeCalendarGrid, type CalendarColorBy } from "@/components/changes/calendar/change-calendar-grid";
+import { getFormatter, getT } from "@/lib/i18n/server";
+import type { Formatter } from "@/lib/i18n/format";
+import type { Translator } from "@/lib/i18n/translate";
 
-export const metadata: Metadata = { title: "Change Calendar" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("changes");
+  return { title: t("calendar.title") };
+}
 export const dynamic = "force-dynamic";
 
 const CALENDAR_PATH = "/changes/calendar";
-const VIEW_LABELS: Record<CalendarView, string> = { month: "Month", week: "Week" };
-const COLOR_BY_OPTIONS: { value: CalendarColorBy; label: string }[] = [
-  { value: "status", label: "Status" },
-  { value: "risk", label: "Risk" },
-];
+const COLOR_BY_VALUES: CalendarColorBy[] = ["status", "risk"];
 
-function periodLabel(view: CalendarView, start: Date, anchor: Date): string {
-  return view === "month" ? format(anchor, "MMMM yyyy") : `Week of ${format(start, "PP")}`;
+function periodLabel(view: CalendarView, start: Date, anchor: Date, t: Translator<"changes">, f: Formatter): string {
+  return view === "month" ? f.date(anchor, "monthYear") : t("calendar.weekOf", { date: f.date(start) });
 }
 
 function SegmentedLinks<T extends string>({ label, options, active, hrefFor }: {
@@ -67,6 +68,8 @@ function SegmentedLinks<T extends string>({ label, options, active, hrefFor }: {
 export default async function ChangeCalendarPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const me = await requireUser();
+  const [t, tc, f] = await Promise.all([getT("changes"), getT("common"), getFormatter()]);
+  const colorByOptions = COLOR_BY_VALUES.map((value) => ({ value, label: tc(value) }));
   const view = parseCalendarView(getParam(sp, "view"));
   const colorBy: CalendarColorBy = getParam(sp, "color") === "risk" ? "risk" : "status";
   const anchor = parseAnchor(getParam(sp, "date"), new Date());
@@ -93,16 +96,16 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
     <>
       <PageHeader
         icon={CalendarRange}
-        title="Change Calendar"
-        description="Planned windows of all changes, with change freezes, Servio maintenance and schedule conflicts."
+        title={t("calendar.title")}
+        description={t("calendar.description")}
       >
         {hasRole(me.role, "MANAGER") ? (
           <LinkButton href="/changes/freeze" variant="outline">
-            <Snowflake className="size-4" /> Freeze windows
+            <Snowflake className="size-4" /> {t("calendar.freezeWindows")}
           </LinkButton>
         ) : null}
         <LinkButton href="/changes/new">
-          <Plus className="size-4" /> New change
+          <Plus className="size-4" /> {t("list.newChange")}
         </LinkButton>
       </PageHeader>
 
@@ -113,33 +116,33 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
               href={href({ date: formatAnchor(shiftAnchor(view, anchor, -1)) })}
               variant="outline"
               size="icon-sm"
-              aria-label="Previous period"
+              aria-label={t("calendar.previous")}
             >
               <ChevronLeft className="size-4" />
             </LinkButton>
             <LinkButton href={href({ date: null })} variant="outline" size="sm">
-              Today
+              {t("calendar.today")}
             </LinkButton>
             <LinkButton
               href={href({ date: formatAnchor(shiftAnchor(view, anchor, 1)) })}
               variant="outline"
               size="icon-sm"
-              aria-label="Next period"
+              aria-label={t("calendar.next")}
             >
               <ChevronRight className="size-4" />
             </LinkButton>
           </div>
-          <h2 className="font-display text-base font-semibold">{periodLabel(view, range.start, anchor)}</h2>
+          <h2 className="font-display text-base font-semibold">{periodLabel(view, range.start, anchor, t, f)}</h2>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <SegmentedLinks
-              label="Calendar view"
-              options={CALENDAR_VIEWS.map((v) => ({ value: v, label: VIEW_LABELS[v] }))}
+              label={t("calendar.view")}
+              options={CALENDAR_VIEWS.map((v) => ({ value: v, label: t(`calendar.view.${v}`) }))}
               active={view}
               hrefFor={(value) => href({ view: value === "month" ? null : value })}
             />
             <SegmentedLinks
-              label="Colour by"
-              options={COLOR_BY_OPTIONS}
+              label={t("calendar.colourBy")}
+              options={colorByOptions}
               active={colorBy}
               hrefFor={(value) => href({ color: value === "status" ? null : value })}
             />
@@ -151,8 +154,8 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
         {changes.length === 0 && schedule.freezes.length === 0 && schedule.maintenance.length === 0 ? (
           <EmptyState
             icon={CalendarRange}
-            title="Nothing planned in this period"
-            description="Changes appear here once they have a planned window. Adjust the filters or move to another period."
+            title={t("calendar.emptyTitle")}
+            description={t("calendar.emptyDescription")}
           />
         ) : null}
 
@@ -174,20 +177,20 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
             <ToneBadge key={meta.label} meta={meta} dot icon={false} />
           ))}
           <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
-            <Snowflake className="size-3.5" aria-hidden /> Change freeze (shaded days)
+            <Snowflake className="size-3.5" aria-hidden /> {t("calendar.legendFreeze")}
           </span>
           <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400">
-            <Wrench className="size-3.5" aria-hidden /> Maintenance window (Servio unavailable or updating)
+            <Wrench className="size-3.5" aria-hidden /> {t("calendar.legendMaintenance")}
           </span>
           <span className="inline-flex items-center gap-1">
-            <TriangleAlert className="size-3.5" aria-hidden /> Schedule conflict
+            <TriangleAlert className="size-3.5" aria-hidden /> {t("calendar.conflict")}
           </span>
         </div>
 
         {conflicts.length > 0 ? (
           <section className="rounded-xl border bg-card p-4">
             <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-              <TriangleAlert className="size-4 text-amber-500" aria-hidden /> Schedule conflicts in this period
+              <TriangleAlert className="size-4 text-amber-500" aria-hidden /> {t("calendar.conflictsTitle")}
             </h3>
             <ul className="grid gap-1.5 text-sm">
               {conflicts.map((conflict) => {
@@ -198,7 +201,7 @@ export default async function ChangeCalendarPage({ searchParams }: { searchParam
                     {pair.map((change, index) =>
                       change ? (
                         <span key={change.id} className="inline-flex items-center gap-1.5">
-                          {index === 1 ? <span className="text-muted-foreground">overlaps</span> : null}
+                          {index === 1 ? <span className="text-muted-foreground">{t("calendar.overlaps")}</span> : null}
                           <Link href={`/changes/${change.id}`} className="font-medium hover:text-primary">
                             <span className="font-mono text-xs text-muted-foreground">{changeRef(change.id)}</span>{" "}
                             {change.title}

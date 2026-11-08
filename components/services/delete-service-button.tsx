@@ -7,11 +7,14 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useT } from "@/lib/i18n/client";
 
 /** Delete a service behind a confirmation dialog. Server-side is agent-gated. */
 export function DeleteServiceButton({ serviceId, serviceName }: { serviceId: string; serviceName: string }) {
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const t = useT("services");
+  const tc = useT("common");
 
   return (
     <>
@@ -19,8 +22,8 @@ export function DeleteServiceButton({ serviceId, serviceName }: { serviceId: str
         type="button"
         variant="outline"
         size="icon-sm"
-        aria-label="Delete service"
-        title="Delete service"
+        aria-label={t("deleteService")}
+        title={t("deleteService")}
         onClick={() => setOpen(true)}
         className="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
       >
@@ -29,21 +32,20 @@ export function DeleteServiceButton({ serviceId, serviceName }: { serviceId: str
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete service</DialogTitle>
+            <DialogTitle>{t("deleteService")}</DialogTitle>
             <DialogDescription>
-              This permanently deletes <span className="font-medium text-foreground">{serviceName}</span>. Its
-              catalog items and tickets are kept but unlinked from the service. This can&apos;t be undone.
+              {t.rich("deleteDescription", { name: serviceName, b: (c) => <span className="font-medium text-foreground">{c}</span> })}
             </DialogDescription>
           </DialogHeader>
           <form action={(fd) => start(async () => { await deleteService(fd); })}>
             <input type="hidden" name="id" value={serviceId} />
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
-                Cancel
+                {tc("cancel")}
               </Button>
               <Button type="submit" variant="destructive" disabled={pending}>
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                Delete service
+                {t("deleteService")}
               </Button>
             </DialogFooter>
           </form>

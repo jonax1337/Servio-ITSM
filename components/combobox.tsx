@@ -18,6 +18,7 @@ import { ToneBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { useSearchedOptions, type OptionSearch } from "@/components/use-searched-options";
 import type { Tone } from "@/lib/constants";
+import { useT } from "@/lib/i18n/client";
 
 export type ComboOption = {
   value: string;
@@ -66,9 +67,9 @@ export function Combobox({
   search,
   value,
   onChange,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
-  emptyText = "No results found.",
+  placeholder,
+  searchPlaceholder,
+  emptyText,
   name,
   disabled,
   className,
@@ -86,6 +87,7 @@ export function Combobox({
   size?: "default" | "sm";
   pending?: boolean;
 }) {
+  const t = useT("components");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<ComboOption>();
@@ -131,15 +133,15 @@ export function Combobox({
               <OptionInner o={selected} />
             )
           ) : (
-            <span className="truncate">{placeholder}</span>
+            <span className="truncate">{placeholder ?? t("combo.select")}</span>
           )}
           <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[var(--anchor-width)] min-w-56 rounded-md p-0">
           <Command shouldFilter={!search}>
-            <CommandInput placeholder={searchPlaceholder} value={query} onValueChange={setQuery} />
+            <CommandInput placeholder={searchPlaceholder ?? t("combo.search")} value={query} onValueChange={setQuery} />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              <CommandEmpty>{emptyText ?? t("combo.empty")}</CommandEmpty>
               <CommandGroup>
                 {listed.map((o) => (
                   <CommandItem

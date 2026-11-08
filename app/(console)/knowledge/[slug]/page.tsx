@@ -13,7 +13,7 @@ import { getArticleLinkedRecords } from "@/lib/data/related-articles";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { ArticleHistoryDialog, type ArticleRevisionRow } from "@/components/knowledge/article-history-dialog";
 import { ARTICLE_STATUS_META, ARTICLE_VISIBILITY_META } from "@/lib/constants";
-import { format } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const article = await db.article.findUnique({ where: { slug }, select: { title: true } });
-  return { title: article ? article.title : "Article" };
+  const t = await getT("knowledge");
+  return { title: article ? article.title : t("article") };
 }
 
 export default async function ArticlePage({
@@ -48,6 +49,7 @@ export default async function ArticlePage({
     },
   });
   if (!article) notFound();
+  const [t, tc, f] = await Promise.all([getT("knowledge"), getT("common"), getFormatter()]);
   const linkedRecords = await getArticleLinkedRecords(article.id);
 
   const authorName = article.author?.name ?? article.author?.email ?? null;
@@ -71,7 +73,7 @@ export default async function ArticlePage({
   return (
     <div className="mx-auto w-full max-w-3xl">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/knowledge" variant="ghost" size="icon-sm" aria-label="Back to knowledge base">
+        <LinkButton href="/knowledge" variant="ghost" size="icon-sm" aria-label={t("backToKnowledge")}>
           <ArrowLeft className="size-4" />
         </LinkButton>
         <StatusBadge map={ARTICLE_VISIBILITY_META} value={article.visibility} />
@@ -80,33 +82,33 @@ export default async function ArticlePage({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Lifecycle transitions */}
           {(s === "DRAFT" || s === "RETIRED") ? (
-            <ArticleStatusButton id={article.id} to="REVIEW" successMessage="Submitted for review"><Send className="size-3.5" /> Submit for review</ArticleStatusButton>
+            <ArticleStatusButton id={article.id} to="REVIEW" successMessage={t("submittedForReview")}><Send className="size-3.5" /> {t("submitForReview")}</ArticleStatusButton>
           ) : null}
           {(s === "REVIEW" || s === "RETIRED") ? (
-            <ArticleStatusButton id={article.id} to="DRAFT" successMessage="Moved back to draft"><Undo2 className="size-3.5" /> {s === "RETIRED" ? "Revise as draft" : "Back to draft"}</ArticleStatusButton>
+            <ArticleStatusButton id={article.id} to="DRAFT" successMessage={t("movedBackToDraft")}><Undo2 className="size-3.5" /> {s === "RETIRED" ? t("reviseAsDraft") : t("backToDraft")}</ArticleStatusButton>
           ) : null}
           {/* Publishing is an editorial sign-off: MANAGER+ and never the author (enforced in setArticleStatus). */}
           {(s === "DRAFT" || s === "REVIEW" || s === "RETIRED") && canPublish ? (
-            <ArticleStatusButton id={article.id} to="PUBLISHED" variant="default" successMessage="Article published"><CheckCircle2 className="size-3.5" /> Publish</ArticleStatusButton>
+            <ArticleStatusButton id={article.id} to="PUBLISHED" variant="default" successMessage={t("published")}><CheckCircle2 className="size-3.5" /> {t("publish")}</ArticleStatusButton>
           ) : null}
           {(s === "PUBLISHED") ? (
             <>
-              <ArticleStatusButton id={article.id} to="DRAFT" successMessage="Article unpublished"><Undo2 className="size-3.5" /> Unpublish</ArticleStatusButton>
-              <ArticleStatusButton id={article.id} to="RETIRED" successMessage="Article retired"><Archive className="size-3.5" /> Retire</ArticleStatusButton>
+              <ArticleStatusButton id={article.id} to="DRAFT" successMessage={t("unpublished")}><Undo2 className="size-3.5" /> {t("unpublish")}</ArticleStatusButton>
+              <ArticleStatusButton id={article.id} to="RETIRED" successMessage={t("retired")}><Archive className="size-3.5" /> {t("retire")}</ArticleStatusButton>
             </>
           ) : null}
 
           <ArticleHistoryDialog articleId={article.id} revisions={revisionRows} />
 
           <LinkButton href={`/knowledge/${article.slug}/edit`} variant="outline" size="sm">
-            <Pencil className="size-3.5" /> Edit
+            <Pencil className="size-3.5" /> {tc("edit")}
           </LinkButton>
           <ConfirmButton
             action={deleteArticle}
             fields={{ id: article.id }}
-            title="Delete article?"
-            description={`"${article.title}" and its revision history will be permanently deleted.`}
-            triggerLabel="Delete article"
+            title={t("deleteTitle")}
+            description={t("deleteDescription", { title: article.title })}
+            triggerLabel={t("deleteArticle")}
           >
             <Trash2 className="size-3.5" />
           </ConfirmButton>
@@ -116,7 +118,7 @@ export default async function ArticlePage({
       <div className="p-4 sm:p-6">
         {article.visibility === "INTERNAL" ? (
           <p className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-            Internal article — not visible to end users in the portal.
+            {t("internalNotice")}
           </p>
         ) : null}
 
@@ -131,10 +133,10 @@ export default async function ArticlePage({
           {article.category ? (
             <span className="inline-flex items-center gap-1.5"><FolderOpen className="size-3.5" /> {article.category.name}</span>
           ) : null}
-          <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5" /> {article.views} views</span>
-          <span className="inline-flex items-center gap-1.5"><History className="size-3.5" /> rev {article._count.revisions}</span>
+          <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5" /> {t("views", { count: article.views })}</span>
+          <span className="inline-flex items-center gap-1.5"><History className="size-3.5" /> {t("revision", { count: article._count.revisions })}</span>
           <span>·</span>
-          <span>updated {format(article.updatedAt, "PP")}</span>
+          <span>{t("updatedOn", { date: f.date(article.updatedAt) })}</span>
         </div>
 
         <div className="mt-6 rounded-xl border bg-card p-5 sm:p-6">
@@ -147,11 +149,11 @@ export default async function ArticlePage({
         <section className="mt-6">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Link2 className="size-4 text-muted-foreground" />
-            Linked records · {linkedRecords.length}
+            {t("linkedRecords", { count: linkedRecords.length })}
           </h2>
           {linkedRecords.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Not linked to any ticket, problem or change yet. Link it from the record&apos;s page.
+              {t("noLinkedRecords")}
             </p>
           ) : (
             <div className="overflow-hidden rounded-xl border bg-card">

@@ -5,6 +5,7 @@ import { Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { decideEntityApproval } from "@/lib/actions/approvals";
 import { Button } from "@/components/ui/button";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 import { Input } from "@/components/ui/input";
 
 /** Compact approve/reject control for a generic ad-hoc approval (used in the hub). */
@@ -12,6 +13,8 @@ export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const t = useT("approvals");
+  const tm = useServerMessage();
 
   function decide(decision: "APPROVED" | "REJECTED") {
     const fd = new FormData();
@@ -21,13 +24,14 @@ export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
     start(async () => {
       const res = await decideEntityApproval(fd);
       if (!res.ok) {
-        setError(res.error ?? "The decision could not be recorded.");
-        toast.error(res.error ?? "The decision could not be recorded.");
+        const message = res.error ? tm(res.error) : t("decision.failed");
+        setError(message);
+        toast.error(message);
         return;
       }
       setError(null);
       setComment("");
-      toast.success(decision === "APPROVED" ? "Approval recorded" : "Rejection recorded");
+      toast.success(decision === "APPROVED" ? t("decision.approved") : t("decision.rejected"));
     });
   }
 
@@ -36,15 +40,15 @@ export function EntityApprovalDecision({ approvalId }: { approvalId: string }) {
       <Input
         value={comment}
         onChange={(e) => setComment(e.target.value)}
-        placeholder="Add a comment (optional)"
+        placeholder={t("decision.comment")}
         className="h-7 min-w-40 flex-1 text-xs"
       />
       <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("APPROVED")}>
         {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-        Approve
+        {t("decision.approve")}
       </Button>
       <Button size="sm" variant="outline" disabled={pending} onClick={() => decide("REJECTED")}>
-        <X className="size-3.5" /> Reject
+        <X className="size-3.5" /> {t("decision.reject")}
       </Button>
       {error ? <p role="alert" className="basis-full text-xs text-destructive">{error}</p> : null}
     </div>

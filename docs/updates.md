@@ -26,6 +26,9 @@ This page is for operators. For the file-level map see [modules.md](./modules.md
 5. **Updating.** For an update window the tick writes `updater/request.json`. The **updater** (a separate container, see below) pulls the image, backs up the database, replaces the app container and waits for it to become healthy. It reports each step in `updater/status.json`; the tick copies the log into the window.
 6. **Finishing.** A general window ends at `endsAt` (or earlier with **End now**). An update window ends when the updater reports `SUCCEEDED` (`COMPLETED`), `FAILED` or `ROLLED_BACK`. After a successful switch the **new** container's tick finalizes the window, so the maintenance page stays up until the new version is serving. If the updater reports nothing within an hour after `endsAt`, the window fails with "Updater did not report a result". An update whose target is no longer newer than the running version fails at start with "Already running <version>".
 
+The maintenance page, the banners and the Settings › Updates screens follow each viewer's UI
+language ([i18n.md](./i18n.md)); the window's title and message are shown as the admin wrote them.
+
 Window states: `SCHEDULED` → `IN_PROGRESS` → `COMPLETED` / `FAILED` / `ROLLED_BACK`, or `CANCELLED` (from `SCHEDULED`). A scheduled window whose end passed while Servio was not running never starts and is marked `FAILED`.
 
 ## Setup

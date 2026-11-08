@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Combobox, type ComboOption, type OptionSource } from "@/components/combobox";
 import type { OptionSearch } from "@/components/use-searched-options";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /**
  * Generic "add a link" control: a small trigger button that opens a dialog with a
@@ -29,10 +30,10 @@ export function LinkPicker({
   valueName,
   options = [],
   search,
-  placeholder = "Choose…",
-  searchPlaceholder = "Search…",
+  placeholder,
+  searchPlaceholder,
   emptyText,
-  submitLabel = "Link",
+  submitLabel,
   typeName,
   typeOptions,
   typeDefault,
@@ -57,6 +58,8 @@ export function LinkPicker({
   typeDefault?: string;
   successMessage?: string;
 }) {
+  const t = useT("components");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState("");
   const [type, setType] = useState(typeDefault ?? typeOptions?.[0]?.value ?? "");
@@ -76,14 +79,14 @@ export function LinkPicker({
           </DialogHeader>
           {noOptions ? (
             <p className="rounded-lg border bg-muted/40 px-3 py-6 text-center text-sm text-muted-foreground">
-              {emptyText ?? "Nothing available to link."}
+              {emptyText ?? t("link.nothingToLink")}
             </p>
           ) : (
             <form
               action={async (fd) => {
                 const result = readActionResult(await action(fd));
                 if (result && !result.ok) {
-                  toast.error(result.error || "Could not link record.");
+                  toast.error(result.error ? tm(result.error) : t("link.failed"));
                   return;
                 }
                 if (result && successMessage) toast.success(successMessage);
@@ -101,8 +104,8 @@ export function LinkPicker({
                   options={typeOptions}
                   value={type}
                   onChange={(v) => setType(v || (typeDefault ?? ""))}
-                  placeholder="Relationship"
-                  searchPlaceholder="Search types…"
+                  placeholder={t("link.relationship")}
+                  searchPlaceholder={t("link.searchTypes")}
                 />
               ) : null}
               <Combobox
@@ -110,11 +113,11 @@ export function LinkPicker({
                 {...source}
                 value={target}
                 onChange={setTarget}
-                placeholder={placeholder}
-                searchPlaceholder={searchPlaceholder}
+                placeholder={placeholder ?? t("link.choose")}
+                searchPlaceholder={searchPlaceholder ?? t("combo.search")}
               />
               <DialogFooter>
-                <Button type="submit" disabled={!target}>{submitLabel}</Button>
+                <Button type="submit" disabled={!target}>{submitLabel ?? t("link.submit")}</Button>
               </DialogFooter>
             </form>
           )}

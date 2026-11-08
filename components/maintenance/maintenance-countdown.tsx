@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { formatDistanceToNowStrict } from "date-fns";
+import { useFormatter, useT } from "@/lib/i18n/client";
 import { Loader2 } from "lucide-react";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -21,6 +22,8 @@ async function maintenanceActive(): Promise<boolean> {
 /** Expected end (relative and absolute, in the visitor's time zone, so only after mount); polls the status API and sends visitors back to the app once maintenance is over. */
 export function MaintenanceCountdown({ endsAt }: { endsAt: string }) {
   const end = new Date(endsAt);
+  const t = useT("maintenance");
+  const f = useFormatter();
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -41,12 +44,12 @@ export function MaintenanceCountdown({ endsAt }: { endsAt: string }) {
   return (
     <div className="mt-6 grid gap-1 border-t pt-4 text-sm">
       <p className="font-medium">
-        {overdue ? "Taking a little longer than planned" : "Expected back"}
-        {now && !overdue ? <span className="text-muted-foreground"> in about {formatDistanceToNowStrict(end)}</span> : null}
+        {overdue ? t("takingLonger") : t("expectedBack")}
+        {now && !overdue ? <span className="text-muted-foreground">{t("inAbout", { duration: formatDistanceToNowStrict(end, { locale: f.dateFnsLocale }) })}</span> : null}
       </p>
-      {now ? <p className="text-muted-foreground">Planned end: {format(end, "PP p")}</p> : null}
+      {now ? <p className="text-muted-foreground">{t("plannedEnd", { date: f.date(end, "dateTime") })}</p> : null}
       <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> This page refreshes on its own.
+        <Loader2 className="size-3.5 animate-spin" aria-hidden /> {t("refreshesItself")}
       </p>
     </div>
   );

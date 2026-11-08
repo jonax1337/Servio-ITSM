@@ -5,6 +5,7 @@ import { RefreshCw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { runSync } from "@/lib/actions/syncs";
 import { Button } from "@/components/ui/button";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 function SubmitButton({
   size,
@@ -29,22 +30,24 @@ function SubmitButton({
 export function RunButton({
   sourceId,
   size = "sm",
-  label = "Run now",
+  label,
 }: {
   sourceId: string;
   size?: "sm" | "default";
   label?: string;
 }) {
+  const t = useT("syncs");
+  const tm = useServerMessage();
   return (
     <form
       action={async (fd) => {
         const res = await runSync(fd);
-        if (res.ok) toast.success(res.message);
-        else toast.error(res.message);
+        if (res.ok) toast.success(tm(res.message));
+        else toast.error(tm(res.message));
       }}
     >
       <input type="hidden" name="sourceId" value={sourceId} />
-      <SubmitButton size={size} label={label} />
+      <SubmitButton size={size} label={label ?? t("runNow")} />
     </form>
   );
 }

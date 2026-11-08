@@ -11,14 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Header action that opens the cancellation dialog. */
 export function CancelChangeButton({ changeId }: { changeId: number }) {
   const [open, setOpen] = useState(false);
+  const t = useT("changes");
   return (
     <>
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <Ban className="size-3.5" /> Cancel change
+        <Ban className="size-3.5" /> {t("cancel.button")}
       </Button>
       <CancelChangeDialog changeId={changeId} open={open} onOpenChange={setOpen} />
     </>
@@ -47,6 +49,8 @@ function CancelForm({ changeId, onClose }: { changeId: number; onClose: () => vo
   const [reason, setReason] = useState("");
   const [pending, start] = useTransition();
   const problem = cancelReasonError(reason);
+  const t = useT("changes");
+  const tm = useServerMessage();
 
   const confirm = () =>
     start(async () => {
@@ -57,36 +61,34 @@ function CancelForm({ changeId, onClose }: { changeId: number; onClose: () => vo
       fd.set("cancelReason", reason);
       const res = await updateChangeField(fd);
       if (!res.ok) {
-        toast.error(res.error);
+        toast.error(tm(res.error));
         return;
       }
-      toast.success("Change cancelled");
+      toast.success(t("cancel.done"));
       onClose();
     });
 
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Cancel change</DialogTitle>
-        <DialogDescription>
-          The change is withdrawn and becomes read-only. Approval requests that are still pending are withdrawn too.
-        </DialogDescription>
+        <DialogTitle>{t("cancel.button")}</DialogTitle>
+        <DialogDescription>{t("cancel.description")}</DialogDescription>
       </DialogHeader>
       <div className="grid gap-1.5">
-        <Label htmlFor="cancel-reason">Reason</Label>
+        <Label htmlFor="cancel-reason">{t("cancel.reason")}</Label>
         <Textarea
           id="cancel-reason"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="Why is this change being cancelled?"
+          placeholder={t("cancel.reasonPlaceholder")}
           rows={4}
         />
       </div>
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Keep change</Button>
+        <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>{t("cancel.keep")}</Button>
         <Button type="button" variant="destructive" onClick={confirm} disabled={pending || !!problem}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Cancel change
+          {t("cancel.button")}
         </Button>
       </DialogFooter>
     </>

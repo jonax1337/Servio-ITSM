@@ -5,7 +5,8 @@ import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
 import { CONTRACT_STATUS_META, CONTRACT_TYPE_META } from "@/lib/constants";
-import { expiryNotice, formatCost, formatDay } from "@/lib/contract-rules";
+import { getEnumT, getT } from "@/lib/i18n/server";
+import { expiryNoticeIn, formatCostIn, formatDayIn } from "@/components/contracts/contract-format";
 import type { SearchParams } from "@/lib/query";
 import { deleteContract } from "@/lib/actions/contracts";
 import { StatusBadge } from "@/components/status-badge";
@@ -24,7 +25,7 @@ type ContractTab = "overview" | "assets" | "licenses";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const contract = await db.contract.findUnique({ where: { id }, select: { name: true } });
-  return { title: contract?.name ?? "Contract" };
+  return { title: contract?.name ?? (await getT("contracts"))("entity.contract") };
 }
 
 export default async function ContractDetailPage({
@@ -49,14 +50,17 @@ export default async function ContractDetailPage({
   if (!contract) notFound();
 
   const now = new Date();
+  const [t, tc, te] = await Promise.all([getT("contracts"), getT("common"), getEnumT()]);
+  const day = (d: Date) => formatDayIn(t.locale, d);
   const canWrite = !!me && hasRole(me.role, "MANAGER");
   const options = canWrite ? await getContractFormOptions() : null;
-  const notice = expiryNotice(contract, now);
+  const notice = expiryNoticeIn(t, contract, now);
+  const typeLabel = CONTRACT_TYPE_META[contract.type] ? te(CONTRACT_TYPE_META, contract.type) : contract.type;
 
   const tabs: EntityTab<ContractTab>[] = [
-    { key: "overview", label: "Overview" },
-    { key: "assets", label: "Assets", count: contract._count.assets },
-    { key: "licenses", label: "Licenses", count: contract._count.licenses },
+    { key: "overview", label: t("tab.overview") },
+    { key: "assets", label: t("tab.assets"), count: contract._count.assets },
+    { key: "licenses", label: t("tab.licenses"), count: contract._count.licenses },
   ];
   const active = resolveTab(sp, tabs, "overview");
 
@@ -64,29 +68,29 @@ export default async function ContractDetailPage({
     <DetailShell
       aside={
         <>
-          <RailCard title="Properties">
-            <MetaRow label="Vendor">
+          <RailCard title={tc("properties")}>
+            <MetaRow label={t("col.vendor")}>
               {contract.vendor ? (
                 <Link href={`/contracts/vendors/${contract.vendor.id}`} className="hover:text-primary">{contract.vendor.name}</Link>
               ) : "—"}
             </MetaRow>
-            <MetaRow label="Owner">{contract.owner ? (contract.owner.name ?? contract.owner.email) : "—"}</MetaRow>
-            <MetaRow label="Number">{contract.number ?? "—"}</MetaRow>
-            <MetaRow label="Updated">{formatDay(contract.updatedAt)}</MetaRow>
+            <MetaRow label={tc("owner")}>{contract.owner ? (contract.owner.name ?? contract.owner.email) : "—"}</MetaRow>
+            <MetaRow label={t("field.number")}>{contract.number ?? "—"}</MetaRow>
+            <MetaRow label={tc("updated")}>{day(contract.updatedAt)}</MetaRow>
           </RailCard>
-          <RailCard title="Term and cost">
-            <MetaRow label="Starts">{formatDay(contract.startDate)}</MetaRow>
-            <MetaRow label="Ends">{contract.endDate ? formatDay(contract.endDate) : "No end date"}</MetaRow>
-            <MetaRow label="Renewal notice">{contract.renewalNoticeDays} days</MetaRow>
-            <MetaRow label="Auto-renews">{contract.autoRenew ? "Yes" : "No"}</MetaRow>
-            <MetaRow label="Cost">{contract.cost != null ? formatCost(contract.cost) : "—"}</MetaRow>
+          <RailCard title={t("termAndCost")}>
+            <MetaRow label={t("field.starts")}>{day(contract.startDate)}</MetaRow>
+            <MetaRow label={t("col.ends")}>{contract.endDate ? day(contract.endDate) : t("noEndDate")}</MetaRow>
+            <MetaRow label={t("field.renewalNotice")}>{t("days", { count: contract.renewalNoticeDays })}</MetaRow>
+            <MetaRow label={t("field.autoRenews")}>{contract.autoRenew ? tc("yes") : tc("no")}</MetaRow>
+            <MetaRow label={t("col.cost")}>{contract.cost != null ? formatCostIn(t.locale, contract.cost) : "—"}</MetaRow>
           </RailCard>
         </>
       }
     >
       <DetailTopBar
         backHref="/contracts"
-        backLabel="Back to contracts"
+        backLabel={t("backToContracts")}
         lead={
           <>
             {contract.number ? <span className="font-mono text-sm text-muted-foreground">{contract.number}</span> : null}
@@ -100,12 +104,12 @@ export default async function ContractDetailPage({
             <ConfirmButton
               action={deleteContract}
               fields={{ id: contract.id }}
-              title="Delete contract"
-              description={`Permanently delete "${contract.name}"? Its licenses are kept but unlinked from the contract. This can't be undone.`}
-              confirmLabel="Delete contract"
+              title={t("deleteContract")}
+              description={t("deleteContractDescription", { name: contract.name })}
+              confirmLabel={t("deleteContract")}
               triggerVariant="outline"
               triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
-              triggerLabel="Delete contract"
+              triggerLabel={t("deleteContract")}
             >
               <Trash2 className="size-4" />
             </ConfirmButton>
@@ -118,7 +122,7 @@ export default async function ContractDetailPage({
       <div className="p-4 sm:p-6">
         <DetailTitle
           title={contract.name}
-          subtitle={contract.vendor ? `${CONTRACT_TYPE_META[contract.type]?.label ?? contract.type} contract with ${contract.vendor.name}` : `${CONTRACT_TYPE_META[contract.type]?.label ?? contract.type} contract`}
+          subtitle={contract.vendor ? t("subtitleWithVendor", { type: typeLabel, vendor: contract.vendor.name }) : t("subtitle", { type: typeLabel })}
         />
 
         <EntityTabs
@@ -128,7 +132,7 @@ export default async function ContractDetailPage({
           defaultTab="overview"
           basePath={`/contracts/${contract.id}`}
           searchParams={sp}
-          label="Contract sections"
+          label={t("contractSections")}
         />
 
         <div className="mt-6 grid gap-4">
@@ -136,7 +140,7 @@ export default async function ContractDetailPage({
             <>
               {notice ? <Notice tone={notice.tone}>{notice.text}</Notice> : null}
               {!contract.owner && contract.status === "ACTIVE" ? (
-                <Notice>This contract has no owner, so nobody will be reminded before it ends.</Notice>
+                <Notice>{t("noOwnerNotice")}</Notice>
               ) : null}
               <NotesBlock notes={contract.notes} />
             </>

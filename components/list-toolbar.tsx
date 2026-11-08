@@ -6,6 +6,7 @@ import { Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
+import { useLocale, useT } from "@/lib/i18n/client";
 
 export type FilterDef = {
   key: string;
@@ -18,7 +19,7 @@ const asNoun = (label: string) => (label === label.toUpperCase() ? label : label
 
 export function ListToolbar({
   filters = [],
-  searchPlaceholder = "Search…",
+  searchPlaceholder,
   children,
 }: {
   filters?: FilterDef[];
@@ -30,6 +31,10 @@ export function ListToolbar({
   const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [q, setQ] = useState(sp.get("q") ?? "");
+  const t = useT("components");
+  const locale = useLocale();
+  // English puts the filter name mid-sentence ("All priorities"); other locales keep the label as is.
+  const noun = (label: string) => (locale === "en" ? asNoun(label) : label);
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -61,7 +66,7 @@ export function ListToolbar({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={searchPlaceholder}
+          placeholder={searchPlaceholder ?? t("toolbar.search")}
           className="pl-8"
         />
         {isPending ? (
@@ -71,7 +76,7 @@ export function ListToolbar({
 
       {filters.map((f) => {
         const opts: ComboOption[] = [
-          { value: "all", label: `All ${asNoun(f.label)}` },
+          { value: "all", label: t("toolbar.all", { filter: noun(f.label) }) },
           ...f.options,
         ];
         return (
@@ -81,7 +86,7 @@ export function ListToolbar({
             value={sp.get(f.key) ?? "all"}
             onChange={(v) => setParam(f.key, v || "all")}
             placeholder={f.label}
-            searchPlaceholder={`Search ${asNoun(f.label)}…`}
+            searchPlaceholder={t("toolbar.searchFilter", { filter: noun(f.label) })}
             size="sm"
             className="w-auto min-w-[9rem]"
           />
@@ -97,7 +102,7 @@ export function ListToolbar({
             startTransition(() => router.push(pathname));
           }}
         >
-          <X className="size-4" /> Clear
+          <X className="size-4" /> {t("toolbar.clear")}
         </Button>
       ) : null}
 

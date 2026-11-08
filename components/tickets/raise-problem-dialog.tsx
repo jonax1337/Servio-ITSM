@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type ProblemDraft = { title: string; description: string };
 
@@ -60,6 +61,9 @@ function ProblemForm({
   const [chosen, setChosen] = useState<ReadonlySet<number>>(new Set());
   const [fields, setFields] = useState<CustomFieldDef[]>([]);
   const [pending, startCreate] = useTransition();
+  const t = useT("tickets");
+  const tc = useT("common");
+  const tm = useServerMessage();
 
   const primaryId = ticketIds[0];
   useEffect(() => {
@@ -97,11 +101,11 @@ function ProblemForm({
     startCreate(async () => {
       const result = await createProblemFromTickets(fd);
       if (!result.ok) {
-        toast.error(result.error);
+        toast.error(tm(result.error));
         return;
       }
-      const skipped = result.skipped > 0 ? ` (${result.skipped} skipped: already in a problem or not yours)` : "";
-      toast.success(`${problemRef(result.problemId)} created and ${result.linked} ticket${result.linked === 1 ? "" : "s"} linked${skipped}`);
+      const skipped = result.skipped > 0 ? ` ${t("raiseProblem.skipped", { count: result.skipped })}` : "";
+      toast.success(`${t("raiseProblem.created", { ref: problemRef(result.problemId), count: result.linked })}${skipped}`);
       router.push(`/problems/${result.problemId}`);
     });
   }
@@ -109,26 +113,26 @@ function ProblemForm({
   return (
     <form onSubmit={create} className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <DialogHeader>
-        <DialogTitle>Create problem</DialogTitle>
+        <DialogTitle>{t("raiseProblem.title")}</DialogTitle>
         <DialogDescription>
           {ticketIds.length > 1
-            ? `Raise one problem for the ${ticketIds.length} selected tickets and link them to it.`
-            : "Raise a problem for this incident and link it to it."}
+            ? t("raiseProblem.descriptionMany", { count: ticketIds.length })
+            : t("raiseProblem.descriptionOne")}
         </DialogDescription>
       </DialogHeader>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="problem-title">Title</Label>
-        <Input id="problem-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short summary of the underlying problem" required minLength={3} autoFocus />
+        <Label htmlFor="problem-title">{tc("title")}</Label>
+        <Input id="problem-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("raiseProblem.titlePlaceholder")} required minLength={3} autoFocus />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="problem-description">Description</Label>
+        <Label htmlFor="problem-description">{tc("description")}</Label>
         <Textarea id="problem-description" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-24" />
       </div>
 
       {fields.length > 0 ? (
         <fieldset className="grid min-w-0 gap-1.5">
-          <legend className="mb-1 text-sm font-medium">Required details</legend>
+          <legend className="mb-1 text-sm font-medium">{t("raiseProblem.requiredDetails")}</legend>
           <FormCustomFields defs={fields} disabled={pending} />
         </fieldset>
       ) : null}
@@ -136,10 +140,10 @@ function ProblemForm({
       {offerSimilar ? <SimilarIncidents similar={similar} chosen={chosen} onToggle={toggle} /> : null}
 
       <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
+        <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>{tc("cancel")}</Button>
         <Button type="submit" disabled={pending || title.trim().length < 3}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Create problem
+          {t("raiseProblem.title")}
         </Button>
       </DialogFooter>
     </form>
@@ -153,16 +157,17 @@ function SimilarIncidents({
   chosen: ReadonlySet<number>;
   onToggle: (id: number) => void;
 }) {
+  const t = useT("tickets");
   if (similar === null) {
-    return <p className="text-xs text-muted-foreground">Looking for similar incidents…</p>;
+    return <p className="text-xs text-muted-foreground">{t("raiseProblem.lookingSimilar")}</p>;
   }
   if (similar.length === 0) return null;
   return (
     <fieldset className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5">
-      <legend className="mb-1 text-sm font-medium">Also link similar incidents</legend>
+      <legend className="mb-1 text-sm font-medium">{t("raiseProblem.alsoLink")}</legend>
       {similar.map((s) => (
         <label key={s.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm has-[[data-checked]]:border-primary/40 has-[[data-checked]]:bg-primary/5">
-          <Checkbox checked={chosen.has(s.id)} onCheckedChange={() => onToggle(s.id)} aria-label={`Link ${s.ref}`} />
+          <Checkbox checked={chosen.has(s.id)} onCheckedChange={() => onToggle(s.id)} aria-label={t("raiseProblem.linkRef", { ref: s.ref })} />
           <span className="font-mono text-xs text-muted-foreground">{s.ref}</span>
           <span className="min-w-0 flex-1 truncate">{s.title}</span>
           <span className="text-xs tabular-nums text-muted-foreground">{Math.round(s.score * 100)}%</span>
@@ -175,10 +180,11 @@ function SimilarIncidents({
 /** "Create problem from this incident" as a button, for pages that have no actions menu. */
 export function RaiseProblemButton({ ticketId, draft }: { ticketId: number; draft: ProblemDraft }) {
   const [open, setOpen] = useState(false);
+  const t = useT("tickets");
   return (
     <>
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <TriangleAlert className="size-4" /> Create problem from this incident
+        <TriangleAlert className="size-4" /> {t("raiseProblem.fromIncident")}
       </Button>
       <RaiseProblemDialog open={open} onOpenChange={setOpen} ticketIds={[ticketId]} draft={draft} offerSimilar />
     </>

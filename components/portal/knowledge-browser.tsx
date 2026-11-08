@@ -5,6 +5,9 @@ import Link from "next/link";
 import { Eye, ArrowUpRight, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PortalSearchField } from "@/components/portal/portal-search-field";
+import { useT } from "@/lib/i18n/client";
+
+const ALL = "__all__";
 
 export type KbCard = {
   id: string;
@@ -30,13 +33,15 @@ export function KnowledgeBrowser({
     () => Array.from(new Set(items.map((i) => i.category))),
     [items],
   );
-  const [active, setActive] = useState<string>("All");
+  const t = useT("portal");
+  // ALL is a sentinel (not a category name), so a category literally named "All" still works.
+  const [active, setActive] = useState<string>(ALL);
   const [query, setQuery] = useState(initialQuery);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((i) => {
-      const inCat = active === "All" || i.category === active;
+      const inCat = active === ALL || i.category === active;
       const inQuery =
         !q ||
         i.title.toLowerCase().includes(q) ||
@@ -47,7 +52,7 @@ export function KnowledgeBrowser({
   }, [items, active, query]);
 
   const countFor = (label: string) =>
-    label === "All" ? items.length : items.filter((i) => i.category === label).length;
+    label === ALL ? items.length : items.filter((i) => i.category === label).length;
 
   const chip = (label: string) => (
     <button
@@ -62,8 +67,8 @@ export function KnowledgeBrowser({
           : "bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
       )}
     >
-      {label === "All" ? <LayoutGrid className="size-3.5" /> : null}
-      {label}
+      {label === ALL ? <LayoutGrid className="size-3.5" /> : null}
+      {label === ALL ? t("allCategories") : label}
       <span
         className={cn(
           "rounded-full px-1.5 text-xs tabular-nums",
@@ -81,18 +86,18 @@ export function KnowledgeBrowser({
       <PortalSearchField
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search articles…"
+        placeholder={t("searchArticles")}
       />
 
       {/* Category navigation */}
-      <div role="group" aria-label="Filter by category" className="-mx-1 flex flex-wrap gap-2 px-1">
-        {chip("All")}
+      <div role="group" aria-label={t("filterByCategory")} className="-mx-1 flex flex-wrap gap-2 px-1">
+        {chip(ALL)}
         {categories.map((c) => chip(c))}
       </div>
 
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card/40 py-16 text-center text-sm text-muted-foreground">
-          No articles match your search.
+          {t("noArticlesMatch")}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -109,7 +114,7 @@ export function KnowledgeBrowser({
               <h2 className="mt-2 font-display text-base font-semibold tracking-tight">{a.title}</h2>
               <p className="mt-1 line-clamp-2 flex-1 text-sm text-muted-foreground">{a.excerpt}</p>
               <div className="mt-4 flex items-center gap-1 text-xs text-muted-foreground">
-                <Eye className="size-3.5" /> {a.views} view{a.views === 1 ? "" : "s"}
+                <Eye className="size-3.5" /> {t("viewCount", { count: a.views })}
               </div>
             </Link>
           ))}

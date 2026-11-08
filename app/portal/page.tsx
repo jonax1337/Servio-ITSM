@@ -10,12 +10,13 @@ import { StatusBadge } from "@/components/status-badge";
 import { PortalHero } from "@/components/portal/portal-hero";
 import { AllCaughtUpArt } from "@/components/portal/illustrations";
 import { TICKET_STATUS_META, PRIORITY_META, ticketRef } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function PortalHome() {
   const me = await getSessionUser();
+  const [t, f] = await Promise.all([getT("portal"), getFormatter()]);
   const [myTickets, catalog, articles] = await Promise.all([
     db.ticket.findMany({
       where: { requesterId: me?.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
@@ -29,43 +30,43 @@ export default async function PortalHome() {
 
   return (
     <div className="grid min-w-0 grid-cols-1 gap-10">
-      <PortalHero firstName={me?.name?.split(" ")[0] ?? "there"} />
+      <PortalHero firstName={me?.name?.split(" ")[0] ?? t("there")} />
 
       <div className="grid min-w-0 grid-cols-1 gap-10 lg:grid-cols-3">
         {/* My open requests */}
         <section className="lg:col-span-2">
           <SectionHeader
             icon={TicketIcon}
-            title="Your open requests"
-            action={{ href: "/portal/tickets", label: "View all" }}
+            title={t("yourOpenRequests")}
+            action={{ href: "/portal/tickets", label: t("viewAll") }}
           />
           {myTickets.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card px-6 py-10 text-center">
               <AllCaughtUpArt className="h-24 w-24" />
-              <p className="text-sm font-medium">You&apos;re all caught up</p>
+              <p className="text-sm font-medium">{t("allCaughtUp")}</p>
               <p className="max-w-xs text-sm text-muted-foreground">
-                Nothing is open right now. Need something? We&apos;re here to help.
+                {t("nothingOpen")}
               </p>
               <LinkButton href="/portal/new" size="sm" variant="outline" className="mt-1">
-                New request
+                {t("newRequest")}
               </LinkButton>
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border bg-card divide-y">
-              {myTickets.map((t) => (
+              {myTickets.map((tk) => (
                 <Link
-                  key={t.id}
-                  href={`/portal/tickets/${t.id}`}
+                  key={tk.id}
+                  href={`/portal/tickets/${tk.id}`}
                   className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40"
                 >
                   <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
-                    {ticketRef(t.id, t.prefix)}
+                    {ticketRef(tk.id, tk.prefix)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{t.title}</span>
-                  <StatusBadge map={PRIORITY_META} value={t.priority} dot />
-                  <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{tk.title}</span>
+                  <StatusBadge map={PRIORITY_META} value={tk.priority} dot />
+                  <StatusBadge map={TICKET_STATUS_META} value={tk.status} />
                   <span className="hidden w-24 shrink-0 text-right text-xs text-muted-foreground sm:block">
-                    {formatDistanceToNow(t.updatedAt, { addSuffix: true })}
+                    {f.relative(tk.updatedAt)}
                   </span>
                 </Link>
               ))}
@@ -77,12 +78,12 @@ export default async function PortalHome() {
         <section>
           <SectionHeader
             icon={BookOpen}
-            title="Popular answers"
-            action={{ href: "/portal/knowledge", label: "All articles" }}
+            title={t("popularAnswers")}
+            action={{ href: "/portal/knowledge", label: t("allArticles") }}
           />
           {articles.length === 0 ? (
             <div className="rounded-2xl border border-dashed bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
-              No articles published yet.
+              {t("noArticlesPublished")}
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border bg-card divide-y">
@@ -109,8 +110,8 @@ export default async function PortalHome() {
         <section>
           <SectionHeader
             icon={LifeBuoy}
-            title="Popular services"
-            action={{ href: "/portal/catalog", label: "Browse catalog" }}
+            title={t("popularServices")}
+            action={{ href: "/portal/catalog", label: t("browseCatalog") }}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {catalog.map((it) => (
@@ -132,7 +133,7 @@ export default async function PortalHome() {
                   </span>
                   {it.estimatedDays != null ? (
                     <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Clock className="size-3" /> ~{it.estimatedDays} day{it.estimatedDays === 1 ? "" : "s"}
+                      <Clock className="size-3" /> {t("aboutDays", { count: it.estimatedDays })}
                     </span>
                   ) : null}
                 </span>

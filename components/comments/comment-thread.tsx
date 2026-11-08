@@ -13,7 +13,6 @@ import { UserAvatar } from "@/components/user-avatar";
 import { RichTextEditor, type MentionUser, type RichTextEditorHandle } from "@/components/ui/rich-text-editor";
 import { AiButton } from "@/components/ui/ai-button";
 import { draftReply, improveText } from "@/lib/actions/ai";
-import { AI_TEASER_MESSAGE } from "@/lib/constants";
 import { ComposerAttachments } from "@/components/comments/composer-attachments";
 import { RecipientField } from "@/components/comments/recipient-field";
 import { ForwardMessageDialog } from "@/components/comments/forward-message-dialog";
@@ -23,8 +22,8 @@ import { sanitizeCommentHtml } from "@/lib/markdown";
 import { lowerLead } from "@/lib/utils";
 import { iconForMime, formatBytes, type AttachmentRow } from "@/lib/attachments-ui";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
-import { format } from "date-fns";
 import { LocalTime, timeAgo } from "@/components/local-time";
+import { useFormatter, useServerMessage, useT } from "@/lib/i18n/client";
 
 export type ThreadComment = {
   id: string;
@@ -81,12 +80,13 @@ function CommentAttachments({ attachments }: { attachments: AttachmentRow[] }) {
 }
 export type ThreadEvent = { id: string; who: string; summary: string; createdAt: Date };
 
-function SubmitButton({ label = "Send" }: { label?: string }) {
+function SubmitButton({ label }: { label?: string }) {
   const { pending } = useFormStatus();
+  const t = useT("tickets");
   return (
     <Button type="submit" size="sm" disabled={pending}>
       {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-      {label}
+      {label ?? t("comments.send")}
     </Button>
   );
 }
@@ -105,34 +105,36 @@ function AiComposerButtons({
 }) {
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<"draft" | "improve" | null>(null);
+  const t = useT("tickets");
+  const tm = useServerMessage();
 
   function onDraft() {
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    if (teaser) return void toast.info(t("comments.aiTeaser"));
     setBusy("draft");
     start(async () => {
       const res = await draftReply(ticketId);
       setBusy(null);
-      if (!res.ok) return void toast.error(res.error);
+      if (!res.ok) return void toast.error(tm(res.error));
       editorRef.current?.setHTML(res.html);
-      toast.success("Reply drafted");
+      toast.success(t("comments.replyDrafted"));
     });
   }
 
   function onImprove() {
-    if (teaser) return void toast.info(AI_TEASER_MESSAGE);
+    if (teaser) return void toast.info(t("comments.aiTeaser"));
     // Prefer the current selection — improve only what the agent highlighted.
     const selection = editorRef.current?.getSelectionText()?.trim() ?? "";
     const hasSelection = selection.length >= 2;
     const text = hasSelection ? selection : (editorRef.current?.getText() ?? "");
-    if (text.trim().length < 2) return void toast.error("Nothing to improve. Type or select some text first.");
+    if (text.trim().length < 2) return void toast.error(t("comments.nothingToImprove"));
     setBusy("improve");
     start(async () => {
       const res = await improveText(text);
       setBusy(null);
-      if (!res.ok) return void toast.error(res.error);
+      if (!res.ok) return void toast.error(tm(res.error));
       if (hasSelection) editorRef.current?.replaceSelection(res.text);
       else editorRef.current?.setText(res.text);
-      toast.success(hasSelection ? "Selection improved" : "Text improved");
+      toast.success(hasSelection ? t("comments.selectionImproved") : t("comments.textImproved"));
     });
   }
 
@@ -140,11 +142,11 @@ function AiComposerButtons({
     <div className="flex items-center gap-1.5">
       <AiButton type="button" onClick={onDraft} disabled={pending}>
         {pending && busy === "draft" ? <Loader2 className="size-4 animate-spin" /> : <SableMark className="size-4" />}
-        Suggest reply
+        {t("comments.suggestReply")}
       </AiButton>
-      <AiButton type="button" onClick={onImprove} disabled={pending} title="Improves your whole draft, or just the selected text">
+      <AiButton type="button" onClick={onImprove} disabled={pending} title={t("comments.improveHint")}>
         {pending && busy === "improve" ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
-        Improve
+        {t("comments.improve")}
       </AiButton>
     </div>
   );
@@ -157,7 +159,7 @@ export function CommentThread({
   activity,
   addAction,
   allowInternal = true,
-  placeholder = "Write a reply…",
+  placeholder: placeholderProp,
   mentionUsers,
   attachTarget,
   aiTicketId,
@@ -205,6 +207,10 @@ export function CommentThread({
   const [showQuote, setShowQuote] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false); // Freshservice-style: collapsed by default
   const composerMounted = !emailReply || composerOpen;
+  const t = useT("tickets");
+  const tc = useT("common");
+  const f = useFormatter();
+  const placeholder = placeholderProp ?? t("comments.placeholder");
 
   // The quoted mail trail (like a mail client's collapsed "•••"): public messages
   // up to and including the reply anchor (defaults to the latest message), newest
@@ -236,11 +242,11 @@ export function CommentThread({
       {activity ? (
       <TabsList>
         <TabsTrigger value="comments">
-          <MessageSquare className="size-4" /> Comments
+          <MessageSquare className="size-4" /> {tc("comments")}
           <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{comments.length}</span>
         </TabsTrigger>
         <TabsTrigger value="activity">
-          <ActivityIcon className="size-4" /> Activity
+          <ActivityIcon className="size-4" /> {t("comments.activity")}
           <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums">{activity.length}</span>
         </TabsTrigger>
       </TabsList>
@@ -262,15 +268,15 @@ export function CommentThread({
                   <span className="text-sm font-medium">{c.author}</span>
                   {forwarded ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                      <Forward className="size-2.5" /> Forwarded
+                      <Forward className="size-2.5" /> {t("comments.forwarded")}
                     </span>
                   ) : external ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-brand-ice/20 px-1.5 py-0.5 text-[10px] font-medium text-sable">
-                      <Forward className="size-2.5" /> External
+                      <Forward className="size-2.5" /> {t("comments.external")}
                     </span>
                   ) : c.isInternal ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                      <Lock className="size-2.5" /> Internal
+                      <Lock className="size-2.5" /> {t("comments.internal")}
                     </span>
                   ) : null}
                   <span className="text-xs text-muted-foreground"><LocalTime date={c.createdAt} render={timeAgo} /></span>
@@ -281,9 +287,9 @@ export function CommentThread({
                           type="button"
                           onClick={() => replyToMessage(c)}
                           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
-                          title="Reply to this message"
+                          title={t("comments.replyToMessage")}
                         >
-                          <Reply className="size-3.5" /> Reply
+                          <Reply className="size-3.5" /> {t("comments.reply")}
                         </button>
                       ) : null}
                       {enableForward ? (
@@ -293,8 +299,8 @@ export function CommentThread({
                   ) : null}
                 </div>
                 {c.recipients ? (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground" title={`To: ${c.recipients.to}${c.recipients.cc.length ? `\nCc: ${c.recipients.cc.join(", ")}` : ""}`}>
-                    To: {c.recipients.to}
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground" title={`${t("comments.to")}: ${c.recipients.to}${c.recipients.cc.length ? `\nCc: ${c.recipients.cc.join(", ")}` : ""}`}>
+                    {t("comments.to")}: {c.recipients.to}
                     {c.recipients.cc.length ? <span> · Cc: {c.recipients.cc.join(", ")}</span> : null}
                   </div>
                 ) : null}
@@ -314,16 +320,16 @@ export function CommentThread({
             );
           })}
           {comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No comments yet. Start the conversation below.</p>
+            <p className="text-sm text-muted-foreground">{t("comments.none")}</p>
           ) : null}
 
           {emailReply && !composerOpen ? (
             <div className="mt-1 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => { setComposerOpen(true); setMode("reply"); }}>
-                <Reply className="size-4" /> Reply
+                <Reply className="size-4" /> {t("comments.reply")}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => { setComposerOpen(true); setMode("note"); }}>
-                <Lock className="size-4" /> Add note
+                <Lock className="size-4" /> {t("comments.addNote")}
               </Button>
               {anchor ? (
                 <ForwardMessageDialog ticketId={entityId} comment={{ id: anchor.id, author: anchor.author, bodyHtml: anchor.bodyHtml, body: anchor.body }} />
@@ -358,21 +364,21 @@ export function CommentThread({
                     onClick={() => setMode("reply")}
                     className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode === "reply" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    Reply
+                    {t("comments.reply")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setMode("note")}
                     className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode === "note" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    Internal note
+                    {t("comments.internalNote")}
                   </button>
                 </div>
                 <input type="hidden" name="isInternal" value={mode === "note" ? "on" : ""} />
                 <input type="hidden" name="quoteFromCommentId" value={mode === "reply" ? anchorId ?? "" : ""} />
                 {mode === "reply" ? (
                   <div key={resetKey} className="grid gap-1.5 rounded-lg border bg-background/60 p-2">
-                    <RecipientField name="toRecipients" label="To" users={emailReply.candidateUsers} defaultEmails={emailReply.requesterEmail ? [emailReply.requesterEmail] : []} />
+                    <RecipientField name="toRecipients" label={t("comments.to")} users={emailReply.candidateUsers} defaultEmails={emailReply.requesterEmail ? [emailReply.requesterEmail] : []} />
                     <RecipientField name="ccRecipients" label="Cc" users={emailReply.candidateUsers} defaultEmails={emailReply.participantEmails ?? []} />
                     {showBcc ? (
                       <RecipientField name="bccRecipients" label="Bcc" users={emailReply.candidateUsers} />
@@ -389,8 +395,8 @@ export function CommentThread({
             <RichTextEditor
               name="bodyHtml"
               required
-              placeholder={emailReply && mode === "note" ? "Internal note (visible to agents only)…" : placeholder}
-              ariaLabel="Reply"
+              placeholder={emailReply && mode === "note" ? t("comments.notePlaceholder") : placeholder}
+              ariaLabel={t("comments.reply")}
               mentionUsers={mentionUsers}
               onReady={(handle) => { editorRef.current = handle; }}
               innerActions={aiTicketId ? <AiComposerButtons ticketId={aiTicketId} editorRef={editorRef} teaser={aiTeaser} /> : null}
@@ -402,17 +408,20 @@ export function CommentThread({
                   type="button"
                   onClick={() => setShowQuote((s) => !s)}
                   className="flex w-fit items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-                  title={showQuote ? "Hide history" : "Show conversation history"}
+                  title={showQuote ? t("comments.hideHistory") : t("comments.showHistory")}
                 >
                   <MoreHorizontal className="size-4" />
-                  {showQuote ? "Hide history" : `History (${quotedTrail.length})`}
+                  {showQuote ? t("comments.hideHistory") : t("comments.historyCount", { count: quotedTrail.length })}
                 </button>
                 {showQuote ? (
                   <div className="max-h-72 divide-y divide-border overflow-auto rounded-lg border bg-muted/20">
                     {quotedTrail.map((m) => (
                       <div key={m.id} className="p-2.5">
                         <div className="text-xs text-muted-foreground">
-                          On {format(m.createdAt, "dd.MM.yyyy HH:mm")}, <span className="font-medium text-foreground/80">{m.author}</span> wrote:
+                          {t.rich("comments.quoteHeader", {
+                            date: f.date(m.createdAt, "dateTime"),
+                            author: <span className="font-medium text-foreground/80">{m.author}</span>,
+                          })}
                         </div>
                         {m.bodyHtml ? (
                           <div
@@ -440,7 +449,7 @@ export function CommentThread({
                       onCheckedChange={(v) => setIsInternal(v === true)}
                     />
                     <Label htmlFor={`internal-${entityId}`} className="text-xs text-muted-foreground">
-                      Internal note
+                      {t("comments.internalNote")}
                     </Label>
                   </div>
                 ) : null}
@@ -450,10 +459,10 @@ export function CommentThread({
               <div className="flex items-center gap-2">
                 {emailReply ? (
                   <Button type="button" variant="ghost" size="sm" onClick={() => { setComposerOpen(false); setShowQuote(false); }}>
-                    Cancel
+                    {tc("cancel")}
                   </Button>
                 ) : null}
-                <SubmitButton label={emailReply ? (mode === "note" ? "Save note" : "Send") : "Send"} />
+                <SubmitButton label={emailReply && mode === "note" ? t("comments.saveNote") : t("comments.send")} />
               </div>
             </div>
           </form>
@@ -475,7 +484,7 @@ export function CommentThread({
             </div>
           ))}
           {activity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No recorded activity yet.</p>
+            <p className="text-sm text-muted-foreground">{t("comments.noActivity")}</p>
           ) : null}
         </div>
       </TabsContent>

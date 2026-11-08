@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 type Task = { id: string; title: string; done: boolean };
 
 function AddButton() {
   const { pending } = useFormStatus();
+  const t = useT("tickets");
   return (
-    <Button type="submit" size="icon-sm" variant="ghost" disabled={pending} aria-label="Add task">
+    <Button type="submit" size="icon-sm" variant="ghost" disabled={pending} aria-label={t("tasks.add")}>
       <Plus className="size-4" />
     </Button>
   );
@@ -22,13 +24,14 @@ function AddButton() {
 
 export function TicketTasks({ ticketId, tasks }: { ticketId: number; tasks: Task[] }) {
   const ref = useRef<HTMLFormElement>(null);
-  const done = tasks.filter((t) => t.done).length;
+  const done = tasks.filter((task) => task.done).length;
+  const tr = useT("tickets");
 
   return (
     <div className="grid gap-2">
       {tasks.length > 0 ? (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{done}/{tasks.length} done</span>
+          <span>{tr("tasks.progress", { done, total: tasks.length })}</span>
           <div className="ml-3 h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${tasks.length ? (done / tasks.length) * 100 : 0}%` }} />
           </div>
@@ -40,7 +43,7 @@ export function TicketTasks({ ticketId, tasks }: { ticketId: number; tasks: Task
           <li key={t.id} className="group flex items-center gap-2">
             <form action={toggleTask}>
               <input type="hidden" name="taskId" value={t.id} />
-              <button type="submit" className="flex items-center text-muted-foreground hover:text-foreground" aria-label="Toggle task">
+              <button type="submit" className="flex items-center text-muted-foreground hover:text-foreground" aria-label={tr("tasks.toggle")}>
                 {t.done ? <CheckSquare className="size-4 text-primary" /> : <Square className="size-4" />}
               </button>
             </form>
@@ -48,12 +51,12 @@ export function TicketTasks({ ticketId, tasks }: { ticketId: number; tasks: Task
             <ConfirmButton
               action={deleteTask}
               fields={{ taskId: t.id }}
-              title="Delete task?"
-              description={`"${t.title}" will be permanently deleted.`}
+              title={tr("tasks.deleteTitle")}
+              description={tr("tasks.deleteDescription", { title: t.title })}
               triggerVariant="ghost"
               triggerSize="icon-xs"
               triggerClassName="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-              triggerLabel="Delete task"
+              triggerLabel={tr("tasks.delete")}
             >
               <X className="size-3.5" />
             </ConfirmButton>
@@ -67,7 +70,7 @@ export function TicketTasks({ ticketId, tasks }: { ticketId: number; tasks: Task
         className="flex items-center gap-1"
       >
         <input type="hidden" name="ticketId" value={ticketId} />
-        <Input name="title" placeholder="Add a task…" className="h-8" required />
+        <Input name="title" placeholder={tr("tasks.placeholder")} className="h-8" required />
         <AddButton />
       </form>
     </div>

@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { dismissAssistantProposal, type AssistantProposal } from "@/lib/actions/ai-assistant";
 import { parseRemoteToolName } from "@/lib/claude-agent-events";
 import { approvalCardProposal, mcpCallLabel } from "@/lib/sable-mcp-policy";
+import { useServerMessage, useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 
 /** Provides the active conversation id to proposal cards (for applyAssistantProposal). */
 export const SableConversationContext = createContext<string>("");
@@ -123,18 +125,20 @@ function knowledgeCitations(result: unknown): Citation[] {
 }
 
 /** The card's starting state: the decision a reloaded transcript carries, else pending. */
-function initialStatus(proposal: AssistantProposal): ProposalStatus {
-  if (proposal.decision?.status === "applied") return { status: "applied", msg: proposal.decision.summary ?? "Applied" };
+function initialStatus(proposal: AssistantProposal, t: Translator<"assistant">): ProposalStatus {
+  if (proposal.decision?.status === "applied") return { status: "applied", msg: proposal.decision.summary ?? t("proposal.applied") };
   if (proposal.decision?.status === "dismissed") return { status: "dismissed" };
   if (proposal.decision?.status === "unconfirmed") {
-    return { status: "error", msg: "Applying this did not confirm. Check the record before asking Sable again." };
+    return { status: "error", msg: t("proposal.unconfirmed") };
   }
   return { status: "idle" };
 }
 
 function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
   const conversationId = useContext(SableConversationContext);
-  const [status, setStatus] = useState<ProposalStatus>(() => initialStatus(proposal));
+  const t = useT("assistant");
+  const tm = useServerMessage();
+  const [status, setStatus] = useState<ProposalStatus>(() => initialStatus(proposal, t));
 
   // Once dismissed, it's gone for good (the server remembers it across reloads).
   if (status.status === "dismissed") return null;
@@ -151,7 +155,7 @@ function ProposalTool({ proposal }: { proposal: AssistantProposal }) {
         }
         void dismissAssistantProposal({ conversationId, proposal }).then((res) => {
           if (res.ok) setStatus(next);
-          else toast.error(res.error ?? "Could not dismiss");
+          else toast.error(res.error ? tm(res.error) : t("proposal.couldNotDismiss"));
         });
       }}
     />

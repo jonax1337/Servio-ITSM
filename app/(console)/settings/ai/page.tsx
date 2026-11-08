@@ -8,8 +8,12 @@ import { aiConfigured } from "@/lib/ai";
 import { listSableSkills } from "@/lib/sable-workspace";
 import { listMcpServers } from "@/lib/actions/sable-mcp";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "AI settings" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("ai.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 const PROVIDERS = new Set<AiSettingsValues["provider"]>(["claude-code", "anthropic", "openai", "ollama"]);
@@ -21,6 +25,7 @@ function asProvider(value: string | null): AiSettingsValues["provider"] {
 
 export default async function AiSettingsPage() {
   await requireRole("ADMIN");
+  const t = await getT("settings");
   const [
     provider,
     allowExternal,
@@ -63,8 +68,8 @@ export default async function AiSettingsPage() {
     <>
       <PageHeader
         icon={SableMark}
-        title={`${AI_ASSISTANT_NAME} (AI assistant)`}
-        description={`How ${AI_ASSISTANT_NAME} thinks and works: the model behind it, privacy, web search and its ITSM skills.`}
+        title={t("ai.title", { name: AI_ASSISTANT_NAME })}
+        description={t("ai.description", { name: AI_ASSISTANT_NAME })}
       />
       <PageBody className="max-w-3xl">
         <AiSettingsForm

@@ -6,6 +6,7 @@ import { Search, X, Loader2, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/client";
 
 type Option = { value: string; label: string };
 
@@ -28,6 +29,7 @@ export function AuditToolbar({
   const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [q, setQ] = useState(sp.get("q") ?? "");
+  const t = useT("audit");
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -42,24 +44,24 @@ export function AuditToolbar({
 
   // debounce free-text search
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if ((sp.get("q") ?? "") !== q) setParam("q", q);
     }, 350);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
   const actorOpts: ComboOption[] = useMemo(
-    () => [{ value: "all", label: "All actors" }, ...actors],
-    [actors],
+    () => [{ value: "all", label: t("toolbar.allActors") }, ...actors],
+    [actors, t],
   );
   const entityOpts: ComboOption[] = useMemo(
-    () => [{ value: "all", label: "All entities" }, ...entities],
-    [entities],
+    () => [{ value: "all", label: t("toolbar.allEntities") }, ...entities],
+    [entities, t],
   );
   const actionOpts: ComboOption[] = useMemo(
-    () => [{ value: "all", label: "All actions" }, ...actions],
-    [actions],
+    () => [{ value: "all", label: t("toolbar.allActions") }, ...actions],
+    [actions, t],
   );
 
   const from = sp.get("from") ?? "";
@@ -87,7 +89,7 @@ export function AuditToolbar({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search summary or entity id…"
+          placeholder={t("toolbar.searchPlaceholder")}
           className="pl-8"
         />
         {isPending ? (
@@ -99,8 +101,8 @@ export function AuditToolbar({
         options={actorOpts}
         value={sp.get("userId") ?? "all"}
         onChange={(v) => setParam("userId", v || "all")}
-        placeholder="Actor"
-        searchPlaceholder="Search actors…"
+        placeholder={t("toolbar.actor")}
+        searchPlaceholder={t("toolbar.searchActors")}
         size="sm"
         className="w-auto min-w-[9rem]"
       />
@@ -108,8 +110,8 @@ export function AuditToolbar({
         options={entityOpts}
         value={sp.get("entity") ?? "all"}
         onChange={(v) => setParam("entity", v || "all")}
-        placeholder="Entity"
-        searchPlaceholder="Search entities…"
+        placeholder={t("toolbar.entity")}
+        searchPlaceholder={t("toolbar.searchEntities")}
         size="sm"
         className="w-auto min-w-[8rem]"
       />
@@ -117,22 +119,22 @@ export function AuditToolbar({
         options={actionOpts}
         value={sp.get("action") ?? "all"}
         onChange={(v) => setParam("action", v || "all")}
-        placeholder="Action"
-        searchPlaceholder="Search actions…"
+        placeholder={t("toolbar.action")}
+        searchPlaceholder={t("toolbar.searchActions")}
         size="sm"
         className="w-auto min-w-[8rem]"
       />
 
       <Input
         type="date"
-        aria-label="From date"
+        aria-label={t("toolbar.fromDate")}
         value={from}
         onChange={(e) => setParam("from", e.target.value)}
         className="w-auto"
       />
       <Input
         type="date"
-        aria-label="To date"
+        aria-label={t("toolbar.toDate")}
         value={to}
         onChange={(e) => setParam("to", e.target.value)}
         className="w-auto"
@@ -147,7 +149,7 @@ export function AuditToolbar({
             startTransition(() => router.push(pathname));
           }}
         >
-          <X className="size-4" /> Clear
+          <X className="size-4" /> {t("toolbar.clear")}
         </Button>
       ) : null}
 
@@ -157,7 +159,7 @@ export function AuditToolbar({
           download
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
-          <Download className="size-4" /> Export CSV
+          <Download className="size-4" /> {t("toolbar.exportCsv")}
         </a>
       </div>
     </div>

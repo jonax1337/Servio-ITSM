@@ -41,6 +41,7 @@ import {
   type TeamSummary,
   type ProjectLinks,
 } from "@/lib/actions/ai-assistant";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /**
  * The Sable Project OVERVIEW — the empty-state body of a project-bound thread
@@ -60,6 +61,7 @@ export function ProjectHome({
   /** Called after the project is deleted so the shell can clear the active project. */
   onDeleted?: () => void;
 }) {
+  const t = useT("assistant");
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -103,9 +105,9 @@ export function ProjectHome({
     return (
       <div className="grid flex-1 place-items-center p-6 text-center">
         <div className="max-w-xs space-y-1">
-          <p className="text-sm font-medium">Project unavailable</p>
+          <p className="text-sm font-medium">{t("project.unavailable")}</p>
           <p className="text-xs text-muted-foreground">
-            It may have been deleted or is no longer shared with you.
+            {t("project.unavailableHint")}
           </p>
         </div>
       </div>
@@ -123,8 +125,8 @@ export function ProjectHome({
             {project.name}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {isOwner ? "You own this project" : "Shared with you"}
-            {project.isShared ? " · Shared with a team" : ""}
+            {isOwner ? t("project.youOwn") : t("project.sharedWithYou")}
+            {project.isShared ? t("project.sharedWithTeam") : ""}
           </p>
         </div>
         <Button
@@ -132,7 +134,7 @@ export function ProjectHome({
           size="icon-sm"
           variant="ghost"
           onClick={() => setSettingsOpen(true)}
-          aria-label="Project settings"
+          aria-label={t("project.settings")}
           className="shrink-0 text-muted-foreground hover:text-foreground"
         >
           <Settings className="size-4" />
@@ -176,6 +178,8 @@ function LinkedRecords({
   isOwner: boolean;
   onChanged: () => void;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [links, setLinks] = useState<ProjectLinks | null>(null);
 
   const reload = useCallback(async () => {
@@ -199,7 +203,7 @@ function LinkedRecords({
       await reload();
       onChanged();
     } else {
-      toast.error(res.error ?? "Could not link");
+      toast.error(res.error ? tm(res.error) : t("project.couldNotLink"));
     }
   }
 
@@ -209,7 +213,7 @@ function LinkedRecords({
       await reload();
       onChanged();
     } else {
-      toast.error(res.error ?? "Could not unlink");
+      toast.error(res.error ? tm(res.error) : t("project.couldNotUnlink"));
     }
   }
 
@@ -220,45 +224,45 @@ function LinkedRecords({
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Link2 className="size-4 text-muted-foreground" /> Linked records
+          <Link2 className="size-4 text-muted-foreground" /> {t("project.linkedRecords")}
         </h2>
         {isOwner && links ? (
           <div className="flex flex-wrap items-center gap-1.5">
             <LinkPicker
               action={(fd) => bind("ticketId", fd)}
-              triggerLabel="Ticket"
-              title="Link a ticket"
-              description="Set the ticket this project is about."
+              triggerLabel={t("project.ticket")}
+              title={t("project.linkTicket")}
+              description={t("project.linkTicketDescription")}
               hidden={{}}
               valueName="ticketId"
               options={links.options.tickets}
-              placeholder="Choose a ticket"
-              searchPlaceholder="Search tickets…"
-              emptyText="No tickets to link."
+              placeholder={t("project.chooseTicket")}
+              searchPlaceholder={t("project.searchTickets")}
+              emptyText={t("project.noTickets")}
             />
             <LinkPicker
               action={(fd) => bind("problemId", fd)}
-              triggerLabel="Problem"
-              title="Link a problem"
-              description="Set the problem this project is about."
+              triggerLabel={t("project.problem")}
+              title={t("project.linkProblem")}
+              description={t("project.linkProblemDescription")}
               hidden={{}}
               valueName="problemId"
               options={links.options.problems}
-              placeholder="Choose a problem"
-              searchPlaceholder="Search problems…"
-              emptyText="No problems to link."
+              placeholder={t("project.chooseProblem")}
+              searchPlaceholder={t("project.searchProblems")}
+              emptyText={t("project.noProblems")}
             />
             <LinkPicker
               action={(fd) => bind("changeId", fd)}
-              triggerLabel="Change"
-              title="Link a change"
-              description="Set the change this project is about."
+              triggerLabel={t("project.change")}
+              title={t("project.linkChange")}
+              description={t("project.linkChangeDescription")}
               hidden={{}}
               valueName="changeId"
               options={links.options.changes}
-              placeholder="Choose a change"
-              searchPlaceholder="Search changes…"
-              emptyText="No changes to link."
+              placeholder={t("project.chooseChange")}
+              searchPlaceholder={t("project.searchChanges")}
+              emptyText={t("project.noChanges")}
             />
           </div>
         ) : null}
@@ -294,8 +298,8 @@ function LinkedRecords({
       ) : (
         <p className="text-xs text-muted-foreground/80">
           {isOwner
-            ? "Link a ticket, problem or change so Sable treats it as this project's subject."
-            : "No records linked to this project."}
+            ? t("project.linkHint")
+            : t("project.noLinks")}
         </p>
       )}
     </section>
@@ -321,11 +325,13 @@ function ProjectSettingsDialog({
   onChanged: () => void;
   onDeleted?: () => void;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Project settings</DialogTitle>
+          <DialogTitle>{t("project.settings")}</DialogTitle>
         </DialogHeader>
         {/* px so a focused field's ring isn't clipped — overflow-y-auto forces overflow-x:auto. */}
         <div className="max-h-[70vh] space-y-6 overflow-y-auto px-1">
@@ -338,23 +344,23 @@ function ProjectSettingsDialog({
                 action={async () => {
                   const res = await deleteProject(project.id);
                   if (res.ok) {
-                    toast.success("Project deleted");
+                    toast.success(t("project.deleted"));
                     onOpenChange(false);
                     onDeleted?.();
                     onChanged();
                   } else {
-                    toast.error(res.error ?? "Could not delete");
+                    toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
                   }
                 }}
-                title="Delete project?"
-                description="Its files and folders are permanently deleted. Conversations are kept but un-pinned."
-                confirmLabel="Delete project"
+                title={t("project.deleteTitle")}
+                description={t("project.deleteDescription")}
+                confirmLabel={t("project.delete")}
                 triggerVariant="outline"
                 triggerSize="sm"
                 triggerClassName="text-destructive hover:text-destructive"
-                triggerLabel="Delete project"
+                triggerLabel={t("project.delete")}
               >
-                <Trash2 className="size-3.5" /> Delete project
+                <Trash2 className="size-3.5" /> {t("project.delete")}
               </ConfirmButton>
             </div>
           ) : null}
@@ -365,6 +371,8 @@ function ProjectSettingsDialog({
 }
 
 function RenameField({ project, onChanged }: { project: ProjectDetail; onChanged: () => void }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [name, setName] = useState(project.name);
   const [saving, setSaving] = useState(false);
 
@@ -375,12 +383,12 @@ function RenameField({ project, onChanged }: { project: ProjectDetail; onChanged
     const res = await renameProject(project.id, next);
     setSaving(false);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not rename");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotRename"));
   }
 
   return (
     <section className="space-y-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Name</span>
+      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{t("project.name")}</span>
       <div className="flex items-center gap-2">
         <Input
           value={name}
@@ -401,6 +409,8 @@ function RenameField({ project, onChanged }: { project: ProjectDetail; onChanged
 }
 
 function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOwner: boolean }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [value, setValue] = useState(project.instructions ?? "");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -417,10 +427,10 @@ function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOw
         setTimeout(() => setStatus("idle"), 1500);
       } else {
         setStatus("idle");
-        toast.error(res.error ?? "Could not save instructions");
+        toast.error(res.error ? tm(res.error) : t("project.couldNotSaveInstructions"));
       }
     },
-    [project.id],
+    [project.id, t, tm],
   );
 
   useEffect(() => {
@@ -439,15 +449,15 @@ function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOw
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Custom instructions
+          {t("project.instructions")}
         </span>
         {status === "saving" ? (
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" /> Saving
+            <Loader2 className="size-3 animate-spin" /> {t("project.saving")}
           </span>
         ) : status === "saved" ? (
           <span className="flex items-center gap-1 text-[11px] text-sable">
-            <Check className="size-3" /> Saved
+            <Check className="size-3" /> {t("project.saved")}
           </span>
         ) : null}
       </div>
@@ -459,7 +469,7 @@ function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOw
             if (timer.current) clearTimeout(timer.current);
             void save(value);
           }}
-          placeholder="How should Sable behave in this project? e.g. tone, scope, what to prioritise, standing context…"
+          placeholder={t("project.instructionsPlaceholder")}
           className="min-h-24 text-sm"
           maxLength={4000}
         />
@@ -469,7 +479,7 @@ function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOw
         </p>
       ) : (
         <p className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground/70">
-          No custom instructions.
+          {t("project.noInstructions")}
         </p>
       )}
     </section>
@@ -477,6 +487,8 @@ function InstructionsEditor({ project, isOwner }: { project: ProjectDetail; isOw
 }
 
 function SharingSection({ project, onChanged }: { project: ProjectDetail; onChanged: () => void }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [teamId, setTeamId] = useState<string>(project.groupId ?? "");
@@ -497,7 +509,7 @@ function SharingSection({ project, onChanged }: { project: ProjectDetail; onChan
     };
   }, []);
 
-  const options: ComboOption[] = teams.map((t) => ({ value: t.id, label: t.name, icon: Users }));
+  const options: ComboOption[] = teams.map((team) => ({ value: team.id, label: team.name, icon: Users }));
 
   const apply = useCallback(
     async (nextEnabled: boolean, nextTeam: string) => {
@@ -508,30 +520,30 @@ function SharingSection({ project, onChanged }: { project: ProjectDetail; onChan
         : await shareProject(project.id, { isShared: false });
       setPending(false);
       if (res.ok) {
-        toast.success(nextEnabled ? "Project shared" : "Sharing turned off");
+        toast.success(nextEnabled ? t("project.shared") : t("project.sharingOff"));
         onChanged();
       } else {
-        toast.error(res.error ?? "Could not update sharing");
+        toast.error(res.error ? tm(res.error) : t("project.couldNotUpdateSharing"));
       }
     },
-    [project.id, onChanged],
+    [project.id, onChanged, t, tm],
   );
 
   return (
     <section className="space-y-2">
       <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        Sharing
+        {t("project.sharing")}
       </span>
       {loaded && teams.length === 0 ? (
         <p className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground/70">
-          You are not a member of any team, so this project can only be used by you.
+          {t("project.noTeams")}
         </p>
       ) : (
         <div className="space-y-3">
           <label className="flex items-center justify-between gap-3">
             <span className="text-sm">
-              <span className="font-medium">Share with a team</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">Members can chat and read files.</span>
+              <span className="font-medium">{t("project.shareWithTeam")}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{t("project.shareHint")}</span>
             </span>
             <Switch
               checked={enabled}
@@ -550,9 +562,9 @@ function SharingSection({ project, onChanged }: { project: ProjectDetail; onChan
                 setTeamId(v);
                 void apply(true, v);
               }}
-              placeholder="Share with a team…"
-              searchPlaceholder="Search teams…"
-              emptyText="No teams found."
+              placeholder={t("project.shareWithTeamPlaceholder")}
+              searchPlaceholder={t("project.searchTeams")}
+              emptyText={t("project.noTeamsFound")}
               size="sm"
             />
           ) : null}

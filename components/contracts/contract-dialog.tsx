@@ -13,6 +13,7 @@ import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
 import type { ContractFormOptions } from "./contract-options";
 import { Field, SaveDialog } from "./save-dialog";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 export type ContractValues = {
   id: string;
@@ -30,14 +31,6 @@ export type ContractValues = {
   notes: string | null;
 };
 
-const typeOptions: ComboOption[] = CONTRACT_TYPES.map((t) => ({ value: t, label: CONTRACT_TYPE_META[t].label }));
-const statusOptions: ComboOption[] = CONTRACT_STATUSES.map((s) => ({
-  value: s,
-  label: CONTRACT_STATUS_META[s].label,
-  tone: CONTRACT_STATUS_META[s].tone,
-  icon: CONTRACT_STATUS_META[s].icon,
-}));
-
 /** Create a contract, or edit one when `contract` is given. `currentUserId` pre-selects the owner of a new contract. */
 export function ContractDialog({
   contract,
@@ -50,56 +43,66 @@ export function ContractDialog({
   currentUserId?: string;
   size?: "default" | "sm";
 }) {
+  const t = useT("contracts");
+  const tc = useT("common");
+  const te = useEnumT();
+  const typeOptions: ComboOption[] = te.options(CONTRACT_TYPE_META, CONTRACT_TYPES);
+  const statusOptions: ComboOption[] = CONTRACT_STATUSES.map((s) => ({
+    value: s,
+    label: te(CONTRACT_STATUS_META[s]),
+    tone: CONTRACT_STATUS_META[s].tone,
+    icon: CONTRACT_STATUS_META[s].icon,
+  }));
   return (
     <SaveDialog
-      title={contract ? "Edit contract" : "New contract"}
-      description={contract ? undefined : "Track a vendor agreement and get reminded before it ends."}
-      triggerLabel={contract ? "Edit" : "New contract"}
+      title={contract ? t("dialog.editContract") : t("dialog.newContract")}
+      description={contract ? undefined : t("dialog.newContractDescription")}
+      triggerLabel={contract ? tc("edit") : t("dialog.newContract")}
       triggerIcon={contract ? Pencil : Plus}
       triggerVariant={contract ? "outline" : "default"}
       triggerSize={contract ? "sm" : size}
-      submitLabel={contract ? "Save changes" : "Create contract"}
+      submitLabel={contract ? tc("saveChanges") : t("dialog.createContract")}
       action={contract ? updateContract : createContract}
       openCreated={contract ? undefined : (id) => `/contracts/${id}`}
-      successMessage={contract ? "Contract updated" : "Contract created"}
+      successMessage={contract ? t("dialog.contractUpdated") : t("dialog.contractCreated")}
       wide
     >
       {contract ? <input type="hidden" name="id" value={contract.id} /> : null}
       <div className="grid items-start gap-4 sm:grid-cols-2">
-        <Field label="Name" htmlFor="contract-name" required>
-          <Input id="contract-name" name="name" defaultValue={contract?.name} placeholder="e.g. Acme premium support" required />
+        <Field label={tc("name")} htmlFor="contract-name" required>
+          <Input id="contract-name" name="name" defaultValue={contract?.name} placeholder={t("dialog.contractNamePlaceholder")} required />
         </Field>
-        <Field label="Contract number" htmlFor="contract-number">
-          <Input id="contract-number" name="number" defaultValue={contract?.number ?? ""} placeholder="Your reference, if any" />
+        <Field label={t("field.contractNumber")} htmlFor="contract-number">
+          <Input id="contract-number" name="number" defaultValue={contract?.number ?? ""} placeholder={t("dialog.numberPlaceholder")} />
         </Field>
-        <Field label="Type">
+        <Field label={tc("type")}>
           <ComboField name="type" options={typeOptions} defaultValue={contract?.type ?? "SUPPORT"} />
         </Field>
-        <Field label="Status">
+        <Field label={tc("status")}>
           <ComboField name="status" options={statusOptions} defaultValue={contract?.status ?? "ACTIVE"} />
         </Field>
-        <Field label="Vendor">
-          <ComboField name="vendorId" options={options.vendors} defaultValue={contract?.vendorId ?? undefined} includeNone noneLabel="No vendor" />
+        <Field label={t("col.vendor")}>
+          <ComboField name="vendorId" options={options.vendors} defaultValue={contract?.vendorId ?? undefined} includeNone noneLabel={t("noVendor")} />
         </Field>
-        <Field label="Owner" hint="Receives the renewal reminder.">
+        <Field label={tc("owner")} hint={t("dialog.contractOwnerHint")}>
           <ComboField
             name="ownerId"
             options={options.owners}
             defaultValue={contract ? (contract.ownerId ?? undefined) : currentUserId}
             includeNone
-            noneLabel="No owner"
+            noneLabel={t("noOwner")}
           />
         </Field>
-        <Field label="Start date" htmlFor="contract-start" required>
+        <Field label={t("field.startDate")} htmlFor="contract-start" required>
           <Input id="contract-start" name="startDate" type="date" defaultValue={contract ? isoDay(contract.startDate) : ""} required />
         </Field>
-        <Field label="End date" htmlFor="contract-end" hint="Leave empty for an open-ended contract.">
+        <Field label={t("field.endDate")} htmlFor="contract-end" hint={t("dialog.endDateHint")}>
           <Input id="contract-end" name="endDate" type="date" defaultValue={contract?.endDate ? isoDay(contract.endDate) : ""} />
         </Field>
-        <Field label="Cost" htmlFor="contract-cost" hint="Total or yearly cost, as you track it.">
+        <Field label={t("col.cost")} htmlFor="contract-cost" hint={t("dialog.costHint")}>
           <Input id="contract-cost" name="cost" type="number" min="0" step="0.01" defaultValue={contract?.cost ?? ""} />
         </Field>
-        <Field label="Renewal notice (days)" htmlFor="contract-notice" hint="The owner is reminded this many days before the end date.">
+        <Field label={t("field.renewalNoticeDays")} htmlFor="contract-notice" hint={t("dialog.noticeHint")}>
           <Input
             id="contract-notice"
             name="renewalNoticeDays"
@@ -111,9 +114,9 @@ export function ContractDialog({
         </Field>
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <Switch name="autoRenew" defaultChecked={contract?.autoRenew ?? false} /> Renews automatically
+        <Switch name="autoRenew" defaultChecked={contract?.autoRenew ?? false} /> {t("field.renewsAutomatically")}
       </label>
-      <Field label="Notes" htmlFor="contract-notes">
+      <Field label={tc("notes")} htmlFor="contract-notes">
         <Textarea id="contract-notes" name="notes" defaultValue={contract?.notes ?? ""} className="min-h-20" />
       </Field>
     </SaveDialog>

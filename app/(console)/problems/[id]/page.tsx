@@ -25,7 +25,7 @@ import { isProblemLocked } from "@/lib/problem-rules";
 import type { SearchParams } from "@/lib/query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PROBLEM_STATUS_META, PRIORITY_META, problemRef } from "@/lib/constants";
-import { format, formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const p = await db.problem.findUnique({ where: { id: Number(id) }, select: { title: true } });
-  return { title: p ? p.title : "Problem" };
+  return { title: p ? p.title : (await getT("problems"))("entity") };
 }
 
 export default async function ProblemDetailPage({
@@ -52,6 +52,7 @@ export default async function ProblemDetailPage({
   if (!Number.isFinite(problemId)) notFound();
 
   const me = await requireUser();
+  const [t, tc, f] = await Promise.all([getT("problems"), getT("common"), getFormatter()]);
   const [problem, options, customFieldDefs] = await Promise.all([
     db.problem.findUnique({
       where: { id: problemId },
@@ -82,7 +83,7 @@ export default async function ProblemDetailPage({
     incidents: problem._count.tickets,
     changes: problem._count.changes,
     comments: problem._count.comments,
-  });
+  }).map((tab) => ({ ...tab, label: t(`tab.${tab.key}`) }));
   const active = resolveTab(sp, tabs, DEFAULT_PROBLEM_TAB);
 
   return (
@@ -90,7 +91,7 @@ export default async function ProblemDetailPage({
       {/* Main column — scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/problems" variant="ghost" size="icon-sm" aria-label="Back to problems">
+          <LinkButton href="/problems" variant="ghost" size="icon-sm" aria-label={t("backToList")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <span className="font-mono text-sm text-muted-foreground">
@@ -115,7 +116,7 @@ export default async function ProblemDetailPage({
             {problem.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Opened {formatDistanceToNow(problem.createdAt, { addSuffix: true })}
+            {t("openedAgo", { when: f.relative(problem.createdAt) })}
             {problem.category ? <> · {problem.category.name}</> : null}
           </p>
 
@@ -126,7 +127,7 @@ export default async function ProblemDetailPage({
             defaultTab={DEFAULT_PROBLEM_TAB}
             basePath={`/problems/${problem.id}`}
             searchParams={sp}
-            label="Problem sections"
+            label={t("sections")}
           />
 
           <div className="mt-6">
@@ -166,7 +167,7 @@ export default async function ProblemDetailPage({
       {/* Sidebar */}
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
-          <CardHeader><CardTitle className="text-sm">Properties</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{tc("properties")}</CardTitle></CardHeader>
           <CardContent>
             <ProblemProperties problem={problem} options={options} allowedStatuses={allowedStatuses} locked={locked} />
           </CardContent>
@@ -182,27 +183,27 @@ export default async function ProblemDetailPage({
         />
 
         <Card className="mt-4">
-          <CardHeader><CardTitle className="text-sm">Assignment</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("assignment")}</CardTitle></CardHeader>
           <CardContent className="grid gap-3 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Assignee</span>
+              <span className="text-muted-foreground">{tc("assignee")}</span>
               <span className="font-medium">
-                {problem.assignee ? (problem.assignee.name ?? problem.assignee.email) : "Unassigned"}
+                {problem.assignee ? (problem.assignee.name ?? problem.assignee.email) : tc("unassigned")}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Group</span>
+              <span className="text-muted-foreground">{tc("group")}</span>
               <span className="font-medium">{problem.group ? problem.group.name : "—"}</span>
             </div>
           </CardContent>
         </Card>
 
         <Card className="mt-4">
-          <CardHeader><CardTitle className="text-sm">Timeline</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("timeline")}</CardTitle></CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
-            <Meta label="Created" value={format(problem.createdAt, "PP p")} />
-            <Meta label="Updated" value={format(problem.updatedAt, "PP p")} />
-            {problem.resolvedAt ? <Meta label="Resolved" value={format(problem.resolvedAt, "PP p")} /> : null}
+            <Meta label={tc("created")} value={f.date(problem.createdAt, "dateTime")} />
+            <Meta label={tc("updated")} value={f.date(problem.updatedAt, "dateTime")} />
+            {problem.resolvedAt ? <Meta label={t("resolved")} value={f.date(problem.resolvedAt, "dateTime")} /> : null}
           </CardContent>
         </Card>
 

@@ -5,7 +5,9 @@ import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
 import { LICENSE_TYPE_META } from "@/lib/constants";
-import { formatCost, formatDay, licenseCompliance } from "@/lib/contract-rules";
+import { licenseCompliance } from "@/lib/contract-rules";
+import { getEnumT, getT } from "@/lib/i18n/server";
+import { formatCostIn, formatDayIn } from "@/components/contracts/contract-format";
 import type { SearchParams } from "@/lib/query";
 import { deleteLicense } from "@/lib/actions/contracts";
 import { StatusBadge } from "@/components/status-badge";
@@ -24,7 +26,7 @@ type LicenseTab = "overview" | "seats";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const license = await db.softwareLicense.findUnique({ where: { id }, select: { name: true } });
-  return { title: license?.name ?? "License" };
+  return { title: license?.name ?? (await getT("contracts"))("entity.license") };
 }
 
 export default async function LicenseDetailPage({
@@ -50,18 +52,20 @@ export default async function LicenseDetailPage({
   if (!license) notFound();
 
   const now = new Date();
+  const [t, tc, te] = await Promise.all([getT("contracts"), getT("common"), getEnumT()]);
+  const day = (d: Date) => formatDayIn(t.locale, d);
   const canWrite = !!me && hasRole(me.role, "MANAGER");
   const options = canWrite ? await getContractFormOptions() : null;
   const compliance = licenseCompliance(license.seats, license._count.assignments);
-  const licenseType = LICENSE_TYPE_META[license.licenseType]?.label ?? license.licenseType;
+  const licenseType = LICENSE_TYPE_META[license.licenseType] ? te(LICENSE_TYPE_META, license.licenseType) : license.licenseType;
 
   const tabs: EntityTab<LicenseTab>[] = [
-    { key: "overview", label: "Overview" },
+    { key: "overview", label: t("tab.overview") },
     {
       key: "seats",
-      label: "Seats",
+      label: t("col.seats"),
       count: license._count.assignments,
-      warning: compliance.state === "OVER" ? `Over-allocated by ${compliance.overBy}` : undefined,
+      warning: compliance.state === "OVER" ? t("seats.overBy", { count: compliance.overBy }) : undefined,
     },
   ];
   const active = resolveTab(sp, tabs, "overview");
@@ -70,32 +74,32 @@ export default async function LicenseDetailPage({
     <DetailShell
       aside={
         <>
-          <RailCard title="Properties">
-            <MetaRow label="Vendor">
+          <RailCard title={tc("properties")}>
+            <MetaRow label={t("col.vendor")}>
               {license.vendor ? (
                 <Link href={`/contracts/vendors/${license.vendor.id}`} className="hover:text-primary">{license.vendor.name}</Link>
               ) : "—"}
             </MetaRow>
-            <MetaRow label="Contract">
+            <MetaRow label={t("col.contract")}>
               {license.contract ? (
                 <Link href={`/contracts/${license.contract.id}`} className="hover:text-primary">{license.contract.name}</Link>
               ) : "—"}
             </MetaRow>
-            <MetaRow label="Owner">{license.owner ? (license.owner.name ?? license.owner.email) : "—"}</MetaRow>
-            <MetaRow label="Updated">{formatDay(license.updatedAt)}</MetaRow>
+            <MetaRow label={tc("owner")}>{license.owner ? (license.owner.name ?? license.owner.email) : "—"}</MetaRow>
+            <MetaRow label={tc("updated")}>{day(license.updatedAt)}</MetaRow>
           </RailCard>
-          <RailCard title="Seats and cost">
-            <MetaRow label="Seats purchased">{license.seats}</MetaRow>
-            <MetaRow label="Seats assigned">{compliance.used}</MetaRow>
-            <MetaRow label="Expires">{license.expiresAt ? formatDay(license.expiresAt) : "Never"}</MetaRow>
-            <MetaRow label="Cost">{license.cost != null ? formatCost(license.cost) : "—"}</MetaRow>
+          <RailCard title={t("seatsAndCost")}>
+            <MetaRow label={t("seats.purchased")}>{license.seats}</MetaRow>
+            <MetaRow label={t("seats.assigned")}>{compliance.used}</MetaRow>
+            <MetaRow label={t("col.expires")}>{license.expiresAt ? day(license.expiresAt) : tc("never")}</MetaRow>
+            <MetaRow label={t("col.cost")}>{license.cost != null ? formatCostIn(t.locale, license.cost) : "—"}</MetaRow>
           </RailCard>
         </>
       }
     >
       <DetailTopBar
         backHref="/contracts?tab=licenses"
-        backLabel="Back to licenses"
+        backLabel={t("backToLicenses")}
         lead={<StatusBadge map={LICENSE_TYPE_META} value={license.licenseType} dot={false} />}
       >
         {canWrite && options ? (
@@ -104,12 +108,12 @@ export default async function LicenseDetailPage({
             <ConfirmButton
               action={deleteLicense}
               fields={{ id: license.id }}
-              title="Delete license"
-              description={`Permanently delete "${license.name}"${compliance.used > 0 ? ` and release its ${compliance.used} assigned ${compliance.used === 1 ? "seat" : "seats"}` : ""}? This can't be undone.`}
-              confirmLabel="Delete license"
+              title={t("deleteLicense")}
+              description={compliance.used > 0 ? t("deleteLicenseDescriptionSeats", { name: license.name, count: compliance.used }) : t("deleteLicenseDescription", { name: license.name })}
+              confirmLabel={t("deleteLicense")}
               triggerVariant="outline"
               triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
-              triggerLabel="Delete license"
+              triggerLabel={t("deleteLicense")}
             >
               <Trash2 className="size-4" />
             </ConfirmButton>
@@ -122,7 +126,7 @@ export default async function LicenseDetailPage({
       <div className="p-4 sm:p-6">
         <DetailTitle
           title={license.name}
-          subtitle={`${licenseType} license${license.vendor ? ` from ${license.vendor.name}` : ""}`}
+          subtitle={license.vendor ? t("licenseSubtitleWithVendor", { type: licenseType, vendor: license.vendor.name }) : t("licenseSubtitle", { type: licenseType })}
         />
 
         <EntityTabs
@@ -132,7 +136,7 @@ export default async function LicenseDetailPage({
           defaultTab="overview"
           basePath={`/contracts/licenses/${license.id}`}
           searchParams={sp}
-          label="License sections"
+          label={t("licenseSections")}
         />
 
         <div className="mt-6 grid gap-4">
@@ -140,15 +144,15 @@ export default async function LicenseDetailPage({
             <>
               {compliance.state === "OVER" ? (
                 <Notice tone="danger">
-                  Over-allocated by {compliance.overBy} {compliance.overBy === 1 ? "seat" : "seats"}: release seats or buy more.
-                  {license.owner ? "" : " Assign an owner so someone is alerted."}
+                  {t("seats.overNotice", { count: compliance.overBy })}
+                  {license.owner ? "" : ` ${t("seats.assignOwnerHint")}`}
                 </Notice>
               ) : null}
               <div className="grid gap-2 rounded-xl border bg-card p-4">
                 <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="font-medium">Seat usage</span>
+                  <span className="font-medium">{t("seats.usage")}</span>
                   <span className="tabular-nums text-muted-foreground">
-                    {compliance.used} of {compliance.seats} assigned{compliance.free > 0 ? ` · ${compliance.free} free` : ""}
+                    {t("seats.usageValue", { used: compliance.used, seats: compliance.seats })}{compliance.free > 0 ? ` · ${t("seats.free", { count: compliance.free })}` : ""}
                   </span>
                 </div>
                 <SeatMeter compliance={compliance} />

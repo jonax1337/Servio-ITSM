@@ -6,8 +6,12 @@ import { db } from "@/lib/db";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { SyncSourceForm } from "@/components/syncs/source-form";
 import { configToFormValues } from "@/lib/connectors/spec";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Edit sync source" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("syncs");
+  return { title: t("editMetaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function EditSyncSourcePage({
@@ -16,6 +20,7 @@ export default async function EditSyncSourcePage({
   params: Promise<{ id: string }>;
 }) {
   await requireRole("ADMIN");
+  const t = await getT("syncs");
   const { id } = await params;
 
   const source = await db.syncSource.findUnique({ where: { id } });
@@ -27,8 +32,8 @@ export default async function EditSyncSourcePage({
     <>
       <PageHeader
         icon={Settings2}
-        title={`Edit ${source.name}`}
-        description="Update the directory connection and attribute mapping."
+        title={t("editTitle", { name: source.name })}
+        description={t("editDescription")}
       />
       <PageBody>
         <SyncSourceForm

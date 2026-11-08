@@ -563,6 +563,16 @@ When AI is *not* configured, `AI_TEASER=true` still renders the AI buttons as a 
 one shows a friendly "ask your admin to enable AI" hint instead of calling anything — a nudge, not
 a live feature.
 
+### Language
+
+Sable's interface (window, rail, composer, proposal cards, tool activity, insights, the portal
+widget) follows the viewer's UI language — see [i18n.md](./i18n.md). Starter prompts and slash
+templates are inserted in that language, so the conversation starts in it. Proposal-card titles
+are rebuilt in the browser from `assistant` catalog keys (`op.<operationId>`); operations whose
+title needs code logic show the server's English label. The dashboard briefing asks the model to
+write in the viewer's language. **Not translated:** system prompts, tool descriptions and schemas,
+results sent back to the model, and model output.
+
 ---
 
 ## Configuration

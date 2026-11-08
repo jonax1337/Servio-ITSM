@@ -5,6 +5,7 @@ import { setTicketProblem } from "@/lib/actions/tickets";
 import { LinkPicker } from "@/components/link-picker";
 import { UnlinkButton } from "@/components/linked-records";
 import type { ComboOption } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 /** Picker that links an existing change to this problem as its fix. */
 export function ProblemChangePicker({
@@ -13,43 +14,46 @@ export function ProblemChangePicker({
   problemId: number;
   options: ComboOption[];
 }) {
+  const t = useT("problems");
   const link = (formData: FormData) => setChangeProblem(Number(formData.get("changeId")), problemId);
 
   return (
     <LinkPicker
       action={link}
-      successMessage="Change linked"
-      triggerLabel="Link change"
-      title="Link a fix change"
-      description="Attach an existing change that fixes this problem."
+      successMessage={t("changes.linked")}
+      triggerLabel={t("changes.link")}
+      title={t("changes.linkTitle")}
+      description={t("changes.linkDescription")}
       hidden={{ problemId }}
       valueName="changeId"
       options={options}
-      placeholder="Choose a change"
-      searchPlaceholder="Search changes…"
-      emptyText="No unlinked changes available."
+      placeholder={t("changes.choose")}
+      searchPlaceholder={t("changes.search")}
+      emptyText={t("changes.noneAvailable")}
     />
   );
 }
 
 /** Unlink control for a fix-change row; the row must carry the `group/chip` class that reveals it on hover. */
 export function UnlinkChangeButton({ changeId }: { changeId: number }) {
+  const t = useT("problems");
   return (
     <UnlinkButton
       action={() => setChangeProblem(changeId, null)}
       fields={{ changeId }}
-      successMessage="Change unlinked"
+      successMessage={t("changes.unlinked")}
     />
   );
 }
 
 /** Unlink control for a linked-incident row; the row must carry the `group/chip` class that reveals it on hover. */
 export function UnlinkIncidentButton({ ticketId }: { ticketId: number }) {
+  const t = useT("problems");
   return (
     <UnlinkButton
       action={setTicketProblem}
       fields={{ ticketId, problemId: "" }}
-      successMessage="Incident unlinked"
+      successMessage={t("incidents.unlinked")}
     />
   );
 }

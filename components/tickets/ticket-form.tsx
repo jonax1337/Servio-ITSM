@@ -17,18 +17,20 @@ import {
   TICKET_TYPE_META, PRIORITY_META, LEVEL_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 type UserOpt = { id: string; name: string | null; email: string };
 
 function Field({
   label, error, hint, children,
 }: { label: string; error?: string[]; hint?: string; children: React.ReactNode }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -46,10 +48,14 @@ export function TicketForm({
   const [state, action, pending] = useActionState<ActionState, FormData>(createTicket, undefined);
   const submit = useFormSubmit(action);
   const fe = state?.fieldErrors ?? {};
+  const t = useT("tickets");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
 
-  const typeOpts: ComboOption[] = TICKET_TYPES.map((t) => ({ value: t, label: TICKET_TYPE_META[t].label, tone: TICKET_TYPE_META[t].tone, icon: TICKET_TYPE_META[t].icon }));
-  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label, tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
-  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: LEVEL_META[l].label, tone: LEVEL_META[l].tone }));
+  const typeOpts: ComboOption[] = TICKET_TYPES.map((v) => ({ value: v, label: te(TICKET_TYPE_META, v), tone: TICKET_TYPE_META[v].tone, icon: TICKET_TYPE_META[v].icon }));
+  const prioOpts: ComboOption[] = PRIORITIES.map((p) => ({ value: p, label: te(PRIORITY_META, p), tone: PRIORITY_META[p].tone, icon: PRIORITY_META[p].icon }));
+  const levelOpts: ComboOption[] = IMPACT_URGENCY.map((l) => ({ value: l, label: te(LEVEL_META, l), tone: LEVEL_META[l].tone }));
   const userOpts: ComboOption[] = requesters.map((u) => ({ value: u.id, label: u.name ?? u.email, avatar: initials(u.name ?? u.email), hint: u.email }));
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
@@ -60,48 +66,48 @@ export function TicketForm({
     <form method="post" onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
-      <Field label="Subject" error={fe.title}>
-        <Input name="title" placeholder="Short summary of the issue or request" required />
+      <Field label={t("form.subject")} error={fe.title}>
+        <Input name="title" placeholder={t("form.subjectPlaceholder")} required />
       </Field>
 
-      <Field label="Description" error={fe.description}>
-        <Textarea name="description" placeholder="Describe the problem, steps to reproduce, impact…" className="min-h-32" />
+      <Field label={tc("description")} error={fe.description}>
+        <Textarea name="description" placeholder={t("form.descriptionPlaceholder")} className="min-h-32" />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Type"><ComboField name="type" defaultValue="INCIDENT" options={typeOpts} /></Field>
-        <Field label="Priority"><ComboField name="priority" defaultValue="MEDIUM" options={prioOpts} /></Field>
-        <Field label="Impact"><ComboField name="impact" defaultValue="MEDIUM" options={levelOpts} /></Field>
-        <Field label="Urgency"><ComboField name="urgency" defaultValue="MEDIUM" options={levelOpts} /></Field>
+        <Field label={tc("type")}><ComboField name="type" defaultValue="INCIDENT" options={typeOpts} /></Field>
+        <Field label={tc("priority")}><ComboField name="priority" defaultValue="MEDIUM" options={prioOpts} /></Field>
+        <Field label={tc("impact")}><ComboField name="impact" defaultValue="MEDIUM" options={levelOpts} /></Field>
+        <Field label={tc("urgency")}><ComboField name="urgency" defaultValue="MEDIUM" options={levelOpts} /></Field>
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Requester" error={fe.requesterId} hint="Who the ticket is for.">
+        <Field label={tc("requester")} error={fe.requesterId} hint={t("form.requesterHint")}>
           <ComboField
             name="requesterId"
             defaultValue={requesters.some((r) => r.id === currentUserId) ? currentUserId : requesters[0]?.id}
             options={userOpts}
-            placeholder="Who it's for"
+            placeholder={t("form.requesterPlaceholder")}
           />
         </Field>
-        <Field label="Requested by" hint="If someone raised this on behalf of the requester.">
-          <ComboField name="requestedByUserId" options={userOpts} includeNone noneLabel="— The requester —" placeholder="On behalf of the requester" />
+        <Field label={t("form.requestedBy")} hint={t("form.requestedByHint")}>
+          <ComboField name="requestedByUserId" options={userOpts} includeNone noneLabel={t("form.theRequester")} placeholder={t("form.requestedByPlaceholder")} />
         </Field>
-        <Field label="Assignee">
-          <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel="Unassigned" />
+        <Field label={tc("assignee")}>
+          <ComboField name="assigneeId" defaultValue={currentUserId} options={agentOpts} includeNone noneLabel={tc("unassigned")} />
         </Field>
-        <Field label="Group"><ComboField name="groupId" options={groupOpts} includeNone noneLabel="No group" /></Field>
-        <Field label="Category"><ComboField name="categoryId" options={catOpts} includeNone noneLabel="No category" /></Field>
-        <Field label="Service"><ComboField name="serviceId" options={svcOpts} includeNone noneLabel="No service" /></Field>
+        <Field label={tc("group")}><ComboField name="groupId" options={groupOpts} includeNone noneLabel={t("form.noGroup")} /></Field>
+        <Field label={tc("category")}><ComboField name="categoryId" options={catOpts} includeNone noneLabel={t("form.noCategory")} /></Field>
+        <Field label={tc("service")}><ComboField name="serviceId" options={svcOpts} includeNone noneLabel={t("form.noService")} /></Field>
       </div>
 
       {customFieldDefs.length > 0 ? (
         <div className="grid gap-3">
-          <p className="text-sm font-medium">Custom fields</p>
+          <p className="text-sm font-medium">{t("form.customFields")}</p>
           <FormCustomFields defs={customFieldDefs} disabled={pending} />
         </div>
       ) : null}
@@ -109,7 +115,7 @@ export function TicketForm({
       <div className="flex items-center justify-end gap-2 border-t pt-4">
         <Button type="submit" disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          Create ticket
+          {t("form.create")}
         </Button>
       </div>
     </form>

@@ -7,13 +7,18 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { TicketForm } from "@/components/tickets/ticket-form";
 import type { CustomFieldDef } from "@/lib/custom-fields";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New ticket" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("tickets");
+  return { title: t("newTicket") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NewTicketPage() {
   const me = await requireUser();
-  const [options, requesters, customFieldDefs] = await Promise.all([
+  const [t, options, requesters, customFieldDefs] = await Promise.all([
+    getT("tickets"),
     getFormOptions(),
     db.user.findMany({
       where: { isActive: true },
@@ -30,8 +35,8 @@ export default async function NewTicketPage() {
     <>
       <PageHeader
         icon={TicketIcon}
-        title="New ticket"
-        description="Log a new incident or service request."
+        title={t("newTicket")}
+        description={t("new.description")}
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">

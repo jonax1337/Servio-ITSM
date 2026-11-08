@@ -4,18 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ShoppingBag, AlertCircle, Ticket, BookOpen, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/client";
 
 const items = [
-  { href: "/portal", label: "Home", icon: Home },
-  { href: "/portal/catalog", label: "Catalog", icon: ShoppingBag },
-  { href: "/portal/new", label: "Report an issue", icon: AlertCircle },
-  { href: "/portal/tickets", label: "My tickets", icon: Ticket },
-  { href: "/portal/knowledge", label: "Knowledge", icon: BookOpen },
-  { href: "/portal/status", label: "Status", icon: Activity },
-];
+  { href: "/portal", label: "nav.home", icon: Home },
+  { href: "/portal/catalog", label: "nav.catalog", icon: ShoppingBag },
+  { href: "/portal/new", label: "nav.reportIssue", icon: AlertCircle },
+  { href: "/portal/tickets", label: "nav.myTickets", icon: Ticket },
+  { href: "/portal/knowledge", label: "nav.knowledge", icon: BookOpen },
+  { href: "/portal/status", label: "nav.status", icon: Activity },
+] as const;
 
 export function PortalNav() {
   const pathname = usePathname();
+  const t = useT("portal");
   const active = (href: string) =>
     href === "/portal" ? pathname === "/portal" : pathname.startsWith(href);
 
@@ -36,7 +38,7 @@ export function PortalNav() {
             )}
           >
             <i.icon className="size-4" />
-            {i.label}
+            {t(i.label)}
           </Link>
         );
       })}

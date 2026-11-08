@@ -4,8 +4,12 @@ import { Wordmark } from "@/components/brand";
 import { ticketRef } from "@/lib/constants";
 import { getSurveyByToken } from "@/lib/csat-survey";
 import { SurveyForm } from "./survey-form";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Rate our support" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("survey");
+  return { title: t("pageTitle") };
+}
 
 /**
  * PUBLIC customer-satisfaction (CSAT) rating page. Reachable without login —
@@ -19,6 +23,7 @@ export default async function SurveyPage({
 }) {
   const { token } = await params;
   const survey = await getSurveyByToken(token);
+  const t = await getT("survey");
 
   const ref = survey?.ticket
     ? ticketRef(survey.ticket.id, survey.ticket.prefix)
@@ -37,31 +42,28 @@ export default async function SurveyPage({
         <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
           {!survey ? (
             <ClosedState
-              title="Survey unavailable"
-              body="This survey link is not valid or has expired."
+              title={t("unavailableTitle")}
+              body={t("unavailableText")}
             />
           ) : survey.respondedAt ? (
             <ClosedState
-              title="Thanks for your feedback!"
-              body="You've already rated this request. We appreciate you taking the time."
+              title={t("thanksTitle")}
+              body={t("thanksText")}
             />
           ) : (
             <>
               <div className="mb-6 grid gap-1.5">
                 <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  How did we do?
+                  {t("howDidWeDo")}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {ref ? (
-                    <>
-                      Your request{" "}
-                      <span className="font-mono">{ref}</span>
-                      {survey.ticket?.title ? ` — “${survey.ticket.title}”` : ""} was
-                      resolved. Please rate the support you received.
-                    </>
-                  ) : (
-                    "Please rate the support you received."
-                  )}
+                  {ref
+                    ? t.rich("requestResolved", {
+                        ref,
+                        title: survey.ticket?.title ? t("requestTitle", { title: survey.ticket.title }) : "",
+                        mono: (chunks) => <span className="font-mono">{chunks}</span>,
+                      })
+                    : t("pleaseRate")}
                 </p>
               </div>
               <SurveyForm token={survey.token} />
@@ -70,7 +72,7 @@ export default async function SurveyPage({
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Servio · MIT licensed
+          {t("copyright", { year: String(new Date().getFullYear()) })}
         </p>
       </div>
     </div>

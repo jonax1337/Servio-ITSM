@@ -16,6 +16,7 @@ import {
   RadialBar,
   PolarAngleAxis,
 } from "recharts";
+import { useT } from "@/lib/i18n/client";
 
 const DONUT_COLORS = [
   "var(--chart-1)",
@@ -46,6 +47,7 @@ export function VolumeChart({
 }: {
   data: { label: string; created: number; resolved: number }[];
 }) {
+  const t = useT("dashboard");
   return (
     <ResponsiveContainer width="100%" height="100%" minHeight={140}>
       <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -82,7 +84,7 @@ export function VolumeChart({
           stroke="var(--chart-1)"
           strokeWidth={2}
           fill="url(#gCreated)"
-          name="Created"
+          name={t("created")}
         />
         <Area
           type="monotone"
@@ -90,7 +92,7 @@ export function VolumeChart({
           stroke="var(--chart-4)"
           strokeWidth={2}
           fill="url(#gResolved)"
-          name="Resolved"
+          name={t("resolved")}
         />
       </AreaChart>
     </ResponsiveContainer>

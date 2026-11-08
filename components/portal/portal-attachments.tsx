@@ -6,6 +6,7 @@ import { deleteAttachment } from "@/lib/actions/attachments";
 import { iconForMime, formatBytes, DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT } from "@/lib/attachments-ui";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { cn } from "@/lib/utils";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Staged = { id: string; filename: string; mime: string; size: number; previewUrl?: string };
 
@@ -28,6 +29,8 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
   const [dragging, setDragging] = useState(false);
   const [, startDelete] = useTransition();
   const preview = useFilePreview();
+  const t = useT("portal");
+  const tm = useServerMessage();
 
   useEffect(() => {
     const form = rootRef.current?.closest("form");
@@ -58,11 +61,11 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
           }
         } else {
           if (previewUrl) URL.revokeObjectURL(previewUrl);
-          try { setError(JSON.parse(xhr.responseText)?.error ?? "Upload failed."); } catch { setError("Upload failed."); }
+          try { setError(JSON.parse(xhr.responseText)?.error ?? t("uploadFailed")); } catch { setError(t("uploadFailed")); }
         }
         resolve();
       };
-      xhr.onerror = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); setError("Network error during upload."); resolve(); };
+      xhr.onerror = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); setError(t("uploadNetworkError")); resolve(); };
       xhr.send(fd);
     });
 
@@ -72,7 +75,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
     setBusy(true);
     for (const file of Array.from(list)) {
       if (file.size > maxBytes) {
-        setError(`${file.name} is larger than ${formatBytes(maxBytes)}.`);
+        setError(t("fileTooLarge", { name: file.name, max: formatBytes(maxBytes) }));
         continue;
       }
       const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
@@ -115,9 +118,9 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
         ) : (
           <UploadCloud className="size-5 text-muted-foreground" />
         )}
-        <span className="text-sm font-medium">Add a screenshot or file</span>
+        <span className="text-sm font-medium">{t("addFile")}</span>
         <span className="text-xs text-muted-foreground">
-          Drag &amp; drop, or click to browse. Images, PDF, Office docs, media &amp; more (max {formatBytes(maxBytes)}).
+          {t("addFileHint", { max: formatBytes(maxBytes) })}
         </span>
       </button>
 
@@ -150,7 +153,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
                     type="button"
                     onClick={() => preview.openFile(previewFile)}
                     className="inline-flex items-center gap-2 rounded-md hover:opacity-80"
-                    title={`Preview ${f.filename}`}
+                    title={t("previewFile", { name: f.filename })}
                   >
                     {thumb}
                     {meta}
@@ -164,7 +167,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
                 <button
                   type="button"
                   onClick={() => remove(f.id)}
-                  aria-label={`Remove ${f.filename}`}
+                  aria-label={t("removeFile", { name: f.filename })}
                   className="ml-0.5 grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <X className="size-3.5" />
@@ -175,7 +178,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
         </div>
       ) : null}
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error)}</p> : null}
 
       <FilePreview {...preview.props} />
     </div>

@@ -53,6 +53,10 @@ proxy redirects away from it: a link **shown** to a role that ends on `/no-acces
 `/login` or (for the USER role) `/portal` is a bug in what that role is shown. Every
 failure is listed in one table (role, source page, target, reason).
 
+[`e2e/i18n.spec.ts`](../e2e/i18n.spec.ts) runs the same crawl for a German agent (`priya@`) and a
+German end user (`emma@`), whose `User.locale` it sets to `de` through Prisma, and checks the
+sign-in page's language switch. See [i18n.md](./i18n.md).
+
 Links that are broken today but wait for a decision go into `KNOWN_BROKEN` in the
 static test, with a one-line reason; the test fails once such an entry is fixed so the
 list cannot go stale.

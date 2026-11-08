@@ -1,7 +1,8 @@
 import { Search, ShieldCheck } from "lucide-react";
 import { ProblemTextCard } from "@/components/problems/problem-editors";
+import { getT } from "@/lib/i18n/server";
 
-export function ProblemAnalysisTab({
+export async function ProblemAnalysisTab({
   problemId,
   rootCause,
   workaround,
@@ -12,24 +13,25 @@ export function ProblemAnalysisTab({
   workaround: string | null;
   editable: boolean;
 }) {
+  const t = await getT("problems");
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
       <ProblemTextCard
         id={problemId}
         field="rootCause"
-        label="Root cause"
+        label={t("rootCause")}
         icon={<Search className="size-4 text-muted-foreground" />}
         value={rootCause}
-        emptyText="Not yet identified."
+        emptyText={t("rootCauseEmpty")}
         editable={editable}
       />
       <ProblemTextCard
         id={problemId}
         field="workaround"
-        label="Workaround"
+        label={t("workaround")}
         icon={<ShieldCheck className="size-4 text-muted-foreground" />}
         value={workaround}
-        emptyText="No workaround documented."
+        emptyText={t("workaroundEmpty")}
         editable={editable}
       />
     </div>

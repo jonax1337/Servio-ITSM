@@ -9,8 +9,13 @@ import { CategoryRowActions } from "@/components/categories/category-row-actions
 import type { CategoryData } from "@/components/categories/category-form";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { cn } from "@/lib/utils";
+import { getT } from "@/lib/i18n/server";
+import type { Translator } from "@/lib/i18n/translate";
 
-export const metadata: Metadata = { title: "Categories" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("categories");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 type Team = { id: string; name: string };
@@ -25,11 +30,13 @@ type Node = {
 };
 
 function Tree({
+  t,
   nodes,
   parents,
   teams,
   depth = 0,
 }: {
+  t: Translator<"categories">;
   nodes: Node[];
   parents: { id: string; name: string }[];
   teams: Team[];
@@ -54,11 +61,11 @@ function Tree({
               <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{n.team}</span>
             ) : null}
             {n.archived ? (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Archived</span>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t("archived")}</span>
             ) : null}
             <div className="ml-auto flex items-center gap-2">
               {n.ticketCount > 0 ? (
-                <span className="text-xs text-muted-foreground">{n.ticketCount} tickets</span>
+                <span className="text-xs text-muted-foreground">{t("ticketCount", { count: n.ticketCount })}</span>
               ) : null}
               <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <CategoryRowActions
@@ -71,7 +78,7 @@ function Tree({
               </div>
             </div>
           </div>
-          {n.children.length > 0 ? <Tree nodes={n.children} parents={parents} teams={teams} depth={depth + 1} /> : null}
+          {n.children.length > 0 ? <Tree t={t} nodes={n.children} parents={parents} teams={teams} depth={depth + 1} /> : null}
         </li>
       ))}
     </ul>
@@ -79,6 +86,7 @@ function Tree({
 }
 
 export default async function CategoriesPage() {
+  const t = await getT("categories");
   const [categories, teams] = await Promise.all([
     db.category.findMany({
       orderBy: { name: "asc" },
@@ -119,8 +127,8 @@ export default async function CategoriesPage() {
     <>
       <PageHeader
         icon={FolderTree}
-        title="Categories"
-        description="Your classification taxonomy — nest categories, assign a handling team, and archive ones you no longer use."
+        title={t("title")}
+        description={t("description")}
       >
         <CreateCategoryDialog parents={parents} teams={teams} />
       </PageHeader>
@@ -129,15 +137,15 @@ export default async function CategoriesPage() {
         {roots.length === 0 ? (
           <EmptyState
             icon={FolderTree}
-            title="No categories yet"
-            description="Create a top-level category (e.g. Hardware) and nest subcategories under it."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           >
             <CreateCategoryDialog parents={parents} teams={teams} size="sm" />
           </EmptyState>
         ) : (
           <Card>
             <CardContent>
-              <Tree nodes={roots} parents={parents} teams={teams} />
+              <Tree t={t} nodes={roots} parents={parents} teams={teams} />
             </CardContent>
           </Card>
         )}

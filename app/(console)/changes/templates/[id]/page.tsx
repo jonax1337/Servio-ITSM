@@ -10,6 +10,7 @@ import { LinkButton } from "@/components/link-button";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { TemplateForm } from "@/components/changes/templates/template-form";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,9 @@ type Params = Promise<{ id: string }>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { id } = await params;
   const template = await db.changeTemplate.findUnique({ where: { id }, select: { name: true } });
-  return { title: template?.name ?? "Change template" };
+  if (template) return { title: template.name };
+  const t = await getT("changes");
+  return { title: t("templates.fallbackTitle") };
 }
 
 export default async function ChangeTemplateDetailPage({ params }: { params: Params }) {
@@ -29,31 +32,32 @@ export default async function ChangeTemplateDetailPage({ params }: { params: Par
     getFormOptions(),
   ]);
   if (!template) notFound();
+  const [t, tc] = await Promise.all([getT("changes"), getT("common")]);
 
   return (
     <>
       <PageHeader
         icon={FileStack}
         title={template.name}
-        description={`Used for ${template._count.changes} change${template._count.changes === 1 ? "" : "s"}.`}
+        description={t("templates.usedFor", { count: template._count.changes })}
       >
         <LinkButton href="/changes/templates" variant="outline">
-          <ArrowLeft className="size-4" /> Templates
+          <ArrowLeft className="size-4" /> {t("list.templates")}
         </LinkButton>
         {template.isActive ? (
           <LinkButton href={`/changes/new?template=${template.id}`} variant="outline">
-            <GitPullRequestArrow className="size-4" /> New change from template
+            <GitPullRequestArrow className="size-4" /> {t("templates.newChange")}
           </LinkButton>
         ) : null}
         <ConfirmButton
           action={deleteChangeTemplate}
           fields={{ id: template.id }}
-          title={`Delete “${template.name}”?`}
-          description="Changes already created from it keep their content; they just lose the link to the template."
+          title={t("templates.deleteTitle", { name: template.name })}
+          description={t("templates.deleteDescription")}
           triggerVariant="outline"
           triggerSize="default"
         >
-          <Trash2 className="size-4" /> Delete
+          <Trash2 className="size-4" /> {tc("delete")}
         </ConfirmButton>
       </PageHeader>
       <PageBody>

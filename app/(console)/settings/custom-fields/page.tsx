@@ -15,14 +15,19 @@ import {
   parseConditions, type CustomFieldDef, type CustomFieldEntity, type CustomFieldType,
 } from "@/lib/custom-fields";
 import { OPERATORS } from "@/lib/automation-defs";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Custom Fields" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("customFields.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
-const opLabel = (k: string) => OPERATORS.find((o) => o.value === k)?.label ?? k;
 
 export default async function CustomFieldsPage() {
   await requireRole("MANAGER");
+  const t = await getT("settings");
+  const opLabel = (k: string) => t.dyn(`op.${k}`, undefined, OPERATORS.find((o) => o.value === k)?.label ?? k);
   const defs = await db.customFieldDef.findMany({
     orderBy: [{ entityType: "asc" }, { order: "asc" }],
   });
@@ -31,8 +36,8 @@ export default async function CustomFieldsPage() {
     <>
       <PageHeader
         icon={SlidersHorizontal}
-        title="Custom Fields"
-        description="Define extra fields on tickets, problems and changes — shown in the sidebar only when your conditions match."
+        title={t("customFields.title")}
+        description={t("customFields.description")}
       />
 
       <PageBody className="grid gap-8">
@@ -41,12 +46,12 @@ export default async function CustomFieldsPage() {
           return (
             <section key={entity} className="grid gap-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">{CUSTOM_FIELD_ENTITY_LABELS[entity]}</h2>
+                <h2 className="text-sm font-semibold">{t.dyn(`customFields.entity.${entity}`, undefined, CUSTOM_FIELD_ENTITY_LABELS[entity])}</h2>
                 <CustomFieldEditor entityType={entity as CustomFieldEntity} />
               </div>
 
               {rows.length === 0 ? (
-                <EmptyState icon={SlidersHorizontal} title={`No custom fields for ${CUSTOM_FIELD_ENTITY_LABELS[entity].toLowerCase()}`} description="Add a field to collect extra data on the detail sidebar.">
+                <EmptyState icon={SlidersHorizontal} title={t.dyn(`customFields.emptyTitle.${entity}`, undefined, `No custom fields for ${CUSTOM_FIELD_ENTITY_LABELS[entity].toLowerCase()}`)} description={t("customFields.emptyDescription")}>
                   <CustomFieldEditor entityType={entity as CustomFieldEntity} />
                 </EmptyState>
               ) : (
@@ -60,20 +65,20 @@ export default async function CustomFieldsPage() {
                             <div className="flex flex-wrap items-center gap-2">
                               <CardTitle className="text-sm">{d.label}</CardTitle>
                               <span className="font-mono text-xs text-muted-foreground">{d.key}</span>
-                              <ToneBadge meta={{ label: CUSTOM_FIELD_TYPE_LABELS[d.type as CustomFieldType] ?? d.type, tone: "indigo" }} icon={false} />
-                              {d.required ? <ToneBadge meta={{ label: "Required", tone: "warning" }} icon={false} /> : null}
-                              {!d.active ? <ToneBadge meta={{ label: "Inactive", tone: "neutral" }} icon={false} /> : null}
+                              <ToneBadge meta={{ label: t.dyn(`customFields.type.${d.type}`, undefined, CUSTOM_FIELD_TYPE_LABELS[d.type as CustomFieldType] ?? d.type), tone: "indigo" }} icon={false} />
+                              {d.required ? <ToneBadge meta={{ label: t("customFields.required"), tone: "warning" }} icon={false} /> : null}
+                              {!d.active ? <ToneBadge meta={{ label: t("customFields.inactive"), tone: "neutral" }} icon={false} /> : null}
                             </div>
                             {d.help ? <p className="mt-1 text-sm text-muted-foreground">{d.help}</p> : null}
                             <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                               <EyeOff className="size-3.5" />
                               {conds.length === 0 ? (
-                                <span>Always shown</span>
+                                <span>{t("customFields.alwaysShown")}</span>
                               ) : (
                                 <span>
-                                  Shown when {conds.map((c, ci) => (
+                                  {t("customFields.shownWhen")} {conds.map((c, ci) => (
                                     <span key={ci}>
-                                      {ci > 0 ? <span className="text-muted-foreground/70"> {d.matchType === "ANY" ? "or" : "and"} </span> : null}
+                                      {ci > 0 ? <span className="text-muted-foreground/70"> {d.matchType === "ANY" ? t("customFields.or") : t("customFields.and")} </span> : null}
                                       <span className="text-foreground">{c.field}</span> {opLabel(c.op)} {["empty", "not_empty"].includes(c.op) ? "" : <span className="text-foreground">{c.value}</span>}
                                     </span>
                                   ))}
@@ -87,14 +92,14 @@ export default async function CustomFieldsPage() {
                               <form action={moveCustomField}>
                                 <input type="hidden" name="id" value={d.id} />
                                 <input type="hidden" name="direction" value="up" />
-                                <Button type="submit" variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} className="size-6">
+                                <Button type="submit" variant="ghost" size="icon-sm" aria-label={t("customFields.moveUp")} disabled={i === 0} className="size-6">
                                   <ChevronUp className="size-4 text-muted-foreground" />
                                 </Button>
                               </form>
                               <form action={moveCustomField}>
                                 <input type="hidden" name="id" value={d.id} />
                                 <input type="hidden" name="direction" value="down" />
-                                <Button type="submit" variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === rows.length - 1} className="size-6">
+                                <Button type="submit" variant="ghost" size="icon-sm" aria-label={t("customFields.moveDown")} disabled={i === rows.length - 1} className="size-6">
                                   <ChevronDown className="size-4 text-muted-foreground" />
                                 </Button>
                               </form>
@@ -103,10 +108,10 @@ export default async function CustomFieldsPage() {
                             <ConfirmButton
                               action={deleteCustomField}
                               fields={{ id: d.id }}
-                              title="Delete custom field?"
-                              description={`"${d.label}" and the values stored in it will be permanently deleted.`}
+                              title={t("customFields.deleteTitle")}
+                              description={t("customFields.deleteDescription", { label: d.label })}
                               triggerVariant="ghost"
-                              triggerLabel="Delete field"
+                              triggerLabel={t("customFields.deleteField")}
                             >
                               <Trash2 className="size-4 text-muted-foreground" />
                             </ConfirmButton>

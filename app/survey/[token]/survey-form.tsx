@@ -9,19 +9,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { SURVEY_RATING_MAX, SURVEY_RATING_MIN } from "@/lib/constants";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 const RATINGS = Array.from(
   { length: SURVEY_RATING_MAX - SURVEY_RATING_MIN + 1 },
   (_, i) => SURVEY_RATING_MIN + i,
 );
 
-const RATING_LABELS: Record<number, string> = {
-  1: "Very dissatisfied",
-  2: "Dissatisfied",
-  3: "Neutral",
-  4: "Satisfied",
-  5: "Very satisfied",
-};
 
 /** Client-side rating widget + comment, posting to the public submitSurvey action. */
 export function SurveyForm({ token }: { token: string }) {
@@ -32,14 +26,17 @@ export function SurveyForm({ token }: { token: string }) {
     undefined,
   );
   const submit = useFormSubmit(action);
+  const t = useT("survey");
+  const tm = useServerMessage();
+  const ratingLabel = (n: number) => t.dyn(`rating.${n}`, undefined, String(n));
 
   if (state && "ok" in state) {
     return (
       <div className="grid place-items-center gap-3 py-4 text-center">
         <CheckCircle2 className="size-10 text-primary" />
-        <h2 className="font-display text-xl font-semibold tracking-tight">Thank you!</h2>
+        <h2 className="font-display text-xl font-semibold tracking-tight">{t("thankYou")}</h2>
         <p className="text-sm text-muted-foreground">
-          Your feedback has been recorded — it helps us improve.
+          {t("recorded")}
         </p>
       </div>
     );
@@ -51,10 +48,10 @@ export function SurveyForm({ token }: { token: string }) {
       <div className="grid place-items-center gap-3 py-4 text-center">
         <CheckCircle2 className="size-10 text-primary" />
         <h2 className="font-display text-xl font-semibold tracking-tight">
-          Already submitted
+          {t("alreadySubmitted")}
         </h2>
         <p className="text-sm text-muted-foreground">
-          This survey has already been answered. Thank you!
+          {t("alreadyAnswered")}
         </p>
       </div>
     );
@@ -76,7 +73,7 @@ export function SurveyForm({ token }: { token: string }) {
               onClick={() => setRating(n)}
               onMouseEnter={() => setHover(n)}
               onMouseLeave={() => setHover(0)}
-              aria-label={`${n} — ${RATING_LABELS[n]}`}
+              aria-label={t("ratingAria", { n: String(n), label: ratingLabel(n) })}
               className="rounded-md p-1 outline-none transition-transform hover:scale-110 focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <Star
@@ -91,30 +88,30 @@ export function SurveyForm({ token }: { token: string }) {
           ))}
         </div>
         <p className="h-5 text-center text-sm text-muted-foreground">
-          {active ? RATING_LABELS[active] : "Tap a star to rate"}
+          {active ? ratingLabel(active) : t("tapToRate")}
         </p>
       </div>
 
       <div className="grid gap-2">
-        <Label htmlFor="comment">Anything else? (optional)</Label>
+        <Label htmlFor="comment">{t("anythingElse")}</Label>
         <Textarea
           id="comment"
           name="comment"
           rows={4}
           maxLength={2000}
-          placeholder="Tell us what went well or what we could do better…"
+          placeholder={t("commentPlaceholder")}
         />
       </div>
 
       {state && "error" in state && !alreadyDone ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={pending || rating === 0}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-        Submit feedback
+        {t("submitFeedback")}
       </Button>
     </form>
   );

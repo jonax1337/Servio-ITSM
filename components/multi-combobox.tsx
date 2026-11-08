@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/command";
 import type { ComboOption, OptionSource } from "@/components/combobox";
 import { useSearchedOptions } from "@/components/use-searched-options";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * A searchable multi-select for native forms: every chosen option is posted as its own hidden
@@ -23,15 +24,16 @@ export function MultiCombobox({
   name,
   options,
   search,
-  placeholder = "Select…",
-  searchPlaceholder = "Search…",
-  emptyText = "No results found.",
+  placeholder,
+  searchPlaceholder,
+  emptyText,
 }: OptionSource & {
   name: string;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyText?: string;
 }) {
+  const t = useT("components");
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<ComboOption[]>([]);
   const [query, setQuery] = useState("");
@@ -61,19 +63,19 @@ export function MultiCombobox({
             />
           }
         >
-          <span className="truncate">{placeholder}</span>
+          <span className="truncate">{placeholder ?? t("combo.select")}</span>
           <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </PopoverTrigger>
         <PopoverContent align="start" side="top" className="w-[var(--anchor-width)] min-w-56 rounded-md p-0">
           <Command shouldFilter={!search}>
             <CommandInput
-              placeholder={searchPlaceholder}
+              placeholder={searchPlaceholder ?? t("combo.search")}
               value={query}
               onValueChange={setQuery}
               onKeyDown={(e) => removeLastOnBackspace(e, query === "")}
             />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              <CommandEmpty>{emptyText ?? t("combo.empty")}</CommandEmpty>
               <CommandGroup>
                 {listed.map((o) => (
                   <CommandItem key={o.value} value={search ? o.value : o.label} data-checked={isChosen(o.value)} onSelect={() => toggle(o)}>
@@ -87,13 +89,13 @@ export function MultiCombobox({
         </PopoverContent>
       </Popover>
       {chosen.length > 0 ? (
-        <ul className="flex flex-wrap gap-1" aria-label="Selected">
+        <ul className="flex flex-wrap gap-1" aria-label={t("combo.selected")}>
           {chosen.map((o) => (
             <li key={o.value} className="inline-flex items-center gap-1 rounded-md bg-muted py-0.5 pl-1.5 pr-0.5 text-xs">
               {o.label}
               <button
                 type="button"
-                aria-label={`Remove ${o.label}`}
+                aria-label={t("combo.remove", { label: o.label })}
                 className="rounded-sm p-0.5 hover:text-destructive focus-visible:outline-2 focus-visible:outline-ring"
                 onClick={() => toggle(o)}
               >

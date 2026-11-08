@@ -23,9 +23,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ROLE_META, ROLES } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "People" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("people");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function PeoplePage({
@@ -35,6 +38,7 @@ export default async function PeoplePage({
 }) {
   const me = await requireUser();
   const sp = await searchParams;
+  const [t, te, f] = await Promise.all([getT("people"), getEnumT(), getFormatter()]);
   const page = getPage(sp);
   const q = getParam(sp, "q");
   const role = getParam(sp, "role");
@@ -72,15 +76,15 @@ export default async function PeoplePage({
   const filters: FilterDef[] = [
     {
       key: "role",
-      label: "Role",
-      options: ROLES.map((r) => ({ value: r, label: ROLE_META[r].label })),
+      label: t("filterRole"),
+      options: te.options(ROLE_META, ROLES),
     },
     {
       key: "active",
-      label: "Status",
+      label: t("filterStatus"),
       options: [
-        { value: "true", label: "Active" },
-        { value: "false", label: "Inactive" },
+        { value: "true", label: t("active") },
+        { value: "false", label: t("inactive") },
       ],
     },
   ];
@@ -89,33 +93,33 @@ export default async function PeoplePage({
     <>
       <PageHeader
         icon={Users}
-        title="People"
-        description="Agents, managers and end users across your organisation."
+        title={t("title")}
+        description={t("description")}
       >
         {hasRole(me.role, "ADMIN") ? <PersonDialog groups={groups.map((g) => ({ value: g.id, label: g.name }))} /> : null}
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search name or email…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {users.length === 0 ? (
           <EmptyState
             icon={Users}
-            title="No people found"
-            description="Try adjusting your filters or search terms."
+            title={t("noneFound")}
+            description={t("noneFoundText")}
           />
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead k="name" label="Name" sort={sort} dir={dir} />
-                  <SortableHead k="email" label="Email" sort={sort} dir={dir} className="hidden lg:table-cell" />
-                  <TableHead>Role</TableHead>
-                  <SortableHead k="department" label="Department" sort={sort} dir={dir} className="hidden md:table-cell" />
-                  <SortableHead k="jobTitle" label="Job title" sort={sort} dir={dir} className="hidden xl:table-cell" />
-                  <SortableHead k="isActive" label="Active" sort={sort} dir={dir} />
-                  <SortableHead k="lastLoginAt" label="Last login" sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
+                  <SortableHead k="name" label={t("colName")} sort={sort} dir={dir} />
+                  <SortableHead k="email" label={t("colEmail")} sort={sort} dir={dir} className="hidden lg:table-cell" />
+                  <TableHead>{t("colRole")}</TableHead>
+                  <SortableHead k="department" label={t("colDepartment")} sort={sort} dir={dir} className="hidden md:table-cell" />
+                  <SortableHead k="jobTitle" label={t("colJobTitle")} sort={sort} dir={dir} className="hidden xl:table-cell" />
+                  <SortableHead k="isActive" label={t("colActive")} sort={sort} dir={dir} />
+                  <SortableHead k="lastLoginAt" label={t("colLastLogin")} sort={sort} dir={dir} numeric className="hidden xl:table-cell text-right" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -158,13 +162,11 @@ export default async function PeoplePage({
                               : "size-2 rounded-full bg-muted-foreground/40"
                           }
                         />
-                        {u.isActive ? "Active" : "Inactive"}
+                        {u.isActive ? t("active") : t("inactive")}
                       </span>
                     </TableCell>
                     <TableCell className="hidden xl:table-cell text-right text-xs text-muted-foreground">
-                      {u.lastLoginAt
-                        ? formatDistanceToNow(u.lastLoginAt, { addSuffix: true })
-                        : "Never"}
+                      {u.lastLoginAt ? f.relative(u.lastLoginAt) : t("never")}
                     </TableCell>
                   </TableRow>
                 ))}

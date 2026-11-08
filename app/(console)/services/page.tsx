@@ -18,8 +18,12 @@ import {
   CRITICALITIES,
   OPEN_TICKET_STATUSES,
 } from "@/lib/constants";
+import { getEnumT, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Services" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("services");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function ServicesPage({
@@ -29,6 +33,7 @@ export default async function ServicesPage({
 }) {
   const sp = await searchParams;
   const options = await getFormOptions();
+  const [t, tc, te] = await Promise.all([getT("services"), getT("common"), getEnumT()]);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
   const criticality = getParam(sp, "criticality");
@@ -52,19 +57,13 @@ export default async function ServicesPage({
   const filters: FilterDef[] = [
     {
       key: "status",
-      label: "Status",
-      options: SERVICE_STATUSES.map((s) => ({
-        value: s,
-        label: SERVICE_STATUS_META[s].label,
-      })),
+      label: tc("status"),
+      options: te.options(SERVICE_STATUS_META, SERVICE_STATUSES),
     },
     {
       key: "criticality",
-      label: "Criticality",
-      options: CRITICALITIES.map((c) => ({
-        value: c,
-        label: CRITICALITY_META[c].label,
-      })),
+      label: t("criticality"),
+      options: te.options(CRITICALITY_META, CRITICALITIES),
     },
   ];
 
@@ -72,20 +71,20 @@ export default async function ServicesPage({
     <>
       <PageHeader
         icon={LifeBuoy}
-        title="Services"
-        description="The catalog of business and IT services you support."
+        title={t("title")}
+        description={t("description")}
       >
         <CreateServiceDialog options={options} />
       </PageHeader>
 
       <PageBody className="grid gap-4">
-        <ListToolbar filters={filters} searchPlaceholder="Search services…" />
+        <ListToolbar filters={filters} searchPlaceholder={t("searchPlaceholder")} />
 
         {services.length === 0 ? (
           <EmptyState
             icon={LifeBuoy}
-            title="No services found"
-            description="Try adjusting your filters, or add a new service to the catalog."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           >
             <CreateServiceDialog options={options} size="sm" />
           </EmptyState>
@@ -125,11 +124,10 @@ export default async function ServicesPage({
                 <div className="mt-auto flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <User className="size-3.5" />
-                    {s.owner ? (s.owner.name ?? s.owner.email) : "Unassigned"}
+                    {s.owner ? (s.owner.name ?? s.owner.email) : tc("unassigned")}
                   </span>
                   <span className="tabular-nums">
-                    {s._count.tickets} open{" "}
-                    {s._count.tickets === 1 ? "ticket" : "tickets"}
+                    {t("openTickets", { count: s._count.tickets })}
                   </span>
                 </div>
               </Link>

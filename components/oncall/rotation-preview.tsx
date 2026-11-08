@@ -1,3 +1,5 @@
+"use client";
+
 import {
   buildTimeline,
   isValidHandoffTime,
@@ -8,6 +10,8 @@ import {
 } from "@/lib/oncall-rules";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatInZone } from "./format";
+import { useT } from "@/lib/i18n/client";
+import { INTL_LOCALE } from "@/lib/i18n/config";
 
 const HOUR_MS = 3_600_000;
 const PREVIEW_SHIFTS = 4;
@@ -26,12 +30,14 @@ export function RotationPreview({
   /** Rotation members in shift order. */
   members: PreviewPerson[];
 }) {
+  const t = useT("oncall");
+  const intl = INTL_LOCALE[t.locale];
   const date = parseCalendarDate(startDate);
   const hours = shiftHours({ rotationType, customIntervalHours });
   if (!date || hours == null || !isValidHandoffTime(handoffTime) || !isValidTimeZone(timezone)) return null;
 
   if (members.length === 0) {
-    return <p className="text-xs text-muted-foreground">Add people to the rotation to preview who takes which shift.</p>;
+    return <p className="text-xs text-muted-foreground">{t("previewEmpty")}</p>;
   }
 
   const rotationStart = zonedWallToUtc(date, handoffTime, timezone);
@@ -47,7 +53,7 @@ export function RotationPreview({
   return (
     <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
       <p className="text-xs font-medium text-muted-foreground">
-        Preview{members.length === 1 ? ": the same person covers every shift" : ""}
+        {members.length === 1 ? t("previewSingle") : t("preview")}
       </p>
       <ul className="grid gap-1.5">
         {segments.map((s) => {
@@ -57,7 +63,7 @@ export function RotationPreview({
               <UserAvatar name={person?.name} email={person?.email} size="xs" />
               <span className="font-medium">{person?.name ?? person?.email}</span>
               <span className="text-xs tabular-nums text-muted-foreground">
-                {formatInZone(s.start, timezone)}{members.length === 1 ? "" : ` – ${formatInZone(s.end, timezone)}`}
+                {formatInZone(s.start, timezone, intl)}{members.length === 1 ? "" : ` – ${formatInZone(s.end, timezone, intl)}`}
               </span>
             </li>
           );

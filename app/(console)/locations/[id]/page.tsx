@@ -13,17 +13,19 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { LOCATION_TYPE_META, ASSET_TYPE_META, ASSET_STATUS_META } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const l = await db.location.findUnique({ where: { id }, select: { name: true } });
-  return { title: l?.name ?? "Location" };
+  return { title: l?.name ?? (await getT("locations"))("entity") };
 }
 
 export default async function LocationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const [t, tc] = await Promise.all([getT("locations"), getT("common")]);
   const location = await db.location.findUnique({
     where: { id },
     include: {
@@ -41,7 +43,7 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
     <div className="p-4 sm:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <LinkButton href="/locations" variant="ghost" size="icon-sm" aria-label="Back to locations"><ArrowLeft className="size-4" /></LinkButton>
+          <LinkButton href="/locations" variant="ghost" size="icon-sm" aria-label={t("backToList")}><ArrowLeft className="size-4" /></LinkButton>
           <StatusBadge map={LOCATION_TYPE_META} value={location.type} />
           {location.parent ? (
             <span className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -69,24 +71,24 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
 
       <h1 className="font-display text-2xl font-semibold tracking-tight">{location.name}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {[location.address, location.city, location.country].filter(Boolean).join(", ") || "No address on file"}
+        {[location.address, location.city, location.country].filter(Boolean).join(", ") || t("noAddress")}
       </p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Server className="size-4 text-muted-foreground" /> Assets here · {location.assets.length}
+            <Server className="size-4 text-muted-foreground" /> {t("assetsHere", { count: location.assets.length })}
           </h2>
           {location.assets.length === 0 ? (
-            <EmptyState icon={Server} title="No assets" description="No assets are assigned to this location yet." />
+            <EmptyState icon={Server} title={t("noAssetsTitle")} description={t("noAssetsDescription")} />
           ) : (
             <div className="overflow-hidden rounded-xl border bg-card">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>Asset</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t("col.asset")}</TableHead>
+                    <TableHead>{tc("type")}</TableHead>
+                    <TableHead>{tc("status")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -110,10 +112,10 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
 
         <div>
           <Card>
-            <CardHeader><CardTitle className="text-sm">Sub-locations</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">{t("subLocations")}</CardTitle></CardHeader>
             <CardContent className="grid gap-1">
               {location.children.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No sub-locations.</p>
+                <p className="text-sm text-muted-foreground">{t("noSubLocations")}</p>
               ) : (
                 location.children.map((c) => (
                   <Link key={c.id} href={`/locations/${c.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted">
@@ -129,7 +131,7 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
           </Card>
           {location.notes ? (
             <Card className="mt-4">
-              <CardHeader><CardTitle className="text-sm">Notes</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">{tc("notes")}</CardTitle></CardHeader>
               <CardContent className="whitespace-pre-wrap text-sm text-muted-foreground">{location.notes}</CardContent>
             </Card>
           ) : null}

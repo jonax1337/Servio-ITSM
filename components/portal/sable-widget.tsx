@@ -15,6 +15,7 @@ import {
   SABLE_EXIT,
 } from "@/components/assistant/sable-chrome";
 import { PortalThread } from "./portal-thread";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * The self-service help-center assistant — the SAME Sable window + assistant-ui
@@ -31,6 +32,7 @@ export function SableWidget({
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const t = useT("portal");
 
   const handleOpen = () => {
     setMounted(true);
@@ -66,7 +68,7 @@ export function SableWidget({
         >
           <div
             role="dialog"
-            aria-label={`${AI_ASSISTANT_NAME} assistant`}
+            aria-label={t("assistantLabel", { name: AI_ASSISTANT_NAME })}
             className={cn(
               "pointer-events-auto relative",
               SABLE_PANEL_FRAME,
@@ -78,12 +80,12 @@ export function SableWidget({
               extra={
                 previewOnly ? (
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    Preview
+                    {t("preview")}
                   </span>
                 ) : null
               }
             >
-              <Button type="button" variant="ghost" size="icon-sm" onClick={handleClose} aria-label="Close">
+              <Button type="button" variant="ghost" size="icon-sm" onClick={handleClose} aria-label={t("close")}>
                 <X className="size-4" />
               </Button>
             </SableHeader>
@@ -94,8 +96,7 @@ export function SableWidget({
                   <SableMark className="size-7" />
                 </span>
                 <p className="max-w-xs text-sm text-muted-foreground">
-                  {AI_ASSISTANT_NAME} is a preview here — ask your administrator to enable the AI
-                  assistant. In the meantime, you can browse answers or open a request.
+                  {t("previewText", { name: AI_ASSISTANT_NAME })}
                 </p>
               </div>
             ) : (

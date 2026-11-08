@@ -3,10 +3,11 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { AttachmentFilenameLink } from "@/components/attachments/attachment-list-row";
 import { deleteAttachment } from "@/lib/actions/attachments";
 import { formatBytes, iconForMime, type AttachmentRow } from "@/lib/attachments-ui";
-import { formatDistanceToNow } from "date-fns";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
-export function AttachmentList({
-  attachments, canDeleteAll = false, currentUserId, emptyLabel = "No files attached.",
+/** Server Component. */
+export async function AttachmentList({
+  attachments, canDeleteAll = false, currentUserId, emptyLabel,
 }: {
   attachments: AttachmentRow[];
   /** Agents: may delete any attachment. */
@@ -15,8 +16,9 @@ export function AttachmentList({
   currentUserId?: string;
   emptyLabel?: string;
 }) {
+  const [t, f] = await Promise.all([getT("tickets"), getFormatter()]);
   if (attachments.length === 0) {
-    return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
+    return <p className="text-sm text-muted-foreground">{emptyLabel ?? t("attachments.none")}</p>;
   }
   return (
     <ul className="grid gap-1.5">
@@ -29,13 +31,13 @@ export function AttachmentList({
             <div className="min-w-0 flex-1">
               <AttachmentFilenameLink attachment={a} siblings={attachments} />
               <div className="text-xs text-muted-foreground">
-                {formatBytes(a.size)} · {formatDistanceToNow(a.createdAt, { addSuffix: true })}
+                {formatBytes(a.size)} · {f.relative(a.createdAt)}
               </div>
             </div>
             <a
               href={`/api/files/${a.id}`}
               download
-              aria-label={`Download ${a.filename}`}
+              aria-label={t("attachments.download", { name: a.filename })}
               className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
             >
               <Download className="size-4" />
@@ -44,13 +46,13 @@ export function AttachmentList({
               <ConfirmButton
                 action={deleteAttachment}
                 fields={{ id: a.id }}
-                title="Remove attachment?"
-                description={`"${a.filename}" will be permanently deleted.`}
-                confirmLabel="Remove"
+                title={t("attachments.removeTitle")}
+                description={t("tasks.deleteDescription", { title: a.filename })}
+                confirmLabel={t("work.remove")}
                 triggerVariant="ghost"
                 triggerSize="icon-xs"
                 triggerClassName="opacity-0 transition-opacity group-hover:opacity-100"
-                triggerLabel="Remove attachment"
+                triggerLabel={t("attachments.removeAttachment")}
               >
                 <Trash2 className="size-3.5" />
               </ConfirmButton>

@@ -5,22 +5,25 @@ import { ssoEnabled, ssoProviderName } from "@/auth";
 import { Wordmark, BrandName } from "@/components/brand";
 import { SableMark } from "@/components/sable-mark";
 import { LoginForm } from "./login-form";
+import { getLocale, getT } from "@/lib/i18n/server";
+import { LOCALES, LOCALE_NAMES } from "@/lib/i18n/config";
+import { setSignedOutLocale } from "@/lib/actions/locale";
+import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Sign in" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("auth");
+  return { title: t("pageTitle") };
+}
 
 // SSO is configured by runtime env (AUTH_OIDC_*). Without this the page is
 // prerendered at build time, where those vars are unset, so the published Docker
 // image never showed the SSO button (#49).
 export const dynamic = "force-dynamic";
 
-const highlights = [
-  "Tickets, Problems & Changes — full ITIL flow",
-  "CMDB with asset dependency mapping",
-  "SSO, self-service portal & a clean REST API",
-  "Sable proposes. Your team stays in control.",
-];
+const HIGHLIGHTS = ["highlightItil", "highlightCmdb", "highlightSso", "highlightSable"] as const;
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const [t, locale] = await Promise.all([getT("auth"), getLocale()]);
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       {/* Left: brand / marketing panel */}
@@ -32,24 +35,23 @@ export default function LoginPage() {
           <Wordmark />
           <div className="max-w-md">
             <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight">
-              Service,<br /><span className="text-primary">in flow.</span>
+              {t("heroLine1")}<br /><span className="text-primary">{t("heroLine2")}</span>
             </h1>
             <p className="mt-4 text-muted-foreground">
-              Your service desk. A smarter teammate. Bring tickets, knowledge,
-              changes and assets together, with Sable working alongside your team.
+              {t("heroText")}
             </p>
             <ul className="mt-8 grid gap-3">
-              {highlights.map((h) => (
+              {HIGHLIGHTS.map((h) => (
                 <li key={h} className="flex items-center gap-3 text-sm">
                   <CheckCircle2 className="size-4 shrink-0 text-primary" />
-                  <span>{h}</span>
+                  <span>{t(h)}</span>
                 </li>
               ))}
             </ul>
           </div>
           <div className="grid gap-5">
             <div className="flex items-center gap-3 text-sable"><SableMark className="size-7" /><BrandName brand="sable" className="h-4" /></div>
-            <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Servio · MIT licensed</p>
+            <p className="text-xs text-muted-foreground">{t("copyright", { year: String(new Date().getFullYear()) })}</p>
           </div>
         </div>
       </div>
@@ -63,16 +65,38 @@ export default function LoginPage() {
           <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
             <div className="mb-6 grid gap-1.5">
               <h2 className="font-display text-2xl font-semibold tracking-tight">
-                Welcome back
+                {t("welcomeBack")}
               </h2>
               <p className="text-sm text-muted-foreground">
-                Sign in to your Servio workspace.
+                {t("signInSubtitle")}
               </p>
             </div>
             <Suspense>
               <LoginForm ssoEnabled={ssoEnabled} ssoName={ssoProviderName} />
             </Suspense>
           </div>
+          {/* Language for signed-out visitors (cookie); signed-in users pick it in Account settings. */}
+          <form action={setSignedOutLocale} className="mt-4 flex items-center justify-center gap-1 text-xs text-muted-foreground">
+            <span className="sr-only">{t("language")}</span>
+            {LOCALES.map((l, i) => (
+              <span key={l} className="flex items-center gap-1">
+                {i > 0 ? <span aria-hidden>·</span> : null}
+                <button
+                  type="submit"
+                  name="locale"
+                  value={l}
+                  lang={l}
+                  aria-pressed={l === locale}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 transition-colors hover:text-foreground",
+                    l === locale && "font-medium text-foreground",
+                  )}
+                >
+                  {LOCALE_NAMES[l]}
+                </button>
+              </span>
+            ))}
+          </form>
         </div>
       </div>
     </div>

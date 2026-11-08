@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * A small controlled dialog with a single text field, used across the Sable
@@ -23,10 +24,10 @@ export function NameDialog({
   open,
   onOpenChange,
   title,
-  label = "Name",
+  label,
   placeholder,
   initialValue = "",
-  submitLabel = "Save",
+  submitLabel,
   onSubmit,
 }: {
   open: boolean;
@@ -38,6 +39,7 @@ export function NameDialog({
   submitLabel?: string;
   onSubmit: (name: string) => Promise<void> | void;
 }) {
+  const tc = useT("common");
   const [value, setValue] = useState(initialValue);
   const [busy, setBusy] = useState(false);
 
@@ -77,7 +79,7 @@ export function NameDialog({
           className="grid gap-4"
         >
           <div className="grid gap-1.5">
-            <Label htmlFor="name-dialog-input">{label}</Label>
+            <Label htmlFor="name-dialog-input">{label ?? tc("name")}</Label>
             <Input
               id="name-dialog-input"
               autoFocus
@@ -94,11 +96,11 @@ export function NameDialog({
               onClick={() => onOpenChange(false)}
               disabled={busy}
             >
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button type="submit" disabled={!canSubmit}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-              {submitLabel}
+              {submitLabel ?? tc("save")}
             </Button>
           </DialogFooter>
         </form>

@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { AI_INSIGHT_KIND_META, TICKET_STATUS_META, ticketRef } from "@/lib/constants";
 import { parseKbGapPayload } from "@/lib/ai-insights-rules";
 import { StatusBadge } from "@/components/status-badge";
 import { InsightActions } from "@/components/ai/insights/insight-actions";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export type InsightCardData = {
   id: string;
@@ -17,7 +17,8 @@ export type InsightCardData = {
 
 const MAX_TICKET_ROWS = 5;
 
-export function InsightCard({ insight }: { insight: InsightCardData }) {
+export async function InsightCard({ insight }: { insight: InsightCardData }) {
+  const [t, f] = await Promise.all([getT("assistant"), getFormatter()]);
   const isCluster = insight.kind === "CLUSTER";
   const tickets = [...insight.tickets].sort((a, b) => a.id - b.id);
   const shown = tickets.slice(0, MAX_TICKET_ROWS);
@@ -29,7 +30,7 @@ export function InsightCard({ insight }: { insight: InsightCardData }) {
     <article className="grid gap-3 rounded-xl border bg-card p-4">
       <header className="flex flex-wrap items-center gap-2">
         <StatusBadge map={AI_INSIGHT_KIND_META} value={insight.kind} />
-        <span className="text-xs text-muted-foreground">Noticed {formatDistanceToNow(insight.createdAt, { addSuffix: true })}</span>
+        <span className="text-xs text-muted-foreground">{t("insight.noticed", { when: f.relative(insight.createdAt) })}</span>
       </header>
 
       <div className="grid gap-1">
@@ -38,18 +39,18 @@ export function InsightCard({ insight }: { insight: InsightCardData }) {
       </div>
 
       <ul className="divide-y rounded-lg border">
-        {shown.map((t) => (
-          <li key={t.id} className="grid gap-0.5 px-3 py-2 text-sm">
-            <Link href={`/tickets/${t.id}`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 hover:text-primary">
-              <span className="font-mono text-xs text-muted-foreground">{ticketRef(t.id, t.prefix)}</span>
-              <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
-              <StatusBadge map={TICKET_STATUS_META} value={t.status} />
+        {shown.map((row) => (
+          <li key={row.id} className="grid gap-0.5 px-3 py-2 text-sm">
+            <Link href={`/tickets/${row.id}`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 hover:text-primary">
+              <span className="font-mono text-xs text-muted-foreground">{ticketRef(row.id, row.prefix)}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">{row.title}</span>
+              <StatusBadge map={TICKET_STATUS_META} value={row.status} />
             </Link>
-            {fixByTicket.has(t.id) ? <p className="text-xs text-muted-foreground">Fix: {fixByTicket.get(t.id)}</p> : null}
+            {fixByTicket.has(row.id) ? <p className="text-xs text-muted-foreground">{t("insight.fix", { note: fixByTicket.get(row.id) })}</p> : null}
           </li>
         ))}
         {tickets.length > shown.length ? (
-          <li className="px-3 py-2 text-xs text-muted-foreground">+{tickets.length - shown.length} more tickets</li>
+          <li className="px-3 py-2 text-xs text-muted-foreground">{t("insight.moreTickets", { count: tickets.length - shown.length })}</li>
         ) : null}
       </ul>
 

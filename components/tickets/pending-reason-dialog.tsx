@@ -12,6 +12,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 export type PendingPayload = { reason: string; noteHtml: string; isInternal: boolean };
 
@@ -45,9 +46,12 @@ function PendingForm({
   const [noteHtml, setNoteHtml] = useState("");
   const [isInternal, setIsInternal] = useState(true); // waiting notes default to internal
   const [busy, setBusy] = useState(false);
+  const t = useT("tickets");
+  const tc = useT("common");
+  const te = useEnumT();
 
   const opts: ComboOption[] = PENDING_REASONS.map((r) => ({
-    value: r, label: PENDING_REASON_META[r].label, tone: PENDING_REASON_META[r].tone, icon: PENDING_REASON_META[r].icon,
+    value: r, label: te(PENDING_REASON_META, r), tone: PENDING_REASON_META[r].tone, icon: PENDING_REASON_META[r].icon,
   }));
 
   async function confirm() {
@@ -67,32 +71,32 @@ function PendingForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{status === "ON_HOLD" ? "Put ticket on hold" : "Set ticket to pending"}</DialogTitle>
-        <DialogDescription>Tell us what this ticket is waiting on.</DialogDescription>
+        <DialogTitle>{status === "ON_HOLD" ? t("pending.titleOnHold") : t("pending.titlePending")}</DialogTitle>
+        <DialogDescription>{t("pending.description")}</DialogDescription>
       </DialogHeader>
       <div className="grid gap-3" onKeyDown={confirmOnEnter}>
         <div className="grid gap-1.5">
-          <Label>Pending reason</Label>
+          <Label>{t("pending.reason")}</Label>
           <Combobox options={opts} value={reason} onChange={setReason} />
         </div>
         <div className="grid gap-1.5">
-          <Label>Note (optional)</Label>
+          <Label>{t("pending.noteOptional")}</Label>
           <RichTextEditor
             name="pendingNote"
-            ariaLabel="Note"
-            placeholder="e.g. Waiting on the customer to confirm the fix…"
+            ariaLabel={t("work.note")}
+            placeholder={t("pending.notePlaceholder")}
             onChangeHTML={setNoteHtml}
           />
         </div>
         <div className="flex items-center gap-2">
           <Checkbox id="pend-internal" checked={isInternal} onCheckedChange={(v) => setIsInternal(v === true)} />
-          <Label htmlFor="pend-internal" className="text-xs text-muted-foreground">Internal note (not visible to the requester)</Label>
+          <Label htmlFor="pend-internal" className="text-xs text-muted-foreground">{t("pending.internalNote")}</Label>
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>{tc("cancel")}</Button>
           <Button type="button" onClick={confirm} disabled={busy} autoFocus>
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            Confirm
+            {tc("confirm")}
           </Button>
         </DialogFooter>
       </div>

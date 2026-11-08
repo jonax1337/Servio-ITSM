@@ -9,7 +9,7 @@ import { canSeatApprovers } from "@/lib/change-rules";
 import { changeSelfApprovalError } from "@/lib/approval-rules";
 import { Info } from "lucide-react";
 import type { ComboOption } from "@/components/combobox";
-import { formatDistanceToNow } from "date-fns";
+import { getFormatter, getServerMessageT, getT } from "@/lib/i18n/server";
 
 export type ApprovalRow = {
   id: string;
@@ -19,7 +19,7 @@ export type ApprovalRow = {
   decidedAt: Date | null;
 };
 
-export function ApprovalPanel({
+export async function ApprovalPanel({
   preAuthorized, changeStatus, approvals, currentUserId, canManage, changeId, agentOptions, change,
 }: {
   /** Who raised and owns the change: they may not decide its approvals. */
@@ -35,13 +35,14 @@ export function ApprovalPanel({
 }) {
   const canSeat = canManage && !preAuthorized && canSeatApprovers(changeStatus);
   const selfApproval = changeSelfApprovalError(change, currentUserId);
+  const [t, f, tm] = await Promise.all([getT("changes"), getFormatter(), getServerMessageT()]);
 
   return (
     <div className="mt-8">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <ShieldCheck className="size-4 text-muted-foreground" />
-          CAB approvals · {approvals.length}
+          {t("approvalPanel.title", { count: approvals.length })}
         </h2>
         {canSeat ? <AddApprover changeId={changeId} agentOptions={agentOptions} /> : null}
       </div>
@@ -49,7 +50,7 @@ export function ApprovalPanel({
       {preAuthorized ? (
         <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
           <ShieldCheck className="size-4 text-emerald-500" />
-          Standard change from an approved template — pre-approved. No CAB decision required; submitting moves it straight to Approved.
+          {t("approvalPanel.preAuthorized")}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -61,8 +62,8 @@ export function ApprovalPanel({
                   <div className="text-sm font-medium">{a.approver.name ?? a.approver.email}</div>
                   <div className="text-xs text-muted-foreground">
                     {a.decidedAt
-                      ? `Decided ${formatDistanceToNow(a.decidedAt, { addSuffix: true })}`
-                      : changeStatus === "DRAFT" ? "Will be asked on submit" : "Awaiting decision"}
+                      ? t("approvalPanel.decided", { time: f.relative(a.decidedAt) })
+                      : changeStatus === "DRAFT" ? t("approvalPanel.askedOnSubmit") : t("approvalPanel.awaiting")}
                   </div>
                 </div>
                 <StatusBadge map={APPROVAL_META} value={a.status} />
@@ -80,7 +81,7 @@ export function ApprovalPanel({
                 selfApproval ? (
                   <p className="mt-2 flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
                     <Info className="mt-0.5 size-3.5 shrink-0" />
-                    {selfApproval}
+                    {tm(selfApproval)}
                   </p>
                 ) : (
                   <ApprovalActions approvalId={a.id} />
@@ -91,7 +92,7 @@ export function ApprovalPanel({
           {approvals.length === 0 ? (
             <div className="flex items-center gap-2 rounded-xl border border-dashed bg-card/50 px-4 py-6 text-sm text-muted-foreground">
               <CheckCircle2 className="size-4" />
-              No approvers yet.{canManage ? " Submit for approval to build the CAB automatically, or add approvers above." : ""}
+              {canManage ? t("approvalPanel.emptyManager") : t("approvalPanel.empty")}
             </div>
           ) : null}
         </div>

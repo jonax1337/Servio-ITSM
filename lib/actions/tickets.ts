@@ -225,7 +225,7 @@ export async function updateTicketField(formData: FormData): Promise<TicketActio
   if (field === "status" && value === "RESOLVED") await sendResolvedMail(ticket, me.email, null);
   if (field === "assigneeId" && ticket.assignee?.email && ticket.assigneeId !== me.id) {
     await notify(ticket.assigneeId!, { type: "ASSIGNED", title: "Ticket assigned to you", body: ticket.title, entity: "Ticket", entityId: String(ticket.id) });
-    await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand())) });
+    await sendMail({ to: ticket.assignee.email, toName: ticket.assignee.name, entity: "Ticket", entityId: ticket.id, ticketId: ticket.id, ...(await tplTicketAssigned(ticket, ticket.assignee.name ?? "there", await mailBrand(ticket.assignee))) });
   }
 
   // An Undo puts back a state the user already saw: re-running routing would overwrite it,
@@ -463,7 +463,7 @@ async function sendResolvedMail(ticket: ResolvedMailTicket, actorEmail: string, 
     entity: "Ticket", entityId: ticket.id, ticketId: ticket.id,
     ...(await ticketThreadHeaders(ticket.id)),
     ...(await renderTicketResolvedEmail({
-      brand: await mailBrand(),
+      brand: await mailBrand(ticket.requester),
       ref: ticketRef(ticket.id, ticket.prefix || ticket.type),
       title: ticket.title,
       requesterName: ticket.requester.name ?? "",
@@ -1482,7 +1482,7 @@ export async function addParticipant(formData: FormData) {
   });
   if (notifyByEmail && target.email) {
     const threadHeaders = await ticketThreadHeaders(ticketId);
-    await sendMail({ to: target.email, toName: target.name, entity: "Ticket", entityId: ticketId, ticketId, ...threadHeaders, ...(await tplTicketParticipant(ticket, target.name ?? "there", me.name, note, await mailBrand())) });
+    await sendMail({ to: target.email, toName: target.name, entity: "Ticket", entityId: ticketId, ticketId, ...threadHeaders, ...(await tplTicketParticipant(ticket, target.name ?? "there", me.name, note, await mailBrand(target))) });
   }
   await db.ticketComment.create({
     data: { ticketId, authorId: me.id, isInternal: true, body: `Added ${target.name ?? target.email} as a participant${note ? `: ${note}` : "."}` },

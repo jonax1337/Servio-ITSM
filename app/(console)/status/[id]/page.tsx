@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { format } from "date-fns";
 import { ArrowLeft, ExternalLink, Eye, EyeOff, FilePen, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
@@ -23,13 +22,15 @@ import {
   TONE_TEXT_CLASSES,
   ticketRef,
 } from "@/lib/constants";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const incident = await db.statusIncident.findUnique({ where: { id }, select: { title: true } });
-  return { title: incident ? incident.title : "Status incident" };
+  const t = await getT("status");
+  return { title: incident ? incident.title : t("statusIncident") };
 }
 
 /** Delete, then leave the (now missing) detail page. */
@@ -49,8 +50,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-const when = (date: Date | null) => (date ? format(date, "MMM d, yyyy HH:mm") : "Not yet");
-
 export default async function StatusIncidentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const me = await requireRole("AGENT");
@@ -66,6 +65,9 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
     db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!incident) notFound();
+  const [t, tc, f] = await Promise.all([getT("status"), getT("common"), getFormatter()]);
+  const when = (date: Date | null) =>
+    date ? f.pattern(date, f.locale === "de" ? "d. MMM yyyy, HH:mm" : "MMM d, yyyy HH:mm") : t("notYet");
   const tickets = await listLinkableTickets(me, incident.ticketId);
   const canPublish = canPublishStatusIncident(me.role);
 
@@ -73,30 +75,30 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
     <ConfirmButton
       action={setStatusIncidentVisibility}
       fields={{ incidentId: incident.id, isPublic: "false" }}
-      title="Retract this incident?"
-      description="It disappears from the portal status page and banner. Its timeline is kept and you can publish it again."
-      confirmLabel="Retract"
+      title={t("retractTitle")}
+      description={t("retractDescription")}
+      confirmLabel={t("retract")}
       confirmVariant="default"
       triggerVariant="outline"
       triggerSize="sm"
-      successMessage="Incident retracted. It is a draft again."
+      successMessage={t("retracted")}
     >
-      <EyeOff className="size-4" /> Retract
+      <EyeOff className="size-4" /> {t("retract")}
     </ConfirmButton>
   );
   const publish = (
     <ConfirmButton
       action={setStatusIncidentVisibility}
       fields={{ incidentId: incident.id, isPublic: "true" }}
-      title="Publish this incident?"
-      description="Everyone who can open the portal will see its title, summary, affected services and every update, including the existing ones."
-      confirmLabel="Publish"
+      title={t("publishTitle")}
+      description={t("publishDescription")}
+      confirmLabel={t("publish")}
       confirmVariant="default"
       triggerVariant="default"
       triggerSize="sm"
-      successMessage="Incident published. Portal users can see it now."
+      successMessage={t("publishedToast")}
     >
-      <Eye className="size-4" /> Publish
+      <Eye className="size-4" /> {t("publish")}
     </ConfirmButton>
   );
 
@@ -105,7 +107,7 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
       {/* Main column: scrolls independently from the properties rail */}
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/status" variant="ghost" size="icon-sm" aria-label="Back to status incidents">
+          <LinkButton href="/status" variant="ghost" size="icon-sm" aria-label={t("backToIncidents")}>
             <ArrowLeft className="size-4" />
           </LinkButton>
           <VisibilityBadge isPublic={incident.isPublic} />
@@ -129,9 +131,9 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
               <ConfirmButton
                 action={removeIncident}
                 fields={{ incidentId: incident.id }}
-                title="Delete this incident?"
-                description="The incident and its whole timeline are removed permanently."
-                triggerLabel="Delete incident"
+                title={t("deleteTitle")}
+                description={t("deleteDescription")}
+                triggerLabel={t("deleteIncident")}
               >
                 <Trash2 className="size-4" />
               </ConfirmButton>
@@ -142,24 +144,24 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
         {incident.isPublic ? (
           <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 text-sm sm:px-6 ${TONE_BANNER_CLASSES.info}`}>
             <Eye className={`size-4 ${TONE_TEXT_CLASSES.info}`} />
-            <span className="font-medium">Public</span>
+            <span className="font-medium">{t("public")}</span>
             <span className="text-muted-foreground">
-              Portal users can see this incident{incident.publishedAt ? ` since ${when(incident.publishedAt)}` : ""}.
+              {incident.publishedAt ? t("publicNoticeSince", { date: when(incident.publishedAt) }) : t("publicNotice")}
             </span>
             <Link href="/portal/status" className="inline-flex items-center gap-1 text-primary hover:underline">
-              Portal status page <ExternalLink className="size-3.5" />
+              {t("portalStatusPage")} <ExternalLink className="size-3.5" />
             </Link>
             {canPublish ? <span className="ml-auto">{retract}</span> : null}
           </div>
         ) : (
           <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 text-sm sm:px-6 ${TONE_BANNER_CLASSES.warning}`}>
             <FilePen className={`size-4 ${TONE_TEXT_CLASSES.warning}`} />
-            <span className="font-medium">Draft</span>
+            <span className="font-medium">{t("draft")}</span>
             <span className="text-muted-foreground">
-              Only staff can see this. Portal users see nothing until it is published.
+              {t("draftNotice")}
             </span>
             <span className="ml-auto">
-              {canPublish ? publish : <span className="text-muted-foreground">A manager publishes it.</span>}
+              {canPublish ? publish : <span className="text-muted-foreground">{t("managerPublishes")}</span>}
             </span>
           </div>
         )}
@@ -171,14 +173,14 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
               <p className="mt-1 text-sm text-muted-foreground">{incident.summary}</p>
             ) : (
               <p className="mt-1 text-sm text-muted-foreground">
-                No summary yet. Use Edit to add a plain-language summary for portal users.
+                {t("noSummary")}
               </p>
             )}
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Post an update</CardTitle>
+              <CardTitle className="text-sm">{t("postUpdate")}</CardTitle>
             </CardHeader>
             <CardContent>
               <PostUpdateForm incidentId={incident.id} currentState={incident.state} isPublic={incident.isPublic} />
@@ -186,7 +188,7 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
           </Card>
 
           <section className="grid gap-4">
-            <h2 className="text-sm font-medium">Timeline</h2>
+            <h2 className="text-sm font-medium">{t("timeline")}</h2>
             <IncidentTimeline
               updates={incident.updates.map((u) => ({
                 id: u.id,
@@ -203,35 +205,35 @@ export default async function StatusIncidentPage({ params }: { params: Promise<{
       <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Properties</CardTitle>
+            <CardTitle className="text-sm">{tc("properties")}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="grid gap-4">
-              <Fact label="Visibility">
+              <Fact label={t("visibility")}>
                 <VisibilityBadge isPublic={incident.isPublic} />
               </Fact>
-              <Fact label="State">
+              <Fact label={t("state")}>
                 <StatusBadge map={STATUS_INCIDENT_STATE_META} value={incident.state} />
               </Fact>
-              <Fact label="Impact">
+              <Fact label={tc("impact")}>
                 <StatusBadge map={STATUS_INCIDENT_IMPACT_META} value={incident.impact} dot={false} />
               </Fact>
-              <Fact label="Affected services">
-                {incident.services.length > 0 ? incident.services.map((s) => s.service.name).join(", ") : "None"}
+              <Fact label={t("affectedServices")}>
+                {incident.services.length > 0 ? incident.services.map((s) => s.service.name).join(", ") : tc("none")}
               </Fact>
-              <Fact label="Linked ticket">
+              <Fact label={t("linkedTicket")}>
                 {incident.ticket ? (
                   <Link href={`/tickets/${incident.ticket.id}`} className="hover:text-primary">
                     <span className="font-mono text-xs">{ticketRef(incident.ticket.id, incident.ticket.prefix || incident.ticket.type)}</span>
                     <span className="block text-muted-foreground">{incident.ticket.title}</span>
                   </Link>
                 ) : (
-                  "None"
+                  tc("none")
                 )}
               </Fact>
-              <Fact label="Started">{when(incident.startedAt)}</Fact>
-              <Fact label="Published">{when(incident.publishedAt)}</Fact>
-              <Fact label="Resolved">{when(incident.resolvedAt)}</Fact>
+              <Fact label={t("started")}>{when(incident.startedAt)}</Fact>
+              <Fact label={t("published")}>{when(incident.publishedAt)}</Fact>
+              <Fact label={t("resolved")}>{when(incident.resolvedAt)}</Fact>
             </dl>
           </CardContent>
         </Card>

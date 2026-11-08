@@ -5,10 +5,13 @@ import { Link2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { linkTicket } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Links two tickets as RELATED, reporting the action's refusal as a toast. */
 export function LinkRelatedButton({ ticketId, targetId }: { ticketId: number; targetId: number }) {
   const [pending, startTransition] = useTransition();
+  const t = useT("assistant");
+  const tm = useServerMessage();
 
   const link = () => {
     const formData = new FormData();
@@ -17,15 +20,15 @@ export function LinkRelatedButton({ ticketId, targetId }: { ticketId: number; ta
     formData.set("type", "RELATED");
     startTransition(async () => {
       const result = await linkTicket(formData);
-      if (result.ok) toast.success("Linked as related.");
-      else toast.error(result.error || "Could not link the tickets.");
+      if (result.ok) toast.success(t("related.linked"));
+      else toast.error(result.error ? tm(result.error) : t("related.failed"));
     });
   };
 
   return (
     <Button type="button" variant="outline" size="sm" onClick={link} disabled={pending}>
       {pending ? <Loader2 className="animate-spin" /> : <Link2 />}
-      Link as related
+      {t("related.link")}
     </Button>
   );
 }

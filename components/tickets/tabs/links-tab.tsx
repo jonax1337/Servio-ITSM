@@ -15,6 +15,7 @@ import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
 import { HIERARCHY_PICKER_LIMIT, ancestorChain, descendantIds } from "@/lib/ticket-hierarchy-rules";
 import { TONE_TEXT_CLASSES, problemRef, changeRef, ticketRef } from "@/lib/constants";
 import type { TicketViewer } from "./ticket-tabs";
+import { getT } from "@/lib/i18n/server";
 
 type RelatedTicket = { id: number; title: string; prefix: string; status: string };
 
@@ -86,6 +87,7 @@ export async function LinksTab({
     },
   });
   if (!ticket) notFound();
+  const t = await getT("tickets");
 
   const linkedTickets = ticketLinkEntries(ticket.linksFrom, ticket.linksTo);
   const pickers = viewer.isAgent
@@ -99,7 +101,7 @@ export async function LinksTab({
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <Link2 className="size-4 text-muted-foreground" /> Linked records
+            <Link2 className="size-4 text-muted-foreground" /> {t("links.linkedRecords")}
           </h2>
           {pickers ? (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -108,42 +110,42 @@ export async function LinksTab({
               ) : null}
               <LinkPicker
                 action={setTicketProblem}
-                triggerLabel="Problem"
-                title="Link to problem"
-                description="Connect this incident to a known problem."
+                triggerLabel={t("links.problem")}
+                title={t("links.linkProblemTitle")}
+                description={t("links.linkProblemDescription")}
                 hidden={{ ticketId }}
                 valueName="problemId"
                 options={pickers.problems}
-                placeholder="Choose a problem"
-                searchPlaceholder="Search problems…"
-                emptyText="No open problems to link."
-                successMessage="Problem linked"
+                placeholder={t("links.chooseProblem")}
+                searchPlaceholder={t("links.searchProblems")}
+                emptyText={t("links.noProblems")}
+                successMessage={t("links.problemLinked")}
               />
               <LinkPicker
                 action={setTicketChange}
-                triggerLabel="Change"
-                title="Link to change"
-                description="Connect this ticket to a change request."
+                triggerLabel={t("links.change")}
+                title={t("links.linkChangeTitle")}
+                description={t("links.linkChangeDescription")}
                 hidden={{ ticketId }}
                 valueName="changeId"
                 options={pickers.changes}
-                placeholder="Choose a change"
-                searchPlaceholder="Search changes…"
-                emptyText="No open changes to link."
-                successMessage="Change linked"
+                placeholder={t("links.chooseChange")}
+                searchPlaceholder={t("links.searchChanges")}
+                emptyText={t("links.noChanges")}
+                successMessage={t("links.changeLinked")}
               />
               <LinkPicker
                 action={linkAsset}
-                triggerLabel="Asset"
-                title="Link an asset"
-                description="Attach an affected configuration item."
+                triggerLabel={t("links.asset")}
+                title={t("links.linkAssetTitle")}
+                description={t("links.linkAssetDescription")}
                 hidden={{ ticketId }}
                 valueName="assetId"
                 options={pickers.assets}
-                placeholder="Choose an asset"
-                searchPlaceholder="Search assets…"
-                emptyText="No more assets to link."
-                successMessage="Asset linked"
+                placeholder={t("links.chooseAsset")}
+                searchPlaceholder={t("links.searchAssets")}
+                emptyText={t("links.noAssets")}
+                successMessage={t("links.assetLinked")}
               />
             </div>
           ) : null}
@@ -159,7 +161,7 @@ export async function LinksTab({
                 unlink={<UnlinkBtn action={unlinkRelation} fields={{ ticketId, kind: "change" }} />} />
             ) : null}
             {linkedTickets.map((l) => (
-              <Chip key={l.linkId} href={`/tickets/${l.ticket.id}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${l.label} ${ticketRef(l.ticket.id, l.ticket.prefix)} · ${l.ticket.title}`}
+              <Chip key={l.linkId} href={`/tickets/${l.ticket.id}`} icon={<Link2 className={`size-3.5 ${TONE_TEXT_CLASSES.info}`} />} label={`${t.dyn(`linkType.${l.label}`, undefined, l.label)} ${ticketRef(l.ticket.id, l.ticket.prefix)} · ${l.ticket.title}`}
                 unlink={<UnlinkBtn action={unlinkTicket} fields={{ linkId: l.linkId }} />} />
             ))}
             {ticket.assets.map((a) => (
@@ -168,7 +170,7 @@ export async function LinksTab({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No linked records yet.</p>
+          <p className="text-sm text-muted-foreground">{t("links.none")}</p>
         )}
       </section>
 
@@ -189,7 +191,7 @@ export async function LinksTab({
         actions={
           canDraftArticleFrom(ticket.status) ? (
             <LinkButton href={`/knowledge/new?fromTicket=${ticketId}`} variant="outline" size="sm">
-              <BookOpen className="size-4" /> Create article
+              <BookOpen className="size-4" /> {t("links.createArticle")}
             </LinkButton>
           ) : null
         }

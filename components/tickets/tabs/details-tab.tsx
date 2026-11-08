@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getMaxUploadMb } from "@/lib/settings";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import type { TicketViewer } from "./ticket-tabs";
+import { getT } from "@/lib/i18n/server";
 
 /** Details tab: attachments, custom fields and participants (form answers sit above the tabs). Loads its own data. */
 export async function DetailsTab({ ticketId, viewer }: { ticketId: number; viewer: TicketViewer }) {
@@ -25,6 +26,7 @@ export async function DetailsTab({ ticketId, viewer }: { ticketId: number; viewe
     getMaxUploadMb(),
   ]);
   if (!ticket) notFound();
+  const t = await getT("tickets");
 
   // Keep only defs whose visibility matches this ticket's built-in fields.
   const visibleCustomFields = (customFieldDefs as CustomFieldDef[]).filter((def) =>
@@ -34,7 +36,7 @@ export async function DetailsTab({ ticketId, viewer }: { ticketId: number; viewe
     ticket.attachments.length > 0 || visibleCustomFields.length > 0 || ticket.participants.length > 0;
 
   if (!hasContent) {
-    return <EmptyState title="No further details" description="Attachments, custom fields and portal participants appear here." />;
+    return <EmptyState title={t("detailsTab.emptyTitle")} description={t("detailsTab.emptyDescription")} />;
   }
 
   return (
@@ -61,9 +63,9 @@ export async function DetailsTab({ ticketId, viewer }: { ticketId: number; viewe
       {/* Participants: portal-visible collaborators (e.g. a CC'd manager). */}
       {ticket.participants.length > 0 ? (
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-1.5 text-sm"><Users className="size-4 text-muted-foreground" /> Participants</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-1.5 text-sm"><Users className="size-4 text-muted-foreground" /> {t("detailsTab.participants")}</CardTitle></CardHeader>
           <CardContent className="grid gap-1.5">
-            <div className="text-xs text-muted-foreground">Can see &amp; reply in the portal</div>
+            <div className="text-xs text-muted-foreground">{t("detailsTab.participantsHint")}</div>
             {ticket.participants.map((p) => (
               <Link
                 key={p.userId}

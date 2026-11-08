@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { Lightbulb } from "lucide-react";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
@@ -12,8 +11,12 @@ import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { InsightCard } from "@/components/ai/insights/insight-card";
 import { InsightsExplainer } from "@/components/ai/insights/insights-explainer";
+import { getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Insights" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("insights");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 const MAX_OPEN_INSIGHTS = 100;
@@ -22,13 +25,14 @@ const MAX_RECENT_INSIGHTS = 10;
 const TICKET_SELECT = { select: { ticket: { select: { id: true, prefix: true, title: true, status: true } } } } as const;
 
 type InsightKind = "CLUSTER" | "KB_GAP";
-const SECTIONS: { kind: InsightKind; heading: string }[] = [
-  { kind: "CLUSTER", heading: "Incident clusters" },
-  { kind: "KB_GAP", heading: "Knowledge gaps" },
+const SECTIONS: { kind: InsightKind; heading: "incidentClusters" | "knowledgeGaps" }[] = [
+  { kind: "CLUSTER", heading: "incidentClusters" },
+  { kind: "KB_GAP", heading: "knowledgeGaps" },
 ];
 
 export default async function InsightsPage() {
   await requireRole("AGENT");
+  const [t, f] = await Promise.all([getT("insights"), getFormatter()]);
 
   const [open, recent, config, detectionEnabled] = await Promise.all([
     db.aiInsight.findMany({
@@ -53,16 +57,16 @@ export default async function InsightsPage() {
     <>
       <PageHeader
         icon={Lightbulb}
-        title="Insights"
-        description="Patterns Sable noticed in your tickets: recurring incidents to turn into a problem, and fixes worth writing down."
+        title={t("title")}
+        description={t("description")}
       />
 
       <PageBody className="grid gap-6">
         {cards.length === 0 ? (
           <EmptyState
             icon={Lightbulb}
-            title="Nothing to act on right now"
-            description="Insights appear here when Sable notices incidents that keep coming back or fixes that were never written down."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           />
         ) : (
           SECTIONS.map(({ kind, heading }) => {
@@ -71,7 +75,7 @@ export default async function InsightsPage() {
             return (
               <section key={kind} className="grid gap-3">
                 <h2 className="text-sm font-medium text-muted-foreground">
-                  {heading} <span className="tabular-nums">({ofKind.length})</span>
+                  {t(heading)} <span className="tabular-nums">({ofKind.length})</span>
                 </h2>
                 {ofKind.map((card) => (
                   <InsightCard key={card.id} insight={card} />
@@ -83,7 +87,7 @@ export default async function InsightsPage() {
 
         {recent.length > 0 ? (
           <section className="grid gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Recently handled</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">{t("recentlyHandled")}</h2>
             <ul className="divide-y rounded-xl border bg-card">
               {recent.map((insight) => (
                 <li key={insight.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
@@ -101,7 +105,7 @@ export default async function InsightsPage() {
                     </Link>
                   ) : null}
                   <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(insight.updatedAt, { addSuffix: true })}
+                    {f.relative(insight.updatedAt)}
                   </span>
                 </li>
               ))}

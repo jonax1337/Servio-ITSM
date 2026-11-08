@@ -13,6 +13,7 @@ import {
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { toDateTimeInputValue } from "./format";
 import type { PersonOption } from "./schedule-form";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 const HOUR_MS = 3_600_000;
 const NO_REPLACEMENT = "none";
@@ -47,6 +48,8 @@ export function OverrideDialog({
   suggestedWindow?: { startsAt: Date; endsAt: Date };
 }) {
   const swapping = !!swapForUserId;
+  const t = useT("oncall");
+  const tm = useServerMessage();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -56,7 +59,7 @@ export function OverrideDialog({
   const [endsAt, setEndsAt] = useState("");
 
   const coverOpts = candidates.filter((c) => c.id !== swapForUserId).map(personOption);
-  const replaceOpts: ComboOption[] = [{ value: NO_REPLACEMENT, label: "— Nobody in particular —" }, ...rotationMembers.map(personOption)];
+  const replaceOpts: ComboOption[] = [{ value: NO_REPLACEMENT, label: t("nobodyInParticular") }, ...rotationMembers.map(personOption)];
 
   const onOpenChange = (next: boolean) => {
     if (next) {
@@ -77,9 +80,9 @@ export function OverrideDialog({
       const res = await createOverride(formData);
       if (res.ok) {
         setOpen(false);
-        toast.success(swapping ? "Shift handed over" : "Override added");
+        toast.success(swapping ? t("shiftHandedOver") : t("overrideAdded"));
       } else {
-        setError(res.error ?? "Could not add the override.");
+        setError(res.error ? tm(res.error) : t("overrideFailed"));
       }
     });
   };
@@ -87,18 +90,16 @@ export function OverrideDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <Plus className="size-4" /> {swapping ? "Swap my shift" : "Add override"}
+        <Plus className="size-4" /> {swapping ? t("swapMyShift") : t("addOverride")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="size-4 text-primary" /> {swapping ? "Swap your shift" : "New override"}
+            <CalendarClock className="size-4 text-primary" /> {swapping ? t("swapYourShift") : t("newOverride")}
           </DialogTitle>
           <DialogDescription>
-            {swapping
-              ? "Hand your on-call time to a colleague. They are notified and take over for the period."
-              : "Put someone on call for a period, regardless of the rotation. The rotation resumes afterwards."}{" "}
-            Times are in {timezone}.
+            {swapping ? t("swapDescription") : t("overrideDescription")}{" "}
+            {t("timesIn", { timezone })}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
@@ -111,33 +112,33 @@ export function OverrideDialog({
           ) : null}
 
           <div className="grid gap-1.5">
-            <Label>{swapping ? "Covered by" : "On call"}</Label>
-            <Combobox options={coverOpts} value={userId} onChange={setUserId} placeholder="Choose a person" searchPlaceholder="Search agents…" />
+            <Label>{swapping ? t("coveredBy") : t("onCall")}</Label>
+            <Combobox options={coverOpts} value={userId} onChange={setUserId} placeholder={t("choosePerson")} searchPlaceholder={t("searchAgents")} />
           </div>
           {swapping ? null : (
             <div className="grid gap-1.5">
-              <Label>Covering</Label>
+              <Label>{t("covering")}</Label>
               <Combobox options={replaceOpts} value={replacesUserId} onChange={setReplacesUserId} />
-              <p className="text-xs text-muted-foreground">Optional. The rotation member whose shift this covers; they are told about it.</p>
+              <p className="text-xs text-muted-foreground">{t("coveringHint")}</p>
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="override-starts">From</Label>
+              <Label htmlFor="override-starts">{t("from")}</Label>
               <Input id="override-starts" name="startsAt" type="datetime-local" required value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="override-ends">Until</Label>
+              <Label htmlFor="override-ends">{t("untilLabel")}</Label>
               <Input id="override-ends" name="endsAt" type="datetime-local" required value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="override-reason">Reason</Label>
-            <Input id="override-reason" name="reason" maxLength={300} placeholder="Optional, e.g. holiday cover" />
+            <Label htmlFor="override-reason">{t("reason")}</Label>
+            <Input id="override-reason" name="reason" maxLength={300} placeholder={t("reasonPlaceholder")} />
           </div>
           <DialogFooter>
             <Button type="submit" disabled={pending || !userId}>
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} {swapping ? "Hand over shift" : "Add override"}
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} {swapping ? t("handOverShift") : t("addOverride")}
             </Button>
           </DialogFooter>
         </form>

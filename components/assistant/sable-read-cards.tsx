@@ -20,6 +20,7 @@ import { ToneBadge } from "@/components/status-badge";
 import { inlineBadgeMeta } from "@/lib/inline-badge";
 import { Button } from "@/components/ui/button";
 import { useSable, type SableCanvasDoc } from "./sable-provider";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * Branded, generative read cards for a couple of high-value Sable tools — a
@@ -81,6 +82,7 @@ export const SableTicketCard: FC<{ result: unknown }> = ({ result }) => {
 const TicketCardBody: FC<{ t: NonNullable<TicketResult["ticket"]> }> = ({
   t,
 }) => {
+  const tr = useT("assistant");
   return (
     <>
       <div className="flex items-center gap-2">
@@ -90,7 +92,7 @@ const TicketCardBody: FC<{ t: NonNullable<TicketResult["ticket"]> }> = ({
         <span className="font-mono text-xs font-medium text-sable">{t.ref}</span>
         {t.breached ? (
           <span className="inline-flex items-center gap-1 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-            <AlertTriangle className="size-3" /> SLA breached
+            <AlertTriangle className="size-3" /> {tr("cards.slaBreached")}
           </span>
         ) : null}
       </div>
@@ -108,7 +110,7 @@ const TicketCardBody: FC<{ t: NonNullable<TicketResult["ticket"]> }> = ({
 
       {t.resolveDueAt ? (
         <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <Clock className="size-3" /> Resolve due {t.resolveDueAt}
+          <Clock className="size-3" /> {tr("cards.resolveDue", { when: t.resolveDueAt })}
         </p>
       ) : null}
     </>
@@ -180,6 +182,7 @@ export const SableDraftCard: FC<{ result: unknown; args?: Record<string, unknown
   args,
 }) => {
   const { openCanvas } = useSable();
+  const tr = useT("assistant");
   const r = (result ?? undefined) as DraftResult | undefined;
   const a = (args ?? undefined) as DraftResult | undefined;
   const pick = (k: keyof DraftResult): string | undefined => {
@@ -218,7 +221,7 @@ export const SableDraftCard: FC<{ result: unknown; args?: Record<string, unknown
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Drafted
+          {tr("cards.drafted")}
         </p>
         <p className="truncate font-medium text-foreground">{title}</p>
       </div>
@@ -230,7 +233,7 @@ export const SableDraftCard: FC<{ result: unknown; args?: Record<string, unknown
         onClick={() => openCanvas(doc)}
       >
         <PanelRightOpen className="size-3.5" />
-        Open in canvas
+        {tr("cards.openInCanvas")}
       </Button>
     </div>
   );
@@ -243,6 +246,7 @@ type FileSearchResult = { hits?: FileHit[] };
 
 /** A short list of project-file matches, each with a snippet + a source chip. */
 export const SableFileHitsCard: FC<{ result: unknown }> = ({ result }) => {
+  const tr = useT("assistant");
   const hits = (result as FileSearchResult | undefined)?.hits;
   if (!Array.isArray(hits) || hits.length === 0) return null;
 
@@ -251,7 +255,7 @@ export const SableFileHitsCard: FC<{ result: unknown }> = ({ result }) => {
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <FolderSearch className="size-3.5 text-sable" />
         <span className="font-medium text-foreground">
-          {hits.length} passage{hits.length === 1 ? "" : "s"} from the project files
+          {tr("cards.passages", { count: hits.length })}
         </span>
       </div>
 
@@ -285,7 +289,8 @@ const SourceChip: FC<{ fileId?: string; name?: string }> = ({
   fileId,
   name,
 }) => {
-  const label = name || "file";
+  const tr = useT("assistant");
+  const label = name || tr("cards.file");
   const chip = (
     <span
       className={cn(
@@ -330,12 +335,13 @@ function isSafeSourceUrl(s: SourceItem): boolean {
 }
 
 export const SableSourcesCard: FC<{ result: unknown }> = ({ result }) => {
+  const tr = useT("assistant");
   const all = (result as { sources?: SourceItem[] } | undefined)?.sources;
   const sources = Array.isArray(all) ? all.filter(isSafeSourceUrl) : [];
   if (sources.length === 0) return null;
   return (
     <div className="my-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="text-[11px] font-medium text-muted-foreground">Sources</span>
+      <span className="text-[11px] font-medium text-muted-foreground">{tr("cards.sources")}</span>
       {sources.map((s, i) => {
         const Icon = s.kind === "kb" ? BookOpen : s.kind === "file" ? FileText : Globe;
         const cls =
@@ -368,10 +374,11 @@ export type Citation = { label: string; href: string; external?: boolean };
 export const SableCitationRow: FC<{ citations: Citation[] }> = ({
   citations,
 }) => {
+  const tr = useT("assistant");
   if (citations.length === 0) return null;
   return (
     <div className="my-1 flex flex-wrap items-center gap-1.5">
-      <span className="text-[11px] font-medium text-muted-foreground">Sources</span>
+      <span className="text-[11px] font-medium text-muted-foreground">{tr("cards.sources")}</span>
       {citations.map((c, i) =>
         c.external ? (
           <a

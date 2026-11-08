@@ -123,6 +123,11 @@ const DOC_MAP = [
     docs: ['docs/design-system.md'],
   },
   {
+    label: 'Internationalization (locale resolution, catalogs, formatting)',
+    code: ['lib/i18n/', 'messages/'],
+    docs: ['docs/i18n.md'],
+  },
+  {
     label: 'Feature modules (server actions & console/portal routes)',
     code: ['lib/actions/', 'app/(console)/', 'app/portal/'],
     docs: ['docs/modules.md'],

@@ -12,9 +12,12 @@ import { StatusBadge } from "@/components/status-badge";
 import {
   ARTICLE_STATUSES, ARTICLE_STATUS_META, ARTICLE_VISIBILITIES, ARTICLE_VISIBILITY_META,
 } from "@/lib/constants";
-import { formatDistanceToNow } from "date-fns";
+import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Knowledge Base" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("knowledge");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function KnowledgePage({
@@ -23,6 +26,7 @@ export default async function KnowledgePage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const [t, tc, te, f] = await Promise.all([getT("knowledge"), getT("common"), getEnumT(), getFormatter()]);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
   const visibility = getParam(sp, "visibility");
@@ -43,28 +47,28 @@ export default async function KnowledgePage({
     <>
       <PageHeader
         icon={BookOpen}
-        title="Knowledge Base"
-        description="Author, review and publish guides and known solutions."
+        title={t("title")}
+        description={t("description")}
       >
         <LinkButton href="/knowledge/new" size="sm">
-          <Plus className="size-4" /> New article
+          <Plus className="size-4" /> {t("newArticle")}
         </LinkButton>
       </PageHeader>
 
       <PageBody className="grid gap-4">
         <ListToolbar
-          searchPlaceholder="Search articles…"
+          searchPlaceholder={t("searchPlaceholder")}
           filters={[
-            { key: "status", label: "Status", options: ARTICLE_STATUSES.map((s) => ({ value: s, label: ARTICLE_STATUS_META[s].label })) },
-            { key: "visibility", label: "Visibility", options: ARTICLE_VISIBILITIES.map((v) => ({ value: v, label: ARTICLE_VISIBILITY_META[v].label })) },
+            { key: "status", label: tc("status"), options: te.options(ARTICLE_STATUS_META, ARTICLE_STATUSES) },
+            { key: "visibility", label: t("visibility"), options: te.options(ARTICLE_VISIBILITY_META, ARTICLE_VISIBILITIES) },
           ]}
         />
 
         {articles.length === 0 ? (
           <EmptyState
             icon={BookOpen}
-            title="No articles found"
-            description="Adjust your filters, or create the first knowledge base article."
+            title={t("emptyTitle")}
+            description={t("emptyDescription")}
           />
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
@@ -78,11 +82,11 @@ export default async function KnowledgePage({
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{a.title}</div>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{a.category?.name ?? "General"}</span>
+                      <span>{a.category?.name ?? t("generalCategory")}</span>
                       <span>·</span>
-                      <span>{a.author?.name ?? a.author?.email ?? "Unknown"}</span>
+                      <span>{a.author?.name ?? a.author?.email ?? tc("unknown")}</span>
                       <span>·</span>
-                      <span>updated {formatDistanceToNow(a.updatedAt, { addSuffix: true })}</span>
+                      <span>{t("updatedAgo", { when: f.relative(a.updatedAt) })}</span>
                     </div>
                   </div>
                   <StatusBadge map={ARTICLE_VISIBILITY_META} value={a.visibility} />

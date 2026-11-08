@@ -58,6 +58,7 @@ import {
 import { ProjectRailSection } from "./project-rail-section";
 import { NameDialog } from "./name-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /**
  * The premium conversation rail: a "New chat" action, search, user folders
@@ -93,6 +94,8 @@ export function SableRail({
   /** Bumped after a project mutation so the header chip re-fetches. */
   onProjectsChanged?: () => void;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [convs, setConvs] = useState<ConversationSummary[]>([]);
   const [folders, setFolders] = useState<AiFolderSummary[]>([]);
   // Mirror of the Projects section's loaded list, used to resolve a chat's
@@ -167,7 +170,7 @@ export function SableRail({
       setConvs((cs) => cs.map((c) => (c.id === convId ? { ...c, projectId, folderId: null } : c)));
       const res = await moveConversationToProject(convId, projectId);
       if (!res.ok) {
-        toast.error(res.error ?? "Could not move");
+        toast.error(res.error ? tm(res.error) : t("rail.couldNotMove"));
         void reload();
       } else {
         onProjectsChanged?.();
@@ -181,7 +184,7 @@ export function SableRail({
     setConvs((cs) => cs.map((c) => (c.id === convId ? { ...c, folderId: target, projectId: null } : c)));
     const res = await moveConversation(convId, target);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not move");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotMove"));
       void reload();
     } else if (target) {
       setExpanded((s) => ({ ...s, [target]: true }));
@@ -191,7 +194,7 @@ export function SableRail({
   async function onCreateFolder(name: string) {
     const res = await createFolder(name);
     if (!res.ok) {
-      toast.error(res.error ?? "Could not create folder");
+      toast.error(res.error ? tm(res.error) : t("rail.couldNotCreateFolder"));
       return;
     }
     setFolders((f) => [...f, res.folder]);
@@ -211,7 +214,7 @@ export function SableRail({
           onClick={onNewChat}
           className="w-full justify-start gap-2 rounded-lg bg-sable text-sable-foreground shadow-none hover:bg-sable/90"
         >
-          <Plus className="size-4" /> New chat
+          <Plus className="size-4" /> {t("newChat")}
         </Button>
 
         <div className="relative">
@@ -219,7 +222,7 @@ export function SableRail({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search chats"
+            placeholder={t("rail.searchChats")}
             className="h-8 rounded-lg pl-8 text-sm"
           />
         </div>
@@ -245,14 +248,14 @@ export function SableRail({
           <section className="space-y-0.5">
             <div className="flex items-center justify-between px-1.5 pb-0.5">
               <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Folders
+                {t("rail.folders")}
               </span>
               <Button
                 type="button"
                 size="icon-xs"
                 variant="ghost"
                 onClick={() => setCreateFolderOpen(true)}
-                aria-label="New folder"
+                aria-label={t("rail.newFolder")}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <FolderPlus className="size-3.5" />
@@ -265,7 +268,7 @@ export function SableRail({
                 className="flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-border/60 px-3 py-3 text-center transition-colors hover:border-sable/40 hover:bg-sable-muted/30"
               >
                 <FolderPlus className="size-4 text-muted-foreground/50" />
-                <span className="text-[11px] text-muted-foreground">Create a folder to group chats</span>
+                <span className="text-[11px] text-muted-foreground">{t("rail.createFolderHint")}</span>
               </button>
             ) : (
               folders.map((f) => (
@@ -287,13 +290,13 @@ export function SableRail({
           {/* Ungrouped chats */}
           <ChatSection
             id="ungrouped"
-            label="Chats"
+            label={t("rail.chats")}
             chats={ungrouped}
             activeId={activeId}
             onSelect={selectConversation}
             folders={folders}
             onChanged={reload}
-            emptyHint={active.length === 0 ? "No conversations yet." : undefined}
+            emptyHint={active.length === 0 ? t("rail.noConversations") : undefined}
           />
 
           {/* Archived */}
@@ -305,7 +308,7 @@ export function SableRail({
                 className="flex w-full items-center gap-1 px-1.5 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
               >
                 <ChevronRight className={cn("size-3 transition-transform", showArchived && "rotate-90")} />
-                Archived ({archived.length})
+                {t("rail.archivedCount", { count: archived.length })}
               </button>
               {showArchived
                 ? archived.map((c) => (
@@ -336,10 +339,10 @@ export function SableRail({
       <NameDialog
         open={createFolderOpen}
         onOpenChange={setCreateFolderOpen}
-        title="New folder"
-        label="Folder name"
-        placeholder="e.g. Incidents"
-        submitLabel="Create folder"
+        title={t("rail.newFolder")}
+        label={t("rail.folderName")}
+        placeholder={t("rail.folderPlaceholder")}
+        submitLabel={t("rail.createFolder")}
         onSubmit={onCreateFolder}
       />
     </DndContext>
@@ -366,6 +369,7 @@ function ChatSection({
   emptyHint?: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const t = useT("assistant");
   return (
     <section
       ref={setNodeRef}
@@ -384,7 +388,7 @@ function ChatSection({
           >
             <MessageSquare className="size-4 text-muted-foreground/50" />
             <span className="text-xs text-muted-foreground">{emptyHint}</span>
-            <span className="text-[11px] text-muted-foreground/70">Start a chat to see it here.</span>
+            <span className="text-[11px] text-muted-foreground/70">{t("rail.startChatHint")}</span>
           </div>
         ) : null
       ) : (
@@ -423,13 +427,15 @@ function FolderNode({
   onChanged: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `folder:${folder.id}` });
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [renaming, setRenaming] = useState(false);
 
   async function rename(next: string) {
     if (next === folder.name) return;
     const res = await renameFolder(folder.id, next);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not rename");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotRename"));
   }
 
   return (
@@ -461,7 +467,7 @@ function FolderNode({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Folder options"
+                aria-label={t("rail.folderOptions")}
                 className="shrink-0 opacity-0 transition-opacity group-hover/folder:opacity-100 aria-expanded:opacity-100"
               />
             }
@@ -470,17 +476,17 @@ function FolderNode({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setRenaming(true)}>
-              <Pencil className="size-3.5" /> Rename
+              <Pencil className="size-3.5" /> {t("rail.rename")}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onClick={async () => {
                 const res = await deleteFolder(folder.id);
                 if (res.ok) onChanged();
-                else toast.error(res.error ?? "Could not delete");
+                else toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
               }}
             >
-              <Trash2 className="size-3.5" /> Delete folder
+              <Trash2 className="size-3.5" /> {t("rail.deleteFolder")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -489,10 +495,10 @@ function FolderNode({
       <NameDialog
         open={renaming}
         onOpenChange={setRenaming}
-        title="Rename folder"
-        label="Folder name"
+        title={t("rail.renameFolder")}
+        label={t("rail.folderName")}
         initialValue={folder.name}
-        submitLabel="Rename"
+        submitLabel={t("rail.rename")}
         onSubmit={rename}
       />
 
@@ -506,7 +512,7 @@ function FolderNode({
               )}
             >
               <MessageSquare className="size-3.5 text-muted-foreground/50" />
-              <span className="text-[11px] text-muted-foreground">Drop a chat here</span>
+              <span className="text-[11px] text-muted-foreground">{t("rail.dropChatHere")}</span>
             </div>
           ) : (
             chats.map((c) => (
@@ -540,6 +546,8 @@ function ChatRow({
   onChanged: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: conv.id });
+  const t = useT("assistant");
+  const tm = useServerMessage();
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -547,25 +555,25 @@ function ChatRow({
     if (next === conv.title) return;
     const res = await renameConversation(conv.id, next);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not rename");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotRename"));
   }
 
   async function remove() {
     const res = await deleteConversation(conv.id);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not delete");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotDelete"));
   }
 
   async function move(folderId: string | null) {
     const res = await moveConversation(conv.id, folderId);
     if (res.ok) onChanged();
-    else toast.error(res.error ?? "Could not move");
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotMove"));
   }
 
   async function toggleArchive() {
     const res = await archiveConversation(conv.id, !conv.archived);
-    if (res.ok) { onChanged(); toast.success(conv.archived ? "Restored" : "Archived"); }
-    else toast.error(res.error ?? "Could not update");
+    if (res.ok) { onChanged(); toast.success(conv.archived ? t("rail.restored") : t("rail.archived")); }
+    else toast.error(res.error ? tm(res.error) : t("rail.couldNotUpdate"));
   }
 
   return (
@@ -604,7 +612,7 @@ function ChatRow({
               type="button"
               size="icon-xs"
               variant="ghost"
-              aria-label="Chat options"
+              aria-label={t("rail.chatOptions")}
               className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 aria-expanded:opacity-100"
             />
           }
@@ -613,15 +621,15 @@ function ChatRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => setRenaming(true)}>
-            <Pencil className="size-3.5" /> Rename
+            <Pencil className="size-3.5" /> {t("rail.rename")}
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              <FolderInput className="size-3.5" /> Move to
+              <FolderInput className="size-3.5" /> {t("rail.moveTo")}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {conv.folderId ? (
-                <DropdownMenuItem onClick={() => move(null)}>No folder</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => move(null)}>{t("rail.noFolder")}</DropdownMenuItem>
               ) : null}
               {folders
                 .filter((f) => f.id !== conv.folderId)
@@ -631,20 +639,20 @@ function ChatRow({
                   </DropdownMenuItem>
                 ))}
               {folders.length === 0 ? (
-                <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+                <DropdownMenuItem disabled>{t("rail.noFoldersYet")}</DropdownMenuItem>
               ) : null}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={toggleArchive}>
             {conv.archived ? (
-              <><ArchiveRestore className="size-3.5" /> Restore</>
+              <><ArchiveRestore className="size-3.5" /> {t("rail.restore")}</>
             ) : (
-              <><Archive className="size-3.5" /> Archive</>
+              <><Archive className="size-3.5" /> {t("rail.archive")}</>
             )}
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
-            <Trash2 className="size-3.5" /> Delete
+            <Trash2 className="size-3.5" /> {t("rail.delete")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -653,17 +661,17 @@ function ChatRow({
       open={confirmDelete}
       onOpenChange={setConfirmDelete}
       onConfirm={remove}
-      title="Delete chat?"
-      description="This permanently deletes the conversation and all its messages. This cannot be undone."
-      confirmLabel="Delete chat"
+      title={t("rail.deleteChatTitle")}
+      description={t("rail.deleteChatDescription")}
+      confirmLabel={t("rail.deleteChat")}
     />
     <NameDialog
       open={renaming}
       onOpenChange={setRenaming}
-      title="Rename chat"
-      label="Chat name"
+      title={t("rail.renameChat")}
+      label={t("rail.chatName")}
       initialValue={conv.title}
-      submitLabel="Rename"
+      submitLabel={t("rail.rename")}
       onSubmit={rename}
     />
     </>

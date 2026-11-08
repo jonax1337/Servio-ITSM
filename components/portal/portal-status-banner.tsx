@@ -4,11 +4,13 @@ import { cn } from "@/lib/utils";
 import { listActivePublicIncidentHeads } from "@/lib/status-incidents";
 import { worstImpact } from "@/lib/status-rules";
 import { STATUS_INCIDENT_IMPACT_META, TONE_BANNER_CLASSES, TONE_TEXT_CLASSES, metaFor } from "@/lib/constants";
+import { getT } from "@/lib/i18n/server";
 
 /** Banner for active PUBLIC status incidents; renders nothing when all is well. */
 export async function PortalStatusBanner() {
   const incidents = await listActivePublicIncidentHeads();
   if (incidents.length === 0) return null;
+  const t = await getT("portal");
 
   const { tone } = metaFor(STATUS_INCIDENT_IMPACT_META, worstImpact(incidents.map((i) => i.impact)));
   const [latest] = incidents;
@@ -25,12 +27,12 @@ export async function PortalStatusBanner() {
             {more > 0 ? (
               <span className="text-muted-foreground">
                 {" "}
-                and {more} more {more === 1 ? "incident" : "incidents"}
+                {t("bannerMore", { count: more })}
               </span>
             ) : null}
           </span>
           <span className="flex shrink-0 items-center gap-1 text-muted-foreground transition-colors group-hover:text-foreground">
-            Details <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+            {t("bannerDetails")} <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </span>
         </span>
       </Link>

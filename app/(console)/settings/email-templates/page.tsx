@@ -9,12 +9,20 @@ import {
 } from "@/lib/email-templates";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmailTemplateEditor } from "@/components/settings/email-template-editor";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Email templates" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("emailTemplates.metaTitle") };
+}
 export const dynamic = "force-dynamic";
+
+/** Template placeholders named in descriptions, passed through literally. */
+const PLACEHOLDER_VARS = { quote: "{{quote}}", resolution: "{{resolution}}", survey: "{{survey}}" };
 
 export default async function EmailTemplatesPage() {
   await requireRole("ADMIN");
+  const t = await getT("settings");
   const [rows, brand] = await Promise.all([db.emailTemplate.findMany(), mailBrand()]);
   const byKey = new Map(rows.map((r) => [r.key, r]));
 
@@ -22,10 +30,10 @@ export default async function EmailTemplatesPage() {
   const sampleVars: Record<string, string> = {
     appName: brand.appName ?? "Servio",
     ref: "INC-0042",
-    title: "Printer on the 2nd floor won't print",
+    title: t("emailTemplates.sampleTitle"),
     requesterName: "Max Sample",
     agentName: "Alex Admin",
-    message: textToHtmlParagraphs("Hi Max,\n\nwe've ordered a replacement toner — it arrives tomorrow morning. I'll let you know as soon as the printer is back up."),
+    message: textToHtmlParagraphs(t("emailTemplates.sampleMessage")),
     signature: signatureHtml(textToHtmlParagraphs("Alex Admin\nService Desk")),
   };
   const ctx = { brand, vars: sampleVars };
@@ -34,8 +42,8 @@ export default async function EmailTemplatesPage() {
     <>
       <PageHeader
         icon={MailCheck}
-        title="Email templates"
-        description="Customize the subject and content of the ticket emails users receive."
+        title={t("emailTemplates.title")}
+        description={t("emailTemplates.description")}
       />
       <PageBody className="grid max-w-3xl gap-5">
         {TEMPLATE_KEYS.map((key: TemplateKey) => {
@@ -47,8 +55,8 @@ export default async function EmailTemplatesPage() {
             <EmailTemplateEditor
               key={key}
               templateKey={key}
-              label={TEMPLATE_META[key].label}
-              description={TEMPLATE_META[key].description}
+              label={t.dyn(`template.${key}.label`, undefined, TEMPLATE_META[key].label)}
+              description={t.dyn(`template.${key}.description`, PLACEHOLDER_VARS, TEMPLATE_META[key].description)}
               vars={TEMPLATE_META[key].vars}
               subject={subject}
               bodyHtml={bodyHtml}

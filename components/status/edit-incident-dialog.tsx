@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { ComboOption } from "@/components/combobox";
 import { IncidentForm, type IncidentFormDefaults } from "@/components/status/incident-form";
+import { useT } from "@/lib/i18n/client";
 
 export function EditIncidentDialog({
   incident,
@@ -20,15 +21,17 @@ export function EditIncidentDialog({
   copyLocked: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("status");
+  const tc = useT("common");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <Pencil className="size-4" /> Edit
+        <Pencil className="size-4" /> {tc("edit")}
       </DialogTrigger>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Edit status incident</DialogTitle>
-          <DialogDescription>To change the state, post an update instead.</DialogDescription>
+          <DialogTitle>{t("editIncident")}</DialogTitle>
+          <DialogDescription>{t("editDescription")}</DialogDescription>
         </DialogHeader>
         <IncidentForm incident={incident} services={services} tickets={tickets} canPublish={false} copyLocked={copyLocked} onDone={() => setOpen(false)} />
       </DialogContent>

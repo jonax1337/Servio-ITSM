@@ -4,20 +4,23 @@ import { ChangeWindowEditor } from "@/components/changes/change-window-editor";
 import { ChangeConflicts } from "@/components/changes/change-conflicts";
 import { ChangeCopilot } from "@/components/changes/change-copilot";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPlannedWindow, isWindowEditable, requiresRescheduleReason, submitFieldAnchor } from "@/lib/change-rules";
+import { isWindowEditable, requiresRescheduleReason, submitFieldAnchor } from "@/lib/change-rules";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
+import { getFormatter, getT } from "@/lib/i18n/server";
+import { formatWindow } from "@/components/changes/window-text";
 
-export function PlanningTab({ change, canEdit }: ChangeTabContext) {
+export async function PlanningTab({ change, canEdit }: ChangeTabContext) {
+  const [t, f] = await Promise.all([getT("changes"), getFormatter()]);
   return (
     <div className="grid gap-4">
       <div id={submitFieldAnchor("implementationPlan")} className="scroll-mt-20">
         <ChangeTextCard
           id={change.id}
           field="implementationPlan"
-          label="Implementation plan"
+          label={t("planning.implementationPlan")}
           icon={<ClipboardList className="size-4 text-muted-foreground" />}
           value={change.implementationPlan}
-          emptyText="Not documented yet."
+          emptyText={t("notDocumented")}
           editable={canEdit}
         />
       </div>
@@ -25,17 +28,17 @@ export function PlanningTab({ change, canEdit }: ChangeTabContext) {
         <ChangeTextCard
           id={change.id}
           field="rollbackPlan"
-          label="Rollback plan"
+          label={t("planning.rollbackPlan")}
           icon={<RotateCcw className="size-4 text-muted-foreground" />}
           value={change.rollbackPlan}
-          emptyText="Not documented yet."
+          emptyText={t("notDocumented")}
           editable={canEdit}
         />
       </div>
       <ChangeCopilot changeId={change.id} editable={canEdit} />
 
       <Card id={submitFieldAnchor("plannedWindow")} className="scroll-mt-20">
-        <CardHeader><CardTitle className="text-sm">Planned window</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t("planning.plannedWindow")}</CardTitle></CardHeader>
         <CardContent className="max-w-sm text-sm">
           {canEdit && isWindowEditable(change.status) ? (
             <ChangeWindowEditor
@@ -45,7 +48,7 @@ export function PlanningTab({ change, canEdit }: ChangeTabContext) {
               requiresReason={requiresRescheduleReason(change.status)}
             />
           ) : (
-            <p className="font-medium">{formatPlannedWindow({ start: change.plannedStart, end: change.plannedEnd })}</p>
+            <p className="font-medium">{formatWindow({ start: change.plannedStart, end: change.plannedEnd }, f, t)}</p>
           )}
         </CardContent>
       </Card>

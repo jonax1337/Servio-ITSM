@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Combobox, type ComboOption } from "@/components/combobox";
+import { useT } from "@/lib/i18n/client";
 
 /**
  * A form-friendly searchable combobox: manages its own state and submits via a
@@ -14,7 +15,7 @@ export function ComboField({
   defaultValue,
   placeholder,
   includeNone = false,
-  noneLabel = "— None —",
+  noneLabel,
   size = "default",
   disabled,
 }: {
@@ -27,10 +28,11 @@ export function ComboField({
   size?: "default" | "sm";
   disabled?: boolean;
 }) {
+  const t = useT("components");
   const initial = defaultValue ?? (includeNone ? "none" : options[0]?.value ?? "");
   const [value, setValue] = useState(initial);
   const opts: ComboOption[] = includeNone
-    ? [{ value: "none", label: noneLabel }, ...options]
+    ? [{ value: "none", label: noneLabel ?? t("combo.none") }, ...options]
     : options;
   return (
     <Combobox
@@ -39,7 +41,7 @@ export function ComboField({
       value={value}
       onChange={setValue}
       placeholder={placeholder}
-      searchPlaceholder="Search…"
+      searchPlaceholder={t("combo.search")}
       size={size}
       disabled={disabled}
     />

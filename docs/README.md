@@ -30,6 +30,7 @@ against the code and kept in sync with the repository.
 | [data-model.md](./data-model.md) | The Prisma schema by domain, the String-backed enum strategy, human reference numbers, and the migration workflow. |
 | [rest-api.md](./rest-api.md) | The versioned `/api/v1` Bearer-token REST API: auth, scopes, envelope, pagination, and every endpoint. |
 | [design-system.md](./design-system.md) | Theme tokens, typography, the base-ui/shadcn setup, primitive library, and shared composite components. |
+| [i18n.md](./i18n.md) | Translations: how the UI language is chosen (user setting, instance default `APP_LOCALE`), the message catalogs, `getT`/`useT`, enum labels, dates, and how to add strings and locales. |
 | [branding.md](./branding.md) | Relay/Nova Flow, canonical assets, fonts, generated application files and sync commands. |
 | [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
 | [audit.md](./audit.md) | The 2026-08-23 remediation audit (a dated snapshot, not kept in sync). |

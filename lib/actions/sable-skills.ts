@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { setSetting } from "@/lib/settings";
 import { writeAudit } from "@/lib/audit";
+import { getT } from "@/lib/i18n/server";
 import type { ActionResult } from "@/lib/action-result";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
 import {
@@ -49,10 +50,10 @@ async function rejectCustomSkill(skill: SableSkillInput, ownId?: string): Promis
   const invalid = validateSkill(skill);
   if (invalid) return invalid;
   if ((await builtinNames()).has(skill.name)) {
-    return `"${skill.name}" is a built-in skill. Choose another name.`;
+    return (await getT("settings"))("skills.isBuiltin", { name: skill.name });
   }
   const taken = await db.aiSkill.findUnique({ where: { name: skill.name }, select: { id: true } });
-  if (taken && taken.id !== ownId) return `A skill named "${skill.name}" already exists.`;
+  if (taken && taken.id !== ownId) return (await getT("settings"))("skills.nameTaken", { name: skill.name });
   return null;
 }
 

@@ -12,6 +12,7 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useEnumT, useT } from "@/lib/i18n/client";
 
 export type ResolutionPayload = { code: string | null; noteHtml: string; isInternal: boolean; resolveChildren: boolean };
 
@@ -53,11 +54,14 @@ function ResolutionForm({
   const [isInternal, setIsInternal] = useState(false); // resolution note is customer-facing by default
   const [resolveChildren, setResolveChildren] = useState(true);
   const [busy, setBusy] = useState(false);
+  const t = useT("tickets");
+  const tc = useT("common");
+  const te = useEnumT();
 
   const codeOpts: ComboOption[] = RESOLUTION_CODES.map((c) => ({
-    value: c, label: RESOLUTION_CODE_META[c].label, tone: RESOLUTION_CODE_META[c].tone, icon: RESOLUTION_CODE_META[c].icon,
+    value: c, label: te(RESOLUTION_CODE_META, c), tone: RESOLUTION_CODE_META[c].tone, icon: RESOLUTION_CODE_META[c].icon,
   }));
-  const title = isCancel ? "Cancel ticket" : status === "CLOSED" ? "Close ticket" : "Resolve ticket";
+  const title = isCancel ? t("resolution.cancelTicket") : status === "CLOSED" ? t("resolution.closeTicket") : t("resolution.resolveTicket");
   const hasNote = noteHtml.replace(/<[^>]+>/g, "").trim().length > 0;
 
   async function confirm() {
@@ -79,43 +83,43 @@ function ResolutionForm({
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>
-          {isCancel ? "Add a short reason for cancelling this ticket." : "Record how this ticket was resolved so the requester knows what happened."}
+          {isCancel ? t("resolution.cancelDescription") : t("resolution.resolveDescription")}
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-3" onKeyDown={confirmOnEnter}>
         {!isCancel ? (
           <div className="grid gap-1.5">
-            <Label>Resolution code</Label>
+            <Label>{t("resolution.code")}</Label>
             <Combobox options={codeOpts} value={code} onChange={setCode} />
           </div>
         ) : null}
         <div className="grid gap-1.5">
-          <Label>{isCancel ? "Cancellation reason" : "Resolution note"}</Label>
+          <Label>{isCancel ? t("resolution.cancelReason") : t("resolution.note")}</Label>
           <RichTextEditor
             name="resolutionNote"
-            ariaLabel="Note"
-            placeholder={isCancel ? "Why is this being cancelled?" : "What was done to resolve it?"}
+            ariaLabel={t("work.note")}
+            placeholder={isCancel ? t("resolution.cancelPlaceholder") : t("resolution.notePlaceholder")}
             onChangeHTML={setNoteHtml}
             onReady={(editor) => editor.focus()}
           />
         </div>
         <div className="flex items-center gap-2">
           <Checkbox id="res-internal" checked={isInternal} onCheckedChange={(v) => setIsInternal(v === true)} />
-          <Label htmlFor="res-internal" className="text-xs text-muted-foreground">Internal note (not visible to the requester)</Label>
+          <Label htmlFor="res-internal" className="text-xs text-muted-foreground">{t("pending.internalNote")}</Label>
         </div>
         {offerChildren ? (
           <div className="flex items-center gap-2">
             <Checkbox id="res-children" checked={resolveChildren} onCheckedChange={(v) => setResolveChildren(v === true)} />
             <Label htmlFor="res-children" className="text-xs text-muted-foreground">
-              Also resolve {openChildCount} open direct child ticket{openChildCount === 1 ? "" : "s"} with this resolution
+              {t("resolution.alsoResolveChildren", { count: openChildCount })}
             </Label>
           </div>
         ) : null}
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>{tc("cancel")}</Button>
           <Button type="button" variant={isCancel ? "destructive" : "default"} disabled={!hasNote || busy} onClick={confirm}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            {isCancel ? "Cancel ticket" : "Confirm"}
+            {isCancel ? t("resolution.cancelTicket") : tc("confirm")}
           </Button>
         </DialogFooter>
       </div>

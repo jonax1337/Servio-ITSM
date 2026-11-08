@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { LinkButton } from "@/components/link-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getT } from "@/lib/i18n/server";
 
 /**
  * Two-column frame of a contracts detail page, the same as tickets, changes and
@@ -73,10 +74,11 @@ export function MetaRow({ label, children }: { label: string; children: ReactNod
 }
 
 /** The free-text notes of a record. */
-export function NotesBlock({ notes }: { notes: string | null }) {
+export async function NotesBlock({ notes }: { notes: string | null }) {
+  const t = await getT("contracts");
   return (
     <div className="rounded-xl border bg-card p-4 text-sm leading-relaxed whitespace-pre-wrap">
-      {notes || <span className="text-muted-foreground">No notes yet. Use Edit to add some.</span>}
+      {notes || <span className="text-muted-foreground">{t("notesEmpty")}</span>}
     </div>
   );
 }

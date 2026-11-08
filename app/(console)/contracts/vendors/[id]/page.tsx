@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
-import { formatDay } from "@/lib/contract-rules";
+import { getT } from "@/lib/i18n/server";
+import { formatDayIn } from "@/components/contracts/contract-format";
 import type { SearchParams } from "@/lib/query";
 import { deleteVendor } from "@/lib/actions/contracts";
 import { ToneBadge } from "@/components/status-badge";
@@ -20,7 +21,7 @@ type VendorTab = "overview" | "contracts" | "licenses";
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const vendor = await db.vendor.findUnique({ where: { id }, select: { name: true } });
-  return { title: vendor?.name ?? "Vendor" };
+  return { title: vendor?.name ?? (await getT("contracts"))("entity.vendor") };
 }
 
 const isWebAddress = (value: string) => /^https?:\/\//i.test(value);
@@ -44,11 +45,12 @@ export default async function VendorDetailPage({
 
   const now = new Date();
   const canWrite = !!me && hasRole(me.role, "MANAGER");
+  const [t, tc] = await Promise.all([getT("contracts"), getT("common")]);
 
   const tabs: EntityTab<VendorTab>[] = [
-    { key: "overview", label: "Overview" },
-    { key: "contracts", label: "Contracts", count: vendor._count.contracts },
-    { key: "licenses", label: "Licenses", count: vendor._count.licenses },
+    { key: "overview", label: t("tab.overview") },
+    { key: "contracts", label: t("tab.contracts"), count: vendor._count.contracts },
+    { key: "licenses", label: t("tab.licenses"), count: vendor._count.licenses },
   ];
   const active = resolveTab(sp, tabs, "overview");
 
@@ -56,50 +58,50 @@ export default async function VendorDetailPage({
     <DetailShell
       aside={
         <>
-          <RailCard title="Contact">
-            <MetaRow label="Website">
+          <RailCard title={t("col.contact")}>
+            <MetaRow label={t("field.website")}>
               {vendor.website && isWebAddress(vendor.website) ? (
                 <a href={vendor.website} target="_blank" rel="noreferrer noopener" className="text-primary hover:underline">
                   {vendor.website.replace(/^https?:\/\//i, "")}
                 </a>
               ) : (vendor.website ?? "—")}
             </MetaRow>
-            <MetaRow label="Email">
+            <MetaRow label={tc("email")}>
               {vendor.email ? <a href={`mailto:${vendor.email}`} className="text-primary hover:underline">{vendor.email}</a> : "—"}
             </MetaRow>
-            <MetaRow label="Phone">{vendor.phone ?? "—"}</MetaRow>
+            <MetaRow label={tc("phone")}>{vendor.phone ?? "—"}</MetaRow>
           </RailCard>
-          <RailCard title="Relationship">
-            <MetaRow label="Contracts">{vendor._count.contracts}</MetaRow>
-            <MetaRow label="Licenses">{vendor._count.licenses}</MetaRow>
-            <MetaRow label="Added">{formatDay(vendor.createdAt)}</MetaRow>
+          <RailCard title={t("relationship")}>
+            <MetaRow label={t("tab.contracts")}>{vendor._count.contracts}</MetaRow>
+            <MetaRow label={t("tab.licenses")}>{vendor._count.licenses}</MetaRow>
+            <MetaRow label={t("field.added")}>{formatDayIn(t.locale, vendor.createdAt)}</MetaRow>
           </RailCard>
         </>
       }
     >
-      <DetailTopBar backHref="/contracts?tab=vendors" backLabel="Back to vendors">
+      <DetailTopBar backHref="/contracts?tab=vendors" backLabel={t("backToVendors")}>
         {canWrite ? (
           <>
             <VendorDialog vendor={vendor} />
             <ConfirmButton
               action={deleteVendor}
               fields={{ id: vendor.id }}
-              title="Delete vendor"
-              description={`Permanently delete "${vendor.name}"? Its contracts and licenses are kept but lose their vendor. This can't be undone.`}
-              confirmLabel="Delete vendor"
+              title={t("deleteVendor")}
+              description={t("deleteVendorDescription", { name: vendor.name })}
+              confirmLabel={t("deleteVendor")}
               triggerVariant="outline"
               triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
-              triggerLabel="Delete vendor"
+              triggerLabel={t("deleteVendor")}
             >
               <Trash2 className="size-4" />
             </ConfirmButton>
           </>
         ) : null}
-        <ToneBadge meta={vendor.isActive ? { label: "Active", tone: "success" } : { label: "Inactive", tone: "neutral" }} dot />
+        <ToneBadge meta={vendor.isActive ? { label: tc("active"), tone: "success" } : { label: tc("inactive"), tone: "neutral" }} dot />
       </DetailTopBar>
 
       <div className="p-4 sm:p-6">
-        <DetailTitle title={vendor.name} subtitle="Vendor" />
+        <DetailTitle title={vendor.name} subtitle={t("entity.vendor")} />
 
         <EntityTabs
           className="mt-4"
@@ -108,7 +110,7 @@ export default async function VendorDetailPage({
           defaultTab="overview"
           basePath={`/contracts/vendors/${vendor.id}`}
           searchParams={sp}
-          label="Vendor sections"
+          label={t("vendorSections")}
         />
 
         <div className="mt-6 grid gap-4">

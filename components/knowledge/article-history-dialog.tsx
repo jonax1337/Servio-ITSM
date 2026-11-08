@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { format } from "date-fns";
 import { History, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -9,6 +8,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { restoreArticleRevision } from "@/lib/actions/knowledge";
 import { cn } from "@/lib/utils";
+import { useFormatter, useT } from "@/lib/i18n/client";
 
 export type ArticleRevisionRow = {
   id: string;
@@ -36,6 +36,8 @@ export function ArticleHistoryDialog({
   revisions: ArticleRevisionRow[];
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("knowledge");
+  const f = useFormatter();
   const [selectedId, setSelectedId] = useState<string | null>(revisions[0]?.id ?? null);
   const selected = revisions.find((r) => r.id === selectedId) ?? revisions[0] ?? null;
   const latestVersion = revisions[0]?.version ?? 0;
@@ -49,7 +51,7 @@ export function ArticleHistoryDialog({
       }}
     >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <History className="size-3.5" /> History
+        <History className="size-3.5" /> {t("history")}
         {revisions.length > 0 ? (
           <span className="ml-0.5 rounded-full bg-muted px-1.5 text-xs font-medium text-muted-foreground">
             {revisions.length}
@@ -58,10 +60,10 @@ export function ArticleHistoryDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Revision history</DialogTitle>
+          <DialogTitle>{t("revisionHistory")}</DialogTitle>
         </DialogHeader>
         {revisions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No revisions recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t("noRevisions")}</p>
         ) : (
           <div className="grid max-h-[65vh] grid-cols-1 gap-4 overflow-hidden sm:grid-cols-[220px_1fr]">
             <div className="flex flex-col gap-1 overflow-y-auto pr-1 sm:border-r sm:pr-3">
@@ -79,14 +81,14 @@ export function ArticleHistoryDialog({
                     v{r.version}
                     {r.version === latestVersion ? (
                       <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                        Current
+                        {t("current")}
                       </span>
                     ) : null}
                   </span>
-                  <span className="text-muted-foreground">{format(new Date(r.createdAt), "PP p")}</span>
+                  <span className="text-muted-foreground">{f.date(r.createdAt, "dateTime")}</span>
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <UserAvatar name={r.editor?.name} email={r.editor?.email} image={r.editor?.image} size="xs" />
-                    {r.editor?.name ?? r.editor?.email ?? "Unknown"}
+                    {r.editor?.name ?? r.editor?.email ?? t("unknownEditor")}
                   </span>
                 </button>
               ))}
@@ -106,15 +108,15 @@ export function ArticleHistoryDialog({
                           setOpen(false);
                         }}
                         fields={{ articleId, revisionId: selected.id }}
-                        title="Restore this revision?"
-                        description={`Restore the article to v${selected.version}? This writes a new revision from the old content — nothing is deleted.`}
-                        confirmLabel="Restore"
+                        title={t("restoreTitle")}
+                        description={t("restoreDescription", { version: selected.version })}
+                        confirmLabel={t("restore")}
                         confirmVariant="default"
                         triggerVariant="outline"
                         triggerSize="sm"
-                        triggerLabel="Restore this version"
+                        triggerLabel={t("restoreVersion")}
                       >
-                        <RotateCcw className="size-3.5" /> Restore
+                        <RotateCcw className="size-3.5" /> {t("restore")}
                       </ConfirmButton>
                     ) : null}
                   </div>

@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CategoryForm } from "./category-form";
+import { useT } from "@/lib/i18n/client";
 
 type Parent = { id: string; name: string };
 type Team = { id: string; name: string };
@@ -26,16 +27,17 @@ export function CreateCategoryDialog({
   size?: "default" | "sm";
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT("categories");
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button size={size} />}>
-        <Plus className="size-4" /> New category
+        <Plus className="size-4" /> {t("new.title")}
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New category</DialogTitle>
+          <DialogTitle>{t("new.title")}</DialogTitle>
           <DialogDescription>
-            Add a classification for tickets, problems, changes or assets.
+            {t("new.description")}
           </DialogDescription>
         </DialogHeader>
         <CategoryForm parents={parents} teams={teams} />

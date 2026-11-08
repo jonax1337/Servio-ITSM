@@ -13,12 +13,17 @@ import { PublishToggle } from "@/components/catalog/publish-toggle";
 import { ApprovalStagesEditor } from "./approval-stages-editor";
 import { deleteCatalogItem } from "@/lib/actions/catalog-admin";
 import { parseFormSchema, parseApprovalStages } from "@/lib/service-forms";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Service Catalog" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("catalog");
+  return { title: t("title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function CatalogAdminPage() {
   await requireRole("MANAGER");
+  const [t, tc] = await Promise.all([getT("catalog"), getT("common")]);
   const [items, categories, services, agents, groups] = await Promise.all([
     db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, _count: { select: { tickets: true } } } }),
     db.category.findMany({ where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -36,15 +41,15 @@ export default async function CatalogAdminPage() {
     <>
       <PageHeader
         icon={ShoppingBag}
-        title="Service Catalog"
-        description="Items users can request from the self-service portal — separate from operational Services."
+        title={t("title")}
+        description={t("description")}
       >
         <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
       </PageHeader>
 
       <PageBody className="grid gap-3">
         {items.length === 0 ? (
-          <EmptyState icon={ShoppingBag} title="No catalog items yet" description="Add requestable items (laptops, access, onboarding…) with their own request forms.">
+          <EmptyState icon={ShoppingBag} title={t("emptyTitle")} description={t("emptyDescription")}>
             <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
           </EmptyState>
         ) : (
@@ -58,18 +63,18 @@ export default async function CatalogAdminPage() {
                     </span>
                     <span className="font-medium">{it.name}</span>
                     {it.category ? <ToneBadge meta={{ label: it.category.name, tone: "indigo" }} icon={false} /> : null}
-                    {it.requiresApproval ? <ToneBadge meta={{ label: "Approval", tone: "warning" }} icon={false} /> : null}
+                    {it.requiresApproval ? <ToneBadge meta={{ label: t("approvalBadge"), tone: "warning" }} icon={false} /> : null}
                     {parseApprovalStages(it.approvalStages).length > 1 ? (
-                      <ToneBadge meta={{ label: `${parseApprovalStages(it.approvalStages).length} stages`, tone: "indigo" }} icon={false} />
+                      <ToneBadge meta={{ label: t("stagesBadge", { count: parseApprovalStages(it.approvalStages).length }), tone: "indigo" }} icon={false} />
                     ) : null}
-                    {!it.isPublished ? <ToneBadge meta={{ label: "Unpublished", tone: "neutral" }} icon={false} /> : null}
+                    {!it.isPublished ? <ToneBadge meta={{ label: t("unpublished"), tone: "neutral" }} icon={false} /> : null}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">{it.shortDescription ?? it.description ?? "—"}</p>
                   <p className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{parseFormSchema(it.formSchema).length} form fields</span>
-                    {it.estimatedDays != null ? <span className="flex items-center gap-1"><Clock className="size-3" /> ~{it.estimatedDays}d</span> : null}
-                    {it.requiresApproval ? <span className="flex items-center gap-1"><ShieldCheck className="size-3" /> needs approval</span> : null}
-                    <span>{it._count.tickets} requests</span>
+                    <span>{t("formFields", { count: parseFormSchema(it.formSchema).length })}</span>
+                    {it.estimatedDays != null ? <span className="flex items-center gap-1"><Clock className="size-3" /> {t("estimatedDays", { count: it.estimatedDays })}</span> : null}
+                    {it.requiresApproval ? <span className="flex items-center gap-1"><ShieldCheck className="size-3" /> {t("needsApproval")}</span> : null}
+                    <span>{t("requests", { count: it._count.tickets })}</span>
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -95,11 +100,11 @@ export default async function CatalogAdminPage() {
                   <ConfirmButton
                     action={deleteCatalogItem}
                     fields={{ id: it.id }}
-                    title="Delete catalog item"
-                    description={`Permanently delete "${it.name}"? End users can no longer request it; existing requests keep their history.`}
-                    confirmLabel="Delete item"
+                    title={t("deleteTitle")}
+                    description={t("deleteDescription", { name: it.name })}
+                    confirmLabel={t("deleteItem")}
                     triggerVariant="ghost"
-                    triggerLabel="Delete"
+                    triggerLabel={tc("delete")}
                   >
                     <Trash2 className="size-4 text-muted-foreground" />
                   </ConfirmButton>

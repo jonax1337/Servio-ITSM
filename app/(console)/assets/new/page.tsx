@@ -6,12 +6,17 @@ import { requireUser } from "@/lib/session";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { AssetForm } from "@/components/assets/asset-form";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "New asset" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("assets");
+  return { title: t("new.title") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function NewAssetPage() {
   await requireUser();
+  const t = await getT("assets");
   const [options, locations] = await Promise.all([
     getFormOptions(),
     db.location.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -21,8 +26,8 @@ export default async function NewAssetPage() {
     <>
       <PageHeader
         icon={HardDrive}
-        title="New asset"
-        description="Register a new configuration item in the CMDB."
+        title={t("new.title")}
+        description={t("new.description")}
       />
       <PageBody>
         <Card className="mx-auto max-w-3xl">

@@ -6,6 +6,26 @@ import type { ServerMessagePattern } from "../../types";
  * `fieldErrors`, plus generic shapes. `$1`… refer to the capture groups.
  */
 export const patterns: ServerMessagePattern[] = [
+  // Module messages with numbers or names in them
+  [/^Ticket hierarchies can be at most (\d+) levels deep\.$/, "Ticket-Hierarchien dürfen höchstens $1 Ebenen tief sein."],
+  [/^Ticket (\d+) does not exist\.$/, "Ticket $1 existiert nicht."],
+  [/^Ticket (\d+) is not a major incident\.$/, "Ticket $1 ist kein Major Incident."],
+  [/^In use by 1 record — archive it instead of deleting\.$/, "Wird von 1 Datensatz verwendet — bitte archivieren statt löschen."],
+  [/^In use by (\d+) records — archive it instead of deleting\.$/, "Wird von $1 Datensätzen verwendet — bitte archivieren statt löschen."],
+  [/^An article can't move from (\w+) to (\w+)\.$/, "Ein Artikel kann nicht von $1 nach $2 wechseln."],
+  [/^Version (\S+) is not newer than the installed version (\S+)\.$/, "Version $1 ist nicht neuer als die installierte Version $2."],
+  [/^The window overlaps "(.*)"\. Maintenance windows cannot overlap\.$/, "Das Wartungsfenster überschneidet sich mit „$1“. Wartungsfenster dürfen sich nicht überschneiden."],
+  [/^Stage (\d+): the selected group no longer exists\.$/, "Stufe $1: Die gewählte Gruppe existiert nicht mehr."],
+  [/^Stage (\d+): the selected group has no active agents to approve\.$/, "Stufe $1: Die gewählte Gruppe hat keine aktiven Agents zum Genehmigen."],
+  [/^Stage (\d+): the selected approver is not an active agent\.$/, "Stufe $1: Die gewählte genehmigende Person ist kein aktiver Agent."],
+  [/^Stage (\d+): choose an approver or a group\.$/, "Stufe $1: Bitte eine genehmigende Person oder Gruppe wählen."],
+  [/^Action (\d+): choose an action\.$/, "Aktion $1: Bitte eine Aktion wählen."],
+  [/^Condition (\d+): (.+)$/, "Bedingung $1: $2"],
+  [/^Action (\d+) \((.+)\): (.+)$/, "Aktion $1 ($2): $3"],
+  [/^The (.+) list could not be read\.$/, "Die Liste „$1“ konnte nicht gelesen werden."],
+  [/^The MCP server "(.*)" is no longer available\.$/, "Der MCP-Server „$1“ ist nicht mehr verfügbar."],
+  [/^The MCP server "(.*)" is read-only, so this call can't run\.$/, "Der MCP-Server „$1“ ist schreibgeschützt; dieser Aufruf kann nicht ausgeführt werden."],
+  [/^The MCP server "(.*)" is misconfigured: (.+)$/, "Der MCP-Server „$1“ ist falsch konfiguriert: $2"],
   // Zod 4 defaults
   [/^Too small: expected string to have >=1 characters$/, "Dieses Feld ist erforderlich."],
   [/^Too small: expected string to have >=(\d+) characters$/, "Mindestens $1 Zeichen erforderlich."],

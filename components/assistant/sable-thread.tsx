@@ -16,17 +16,15 @@ import {
   type AssistantProposal,
   type AssistantScope,
 } from "@/lib/actions/ai-assistant";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 const THREAD_COMPONENTS = { ToolFallback: SableToolUI };
 
 // Tappable starter prompts shown on an empty chat. One unified set now that the
 // GENERAL/ADMIN chat scope toggle is gone (admin ops surface in the normal chat,
 // gated per-operation by the acting user's role).
-const STARTER_SUGGESTIONS = [
-  "What tickets are assigned to me?",
-  "What should I pick up from my team's queue?",
-  "Summarise this ticket and suggest a next step",
-];
+// Clicking one sends it as the user's message, so it follows the viewer's language.
+const STARTER_SUGGESTIONS = ["starter.assigned", "starter.queue", "starter.summarise"] as const;
 
 type SableMetadata = {
   proposals?: AssistantProposal[];
@@ -206,6 +204,9 @@ function ThreadRuntime({
   onConversationCreated?: (id: string) => void;
   onActivity?: () => void;
 }) {
+  const t = useT("assistant");
+  const tm = useServerMessage();
+  const suggestions = useMemo(() => STARTER_SUGGESTIONS.map((k) => t(k)), [t]);
   const [convId, setConvId] = useState<string | null>(initialConversationId);
   const convIdRef = useRef<string | null>(initialConversationId);
 
@@ -219,7 +220,7 @@ function ThreadRuntime({
         // Pin a freshly-created chat to the active project (if any) so it lands in
         // that project's pinned list, mirroring the rail's "New chat in project".
         const res = await createConversation(scope, context?.projectId ?? null);
-        if (!res.ok) throw new Error(res.error ?? "Could not start a chat");
+        if (!res.ok) throw new Error(res.error ? tm(res.error) : t("couldNotStartChat"));
         cid = res.conversation.id;
         convIdRef.current = cid;
         setConvId(cid);
@@ -227,7 +228,7 @@ function ThreadRuntime({
       }
       return { body: { conversationId: cid, context, messages } };
     },
-    [scope, context, onConversationCreated],
+    [scope, context, onConversationCreated, t, tm],
   );
 
   const transport = useMemo(
@@ -286,7 +287,7 @@ function ThreadRuntime({
       type="button"
       onClick={onOpenOverview}
       className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sable/25 bg-sable-muted/40 py-0.5 pr-2.5 pl-1.5 text-xs font-medium text-sable transition-colors hover:bg-sable-muted/70"
-      title={`Back to ${projectName}`}
+      title={t("backToProject", { name: projectName })}
     >
       <Boxes className="size-3.5 shrink-0" />
       <span className="truncate font-display">{projectName}</span>
@@ -301,7 +302,7 @@ function ThreadRuntime({
           <Thread
             onStop={stopRun}
             components={THREAD_COMPONENTS}
-            suggestions={STARTER_SUGGESTIONS}
+            suggestions={suggestions}
             editable={false}
             overview={overview}
             composerChip={projectChip}

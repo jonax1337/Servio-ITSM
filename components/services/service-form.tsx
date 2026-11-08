@@ -18,6 +18,7 @@ import {
   CRITICALITY_META,
 } from "@/lib/constants";
 import type { FormOptions } from "@/lib/data/options";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 function Field({
   label,
@@ -30,12 +31,13 @@ function Field({
   children: React.ReactNode;
   hint?: string;
 }) {
+  const tm = useServerMessage();
   return (
     <div className="grid gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error[0]}</p> : null}
+      {error ? <p className="text-xs text-destructive">{tm(error[0])}</p> : null}
     </div>
   );
 }
@@ -49,17 +51,21 @@ export function ServiceForm({ options }: { options: FormOptions }) {
     undefined,
   );
   const submit = useFormSubmit(action);
+  const t = useT("services");
+  const tc = useT("common");
+  const te = useEnumT();
+  const tm = useServerMessage();
   const fe = state?.fieldErrors ?? {};
 
   const statusOpts: ComboOption[] = SERVICE_STATUSES.map((s) => ({
     value: s,
-    label: SERVICE_STATUS_META[s].label,
+    label: te(SERVICE_STATUS_META[s]),
     tone: SERVICE_STATUS_META[s].tone,
     icon: SERVICE_STATUS_META[s].icon,
   }));
   const critOpts: ComboOption[] = CRITICALITIES.map((c) => ({
     value: c,
-    label: CRITICALITY_META[c].label,
+    label: te(CRITICALITY_META[c]),
     tone: CRITICALITY_META[c].tone,
     icon: CRITICALITY_META[c].icon,
   }));
@@ -86,59 +92,59 @@ export function ServiceForm({ options }: { options: FormOptions }) {
     <form method="post" onSubmit={submit} className="grid gap-5">
       {state?.error ? (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {tm(state.error)}
         </p>
       ) : null}
 
-      <Field label="Name" error={fe.name}>
-        <Input name="name" placeholder="e.g. Email & Calendar" required />
+      <Field label={tc("name")} error={fe.name}>
+        <Input name="name" placeholder={t("namePlaceholder")} required />
       </Field>
 
-      <Field label="Icon">
+      <Field label={t("icon")}>
         <IconPicker name="icon" defaultValue="LifeBuoy" />
       </Field>
 
-      <Field label="Description" error={fe.description}>
+      <Field label={tc("description")} error={fe.description}>
         <Textarea
           name="description"
-          placeholder="What this service provides and who depends on it…"
+          placeholder={t("descriptionPlaceholder")}
           className="min-h-28"
         />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Status">
+        <Field label={tc("status")}>
           <ComboField name="status" defaultValue="OPERATIONAL" options={statusOpts} />
         </Field>
-        <Field label="Criticality">
+        <Field label={t("criticality")}>
           <ComboField name="criticality" defaultValue="MEDIUM" options={critOpts} />
         </Field>
-        <Field label="Owner">
+        <Field label={tc("owner")}>
           <ComboField
             name="ownerId"
             options={ownerOpts}
             includeNone
-            noneLabel="No owner"
+            noneLabel={t("noOwner")}
           />
         </Field>
-        <Field label="Category">
+        <Field label={tc("category")}>
           <ComboField
             name="categoryId"
             options={catOpts}
             includeNone
-            noneLabel="No category"
+            noneLabel={t("noCategory")}
           />
         </Field>
-        <Field label="Group" hint="Handles catalog requests for this service.">
+        <Field label={tc("group")} hint={t("groupHint")}>
           <ComboField
             name="groupId"
             options={teamOpts}
             includeNone
-            noneLabel="No group"
+            noneLabel={t("noGroup")}
           />
         </Field>
-        <Field label="SLA">
-          <ComboField name="slaId" options={slaOpts} includeNone noneLabel="No SLA" />
+        <Field label={t("sla")}>
+          <ComboField name="slaId" options={slaOpts} includeNone noneLabel={t("noSlaOption")} />
         </Field>
       </div>
 
@@ -149,7 +155,7 @@ export function ServiceForm({ options }: { options: FormOptions }) {
           ) : (
             <Plus className="size-4" />
           )}
-          Create service
+          {t("createService")}
         </Button>
       </div>
     </form>

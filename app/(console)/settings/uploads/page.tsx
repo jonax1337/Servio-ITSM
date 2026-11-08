@@ -5,12 +5,17 @@ import { getSetting } from "@/lib/settings";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { saveUploadSettings } from "@/lib/actions/settings";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata: Metadata = { title: "Upload settings" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT("settings");
+  return { title: t("uploads.metaTitle") };
+}
 export const dynamic = "force-dynamic";
 
 export default async function UploadSettingsPage() {
   await requireRole("ADMIN");
+  const t = await getT("settings");
   const [maxMb, gotenbergUrl] = await Promise.all([
     getSetting("MAX_UPLOAD_MB", "15"),
     getSetting("GOTENBERG_URL", ""),
@@ -20,8 +25,8 @@ export default async function UploadSettingsPage() {
     <>
       <PageHeader
         icon={UploadCloud}
-        title="Uploads"
-        description="Limits for file attachments on tickets, comments and articles."
+        title={t("uploads.title")}
+        description={t("uploads.description")}
       />
       <PageBody className="max-w-2xl">
         <SettingsForm
@@ -30,18 +35,18 @@ export default async function UploadSettingsPage() {
             {
               type: "number",
               name: "MAX_UPLOAD_MB",
-              label: "Max upload size (MB)",
+              label: t("uploads.maxMb"),
               defaultValue: maxMb ?? "15",
               placeholder: "15",
-              hint: "Enforced server-side per file. The browser pre-check may lag until reload.",
+              hint: t("uploads.maxMbHint"),
             },
             {
               type: "text",
               name: "GOTENBERG_URL",
-              label: "Gotenberg URL (office previews)",
+              label: t("uploads.gotenberg"),
               defaultValue: gotenbergUrl ?? "",
               placeholder: "http://gotenberg:3000",
-              hint: "Optional. When set, Office documents (docx/pptx/legacy/ODF) preview as a faithful PDF via a Gotenberg (LibreOffice) service. Blank = built-in best-effort text/HTML preview.",
+              hint: t("uploads.gotenbergHint"),
             },
           ]}
         />
