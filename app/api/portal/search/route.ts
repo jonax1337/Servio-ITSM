@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { PORTAL_CATALOG_ITEM_WHERE } from "@/lib/categories";
 import { getCurrentUser } from "@/lib/session";
 import { ticketRef } from "@/lib/constants";
 
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
     }),
     db.catalogItem.findMany({
       where: {
-        isPublished: true,
+        ...PORTAL_CATALOG_ITEM_WHERE,
         OR: [{ name: { contains: q } }, { shortDescription: { contains: q } }, { description: { contains: q } }],
       },
       take: 5,

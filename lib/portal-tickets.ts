@@ -11,14 +11,24 @@ import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
 import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 import { checkReplyRate } from "@/lib/rate-limit";
+import { getSetting, PORTAL_TRIAGE_GROUP_SETTING } from "@/lib/settings";
 
 /** @deprecated Use IntakeFile from @/lib/attachment-intake. Re-exported for callers. */
 export type ProposalAttachment = IntakeFile;
 export { attachDataUrlsToTicket };
 
-/** Resolve the default triage team new self-service tickets land in. */
-async function triageGroupId(): Promise<string | null> {
-  const g = await db.group.findFirst({ where: { name: "Service Desk" }, select: { id: true } });
+/** The triage team when none is configured, matched by name (the setting predates it). */
+const DEFAULT_TRIAGE_GROUP_NAME = "Service Desk";
+
+/** The triage team new self-service tickets land in: the configured group, else the one named "Service Desk". */
+export async function triageGroupId(): Promise<string | null> {
+  const configured = await getSetting(PORTAL_TRIAGE_GROUP_SETTING);
+  if (configured) {
+    const g = await db.group.findUnique({ where: { id: configured }, select: { id: true } });
+    if (g) return g.id;
+    console.warn(`[portal] triage group ${configured} no longer exists; falling back to "${DEFAULT_TRIAGE_GROUP_NAME}"`);
+  }
+  const g = await db.group.findFirst({ where: { name: DEFAULT_TRIAGE_GROUP_NAME }, select: { id: true } });
   return g?.id ?? null;
 }
 
@@ -87,7 +97,7 @@ export type PortalTicketInput = {
  * Shared core for creating a free-form self-service ticket, so the request form
  * action (lib/actions/portal.ts) and the portal Sable assistant create the SAME
  * fully-routed ticket:
- *  - lands in the Service Desk triage team by default (so it's never teamless),
+ *  - lands in the triage team by default (so it's never teamless),
  *  - runs automations (which may re-route, e.g. VPN -> Infrastructure), then
  *  - auto-assigns an agent per the resolved group's strategy.
  */
@@ -180,9 +190,8 @@ export async function createCatalogRequestFor(
   const description = detailText
     ? `Catalog request: ${item.name}.\n\n${detailText}`
     : `Catalog request: ${item.name}.`;
-  const triage = await db.group.findFirst({ where: { name: "Service Desk" } });
-  // Pre-route: the service's team, else the category's team, else Service Desk triage.
-  const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? triage?.id ?? null;
+  // Pre-route: the service's team, else the category's team, else the triage team.
+  const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? (await triageGroupId());
   const needsApproval = plan.stages.length > 0;
   const sla = await slaCreateData({ serviceId: item.serviceId, priority: "MEDIUM" });
 

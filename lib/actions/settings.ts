@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
-import { CHANGE_SELF_APPROVAL_SETTING, TICKET_CLOSED_EMAIL_SETTING, setSetting } from "@/lib/settings";
+import { CHANGE_SELF_APPROVAL_SETTING, PORTAL_TRIAGE_GROUP_SETTING, TICKET_CLOSED_EMAIL_SETTING, setSetting } from "@/lib/settings";
+import { db } from "@/lib/db";
 import { CHANGE_SELF_APPROVAL_MODES } from "@/lib/approval-rules";
 import { TICKET_AUTO_CLOSE_DAYS_SETTING, parseAutoCloseDaysInput } from "@/lib/auto-close-rules";
 import { encryptionAvailable } from "@/lib/crypto";
@@ -77,6 +78,12 @@ export async function saveGeneralSettings(
 ): Promise<ActionState> {
   const me = await requireAdmin();
   if (!me) return { error: "Not authorised" };
+  // "none" → "" = fall back to the group named "Service Desk".
+  const rawTriage = str(fd, PORTAL_TRIAGE_GROUP_SETTING);
+  const triageGroupId = rawTriage === "none" ? "" : rawTriage;
+  if (triageGroupId && !(await db.group.findUnique({ where: { id: triageGroupId }, select: { id: true } }))) {
+    return { error: "Pick an existing group as the triage team." };
+  }
   const result = await persist(
     me.id,
     [
@@ -84,6 +91,7 @@ export async function saveGeneralSettings(
       { key: "APP_URL", value: str(fd, "APP_URL") },
       // Unsupported/blank → "" = fall back to env APP_LOCALE, then English.
       { key: "APP_LOCALE", value: normalizeLocale(str(fd, "APP_LOCALE")) ?? "" },
+      { key: PORTAL_TRIAGE_GROUP_SETTING, value: triageGroupId },
     ],
     "Updated general settings",
     "/settings/general",

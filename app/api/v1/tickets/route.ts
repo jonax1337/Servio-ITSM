@@ -4,6 +4,7 @@ import { guard, ok, apiError, preflight, paginate, pageMeta, principalIsAgent, v
 import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
 import { slaCreateData } from "@/lib/sla";
+import { autoAssignTicket } from "@/lib/assignment";
 import { duplicateCommentText, ticketCreateSchema, type TicketCreate } from "@/lib/api-ticket-input";
 import { isOpenExternalRefConflict } from "@/lib/ticket-external-ref";
 import { serializeComment, serializeTicket } from "../_serializers";
@@ -84,19 +85,27 @@ export async function POST(req: Request) {
   if (externalRef && !isAgentPrincipal) {
     return apiError(403, "external_ref needs a token owned by an agent (AGENT, MANAGER or ADMIN).");
   }
-  // Only agents may set assigneeId; validate it up front so a bad id is a 422,
-  // not a 500 on the FK, and never assigns a non-agent (no group on create).
-  if (isAgentPrincipal && fields.assigneeId) {
-    const reason = await validateTicketAssignee(fields.assigneeId, null);
-    if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
-  }
-  // FK existence up front — a bogus requester/category/service id is a 422, not
-  // a 500 on the Prisma FK constraint (matches the assigneeId contract).
+  // FK existence up front — a bogus requester/category/service/group id is a 422,
+  // not a 500 on the Prisma FK constraint (matches the assigneeId contract).
   if (fields.requesterId && !(await db.user.findUnique({ where: { id: fields.requesterId }, select: { id: true } }))) {
     return apiError(422, "Validation failed", { requesterId: [`Unknown requester: ${fields.requesterId}`] });
   }
-  if (fields.categoryId && !(await db.category.findUnique({ where: { id: fields.categoryId }, select: { id: true } }))) {
+  const category = fields.categoryId
+    ? await db.category.findUnique({ where: { id: fields.categoryId }, select: { groupId: true } })
+    : null;
+  if (fields.categoryId && !category) {
     return apiError(422, "Validation failed", { categoryId: [`Unknown category: ${fields.categoryId}`] });
+  }
+  if (isAgentPrincipal && fields.groupId && !(await db.group.findUnique({ where: { id: fields.groupId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { groupId: [`Unknown group: ${fields.groupId}`] });
+  }
+  // The category's team routes a ticket that names no group.
+  if (isAgentPrincipal) fields.groupId = fields.groupId ?? category?.groupId ?? undefined;
+  // Only agents may set assigneeId; validate it up front so a bad id is a 422,
+  // not a 500 on the FK, and never assigns a non-agent or an out-of-group user.
+  if (isAgentPrincipal && fields.assigneeId) {
+    const reason = await validateTicketAssignee(fields.assigneeId, fields.groupId ?? null);
+    if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
   if (fields.serviceId && !(await db.service.findUnique({ where: { id: fields.serviceId }, select: { id: true } }))) {
     return apiError(422, "Validation failed", { serviceId: [`Unknown service: ${fields.serviceId}`] });
@@ -155,7 +164,7 @@ async function createTicket(principal: ApiPrincipal, fields: Omit<TicketCreate, 
         requesterId,
         source: "API" as const,
       };
-  const ticket = await db.ticket.create({
+  let ticket = await db.ticket.create({
     data,
     include: { requester: true, assignee: true },
   });
@@ -163,6 +172,10 @@ async function createTicket(principal: ApiPrincipal, fields: Omit<TicketCreate, 
     userId: principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id,
     summary: externalRef ? `Created via API (${externalRef})` : "Created via API",
   });
+  // Like a console-routed ticket: the group's auto-assign strategy picks an agent.
+  if (ticket.groupId && !ticket.assigneeId && (await autoAssignTicket(ticket.id))) {
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: { requester: true, assignee: true } });
+  }
 
   return ok(serializeTicket(ticket), { status: 201, ...(externalRef && { meta: { deduplicated: false } }) });
 }

@@ -60,6 +60,9 @@ function Tree({
             {n.team ? (
               <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{n.team}</span>
             ) : null}
+            {n.data.portalHidden ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t("portalHidden")}</span>
+            ) : null}
             {n.archived ? (
               <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{t("archived")}</span>
             ) : null}
@@ -108,7 +111,7 @@ export default async function CategoriesPage() {
   const nodes: Node[] = categories.map((c) => {
     const refs = c._count.tickets + c._count.problems + c._count.changes + c._count.services + c._count.articles + c._count.catalogItems;
     return {
-      data: { id: c.id, name: c.name, description: c.description, color: c.color, icon: c.icon, parentId: c.parentId, groupId: c.groupId },
+      data: { id: c.id, name: c.name, description: c.description, color: c.color, icon: c.icon, parentId: c.parentId, groupId: c.groupId, portalHidden: c.portalHidden },
       team: c.group?.name ?? null,
       archived: c.archived,
       ticketCount: c._count.tickets,

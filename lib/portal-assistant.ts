@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { PORTAL_CATALOG_ITEM_WHERE, PORTAL_CATEGORY_WHERE } from "@/lib/categories";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
@@ -44,7 +45,7 @@ const portalCatalogTool = tool({
   execute: async ({ query }) => {
     const rows = await db.catalogItem.findMany({
       where: {
-        isPublished: true,
+        ...PORTAL_CATALOG_ITEM_WHERE,
         OR: [{ name: { contains: query } }, { shortDescription: { contains: query } }, { description: { contains: query } }],
       },
       take: 5,
@@ -75,7 +76,7 @@ const listCategoriesTool = tool({
   inputSchema: z.object({}),
   execute: async () => {
     const rows = await db.category.findMany({
-      where: { archived: false },
+      where: PORTAL_CATEGORY_WHERE,
       orderBy: { name: "asc" },
       select: { id: true, name: true, group: { select: { name: true } } },
     });
@@ -394,7 +395,7 @@ async function buildTicketProposal(input: unknown): Promise<RequestProposal | nu
   if (!raw.success) return null;
   let categoryName: string | null = null;
   if (raw.data.categoryId) {
-    const cat = await db.category.findUnique({ where: { id: raw.data.categoryId }, select: { name: true } });
+    const cat = await db.category.findFirst({ where: { id: raw.data.categoryId, ...PORTAL_CATEGORY_WHERE }, select: { name: true } });
     categoryName = cat?.name ?? null;
     if (!cat) raw.data.categoryId = null; // drop an invented/stale id
   }

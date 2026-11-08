@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
-import { ok, preflight } from "@/lib/api";
-import { agentGuard } from "../_itsm";
+import { apiError, ok, preflight } from "@/lib/api";
+import { writeAudit } from "@/lib/audit";
+import { categoryCreateSchema, categoryData } from "@/lib/api-category-input";
+import { agentGuard, readBody } from "../_itsm";
+import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, managerRefusal, serializeCategory } from "../_categories";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +20,31 @@ export async function GET(req: Request) {
   const rows = await db.category.findMany({
     where: includeArchived ? {} : { archived: false },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, description: true, parentId: true, groupId: true, archived: true },
+    select: CATEGORY_SELECT,
   });
-  return ok(rows.map((c) => ({ id: c.id, name: c.name, description: c.description, parent_id: c.parentId, group_id: c.groupId, archived: c.archived })));
+  return ok(rows.map(serializeCategory));
+}
+
+/** Create a category (MANAGER+). A name already used under the same parent is a 409 with the existing `id`. */
+export async function POST(req: Request) {
+  const auth = await agentGuard(req, "write");
+  if ("response" in auth) return auth.response;
+  const refused = managerRefusal(auth.principal);
+  if (refused) return refused;
+  const body = await readBody(req, categoryCreateSchema);
+  if ("response" in body) return body.response;
+  const invalid = await categoryWriteErrors(body.data);
+  if (invalid) return invalid;
+
+  try {
+    const category = await db.category.create({
+      data: { ...categoryData(body.data), name: body.data.name },
+      select: CATEGORY_SELECT,
+    });
+    await writeAudit({ userId: auth.principal.userId, action: "CREATE", entity: "Category", entityId: category.id, summary: `Created category "${category.name}" via API` });
+    return ok(serializeCategory(category), { status: 201 });
+  } catch (err) {
+    if (isDuplicateName(err)) return apiError(409, DUPLICATE_NAME);
+    throw err;
+  }
 }

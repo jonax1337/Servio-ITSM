@@ -75,6 +75,9 @@ export async function getMaxUploadMb(): Promise<number> {
 
 export const CHANGE_SELF_APPROVAL_SETTING = "CHANGE_SELF_APPROVAL";
 
+/** Group id of the triage team for self-service tickets (Settings › General); unset = the group named "Service Desk". */
+export const PORTAL_TRIAGE_GROUP_SETTING = "PORTAL_TRIAGE_GROUP_ID";
+
 /** Whether (and when) a change's requester or owner may approve it (Settings › Change management; default OFF). */
 export async function getChangeSelfApprovalMode(): Promise<ChangeSelfApprovalMode> {
   return parseSelfApprovalMode(await getSetting(CHANGE_SELF_APPROVAL_SETTING));

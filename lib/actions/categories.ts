@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
+import { parentCreatesCycle } from "@/lib/categories";
 
 /** Category management is a MANAGER+ operation (mirrors catalog-admin). */
 async function requireManager() {
@@ -35,6 +36,8 @@ const createSchema = z.object({
     .default("#64748b"),
   icon: optionalText,
   description: optionalText,
+  // base-ui Switch submits "on" when checked, nothing when unchecked.
+  portalHidden: z.string().optional().transform((v) => v === "on"),
 });
 
 export type ActionState =
@@ -65,6 +68,7 @@ export async function createCategory(
       color: data.color,
       icon: data.icon,
       description: data.description,
+      portalHidden: data.portalHidden,
     },
   });
 
@@ -91,6 +95,8 @@ const updateSchema = z.object({
     .default("#64748b"),
   icon: optionalText,
   description: optionalText,
+  // base-ui Switch submits "on" when checked, nothing when unchecked.
+  portalHidden: z.string().optional().transform((v) => v === "on"),
 });
 
 export async function updateCategory(
@@ -110,26 +116,8 @@ export async function updateCategory(
   const { id, ...data } = parsed.data;
 
   // A category cannot be its own parent, nor sit under one of its own
-  // descendants — walk the proposed parent's ancestor chain and reject if we
-  // ever reach `id`. Guards against both a direct self-parent and a deeper cycle.
-  let parentId = data.parentId;
-  if (parentId) {
-    let cursor: string | null = parentId;
-    const seen = new Set<string>();
-    while (cursor) {
-      if (cursor === id) {
-        parentId = null; // would create a cycle — detach instead
-        break;
-      }
-      if (seen.has(cursor)) break; // pre-existing cycle: stop, don't loop forever
-      seen.add(cursor);
-      const node: { parentId: string | null } | null = await db.category.findUnique({
-        where: { id: cursor },
-        select: { parentId: true },
-      });
-      cursor = node?.parentId ?? null;
-    }
-  }
+  // descendants: a parent that would close a cycle detaches it instead.
+  const parentId = data.parentId && !(await parentCreatesCycle(id, data.parentId)) ? data.parentId : null;
 
   await db.category.update({
     where: { id },
@@ -140,6 +128,7 @@ export async function updateCategory(
       color: data.color,
       icon: data.icon,
       description: data.description,
+      portalHidden: data.portalHidden,
     },
   });
 

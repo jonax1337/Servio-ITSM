@@ -14,6 +14,7 @@ import {
   changeImportSchema, changeReimportSchema, problemImportSchema, problemReimportSchema, ticketImportSchema, ticketReimportSchema,
 } from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
+import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
@@ -196,7 +197,7 @@ const spec = {
       },
       post: {
         summary: "Create a ticket (or land in the open one carrying `external_ref`)",
-        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one.",
+        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one. `group_id` (agent tokens) routes the ticket; without it the category's team becomes the group. An assignee must be a member of the group; without one, the group's auto-assign strategy picks an agent.",
         requestBody: body(ticketCreateSchema),
         responses: {
           "201": { description: "Created" },
@@ -208,7 +209,12 @@ const spec = {
     },
     "/tickets/{id}": {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
-      patch: { summary: "Update a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Updated" } } },
+      patch: {
+        summary: "Update a ticket",
+        description: "Agent tokens. Fields: `title`, `description`, `status`, `priority`, `assignee_id`, `group_id`, `problem_id`, `change_id` (null clears). A new `group_id` clears an assignee who is not a member and runs the group's auto-assign.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+        responses: { "200": { description: "Updated" }, ...refused },
+      },
     },
     "/tickets/ref/{ref}": {
       get: { summary: "Get the ticket carrying an external reference (the open one, else the most recent)", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
@@ -358,7 +364,24 @@ const spec = {
       post: { summary: "Move a problem along its lifecycle", parameters: [idParam], requestBody: body(problemTransitionSchema), responses: { "200": { description: "Moved" }, "404": { description: "Not found" }, ...refused } },
     },
     "/problems/{id}/comments": commentPaths("problem"),
-    "/categories": { get: { summary: "List categories", description: agentOnly, parameters: [q("include_archived", "true to include archived")], responses: { "200": { description: "OK" } } } },
+    "/categories": {
+      get: { summary: "List categories", description: agentOnly, parameters: [q("include_archived", "true to include archived")], responses: { "200": { description: "OK" } } },
+      post: {
+        summary: "Create a category (MANAGER+)",
+        description: "`group_id` is the team that handles it (the default group of tickets created through the API); `portal_hidden` keeps it out of the self-service portal.",
+        requestBody: body(categoryCreateSchema),
+        responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "Name already used under the same parent (existing id in details)" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/categories/{id}": {
+      get: { summary: "Get a category", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Update a category (MANAGER+)",
+        parameters: [strId],
+        requestBody: body(categoryPatchSchema),
+        responses: { "200": { description: "Updated" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name already used under the same parent" }, "422": { description: "Validation failed" } },
+      },
+    },
     "/groups": { get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } } },
     ...Object.fromEntries(
       ([["tickets", ticketImportSchema], ["problems", problemImportSchema], ["changes", changeImportSchema]] as const).map(([path, schema]) => [

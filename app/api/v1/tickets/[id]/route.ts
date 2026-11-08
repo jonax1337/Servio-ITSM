@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { guard, ok, apiError, preflight, principalIsAgent, validateTicketAssignee } from "@/lib/api";
 import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
+import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
 import { slaRepricePatch, statusChangeData, ticketCalendar } from "@/lib/sla";
 import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { canTransitionConfigured } from "@/lib/workflow";
@@ -46,6 +47,8 @@ const patchSchema = z.object({
   status: z.enum(TICKET_STATUSES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   assigneeId: z.string().nullable().optional(),
+  // Re-routing to a group the current assignee is not in clears the assignee (as in the console).
+  groupId: z.string().nullable().optional(),
   // Links, applied through the console's setTicketProblem / setTicketChange (null unlinks).
   problemId: z.number().int().positive().nullable().optional(),
   changeId: z.number().int().positive().nullable().optional(),
@@ -78,15 +81,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const parsed = patchSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
+  const { groupId } = parsed.data;
+  if (groupId && !(await db.group.findUnique({ where: { id: groupId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { groupId: [`Unknown group: ${groupId}`] });
+  }
   // Validate a (re)assignment up front so a bad assigneeId is a 422, not a 500
   // on the FK, and so we never assign a non-agent or an out-of-group user.
   if (parsed.data.assigneeId) {
-    const reason = await validateTicketAssignee(parsed.data.assigneeId, existing.groupId);
+    const reason = await validateTicketAssignee(parsed.data.assigneeId, groupId === undefined ? existing.groupId : groupId);
     if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
 
   const { problemId, changeId, ...fields } = parsed.data;
   const data = { ...fields } as Record<string, unknown>;
+  const regrouped = groupId !== undefined && groupId !== existing.groupId;
+  if (regrouped && groupId && parsed.data.assigneeId === undefined && existing.assigneeId && !(await isGroupMember(groupId, existing.assigneeId))) {
+    data.assigneeId = null;
+  }
 
   // SLA recompute: a priority change on an open ticket re-stamps the deadlines
   // (same contract as the console's updateTicketField). Done BEFORE the status
@@ -119,6 +130,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   });
   await withdrawPendingApprovals(ticketId, data);
   await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: "Updated via API" });
+  // As in the console, a re-routed ticket without an assignee gets one from the group's strategy.
+  if (regrouped && groupId && (await autoAssignTicket(ticketId))) {
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: { requester: true, assignee: true } });
+  }
 
   // Same permission as the console: only someone who may act on the ticket links it.
   const linkError = await asActor(auth.principal, async () => {
