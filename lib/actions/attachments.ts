@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { storage } from "@/lib/storage";
+import { mayWriteRecordAttachment, recordTargetOf } from "@/lib/attachment-rules";
 
 export async function deleteAttachment(formData: FormData): Promise<{ error?: string } | void> {
   const me = await getCurrentUser();
@@ -17,6 +18,7 @@ export async function deleteAttachment(formData: FormData): Promise<{ error?: st
     select: {
       id: true, filename: true, storageKey: true, uploadedById: true,
       ticketId: true, commentId: true, articleId: true,
+      changeId: true, problemId: true, assetId: true, licenseId: true,
       article: { select: { authorId: true, slug: true } },
     },
   });
@@ -25,10 +27,14 @@ export async function deleteAttachment(formData: FormData): Promise<{ error?: st
   const agent = isAgent(me.role as Role);
   const isTicketTarget = att.ticketId != null || att.commentId != null;
   const isArticleTarget = att.articleId != null;
-  const allowed =
-    att.uploadedById === me.id ||
-    (isTicketTarget && agent) ||
-    (isArticleTarget && (agent || att.article?.authorId === me.id));
+  // Changes, problems, assets and licenses are staff records: any agent (licenses
+  // MANAGER+), and an uploader who lost that right cannot delete there either.
+  const recordTarget = recordTargetOf(att);
+  const allowed = recordTarget
+    ? mayWriteRecordAttachment(me.role, recordTarget)
+    : att.uploadedById === me.id ||
+      (isTicketTarget && agent) ||
+      (isArticleTarget && (agent || att.article?.authorId === me.id));
   if (!allowed) return { error: "Not authorised" };
 
   // Delete the row first (authz already passed); only remove the blob once the
@@ -52,4 +58,8 @@ export async function deleteAttachment(formData: FormData): Promise<{ error?: st
     }
   }
   if (att.article?.slug) revalidatePath(`/knowledge/${att.article.slug}`);
+  if (att.changeId != null) revalidatePath(`/changes/${att.changeId}`);
+  if (att.problemId != null) revalidatePath(`/problems/${att.problemId}`);
+  if (att.assetId != null) revalidatePath(`/assets/${att.assetId}`);
+  if (att.licenseId != null) revalidatePath(`/contracts/licenses/${att.licenseId}`);
 }

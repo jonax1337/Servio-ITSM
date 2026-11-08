@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { RelatedArticlesCard } from "@/components/related-articles-card";
+import { RecordAttachments } from "@/components/attachments/record-attachments";
 import { getFormOptions } from "@/lib/data/options";
 import { allowedTransitions } from "@/lib/workflow";
 import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
@@ -205,6 +206,8 @@ export default async function ProblemDetailPage({
             {problem.resolvedAt ? <Meta label="Resolved" value={format(problem.resolvedAt, "PP p")} /> : null}
           </CardContent>
         </Card>
+
+        <RecordAttachments className="mt-4" target={{ problemId: problem.id }} role={me?.role ?? "USER"} />
 
         <RelatedArticlesCard className="mt-4" entityType="PROBLEM" entityId={problem.id} />
       </aside>
