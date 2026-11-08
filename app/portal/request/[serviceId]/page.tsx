@@ -10,6 +10,7 @@ import { getMaxUploadMb } from "@/lib/settings";
 import { Card, CardContent } from "@/components/ui/card";
 import { ServiceRequestForm } from "@/components/portal/service-request-form";
 import { getT } from "@/lib/i18n/server";
+import { assetLabel, listOwnAssets } from "@/lib/catalog-form-links";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function CatalogRequestPage({
 }: {
   params: Promise<{ serviceId: string }>;
 }) {
-  await requireUser();
+  const me = await requireUser();
   const { serviceId } = await params;
   const item = await db.catalogItem.findUnique({ where: { id: serviceId } });
   if (!item || !item.isPublished) notFound();
@@ -37,6 +38,9 @@ export default async function CatalogRequestPage({
   const maxUploadMb = await getMaxUploadMb();
   const t = await getT("portal");
   const fields = parseFormSchema(item.formSchema);
+  const ownAssets = fields.some((f) => f.type === "asset")
+    ? (await listOwnAssets(me.id)).map((a) => ({ value: a.id, label: assetLabel(a) }))
+    : [];
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -65,6 +69,7 @@ export default async function CatalogRequestPage({
             serviceId={item.id}
             fields={fields}
             requiresApproval={item.requiresApproval}
+            ownAssets={ownAssets}
             maxMb={maxUploadMb}
           />
         </CardContent>

@@ -6,7 +6,7 @@ import { Plus, Pencil, Trash2, Loader2, Save, ShoppingBag } from "lucide-react";
 import {
   createCatalogItem, updateCatalogItem, type CatalogAdminState,
 } from "@/lib/actions/catalog-admin";
-import { FIELD_TYPES, type ServiceField, type FieldType } from "@/lib/service-forms";
+import { CATALOG_TICKET_TYPES, FIELD_TYPES, type ServiceField, type FieldType } from "@/lib/service-forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,11 @@ export type CatalogItemData = {
   icon: string | null; categoryId: string | null; serviceId: string | null; estimatedDays: number | null;
   isPublished: boolean; requiresApproval: boolean; approverId: string | null;
   fields: ServiceField[];
+  ticketType: string; titleTemplate: string | null;
 };
+
+/** Field types whose answers pick from the options the admin types in. */
+const WITH_OPTIONS: FieldType[] = ["select", "multiselect"];
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "field";
@@ -63,6 +67,8 @@ export function CatalogEditor({
   const [isPublished, setIsPublished] = useState(item?.isPublished ?? true);
   const [requiresApproval, setRequiresApproval] = useState(item?.requiresApproval ?? false);
   const [fields, setFields] = useState<ServiceField[]>(item?.fields ?? []);
+  const [ticketType, setTicketType] = useState(item?.ticketType ?? "REQUEST");
+  const ticketTypeOpts: ComboOption[] = CATALOG_TICKET_TYPES.map((tt) => ({ value: tt, label: t(`ticketType.${tt}`) }));
 
   const catOpts: ComboOption[] = [{ value: "none", label: t("noCategory") }, ...categories];
   const serviceOpts: ComboOption[] = [{ value: "none", label: t("noService") }, ...services];
@@ -91,6 +97,7 @@ export function CatalogEditor({
           <input type="hidden" name="isPublished" value={String(isPublished)} />
           <input type="hidden" name="requiresApproval" value={String(requiresApproval)} />
           <input type="hidden" name="formSchema" value={JSON.stringify(normalized)} />
+          <input type="hidden" name="ticketType" value={ticketType} />
 
           {state?.error ? <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p> : null}
 
@@ -119,6 +126,17 @@ export function CatalogEditor({
               <Label>{tc("service")} <span className="text-muted-foreground">{t("preRoutes")}</span></Label>
               <Combobox options={serviceOpts} value={serviceId} onChange={setServiceId} searchPlaceholder={t("searchServices")} />
             </div>
+            <div className="grid gap-1.5">
+              <Label>{t("ticketTypeLabel")}</Label>
+              <Combobox options={ticketTypeOpts} value={ticketType} onChange={(v) => setTicketType(v || "REQUEST")} searchPlaceholder={t("searchTypes")} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>{t("titleTemplate")}</Label>
+              <Input name="titleTemplate" defaultValue={item?.titleTemplate ?? ""} placeholder={t("titleTemplatePlaceholder", { item: "{{item}}" })} />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              {t("titleTemplateHint", { item: "{{item}}", requester: "{{requester}}", keys: normalized.length ? normalized.map((f) => `{{${f.key}}}`).join(", ") : "—" })}
+            </p>
             <div className="grid gap-1.5 sm:col-span-2">
               <Label>{t("estimatedDelivery")}</Label>
               <Input name="estimatedDays" type="number" defaultValue={item?.estimatedDays ?? ""} placeholder={t("estimatedPlaceholder")} />
@@ -160,13 +178,14 @@ export function CatalogEditor({
                   <Button type="button" variant="ghost" size="icon-sm" onClick={() => setFields((arr) => arr.filter((_, idx) => idx !== i))}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
-                  {f.type === "select" ? (
+                  {WITH_OPTIONS.includes(f.type) ? (
                     <Input className="sm:col-span-4" placeholder={t("optionsPlaceholder")} value={(f.options ?? []).join(", ")}
                       onChange={(e) => update(i, { options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
                   ) : null}
                 </div>
               ))
             )}
+            {fields.length > 0 ? <p className="text-xs text-muted-foreground">{t("specialFieldsHint")}</p> : null}
           </div>
 
           <DialogFooter>

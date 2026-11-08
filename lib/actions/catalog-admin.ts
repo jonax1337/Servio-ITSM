@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { parseApprovalStages, serializeApprovalStages, type ApprovalStage } from "@/lib/service-forms";
+import { MAX_TITLE_LEN, catalogTicketType, parseApprovalStages, serializeApprovalStages, type ApprovalStage } from "@/lib/service-forms";
 
 // DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
 // demoted/deactivated manager loses write access immediately.
@@ -47,6 +47,8 @@ async function payload(formData: FormData, approverId: string | null, approvalSt
     approverId,
     approvalStages,
     formSchema,
+    ticketType: catalogTicketType(String(formData.get("ticketType") ?? "")),
+    titleTemplate: opt(formData.get("titleTemplate"))?.slice(0, MAX_TITLE_LEN) ?? null,
   };
 }
 

@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
 import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
-import type { ServiceField } from "@/lib/service-forms";
+import { FORM_URGENCY_LEVELS, type ServiceField } from "@/lib/service-forms";
+import { LEVEL_META } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboOption } from "@/components/combobox";
 import { PortalAttachments } from "@/components/portal/portal-attachments";
 import { DEFAULT_MAX_UPLOAD_MB } from "@/lib/attachments-ui";
-import { useServerMessage, useT } from "@/lib/i18n/client";
+import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Select field for a dynamic catalog form: submits an empty value until chosen,
  * matching the previous <Select name=…> (no auto-selected first option). */
@@ -32,15 +33,37 @@ function SelectField({ name, options }: { name: string; options: ComboOption[] }
   );
 }
 
+/** Multiple choice: one checkbox per option, submitted as a JSON array. */
+function MultiSelectField({ name, options }: { name: string; options: string[] }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  return (
+    <div className="grid gap-1.5 pt-1">
+      <input type="hidden" name={name} value={JSON.stringify(picked)} />
+      {options.map((o) => (
+        <label key={o} className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={picked.includes(o)}
+            onCheckedChange={(v) => setPicked((p) => (v ? [...p, o] : p.filter((x) => x !== o)))}
+          />
+          {o}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function ServiceRequestForm({
   serviceId,
   fields,
   requiresApproval,
+  ownAssets = [],
   maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   serviceId: string;
   fields: ServiceField[];
   requiresApproval: boolean;
+  /** The requester's own devices, for "own device" questions. */
+  ownAssets?: ComboOption[];
   /** Client-side pre-check mirror of the server's MAX_UPLOAD_MB setting. */
   maxMb?: number;
 }) {
@@ -48,7 +71,9 @@ export function ServiceRequestForm({
   const submit = useFormSubmit(action);
   const t = useT("portal");
   const tm = useServerMessage();
+  const te = useEnumT();
   const fe = state?.fieldErrors ?? {};
+  const urgencyOpts: ComboOption[] = FORM_URGENCY_LEVELS.map((l) => ({ value: l, label: te(LEVEL_META, l) }));
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">
@@ -77,6 +102,18 @@ export function ServiceRequestForm({
               <Textarea id={`f_${f.key}`} name={`f_${f.key}`} placeholder={f.placeholder} className="min-h-24" />
             ) : f.type === "select" ? (
               <SelectField name={`f_${f.key}`} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} />
+            ) : f.type === "multiselect" ? (
+              <MultiSelectField name={`f_${f.key}`} options={f.options ?? []} />
+            ) : f.type === "urgency" ? (
+              <SelectField name={`f_${f.key}`} options={urgencyOpts} />
+            ) : f.type === "asset" ? (
+              ownAssets.length > 0 ? (
+                <SelectField name={`f_${f.key}`} options={ownAssets} />
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("noOwnDevices")}</p>
+              )
+            ) : f.type === "people" ? (
+              <Input id={`f_${f.key}`} name={`f_${f.key}`} type="text" placeholder={f.placeholder || t("peoplePlaceholder")} autoComplete="off" />
             ) : f.type === "checkbox" ? (
               <div className="flex items-center gap-2 pt-1">
                 <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} />
@@ -88,7 +125,7 @@ export function ServiceRequestForm({
               <Input
                 id={`f_${f.key}`}
                 name={`f_${f.key}`}
-                type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"}
+                type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "datetime" ? "datetime-local" : "text"}
                 placeholder={f.placeholder}
               />
             )}

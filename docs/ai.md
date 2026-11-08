@@ -675,7 +675,9 @@ limiter.
   (`audience: "portal"`: no charter, no skills, no MCP servers); drafts are confirmed via
   `app/api/portal/assistant/create/route.ts`.
 - **Read tools (public / own only):** `search_knowledge` (published **public** articles),
-  `search_catalog`, `list_categories`, `get_service_form`, the same `web_search` / `fetch_url` as the
+  `search_catalog`, `list_categories`, `get_service_form` (its description tells the model the answer
+  format of each question type: comma lists for multiple choice and people, `YYYY-MM-DDTHH:mm`,
+  `LOW`/`MEDIUM`/`HIGH`, an own device's tag or name), the same `web_search` / `fetch_url` as the
   console (so `WEB_SEARCH_PROVIDER` and its keys apply here too), and
   the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
   notes are excluded by the same `isInternal: false` filter the portal UI uses), and

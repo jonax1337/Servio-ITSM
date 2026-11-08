@@ -586,6 +586,8 @@ model CatalogItem {
   categoryId       String?
   serviceId        String? // the service this request maps to (pre-routes the ticket)
   formSchema       String   @default("[]") // JSON: array of form field definitions
+  ticketType       String   @default("REQUEST") // REQUEST | INCIDENT — what a request of this item becomes
+  titleTemplate    String? // ticket title with {{item}}, {{requester}}, {{<question key>}}; null = "<Item> request"
   requiresApproval Boolean  @default(false)
   approverId       String?
   approvalStages   String? // JSON: ordered array of stage descriptors {approverId?|groupId?}; approverId is the stage-0 fallback
