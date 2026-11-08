@@ -196,7 +196,7 @@ The business-time math lives in [`lib/business-hours.ts`](../lib/business-hours.
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size` (bytes, `Float`), nullable FKs to `ticket`/`comment`/`article`, plus `uploadedBy`; `url` kept for legacy/external only; also the blob behind an `AiProjectFile` |
+| `Attachment` | Uploaded blob (driver-agnostic) | `storageKey` (`YYYY/MM/<id>-<name>`), `checksum` (sha256), `mime`, `size` (bytes, `Float`), nullable FKs to `ticket`/`comment`/`article`/`change`/`problem`/`asset`/`license` (all `Cascade`; a file has at most one parent, a comment file carries only `commentId`), plus `uploadedBy`; `createdAt` may be set by a history import (REST API); `url` kept for legacy/external only; also the blob behind an `AiProjectFile` |
 | `AuditLog` | Immutable activity record | `action`, `entity` + `entityId`, `summary`, `meta` (JSON as TEXT), `ip`, optional `userId` |
 | `Notification` | Per-user in-app notification | `type`, `title`, `body`, `entity`/`entityId`, `read`; indexed `(userId, read)` |
 | `EmailMessage` | Email record / queue (outbound + inbound) and the anchor of a mail thread | `direction` (`OUTBOUND`/`INBOUND`), `toEmail`/`toName`, `fromEmail`/`fromName`, `cc`/`bcc` (JSON arrays), `replyTo`, `subject`, `body` + `bodyHtml`, `template`, `status` (`QUEUED`/`SENT`/`SIMULATED`/`FAILED`/`RECEIVED`), `error`, RFC 2822 threading (`messageId` unique, `inReplyTo`, `references`, `headers`), `entity`/`entityId`, `ticketId` (direct FK, `SetNull`), `commentId`, `sentAt` |
@@ -423,6 +423,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261108000000_maintenance_windows` | `MaintenanceWindow` |
 | `20261109000000_widen_int_overflow_columns` | `Ticket.pausedMs` and `Attachment.size` as `Float` (`REAL`) |
 | `20261112000000_recurring_tickets` | `RecurringTicket` |
+| `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

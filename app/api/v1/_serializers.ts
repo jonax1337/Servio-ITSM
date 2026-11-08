@@ -346,3 +346,20 @@ export function serializeRecurringTicket(r: {
 export function presentRecurringTicket(r: Parameters<typeof serializeRecurringTicket>[0]) {
   return serializeRecurringTicket(r, creationTimeFor(recurrenceOf(r), r.nextDueAt));
 }
+
+/** A file on a ticket, change, problem, asset or license. Never exposes the storage key or path. */
+export function serializeAttachment(
+  a: { id: string; filename: string; mime: string; size: number; createdAt: Date; commentId: string | null; uploadedBy?: Userish },
+  downloadUrl: string,
+) {
+  return {
+    id: a.id,
+    filename: a.filename,
+    content_type: a.mime,
+    size: a.size,
+    comment_id: a.commentId,
+    uploaded_by: user(a.uploadedBy ?? null),
+    created_at: a.createdAt.toISOString(),
+    download_url: downloadUrl,
+  };
+}

@@ -22,6 +22,7 @@ import { ChangeTabPanel } from "@/components/changes/tabs/change-tab-panel";
 import { buildChangeTabs, changeLinkCount, DEFAULT_CHANGE_TAB } from "@/components/changes/tabs/change-tabs";
 import { TabSkeleton } from "@/components/changes/tabs/tab-skeleton";
 import { WindowSummary } from "@/components/changes/tabs/window-summary";
+import { RecordAttachments } from "@/components/attachments/record-attachments";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, changeRef } from "@/lib/constants";
 import type { SearchParams } from "@/lib/query";
@@ -190,6 +191,8 @@ export default async function ChangeDetailPage({
         />
 
         <WindowSummary className="mt-4" change={change} />
+
+        <RecordAttachments className="mt-4" target={{ changeId: change.id }} role={me?.role ?? "USER"} />
       </aside>
     </div>
   );
