@@ -80,8 +80,8 @@ async function stageApproverId(s: ApprovalStage): Promise<string | null> {
  * Validate + normalise the ORDERED approval stages posted by the editor. Each
  * stage names an active-agent approver OR a real group. Returns the serialised
  * JSON (or null for no stages) plus a resolved stage-0 `fallbackApproverId`
- * (kept in CatalogItem.approverId so the single-approver guard in portal-tickets
- * passes and seats a stage-0 approval we then reconcile), or an error string.
+ * (mirrored into CatalogItem.approverId for display; requests are routed by the
+ * stages themselves, see createCatalogRequestFor), or an error string.
  */
 async function validApprovalStages(
   formData: FormData,
@@ -119,8 +119,8 @@ export async function createCatalogItem(_prev: CatalogAdminState, formData: Form
   const approverId = await validApprover(formData);
   const stagesResult = await validApprovalStages(formData);
   if ("error" in stagesResult) return { error: stagesResult.error };
-  // With stages configured, mirror stage 0's concrete approver into approverId so
-  // the single-approver seat in portal-tickets fires (we then reconcile it).
+  // With stages configured, mirror stage 0's concrete approver into approverId
+  // (display only; requests are routed by the stages themselves).
   const effectiveApproverId = stagesResult.stages ? stagesResult.fallbackApproverId : approverId;
   const data = await payload(formData, effectiveApproverId, stagesResult.stages);
   if (data.requiresApproval && !effectiveApproverId && !data.approvalStages) {
@@ -177,8 +177,8 @@ export async function updateApprovalStages(_prev: CatalogAdminState, formData: F
       // Any configured stage implies approval; with no stages fall back to the
       // single approver (only require approval if one is set).
       requiresApproval: stagesResult.stages ? true : !!item.approverId,
-      // Keep approverId mirroring stage 0 (its concrete approver) so the portal
-      // seat guard passes; restore the single approver when stages are cleared.
+      // Keep approverId mirroring stage 0 (its concrete approver); requests are routed
+      // by the stages. Restore the single approver when stages are cleared.
       approverId: stagesResult.stages ? stagesResult.fallbackApproverId : item.approverId,
     },
   });

@@ -6,7 +6,6 @@ import {
   createPortalTicketFor, createCatalogRequestFor, linkStagedAttachments, addPortalReply, attachDataUrlsToTicket,
   REPLY_RATE_LIMIT_MESSAGE,
 } from "@/lib/portal-tickets";
-import { seatCatalogApprovalStages } from "@/lib/approval-seating";
 import type { ProposalAttachment } from "@/lib/portal-tickets";
 import { ticketRef } from "@/lib/constants";
 
@@ -74,9 +73,6 @@ export async function POST(req: Request) {
       for (const a of parsed.data.answers) answers[a.key] = a.value;
       const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "SABLE");
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-      // Reconcile the auto-seated stage-0 approval to the item's real ordered
-      // stages, matching the hand-filled request path (lib/actions/catalog.ts).
-      await seatCatalogApprovalStages(result.ticket.id);
       await linkStagedAttachments(me.id, result.ticket.id, attachmentIds);
       await attachDataUrlsToTicket(me.id, result.ticket.id, attachments);
       return NextResponse.json({

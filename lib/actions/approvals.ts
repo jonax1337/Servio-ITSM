@@ -26,7 +26,7 @@ import { ticketRef, APPROVAL_ENTITY_TYPES, APPROVAL_ENTITY_META, type ApprovalEn
 // approver items collapse to a single implicit stage, so their behaviour is
 // unchanged.
 //
-// The seating internals (seatCatalogStage / seatCatalogApprovalStages) live in
+// The seating internals (seatCatalogStage / resolveStageApprover) live in
 // lib/approval-seating.ts — server-side helpers only, never HTTP endpoints.
 // ═══════════════════════════════════════════════════════════════════════════
 

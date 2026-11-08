@@ -107,6 +107,27 @@ export function effectiveApprovalStages(item: {
   return [];
 }
 
+export const NO_APPROVER_CONFIGURED = "This item requires approval but has no approver configured. Please contact IT.";
+export const APPROVER_UNAVAILABLE = "This item requires approval but its approver is no longer available. Please contact IT.";
+
+/**
+ * The approval stages a new request of `item` walks, or why it can't be requested.
+ * Judged on the item's ORDERED stages (a group-only first stage counts), never on
+ * the mirrored CatalogItem.approverId alone. `firstStageSeatable` says whether the
+ * first stage resolves to an active agent right now (a named approver or any
+ * active agent member of the stage's group).
+ */
+export function catalogApprovalPlan(
+  item: { requiresApproval: boolean; approvalStages?: string | null; approverId?: string | null },
+  firstStageSeatable: boolean,
+): { stages: ApprovalStage[] } | { error: string } {
+  if (!item.requiresApproval) return { stages: [] };
+  const stages = effectiveApprovalStages(item);
+  if (stages.length === 0) return { error: NO_APPROVER_CONFIGURED };
+  if (!firstStageSeatable) return { error: APPROVER_UNAVAILABLE };
+  return { stages };
+}
+
 /** Validate submitted answers against a schema. Returns {values, errors}. */
 export function validateAnswers(
   fields: ServiceField[],
