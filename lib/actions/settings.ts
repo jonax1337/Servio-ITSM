@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
-import { setSetting } from "@/lib/settings";
+import { CHANGE_SELF_APPROVAL_SETTING, setSetting } from "@/lib/settings";
+import { CHANGE_SELF_APPROVAL_MODES } from "@/lib/approval-rules";
 import { encryptionAvailable } from "@/lib/crypto";
 import { writeAudit } from "@/lib/audit";
 import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
@@ -239,6 +240,25 @@ export async function saveUploadSettings(
     ],
     "Updated upload settings",
     "/settings/uploads",
+  );
+}
+
+export async function saveChangeSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const mode = str(fd, CHANGE_SELF_APPROVAL_SETTING);
+  if (!(CHANGE_SELF_APPROVAL_MODES as readonly string[]).includes(mode)) {
+    return { error: "Pick a self-approval mode." };
+  }
+  // OFF is stored, not dropped: an empty row would let an environment value switch it back on.
+  return persist(
+    me.id,
+    [{ key: CHANGE_SELF_APPROVAL_SETTING, value: mode }],
+    `Updated change management settings (self-approval: ${mode})`,
+    "/settings/changes",
   );
 }
 

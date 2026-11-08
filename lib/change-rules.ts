@@ -10,6 +10,7 @@ import {
   PRIORITIES,
   RISKS,
 } from "@/lib/constants";
+import type { ChangeSelfApprovalMode } from "@/lib/approval-rules";
 
 export const statusLabel = (status: string) => CHANGE_STATUS_META[status]?.label ?? status;
 
@@ -220,6 +221,43 @@ export function invalidSeats(
       !seat.isActive ||
       !eligibleRoles.includes(seat.role),
   );
+}
+
+export type SelfSeatCandidate = { id: string; role: string; isActive: boolean };
+
+export type BoardSeatingInput = {
+  mode: ChangeSelfApprovalMode;
+  /** Auto-selected approvers (owner and requester already excluded). */
+  selected: string[];
+  /** Seats kept from drafting. */
+  kept: string[];
+  /** The change's owner and requester, owner first. */
+  parties: SelfSeatCandidate[];
+  eligibleRoles: readonly string[];
+  limit?: number;
+};
+
+/**
+ * Who joins the board at submit. Auto-selected approvers top up the kept seats within the size
+ * limit, exactly as without self-approval. The owner and requester join only as far as the mode
+ * allows and their role may approve the change's risk:
+ * - WHEN_NO_OTHER_APPROVER: only when the board would otherwise be empty;
+ * - ALWAYS: always, ahead of the auto-selected approvers, so they also fit an emergency board.
+ */
+export function seatBoard({
+  mode, selected, kept, parties, eligibleRoles, limit = Number.POSITIVE_INFINITY,
+}: BoardSeatingInput): { autoIds: string[]; selfIds: string[] } {
+  const eligibleParties = [
+    ...new Set(parties.filter((p) => p.isActive && eligibleRoles.includes(p.role)).map((p) => p.id)),
+  ];
+  if (mode === "ALWAYS") {
+    const selfIds = approversToSeat(eligibleParties, kept, limit);
+    return { selfIds, autoIds: approversToSeat(selected, [...kept, ...selfIds], limit) };
+  }
+  const autoIds = approversToSeat(selected, kept, limit);
+  const boardEmpty = kept.length + autoIds.length === 0;
+  const selfIds = mode === "WHEN_NO_OTHER_APPROVER" && boardEmpty ? approversToSeat(eligibleParties, [], limit) : [];
+  return { autoIds, selfIds };
 }
 
 /** Once the board has decided (or the change is called off), approvers who never answered have nothing left to decide. */

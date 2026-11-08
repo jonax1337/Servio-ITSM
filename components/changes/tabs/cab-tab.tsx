@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getEntityApprovals } from "@/lib/data/approvals";
+import { getCurrentUser } from "@/lib/session";
+import { getChangeSelfApprovalMode } from "@/lib/settings";
 import { approverRolesForRisk, evaluateCab } from "@/lib/cab";
 import { canSeatApprovers, isTemplatedStandard } from "@/lib/change-rules";
 import { initials } from "@/lib/avatar";
@@ -13,7 +15,7 @@ import type { ChangeTabContext } from "@/components/changes/tabs/types";
 import { getT } from "@/lib/i18n/server";
 
 export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: ChangeTabContext) {
-  const [approvals, adHocApprovals, options, eligibleApprovers] = await Promise.all([
+  const [approvals, adHocApprovals, options, eligibleApprovers, me, selfApprovalMode] = await Promise.all([
     db.changeApproval.findMany({
       where: { changeId: change.id },
       include: { approver: true },
@@ -26,6 +28,8 @@ export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: Ch
       where: { role: { in: approverRolesForRisk(change.risk) }, isActive: true },
       select: { id: true },
     }),
+    getCurrentUser(),
+    getChangeSelfApprovalMode(),
   ]);
 
   const t = await getT("changes");
@@ -68,6 +72,7 @@ export async function CabTab({ change, userId, isAgent, canManage, isAdmin }: Ch
           approvals={approvalRows}
           currentUserId={userId}
           change={change}
+          selfApproval={{ mode: selfApprovalMode, role: me?.role ?? "", eligibleRoles: approverRolesForRisk(change.risk) }}
           canManage={canManage}
           agentOptions={agentOptions}
         />

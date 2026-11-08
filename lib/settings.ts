@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { parseSelfApprovalMode, type ChangeSelfApprovalMode } from "@/lib/approval-rules";
 
 /**
  * Central runtime-config service. Precedence for every key:
@@ -69,6 +70,13 @@ export async function getNumberSetting(key: string, fallback: number): Promise<n
 /** Per-file upload cap in MB (Admin Settings › Uploads, env `MAX_UPLOAD_MB` fallback). */
 export async function getMaxUploadMb(): Promise<number> {
   return getNumberSetting("MAX_UPLOAD_MB", 15);
+}
+
+export const CHANGE_SELF_APPROVAL_SETTING = "CHANGE_SELF_APPROVAL";
+
+/** Whether (and when) a change's requester or owner may approve it (Settings › Change management; default OFF). */
+export async function getChangeSelfApprovalMode(): Promise<ChangeSelfApprovalMode> {
+  return parseSelfApprovalMode(await getSetting(CHANGE_SELF_APPROVAL_SETTING));
 }
 
 /**

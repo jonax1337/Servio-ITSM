@@ -625,7 +625,13 @@ accepted here.
 - `APPROVED` / `REJECTED` cannot be set by hand (`409`): the board decides through
   `POST /changes/{id}/approvals/{approval_id}` with `{ "decision": "APPROVED" |
   "REJECTED", "comment"? }`. Only the seated approver (or an admin) may decide, and
-  never on a change they requested or own (`409`).
+  never on a change they requested or own (`409`), unless an admin allowed
+  self-approval (setting `CHANGE_SELF_APPROVAL`, see [modules.md](modules.md#approvals)).
+  Then the requester or owner may decide their **own** seat: `comment` becomes
+  required as the justification (`422` without it), their role must still fit the
+  change's risk (`403`), and in `ALWAYS` mode their decision settles the board on its
+  own. A client can tell a self-approval seat by comparing `approver.id` with the
+  change's `created_by.id` and `assignee.id`.
 - All other moves follow the configured transition map and role gates (`409` when
   not allowed). `IN_PROGRESS` stamps `actual_start`, closing stamps `actual_end`.
   `CLOSED`/`FAILED` need an `outcome` (`SUCCESSFUL`, `SUCCESSFUL_WITH_ISSUES`,

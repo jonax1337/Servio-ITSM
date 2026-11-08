@@ -3,6 +3,7 @@ import type { ServerMessages } from "../../types";
 // English server message (exact text) → German. See docs/i18n.md#server-messages.
 const messages: ServerMessages = {
   "Label is required": "Bezeichnung ist erforderlich",
+  "Pick a self-approval mode.": "Wählen Sie einen Modus für die Selbstgenehmigung.",
   "Invalid field": "Ungültiges Feld",
   "1–1000%": "1–1000 %",
   "Add at least one action": "Mindestens eine Aktion hinzufügen",
