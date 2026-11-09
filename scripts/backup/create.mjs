@@ -1,36 +1,62 @@
-// Creates one backup: a VACUUM INTO snapshot of the SQLite database plus a
+// Creates one backup: a snapshot of the SQLite database plus a
 // tar.gz of the upload directory, written into a partial directory, verified
 // there, and published with one rename. A backup that fails verification is
 // deleted, so every published backup directory has passed its checks.
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import {
   DB_FILE_NAME,
   MANIFEST_FILE_NAME,
   PARTIAL_PREFIX,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   UPLOADS_FILE_NAME,
   VERIFICATION_FILE_NAME,
   backupName,
+  ensurePrivateDirectory,
   isInside,
+  removeStalePartials,
 } from "./layout.mjs";
-import { appliedMigrations, countRows, openReadOnly, vacuumInto } from "./sqlite.mjs";
+import { appliedMigrations, countRows, openReadOnly, snapshotDatabase } from "./sqlite.mjs";
 import { writeTarGz } from "./tar.mjs";
 import { sha256File, verifyBackupDirectory } from "./verify.mjs";
 
 export const MANIFEST_FORMAT = 1;
-/** Head room on top of the estimated backup size. */
-const MIN_FREE_MARGIN_BYTES = 64 * 1024 * 1024;
+/**
+ * Space that must stay free on the backup volume AFTER the backup: the larger
+ * of 1 GiB and 10 % of the volume. By default the backups share the volume
+ * with the live database and uploads, which need room to keep working.
+ */
+export const MIN_RESERVE_BYTES = 1024 ** 3;
+export const RESERVE_FRACTION = 0.1;
 
 /**
+ * Coarse failure classes. The monitoring API reports only these; the full
+ * message (paths, process output) stays in the admin UI.
+ */
+export const BACKUP_ERROR_CODES = {
+  databaseMissing: "database_missing",
+  configuration: "invalid_configuration",
+  insufficientSpace: "insufficient_space",
+  verificationFailed: "verification_failed",
+  failed: "backup_failed",
+};
+
+/**
+ * @typedef {{ freeBytes: number, totalBytes: number }} DiskSpace
  * @typedef {{
  *   dbFile: string,
  *   uploadDir: string | null,
  *   backupDir: string,
  *   appVersion?: string | null,
+ *   trigger?: string | null,
+ *   runId?: string | null,
+ *   exclusive?: boolean,
  *   now?: Date,
  *   log?: (line: string) => void,
- *   freeBytes?: (dir: string) => Promise<number>,
+ *   diskSpace?: (dir: string) => Promise<DiskSpace>,
+ *   snapshotStepPages?: number,
  * }} CreateOptions
  * @typedef {{
  *   name: string,
@@ -39,6 +65,7 @@ const MIN_FREE_MARGIN_BYTES = 64 * 1024 * 1024;
  *   uploadsBytes: number | null,
  *   uploadsFiles: number | null,
  *   uploadsContentBytes: number | null,
+ *   partialsRemoved: string[],
  *   verification: import("./verify.mjs").VerificationVerdict & { checks: Record<string, unknown> },
  * }} CreatedBackup
  */
@@ -46,13 +73,25 @@ const MIN_FREE_MARGIN_BYTES = 64 * 1024 * 1024;
 export class BackupError extends Error {
   /**
    * @param {string} message
-   * @param {{ verification?: unknown }} [details]
+   * @param {{ code?: string, verification?: unknown }} [details]
    */
   constructor(message, details = {}) {
     super(message);
     this.name = "BackupError";
+    this.code = details.code ?? BACKUP_ERROR_CODES.failed;
     this.verification = details.verification ?? null;
   }
+}
+
+/**
+ * Bytes the backup volume must have free before a backup of `backupBytes`:
+ * the backup itself plus the reserve that stays free afterwards.
+ *
+ * @param {number} backupBytes
+ * @param {number} volumeBytes
+ */
+export function requiredFreeBytes(backupBytes, volumeBytes) {
+  return backupBytes + Math.max(MIN_RESERVE_BYTES, Math.ceil(volumeBytes * RESERVE_FRACTION));
 }
 
 /**
@@ -91,10 +130,13 @@ export async function listUploadFiles(root) {
   return { sources, bytes };
 }
 
-/** @param {string} dir */
-async function defaultFreeBytes(dir) {
-  const { bavail, bsize } = await statfs(dir);
-  return bavail * bsize;
+/**
+ * @param {string} dir
+ * @returns {Promise<DiskSpace>}
+ */
+async function defaultDiskSpace(dir) {
+  const { bavail, blocks, bsize } = await statfs(dir);
+  return { freeBytes: bavail * bsize, totalBytes: blocks * bsize };
 }
 
 /** @param {number} bytes */
@@ -105,7 +147,7 @@ const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
  * @param {unknown} value
  */
 async function writeJsonDurably(file, value) {
-  await writeFile(file, JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
+  await writeFile(file, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: PRIVATE_FILE_MODE });
   const handle = await open(file, "r+");
   try {
     await handle.sync();
@@ -137,6 +179,32 @@ async function syncFile(file) {
 }
 
 /**
+ * Makes every file in `dir` readable by its owner only (the snapshot and the
+ * archive are created with the process umask).
+ *
+ * @param {string} dir
+ */
+async function restrictFiles(dir) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isFile()) await chmod(join(dir, entry.name), PRIVATE_FILE_MODE);
+  }
+}
+
+/**
+ * Row counts of the live database, read in their own short transaction.
+ *
+ * @param {string} dbFile
+ */
+function countLiveRows(dbFile) {
+  const live = openReadOnly(dbFile);
+  try {
+    return countRows(live);
+  } finally {
+    live.close();
+  }
+}
+
+/**
  * A backup name that does not exist yet in `backupDir` (a second backup within
  * the same second gets a `-2` suffix).
  *
@@ -160,42 +228,44 @@ async function freeName(backupDir, now) {
 export async function createBackup(options) {
   const now = options.now ?? new Date();
   const log = options.log ?? (() => {});
-  const freeBytes = options.freeBytes ?? defaultFreeBytes;
+  const diskSpace = options.diskSpace ?? defaultDiskSpace;
   const dbFile = resolve(options.dbFile);
   const backupDir = resolve(options.backupDir);
   const uploadDir = options.uploadDir ? resolve(options.uploadDir) : null;
 
   const dbStats = await stat(dbFile).catch(() => null);
-  if (!dbStats?.isFile()) throw new BackupError(`Database file ${dbFile} does not exist`);
+  if (!dbStats?.isFile()) throw new BackupError(`Database file ${dbFile} does not exist`, { code: BACKUP_ERROR_CODES.databaseMissing });
   if (uploadDir && isInside(uploadDir, backupDir)) {
-    throw new BackupError(`The backup directory ${backupDir} lies inside the upload directory ${uploadDir}; choose another BACKUP_DIR`);
+    throw new BackupError(`The backup directory ${backupDir} lies inside the upload directory ${uploadDir}; choose another BACKUP_DIR`, {
+      code: BACKUP_ERROR_CODES.configuration,
+    });
   }
-  await mkdir(backupDir, { recursive: true });
+  await ensurePrivateDirectory(backupDir);
+  // Leftovers of interrupted runs go first: their space counts as free for this run.
+  const partialsRemoved = await removeStalePartials(backupDir, { now, exclusive: options.exclusive === true });
+  if (partialsRemoved.length) log(`removed interrupted backups ${partialsRemoved.join(", ")}`);
 
   const uploads = uploadDir ? await listUploadFiles(uploadDir) : null;
-  let walBytes = 0;
-  for (const suffix of ["-wal", "-journal"]) walBytes += (await stat(dbFile + suffix).catch(() => null))?.size ?? 0;
-  const needed = dbStats.size + walBytes + (uploads?.bytes ?? 0) + MIN_FREE_MARGIN_BYTES;
-  const free = await freeBytes(backupDir);
-  if (free < needed) {
-    throw new BackupError(`Not enough free space in ${backupDir}: ${megabytes(free)} free, about ${megabytes(needed)} needed`);
+  let journalBytes = 0;
+  for (const suffix of ["-wal", "-journal"]) journalBytes += (await stat(dbFile + suffix).catch(() => null))?.size ?? 0;
+  const space = await diskSpace(backupDir);
+  const needed = requiredFreeBytes(dbStats.size + journalBytes + (uploads?.bytes ?? 0), space.totalBytes);
+  if (space.freeBytes < needed) {
+    throw new BackupError(
+      `Not enough free space in ${backupDir}: ${megabytes(space.freeBytes)} free, about ${megabytes(needed)} needed ` +
+        "(the backup plus a reserve of 1 GB or 10 % of the volume, whichever is larger, that stays free for the live data)",
+      { code: BACKUP_ERROR_CODES.insufficientSpace },
+    );
   }
 
   const name = await freeName(backupDir, now);
   const work = join(backupDir, `${PARTIAL_PREFIX}${name}-${randomUUID()}`);
-  await mkdir(work);
+  await mkdir(work, { mode: PRIVATE_DIR_MODE });
   try {
     log(`snapshotting ${dbFile}`);
-    const live = openReadOnly(dbFile);
-    let liveBefore;
-    let liveAfter;
-    try {
-      liveBefore = countRows(live);
-      vacuumInto(live, join(work, DB_FILE_NAME));
-      liveAfter = countRows(live);
-    } finally {
-      live.close();
-    }
+    const liveBefore = countLiveRows(dbFile);
+    const snapshot = await snapshotDatabase(dbFile, join(work, DB_FILE_NAME), { stepPages: options.snapshotStepPages, log });
+    const liveAfter = countLiveRows(dbFile);
     await syncFile(join(work, DB_FILE_NAME));
     const copy = openReadOnly(join(work, DB_FILE_NAME));
     let migrations;
@@ -229,6 +299,9 @@ export async function createBackup(options) {
       name,
       created_at: now.toISOString(),
       app_version: options.appVersion ?? null,
+      trigger: options.trigger ?? null,
+      run_id: options.runId ?? null,
+      snapshot: { method: snapshot.method, attempts: snapshot.attempts },
       database: { file: DB_FILE_NAME, source: dbFile, bytes: databaseBytes, sha256: databaseSha256 },
       uploads: uploadsManifest,
       migrations,
@@ -240,9 +313,13 @@ export async function createBackup(options) {
     log("verifying");
     const verification = await verifyBackupDirectory(work, manifest, { liveBefore, liveAfter });
     if (!verification.ok) {
-      throw new BackupError(`Verification failed: ${verification.problems.join("; ")}`, { verification });
+      throw new BackupError(`Verification failed: ${verification.problems.join("; ")}`, {
+        code: BACKUP_ERROR_CODES.verificationFailed,
+        verification,
+      });
     }
     await writeJsonDurably(join(work, VERIFICATION_FILE_NAME), { ...verification, verified_at: new Date().toISOString() });
+    await restrictFiles(work);
     await syncDirectory(work);
 
     const path = join(backupDir, name);
@@ -256,6 +333,7 @@ export async function createBackup(options) {
       uploadsBytes: uploadsManifest ? Number(uploadsManifest.bytes) : null,
       uploadsFiles: uploadsManifest ? Number(uploadsManifest.files) : null,
       uploadsContentBytes: uploadsManifest ? Number(uploadsManifest.content_bytes) : null,
+      partialsRemoved,
       verification,
     };
   } catch (error) {

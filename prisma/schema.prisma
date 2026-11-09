@@ -1958,13 +1958,13 @@ model MaintenanceWindow {
   @@index([status, startsAt])
 }
 
-// One run of the built-in backup (lib/backup.ts): a VACUUM INTO copy of the
-// SQLite database plus an archive of the uploads, verified before it is kept.
+// One run of the built-in backup (lib/backup.ts): a snapshot of the SQLite
+// database plus an archive of the uploads, verified before it is kept.
 // The files live in BACKUP_DIR/<name>; `prunedAt` is set when retention removed them.
 model BackupRun {
   id            String    @id @default(cuid())
   status        String    @default("RUNNING") // RUNNING | SUCCESS | FAILED
-  trigger       String    @default("SCHEDULE") // SCHEDULE | MANUAL
+  trigger       String    @default("SCHEDULE") // SCHEDULE | MANUAL | CLI
   startedAt     DateTime  @default(now())
   finishedAt    DateTime?
   heartbeatAt   DateTime  @default(now()) // refreshed while RUNNING; a stale one marks an interrupted run
@@ -1974,7 +1974,8 @@ model BackupRun {
   uploadsFiles  Int?
   verified      Boolean   @default(false)
   details       String    @default("{}") // JSON: verification checks, warnings, pruned backups
-  error         String?
+  error         String? // full message, shown to admins only
+  errorCode     String? // coarse class (lib/backup-rules.ts BACKUP_ERROR_CODES), the only failure detail the API reports
   prunedAt      DateTime?
   triggeredById String?
   createdAt     DateTime  @default(now())

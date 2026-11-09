@@ -1,5 +1,8 @@
 import { CronExpressionParser } from "cron-parser";
 import { isValidTimeZone } from "@/lib/oncall-rules";
+import { BACKUP_RUN_STALE_MS } from "@/scripts/backup/layout.mjs";
+
+export { BACKUP_HEARTBEAT_MS, BACKUP_RUN_STALE_MS } from "@/scripts/backup/layout.mjs";
 
 /**
  * Pure rules of the built-in backup (lib/backup.ts): the schedule, staleness of
@@ -22,12 +25,41 @@ export const DEFAULT_BACKUP_KEEP_COUNT = 7;
 export const DEFAULT_BACKUP_KEEP_DAYS = 14;
 /** Scheduled backups at most once an hour: each run copies the whole database and the uploads. */
 export const MIN_BACKUP_INTERVAL_MS = 60 * 60_000;
-/** A RUNNING backup refreshes its heartbeat this often… */
-export const BACKUP_HEARTBEAT_MS = 30_000;
-/** …and counts as interrupted (its process is gone) when the heartbeat is older than this. */
-export const BACKUP_RUN_STALE_MS = 3 * 60_000;
 /** Hard limit for one backup process. */
 export const BACKUP_TIMEOUT_MS = 6 * 60 * 60_000;
+/** After a verified manual backup, Back up now waits this long: each run copies everything again. */
+export const MANUAL_BACKUP_COOLDOWN_MS = 15 * 60_000;
+
+/**
+ * Failure classes of a backup run (BackupRun.errorCode). The monitoring API
+ * reports only these; the full message stays in Settings › Backups. The first
+ * five come from the backup process (scripts/backup/create.mjs).
+ */
+export const BACKUP_ERROR_CODES = [
+  "database_missing",
+  "invalid_configuration",
+  "insufficient_space",
+  "verification_failed",
+  "backup_failed",
+  "timeout",
+  "process_failed",
+  "interrupted",
+] as const;
+export type BackupErrorCode = (typeof BACKUP_ERROR_CODES)[number];
+
+/** A code reported by the backup process, or `backup_failed` for anything unknown. */
+export function normalizeBackupErrorCode(raw: unknown): BackupErrorCode {
+  return BACKUP_ERROR_CODES.find((code) => code === raw) ?? "backup_failed";
+}
+
+/**
+ * Milliseconds until Back up now is allowed again (0 = now), counted from the
+ * start of the newest verified manual backup.
+ */
+export function manualBackupCooldownLeft(lastManualSuccessAt: Date | null, now: Date): number {
+  if (!lastManualSuccessAt) return 0;
+  return Math.max(0, lastManualSuccessAt.getTime() + MANUAL_BACKUP_COOLDOWN_MS - now.getTime());
+}
 
 const DAILY_TIME = /^(\d{1,2}):(\d{2})$/;
 
@@ -108,7 +140,7 @@ type RunFacts = {
   databaseBytes: number | null;
   uploadsBytes: number | null;
   uploadsFiles: number | null;
-  error: string | null;
+  errorCode: string | null;
   name: string | null;
 };
 
@@ -147,7 +179,7 @@ export function latestBackupPayload(input: LatestBackupInput) {
     uploads_bytes: latest?.uploadsBytes ?? null,
     uploads_files: latest?.uploadsFiles ?? null,
     name: latest?.name ?? null,
-    error: latest?.error ?? null,
+    error_code: latest?.status === "FAILED" ? normalizeBackupErrorCode(latest.errorCode) : null,
     last_success_at: iso(lastSuccess?.finishedAt),
     last_success_age_seconds: ageSeconds(lastSuccess?.finishedAt, now),
     last_success_size_bytes: sizeOf(lastSuccess),

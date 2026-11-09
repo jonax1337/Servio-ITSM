@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  BACKUP_ERROR_CODES,
   BACKUP_RUN_STALE_MS,
+  MANUAL_BACKUP_COOLDOWN_MS,
   isBackupDue,
   isBackupRunStale,
   latestBackupPayload,
+  manualBackupCooldownLeft,
   nextBackupAt,
+  normalizeBackupErrorCode,
   normalizeBackupTimeZone,
   parseBackupSchedule,
   parseRetentionInput,
@@ -106,7 +110,7 @@ describe("latestBackupPayload", () => {
     databaseBytes: 1000,
     uploadsBytes: 500,
     uploadsFiles: 3,
-    error: null,
+    errorCode: null,
     name: "servio-backup-20261119T023000Z",
     ...over,
   });
@@ -132,14 +136,49 @@ describe("latestBackupPayload", () => {
 
   it("keeps the last verified backup visible after a failure", () => {
     const success = run({ startedAt: new Date("2026-11-18T02:30:00Z"), finishedAt: new Date("2026-11-18T02:31:00Z") });
-    const failed = run({ status: "FAILED", verified: false, error: "disk full", databaseBytes: null, uploadsBytes: null });
+    const failed = run({ status: "FAILED", verified: false, errorCode: "insufficient_space", databaseBytes: null, uploadsBytes: null });
     const payload = latestBackupPayload({ ...base, latest: failed, lastSuccess: success });
-    expect(payload).toMatchObject({ status: "FAILED", verified: false, error: "disk full", size_bytes: null, last_success_size_bytes: 1500 });
+    expect(payload).toMatchObject({
+      status: "FAILED",
+      verified: false,
+      error_code: "insufficient_space",
+      size_bytes: null,
+      last_success_size_bytes: 1500,
+    });
     expect(payload.last_success_age_seconds).toBe(33.5 * 3600 - 60);
+  });
+
+  it("reports only a coarse error class, never the message", () => {
+    const failed = run({ status: "FAILED", verified: false, errorCode: "something new" });
+    const payload = latestBackupPayload({ ...base, latest: failed, lastSuccess: null });
+    expect(payload.error_code).toBe("backup_failed");
+    expect(payload).not.toHaveProperty("error");
+    expect(latestBackupPayload({ ...base, latest: run({}), lastSuccess: null }).error_code).toBeNull();
   });
 
   it("has no next run when scheduled backups are off or unsupported", () => {
     expect(latestBackupPayload({ ...base, enabled: false, latest: null, lastSuccess: null }).next_run_at).toBeNull();
     expect(latestBackupPayload({ ...base, supported: false, latest: null, lastSuccess: null }).next_run_at).toBeNull();
+  });
+});
+
+describe("manualBackupCooldownLeft", () => {
+  const now = new Date("2026-11-19T12:00:00Z");
+
+  it("allows a manual backup without a previous one", () => {
+    expect(manualBackupCooldownLeft(null, now)).toBe(0);
+  });
+
+  it("waits 15 minutes after the last verified manual backup", () => {
+    expect(manualBackupCooldownLeft(new Date(now.getTime() - 60_000), now)).toBe(MANUAL_BACKUP_COOLDOWN_MS - 60_000);
+    expect(manualBackupCooldownLeft(new Date(now.getTime() - MANUAL_BACKUP_COOLDOWN_MS), now)).toBe(0);
+  });
+});
+
+describe("normalizeBackupErrorCode", () => {
+  it("keeps known codes and folds anything else into backup_failed", () => {
+    for (const code of BACKUP_ERROR_CODES) expect(normalizeBackupErrorCode(code)).toBe(code);
+    expect(normalizeBackupErrorCode("/data/backups: EACCES")).toBe("backup_failed");
+    expect(normalizeBackupErrorCode(null)).toBe("backup_failed");
   });
 });

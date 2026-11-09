@@ -617,11 +617,12 @@ export const BACKUP_RUN_STATUS_META: Record<BackupRunStatus, Meta> = {
   FAILED: { label: "Failed", tone: "danger", icon: XCircle },
 };
 
-export const BACKUP_TRIGGERS = ["SCHEDULE", "MANUAL"] as const;
+export const BACKUP_TRIGGERS = ["SCHEDULE", "MANUAL", "CLI"] as const;
 export type BackupTrigger = (typeof BACKUP_TRIGGERS)[number];
 export const BACKUP_TRIGGER_META: Record<BackupTrigger, Meta> = {
   SCHEDULE: { label: "Scheduled", tone: "neutral", icon: CalendarClock },
   MANUAL: { label: "Manual", tone: "indigo" },
+  CLI: { label: "Command line", tone: "neutral" },
 };
 
 // ---- Releases & change templates -------------------------------------------

@@ -13,12 +13,12 @@ See also: [deployment.md](./deployment.md) · [configuration.md](./configuration
 | | |
 | --- | --- |
 | What is backed up | The SQLite database (`DATABASE_URL=file:…`) and the upload directory (`UPLOAD_DIR`, `STORAGE_DRIVER=fs`). |
-| How | `VACUUM INTO` (a transactionally consistent, compacted copy taken while the app keeps running) and a `tar.gz` of the uploads, written by a child process so the web server never blocks. |
+| How | The SQLite backup API (a consistent copy taken while the app keeps running, in short steps so the app's writes are not held up) and a `tar.gz` of the uploads, written by a child process so the web server's event loop never blocks. |
 | Verified | Every backup, before it is kept: checksums, `PRAGMA integrity_check` on the copy opened read-only, row counts of the core tables against the live database, the archive read back end to end. A backup that fails is deleted and the run is recorded as failed. |
 | Where | `BACKUP_DIR`: `/data/backups` in the Docker image (on the persistent `servio-data` volume), `./.backups` otherwise. |
 | When | Scheduled backups are **on by default** (daily 02:30 UTC). Settings › Backups changes the schedule, time zone, retention and whether attachments are included, and has **Back up now**. |
-| Retention | The newest 7 backups and every backup younger than 14 days are kept; older ones are deleted after each successful backup. |
-| Monitoring | `GET /api/v1/system/backups/latest` (agent token, `read` scope) and an admin notification when a scheduled backup fails. |
+| Retention | The newest 7 scheduled backups and every scheduled backup younger than 14 days are kept; of the backups started by hand, the newest 3. Older ones are deleted after each successful backup. |
+| Monitoring | `GET /api/v1/system/backups/latest` (agent token, `read` scope; status, age and an error class, no paths or messages) and an admin notification when a scheduled backup fails. |
 | Restore | `node scripts/restore-backup.mjs` with the app stopped; `--dry-run` verifies first. |
 | Not covered | PostgreSQL deployments (use `pg_dump`), non-filesystem storage drivers, and anything outside the database and uploads (the `.env`, compose files, `SERVIO_STATE_DIR`). |
 
@@ -28,7 +28,7 @@ Each backup is one directory in `BACKUP_DIR`:
 
 ```
 servio-backup-20261119T023000Z/
-  servio.db            VACUUM INTO copy of the database (no -wal/-shm needed)
+  servio.db            copy of the database (no -wal/-shm/-journal needed)
   uploads.tar.gz       every file below UPLOAD_DIR (absent when attachments are excluded)
   manifest.json        sizes, sha256 checksums, applied migrations, live row counts, app version
   verification.json    the checks the backup passed
@@ -36,7 +36,9 @@ servio-backup-20261119T023000Z/
 
 A backup is written into a `.partial-…` directory first and renamed into place only after it
 passed verification, so a directory with the final name is always complete and verified. Partial
-directories left by an interrupted run are removed after 12 hours. The archive is a standard
+directories left by an interrupted run are removed before the next backup checks the free space
+(by a run that holds the backup lock; otherwise once they are 12 hours old). Backup directories are
+created with mode `0700` and their files `0600`. The archive is a standard
 POSIX tar (`tar tzf uploads.tar.gz` lists it). Temporary files of uploads in flight (`*.tmp`)
 and symlinks are skipped.
 
@@ -57,7 +59,7 @@ or rsync/restic/borg on the volume's host path).
 | --- | --- |
 | Checksum | The copy or the archive no longer matches the sha256 in the manifest. |
 | `PRAGMA integrity_check` | The copy, opened read-only, reports anything but `ok`. |
-| Row counts | A core table (`User`, `Group`, `Ticket`, `TicketComment`, `Problem`, `Change`, `Asset`, `Attachment`, `Article`, `AuditLog`, `AppSetting`, `ApiToken`) is missing or its count is outside the live counts taken right before and after the snapshot. |
+| Row counts | A core table (`User`, `Group`, `Ticket`, `TicketComment`, `Problem`, `Change`, `Asset`, `Attachment`, `Article`, `AuditLog`, `AppSetting`, `ApiToken`) is missing, or its count is more than 100 rows (or 1 % of the table, whichever is larger) outside the live counts taken right before and after the snapshot. A smaller difference is only a **warning**: rows added and deleted again while the snapshot was taken legitimately leave a good copy outside that range. Checksums and `integrity_check` are never relaxed. |
 | Migrations | The applied migrations of the copy differ from the manifest. |
 | Archive | The `tar.gz` cannot be read to the end (gzip CRC, tar checksums, end marker), holds links or devices, or its file count or size differs from what was written. |
 | Referenced files | A `storageKey` in the copied database has no file in the archive. This is only a **warning** (the file was usually already missing on disk) and is shown on the run. |
@@ -75,15 +77,32 @@ Admin settings (Settings › Backups) override the environment variables of the 
 | `BACKUP_ENABLED` | `true` | Scheduled backups on/off. Back up now works either way. |
 | `BACKUP_SCHEDULE` | `02:30` | A daily time `HH:MM` or a five-field cron expression; at most hourly. |
 | `BACKUP_TIMEZONE` | `UTC` | IANA time zone the schedule is read in. |
-| `BACKUP_RETENTION_COUNT` | `7` | Always keep this many of the newest backups (minimum 1). |
-| `BACKUP_RETENTION_DAYS` | `14` | Also keep every backup younger than this many days (0 = by count only). |
+| `BACKUP_RETENTION_COUNT` | `7` | Always keep this many of the newest scheduled backups (minimum 1). |
+| `BACKUP_RETENTION_DAYS` | `14` | Also keep every scheduled backup younger than this many days (0 = by count only). |
 | `BACKUP_INCLUDE_UPLOADS` | `true` | Archive the upload directory with the database. |
 
 A run that is due while the server is down is caught up once when it is back. A run interrupted
 by a restart is marked failed after three minutes without a heartbeat. Only one backup runs at a
 time. Scheduled backups run on the scheduler instance (`SCHEDULER_ENABLED=true`, see
 [deployment.md](./deployment.md)). Free space is checked first: the backup directory needs room
-for the database, the uploads and 64 MB.
+for the database and the uploads **plus a reserve that stays free afterwards**, 1 GB or 10 % of the
+volume, whichever is larger (by default the backups share the volume with the live data).
+
+Backups started by hand (**Back up now**, or `node scripts/backup/run.mjs`) are kept by count only:
+the newest 3, however young, and they do not count against `BACKUP_RETENTION_COUNT`. **Back up now**
+is refused for 15 minutes after a verified manual backup.
+
+### How the database is copied
+
+Servio runs SQLite in its default rollback-journal mode, where any reader blocks the writers for as
+long as it reads. A single long read of the whole database (such as `VACUUM INTO`) would make the
+app's writes wait for the entire copy and fail with "database is locked" once that takes longer
+than their 5-second wait. The backup therefore uses the SQLite backup API and copies 1024 pages
+(4 MB with the default page size) per step, releasing the lock between steps. A write between two
+steps makes SQLite start the copy over; the backup then pauses briefly and retries with larger
+steps. Only under a constant stream of writes does it finally copy everything in one step, and
+writers wait for that copy once. On a Node.js without the backup API it falls back to
+`VACUUM INTO`. The manifest records the method and the number of attempts (`snapshot`).
 
 ## 📈 Monitoring
 
@@ -110,7 +129,9 @@ for the database, the uploads and 64 MB.
 
 Alert when `last_success_age_seconds` exceeds the schedule plus a margin (for a daily backup,
 for example 26 hours = 93600 s), or when `status` is `FAILED`. `status` is `NONE` before the first
-run. Use a token of an agent account with the `read` scope (Settings › API Tokens). Field reference:
+run. A failed run carries an `error_code` (for example `insufficient_space` or
+`verification_failed`); the full message, which names paths on the server, is only shown in
+Settings › Backups. Use a token of an agent account with the `read` scope (Settings › API Tokens). Field reference:
 [rest-api.md](./rest-api.md#built-in-backup). Admins also get an in-app notification
 (`BACKUP_FAILED`) whenever a scheduled backup fails.
 
@@ -118,7 +139,9 @@ run. Use a token of an agent account with the `read` scope (Settings › API Tok
 
 Restoring replaces the database and the upload directory with a backup. **The app must be
 stopped.** The script refuses while the app's heartbeat file (`app-heartbeat.json` in
-`SERVIO_STATE_DIR`) is fresh or the database is locked; `--force` overrides. It keeps the current
+`SERVIO_STATE_DIR`) is fresh or the database is locked; `--force` overrides. Only the scheduler
+instance (`SCHEDULER_ENABLED=true`) writes the heartbeat: with several replicas, stop all of them
+yourself, since a passive replica is only seen while it holds a lock on the database. It keeps the current
 database and upload directory as `*.pre-restore-<time>` next to the originals and deletes nothing.
 
 ### Docker (published images)
@@ -146,6 +169,14 @@ docker compose -f docker-compose.release.yml start web
 `--entrypoint node` skips the image's boot script (which would migrate the current database
 first); `run` uses the same volumes and environment as `web`. With `docker-compose.yml` (built from
 source) use that file instead. `latest` instead of a name picks the newest verified backup.
+
+> **Use the image of the version you run.** `docker compose run` starts the image named in the
+> compose file, i.e. the `SERVIO_VERSION` from `.env`. After an update through Settings › Updates
+> the running `web` container uses a newer image than that tag, until you bump `SERVIO_VERSION`
+> ([deployment.md](./deployment.md)). Check with `docker compose ps` / `docker inspect` and set
+> `SERVIO_VERSION` to the running version first. A restore with an older image refuses a backup
+> made by a newer version, and images released before the built-in backup do not contain
+> `scripts/restore-backup.mjs` at all.
 
 ### From source
 
@@ -184,6 +215,9 @@ Run it as the user the app runs as, so the restored files keep the right owner.
 4. Copies the current database (and its `-wal`/`-shm`/`-journal` files) to
    `<db>.pre-restore-<time>`, removes the old sidecar files (replaying them onto the restored
    database would corrupt it) and puts the backup in place via a temporary file and a rename.
+   In that temporary copy, the run that took the backup (it was still running in the snapshot)
+   is recorded as the verified backup it became, and any other run in progress at that moment
+   as interrupted.
 5. Unpacks the archive next to the upload directory, moves the current directory aside to
    `<uploads>.pre-restore-<time>` and renames the restored one into place. When the upload
    directory is a mount point, the swap happens inside it (`<uploads>/.pre-restore-<time>/`).
@@ -219,7 +253,7 @@ containers (`web`: `/data/backups`, `updater`: `/backups`).
 
 | Part | File |
 | --- | --- |
-| Backup run (create → verify → publish → retention), operator CLI | [`../scripts/backup/run.mjs`](../scripts/backup/run.mjs), [`create.mjs`](../scripts/backup/create.mjs) |
+| Backup run (create → verify → publish → retention), operator CLI, run rows of CLI runs and restores | [`../scripts/backup/run.mjs`](../scripts/backup/run.mjs), [`create.mjs`](../scripts/backup/create.mjs), [`runs.mjs`](../scripts/backup/runs.mjs) |
 | Verification | [`../scripts/backup/verify.mjs`](../scripts/backup/verify.mjs) |
 | Layout, retention, paths | [`../scripts/backup/layout.mjs`](../scripts/backup/layout.mjs) |
 | SQLite access (`node:sqlite`) and the tar.gz format | [`sqlite.mjs`](../scripts/backup/sqlite.mjs), [`tar.mjs`](../scripts/backup/tar.mjs) |
@@ -233,4 +267,6 @@ containers (`web`: `/data/backups`, `updater`: `/backups`).
 The scripts are plain Node (no dependencies, Node's built-in `node:sqlite`), so they run in the
 image without the app and an operator can also start a backup by hand:
 `node scripts/backup/run.mjs` (same defaults as the app; `--help` lists the options). Such a run
-is not recorded in the run history.
+is recorded in the run history with the trigger `CLI` and takes the same lock as the app (it is
+refused while another backup runs); `--no-record` skips both, for example on a read-only copy of
+the database. Run it as the user the app runs as.

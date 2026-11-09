@@ -409,6 +409,7 @@ built-in backup on its schedule ([backup.md](./backup.md)), so no host cron job 
 - [ ] `.env` next to `docker-compose.release.yml` with `AUTH_SECRET`, `SETTINGS_ENCRYPTION_KEY` and `DOCKER_GID`.
 - [ ] `APP_URL` and `AUTH_URL` set to the public HTTPS origin; TLS terminated by a reverse proxy.
 - [ ] Seeded demo passwords changed and the demo API token revoked after the first login.
+- [ ] The `servio-data` (database, uploads, built-in backups) and the updater's `servio-backups` (pre-update database copies) volumes exist and are part of your host backups.
 - [ ] Built-in backups run (Settings › Backups shows a verified backup) and `BACKUP_DIR` is copied off the host or on a separate disk; monitoring watches `GET /api/v1/system/backups/latest` ([backup.md](./backup.md)).
 - [ ] Your `.env` (`SETTINGS_ENCRYPTION_KEY`, `AUTH_SECRET`) is stored safely outside the server; a database backup cannot decrypt its secrets without it.
 - [ ] Exactly one instance runs the scheduler (`SCHEDULER_ENABLED`).

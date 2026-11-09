@@ -1,6 +1,7 @@
 // "Restore test light" for a backup: the copy must open, pass PRAGMA
-// integrity_check, hold as many rows in the core tables as the live database
-// did around the snapshot, and the upload archive must read back completely.
+// integrity_check and match its checksums, hold about as many rows in the core
+// tables as the live database did around the snapshot, and the upload archive
+// must read back completely.
 // The decision is a pure function (evaluateVerification) so it can be tested;
 // verifyBackupDirectory gathers the facts.
 import { createHash } from "node:crypto";
@@ -13,6 +14,14 @@ import { inspectTarGz } from "./tar.mjs";
 
 /** How many missing blob keys a report lists by name. */
 const MISSING_KEYS_SHOWN = 10;
+/**
+ * A row count outside the live counts by at most this many rows (or this
+ * share of the table, whichever is larger) is only a warning: rows written and
+ * deleted again while the snapshot was taken leave the copy outside the range
+ * although it is a good snapshot. A larger gap fails the backup.
+ */
+export const ROW_COUNT_TOLERANCE_ROWS = 100;
+export const ROW_COUNT_TOLERANCE_FRACTION = 0.01;
 
 /**
  * @typedef {Record<string, number>} RowCounts
@@ -31,19 +40,24 @@ const MISSING_KEYS_SHOWN = 10;
  */
 
 /**
- * Whether the row count of the copy is plausible for a snapshot taken between
- * two live counts: it must lie between them (inclusive). Rows written and
- * deleted around the snapshot move the live count, not the snapshot.
+ * How the row count of the copy compares with the live counts taken right
+ * before and after the snapshot: `within` them (inclusive), `near` them
+ * (outside, but within the tolerance: rows added and deleted again around the
+ * snapshot) or `off` (more than the tolerance away: rows were lost).
  *
  * @param {number} copy
  * @param {number | undefined} before
  * @param {number | undefined} after
- * @returns {boolean}
+ * @returns {"within" | "near" | "off"}
  */
-export function countWithinSnapshot(copy, before, after) {
-  const known = [before, after].filter((n) => typeof n === "number");
-  if (known.length === 0) return true;
-  return copy >= Math.min(...known) && copy <= Math.max(...known);
+export function compareSnapshotCount(copy, before, after) {
+  const known = /** @type {number[]} */ ([before, after].filter((n) => typeof n === "number"));
+  if (known.length === 0) return "within";
+  const low = Math.min(...known);
+  const high = Math.max(...known);
+  if (copy >= low && copy <= high) return "within";
+  const tolerance = Math.max(ROW_COUNT_TOLERANCE_ROWS, Math.ceil(high * ROW_COUNT_TOLERANCE_FRACTION));
+  return copy >= low - tolerance && copy <= high + tolerance ? "near" : "off";
 }
 
 /**
@@ -75,9 +89,10 @@ export function evaluateVerification(facts) {
         problems.push(`Table ${table} is missing from the copy`);
         continue;
       }
-      if (!countWithinSnapshot(copy, before?.[table], after?.[table])) {
+      const comparison = compareSnapshotCount(copy, before?.[table], after?.[table]);
+      if (comparison !== "within") {
         const live = [before?.[table], after?.[table]].filter((n) => n !== undefined).join("–");
-        problems.push(`Row count of ${table} differs: copy ${copy}, live ${live}`);
+        (comparison === "off" ? problems : warnings).push(`Row count of ${table} differs: copy ${copy}, live ${live}`);
       }
     }
   }

@@ -15,7 +15,9 @@ import {
   DEFAULT_BACKUP_SCHEDULE,
   isBackupDue,
   isBackupRunStale,
+  manualBackupCooldownLeft,
   nextBackupAt,
+  normalizeBackupErrorCode,
   normalizeBackupTimeZone,
   parseBackupSchedule,
 } from "@/lib/backup-rules";
@@ -24,7 +26,7 @@ import { APP_HEARTBEAT_FILE, listBackups, normalizeRetention, sqliteFileFromUrl 
 /**
  * The built-in backup: on a schedule (lib/ticks/backup.ts) or on demand
  * (Settings › Backups), a child process (scripts/backup/run.mjs) takes a
- * VACUUM INTO copy of the SQLite database and archives the upload directory,
+ * snapshot of the SQLite database and archives the upload directory,
  * verifies both and applies retention. This module owns the BackupRun rows,
  * the lock (one RUNNING row at a time), audit entries and admin notices.
  * Server-only (Prisma, node:child_process).
@@ -116,7 +118,12 @@ export async function failStaleBackupRuns(now = new Date()): Promise<number> {
     if (!isBackupRunStale(run.heartbeatAt, now)) continue;
     const res = await db.backupRun.updateMany({
       where: { id: run.id, status: "RUNNING" },
-      data: { status: "FAILED", finishedAt: now, error: "Interrupted: the process running this backup stopped (restart or crash)." },
+      data: {
+        status: "FAILED",
+        finishedAt: now,
+        error: "Interrupted: the process running this backup stopped (restart or crash).",
+        errorCode: "interrupted",
+      },
     });
     failed += res.count;
   }
@@ -134,13 +141,18 @@ type ChildResult = {
   partials_removed?: string[];
   prune_error?: string;
   error?: string;
+  error_code?: string;
 };
 
-/** Runs scripts/backup/run.mjs and returns its JSON result (a failure result when it crashed). */
-function runBackupProcess(config: BackupConfig): Promise<ChildResult> {
+/** Runs scripts/backup/run.mjs for a claimed run and returns its JSON result (a failure result when it crashed). */
+function runBackupProcess(runId: string, trigger: string, config: BackupConfig): Promise<ChildResult> {
   const args = [
     SCRIPT,
     "--json",
+    "--run-id",
+    runId,
+    "--trigger",
+    trigger,
     "--db",
     config.dbFile ?? "",
     "--backup-dir",
@@ -167,7 +179,11 @@ function runBackupProcess(config: BackupConfig): Promise<ChildResult> {
           /* fall through: the process died before it printed its result */
         }
         const reason = error?.killed ? "The backup process timed out and was stopped." : error?.message ?? "The backup process ended without a result.";
-        resolve({ ok: false, error: `${reason} ${String(stderr).trim().slice(-MAX_ERROR_CHARS)}`.trim() });
+        resolve({
+          ok: false,
+          error: `${reason} ${String(stderr).trim().slice(-MAX_ERROR_CHARS)}`.trim(),
+          error_code: error?.killed ? "timeout" : "process_failed",
+        });
       },
     );
   });
@@ -177,11 +193,22 @@ export type StartResult = { ok: true; runId: string } | { ok: false; error: stri
 
 /**
  * Claims the backup lock by creating a RUNNING row. Refused while another
- * backup runs (in this process or, per its fresh heartbeat, in another one).
+ * backup runs (in this process or, per its fresh heartbeat, in another one),
+ * and for a manual backup within the cooldown after the last verified one.
  */
 export async function startBackupRun(trigger: BackupTrigger, userId: string | null, config: BackupConfig): Promise<StartResult> {
   if (!config.supported) return { ok: false, error: "The built-in backup supports SQLite databases only." };
   if (g.__servioBackupRunning) return { ok: false, error: "A backup is already running." };
+  if (trigger === "MANUAL") {
+    const lastManual = await db.backupRun.findFirst({
+      where: { trigger: "MANUAL", status: "SUCCESS" },
+      orderBy: { startedAt: "desc" },
+      select: { startedAt: true },
+    });
+    if (manualBackupCooldownLeft(lastManual?.startedAt ?? null, new Date()) > 0) {
+      return { ok: false, error: "A manual backup was made less than 15 minutes ago. Try again later." };
+    }
+  }
   await failStaleBackupRuns();
   const run = await db.$transaction(async (tx) => {
     const running = await tx.backupRun.findFirst({ where: { status: "RUNNING" }, select: { id: true } });
@@ -196,14 +223,14 @@ export async function startBackupRun(trigger: BackupTrigger, userId: string | nu
  * Executes a claimed run to the end: the backup process, the BackupRun row,
  * pruned rows, the audit entry and (for a failed scheduled run) the admin notice.
  */
-export async function executeBackupRun(runId: string, config: BackupConfig): Promise<void> {
+export async function executeBackupRun(runId: string, trigger: BackupTrigger, config: BackupConfig): Promise<void> {
   g.__servioBackupRunning = true;
   const heartbeat = setInterval(() => {
     void db.backupRun.updateMany({ where: { id: runId, status: "RUNNING" }, data: { heartbeatAt: new Date() } }).catch(() => {});
   }, BACKUP_HEARTBEAT_MS);
   if (typeof heartbeat.unref === "function") heartbeat.unref();
   try {
-    const result = await runBackupProcess(config);
+    const result = await runBackupProcess(runId, trigger, config);
     const now = new Date();
     const verified = result.ok === true && result.verification?.ok === true;
     const details = {
@@ -229,6 +256,7 @@ export async function executeBackupRun(runId: string, config: BackupConfig): Pro
         verified,
         details: JSON.stringify(details),
         error: verified ? null : (result.error ?? "Unknown error").slice(0, MAX_ERROR_CHARS),
+        errorCode: verified ? null : normalizeBackupErrorCode(result.error_code),
       },
     });
     if (details.pruned.length > 0) {
@@ -259,7 +287,10 @@ export async function executeBackupRun(runId: string, config: BackupConfig): Pro
     const message = e instanceof Error ? e.message : String(e);
     console.error("[servio:backup] run error:", message);
     await db.backupRun
-      .updateMany({ where: { id: runId, status: "RUNNING" }, data: { status: "FAILED", finishedAt: new Date(), error: message.slice(0, MAX_ERROR_CHARS) } })
+      .updateMany({
+        where: { id: runId, status: "RUNNING" },
+        data: { status: "FAILED", finishedAt: new Date(), error: message.slice(0, MAX_ERROR_CHARS), errorCode: "backup_failed" },
+      })
       .catch(() => {});
   } finally {
     clearInterval(heartbeat);
@@ -280,7 +311,7 @@ export async function runScheduledBackupIfDue(now = new Date()): Promise<void> {
   if (!isBackupDue(config.cron, config.timezone, lastScheduled?.startedAt ?? null, PROCESS_STARTED_AT, now)) return;
   const started = await startBackupRun("SCHEDULE", null, config);
   if (!started.ok) return; // another backup is running; the schedule tries again on the next tick
-  await executeBackupRun(started.runId, config);
+  await executeBackupRun(started.runId, "SCHEDULE", config);
 }
 
 /** Everything Settings › Backups and the monitoring endpoint show. */

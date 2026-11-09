@@ -30,11 +30,13 @@ import {
   DB_FILE_NAME,
   MANIFEST_FILE_NAME,
   UPLOADS_FILE_NAME,
+  VERIFICATION_FILE_NAME,
   backupName,
   listBackups,
   readJson,
   sqliteFileFromUrl,
 } from "./backup/layout.mjs";
+import { settleRestoredRuns } from "./backup/runs.mjs";
 import { canLockExclusively } from "./backup/sqlite.mjs";
 import { extractTarGz } from "./backup/tar.mjs";
 import { verifyBackupDirectory } from "./backup/verify.mjs";
@@ -216,6 +218,29 @@ if (values["dry-run"]) {
 }
 
 // ── 5. Restore the database ──────────────────────────────────────────────────
+/**
+ * The snapshot holds the run that took it as RUNNING; record it as the
+ * verified backup it became (the app would otherwise mark it interrupted).
+ *
+ * @param {string} file the restored copy, before it is put in place
+ */
+async function settleSnapshotRun(file) {
+  const verified = await readJson(join(source, VERIFICATION_FILE_NAME));
+  const finishedAt = new Date(String(verified?.verified_at ?? manifest.created_at ?? new Date().toISOString()));
+  const database = /** @type {Record<string, unknown>} */ (manifest.database ?? {});
+  const runs = settleRestoredRuns(file, {
+    runId: typeof manifest.run_id === "string" ? manifest.run_id : null,
+    name: String(manifest.name ?? basename(source)),
+    finishedAt: Number.isNaN(finishedAt.getTime()) ? new Date() : finishedAt,
+    databaseBytes: typeof database.bytes === "number" ? database.bytes : null,
+    uploadsBytes: typeof uploads?.bytes === "number" ? uploads.bytes : null,
+    uploadsFiles: typeof uploads?.files === "number" ? uploads.files : null,
+  });
+  if (runs.settled || runs.interrupted) {
+    say(`  run history: the backup's own run recorded as verified${runs.interrupted ? `, ${runs.interrupted} run(s) in progress at that moment marked interrupted` : ""}.`);
+  }
+}
+
 say();
 await mkdir(dirname(dbFile), { recursive: true });
 /** @type {string[]} */
@@ -230,6 +255,7 @@ if (dbExists) {
 const temp = `${dbFile}.restore-${randomUUID()}`;
 try {
   await copyFile(join(source, DB_FILE_NAME), temp, constants.COPYFILE_EXCL);
+  await settleSnapshotRun(temp);
   await syncFile(temp);
   // The old WAL / journal belong to the old database; replayed onto the restored one they would corrupt it.
   for (const suffix of SIDECARS) await rm(dbFile + suffix, { force: true });

@@ -183,7 +183,7 @@ export const enumsDe = {
     ROLLED_BACK: "Zurückgerollt",
   },
   BACKUP_RUN_STATUS_META: { RUNNING: "Läuft", SUCCESS: "Geprüft", FAILED: "Fehlgeschlagen" },
-  BACKUP_TRIGGER_META: { SCHEDULE: "Geplant", MANUAL: "Manuell" },
+  BACKUP_TRIGGER_META: { SCHEDULE: "Geplant", MANUAL: "Manuell", CLI: "Kommandozeile" },
   RELEASE_STATUS_META: {
     PLANNING: "In Planung",
     READY: "Bereit",

@@ -25,7 +25,7 @@ export async function backupNow(): Promise<ActionResult> {
     summary: "Started a manual backup",
   });
   // Not awaited: the page is dynamic and refreshes itself until the run is finished.
-  void executeBackupRun(started.runId, config);
+  void executeBackupRun(started.runId, "MANUAL", config);
   revalidatePath("/settings/backups");
   return { ok: true };
 }

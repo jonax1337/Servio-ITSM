@@ -408,7 +408,7 @@ const settings: Translations<typeof en> = {
   "backups.timezoneHint": "IANA-Name, in dem der Zeitplan gilt, z. B. America/New_York. Leer bedeutet UTC.",
   "backups.keepCount": "Neueste Sicherungen aufbewahren",
   "backups.keepDays": "Außerdem alle Sicherungen jünger als (Tage) aufbewahren",
-  "backups.retentionHint": "Ältere Sicherungen jenseits beider Grenzen werden nach jeder erfolgreichen Sicherung gelöscht. 0 Tage bewahrt nur nach Anzahl auf.",
+  "backups.retentionHint": "Diese Grenzen gelten für geplante Sicherungen: ältere jenseits beider Grenzen werden nach jeder erfolgreichen Sicherung gelöscht (0 Tage bewahrt nur nach Anzahl auf). Von den von Hand gestarteten Sicherungen bleiben die neuesten 3.",
   "backups.includeUploads": "Anhänge einschließen",
   "backups.includeUploadsHint": "Das Upload-Verzeichnis mit der Datenbank archivieren. Nur ausschalten, wenn die Dateien anderweitig gesichert werden.",
   "backups.restore": "Wiederherstellung",

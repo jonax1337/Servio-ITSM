@@ -1,4 +1,4 @@
--- Built-in backup: one row per backup run (scheduled or manual) with its verification result.
+-- Built-in backup: one row per backup run (scheduled, manual or from the command line) with its verification result.
 -- CreateTable
 CREATE TABLE "BackupRun" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -14,6 +14,7 @@ CREATE TABLE "BackupRun" (
     "verified" BOOLEAN NOT NULL DEFAULT false,
     "details" TEXT NOT NULL DEFAULT '{}',
     "error" TEXT,
+    "errorCode" TEXT,
     "prunedAt" DATETIME,
     "triggeredById" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

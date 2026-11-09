@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ON_DEMAND_KEEP_COUNT,
   backupName,
   isInside,
   normalizeRetention,
@@ -60,6 +61,24 @@ describe("selectExpiredBackups", () => {
   it("orders by creation time, not by input order", () => {
     const backups = daily(4).reverse();
     expect(selectExpiredBackups(backups, { keepCount: 2, keepDays: 0 }, now)).toEqual([daily(4)[2].name, daily(4)[3].name]);
+  });
+
+  it("keeps manual and command-line backups by count only, apart from the scheduled ones", () => {
+    const hourly = (i: number, trigger: string) => {
+      const createdAt = new Date(now.getTime() - (i + 1) * 60 * 60 * 1000);
+      return { name: backupName(createdAt), createdAt, trigger };
+    };
+    const onDemand = [0, 1, 2, 3, 4, 5].map((i) => hourly(i, i % 2 ? "CLI" : "MANUAL"));
+    const scheduled = daily(3).map((b) => ({ ...b, trigger: "SCHEDULE" }));
+    const expired = selectExpiredBackups([...onDemand, ...scheduled], { keepCount: 3, keepDays: 14 }, now);
+    // All hand-made backups are hours old, well inside 14 days, yet only the newest three stay;
+    // they do not push the three scheduled ones out of their count either.
+    expect(expired).toEqual(onDemand.slice(ON_DEMAND_KEEP_COUNT).map((b) => b.name));
+  });
+
+  it("treats backups without a recorded trigger as scheduled", () => {
+    const backups = daily(5).map((b) => ({ ...b, trigger: null }));
+    expect(selectExpiredBackups(backups, { keepCount: 2, keepDays: 0 }, now)).toEqual(backups.slice(2).map((b) => b.name));
   });
 
   it("deletes nothing when there are fewer backups than the count", () => {

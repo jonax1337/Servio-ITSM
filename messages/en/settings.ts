@@ -405,7 +405,7 @@ const settings = {
   "backups.timezoneHint": "IANA name the schedule is read in, e.g. America/New_York. Empty means UTC.",
   "backups.keepCount": "Keep the newest backups",
   "backups.keepDays": "Also keep every backup younger than (days)",
-  "backups.retentionHint": "Older backups beyond both limits are deleted after each successful backup. 0 days keeps by count only.",
+  "backups.retentionHint": "These limits apply to scheduled backups: older ones beyond both limits are deleted after each successful backup (0 days keeps by count only). Of the backups started by hand, the newest 3 are kept.",
   "backups.includeUploads": "Include attachments",
   "backups.includeUploadsHint": "Archive the upload directory with the database. Turn off only when the files are backed up elsewhere.",
   "backups.restore": "Restore",

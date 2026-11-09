@@ -3,12 +3,14 @@
 //
 //   <BACKUP_DIR>/
 //     servio-backup-20261119T023000Z/     one published backup (always verified)
-//       servio.db                          VACUUM INTO copy of the database
+//       servio.db                          snapshot of the database (SQLite backup API)
 //       uploads.tar.gz                     the upload directory (absent when uploads are excluded)
 //       manifest.json                      what was backed up: sizes, sha256, migrations, row counts
 //       verification.json                  the checks the backup passed before it was published
 //     .partial-servio-backup-…-<uuid>/     a backup in progress (or left by an interrupted one)
-import { lstat, readdir, readFile, rm, stat } from "node:fs/promises";
+//
+// Backups hold every record: the directories are created 0700, the files 0600.
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 export const BACKUP_PREFIX = "servio-backup-";
@@ -24,14 +26,24 @@ export const VERIFICATION_FILE_NAME = "verification.json";
  * refuses to run while it is fresh.
  */
 export const APP_HEARTBEAT_FILE = "app-heartbeat.json";
-/** The app rewrites the heartbeat every minute; older than this means it is gone. */
+/** A heartbeat older than this means the app is gone. */
 export const APP_HEARTBEAT_STALE_MS = 3 * 60 * 1000;
+/** Longest allowed heartbeat interval: two missed beats still fit into the stale window. */
+export const APP_HEARTBEAT_MAX_INTERVAL_MS = 90 * 1000;
+export const PRIVATE_DIR_MODE = 0o700;
+export const PRIVATE_FILE_MODE = 0o600;
+/** A RUNNING backup run (BackupRun row) refreshes its heartbeat this often… */
+export const BACKUP_HEARTBEAT_MS = 30_000;
+/** …and counts as interrupted (its process is gone) when the heartbeat is older than this. */
+export const BACKUP_RUN_STALE_MS = 3 * 60_000;
+/** Backups started by hand (Back up now, the CLI) are kept by count only: the newest this many. */
+export const ON_DEMAND_KEEP_COUNT = 3;
 /** A partial directory younger than this may belong to a backup that is still running. */
 const PARTIAL_GRACE_MS = 12 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * @typedef {{ name: string, createdAt: Date }} BackupRef
+ * @typedef {{ name: string, createdAt: Date, trigger?: string | null }} BackupRef
  * @typedef {{ keepCount: number, keepDays: number }} RetentionPolicy
  * @typedef {BackupRef & { path: string, verified: boolean, bytes: number, manifest: Record<string, unknown> | null }} BackupInfo
  */
@@ -72,28 +84,37 @@ export function normalizeRetention({ keepCount, keepDays }) {
 }
 
 /**
- * The backups retention deletes. A backup is kept when it is one of the newest
- * `keepCount`, OR younger than `keepDays` days (0 = count only), OR protected
- * (the backup that was just made). Everything else expires.
+ * Whether a backup was started by hand (Back up now, the CLI) rather than by
+ * the schedule. Backups without a recorded trigger count as scheduled.
+ *
+ * @param {BackupRef} backup
+ */
+export const isOnDemandBackup = (backup) => Boolean(backup.trigger) && backup.trigger !== "SCHEDULE";
+
+/**
+ * The backups retention deletes. Scheduled backups follow the policy: one is
+ * kept when it is one of the newest `keepCount`, OR younger than `keepDays`
+ * days (0 = count only). Backups started by hand are kept by count only (the
+ * newest ON_DEMAND_KEEP_COUNT), so repeated manual runs neither pile up for
+ * `keepDays` nor push scheduled backups out. Protected backups (the one that
+ * was just made) are always kept.
  *
  * @param {BackupRef[]} backups
  * @param {RetentionPolicy} policy
  * @param {Date} now
  * @param {string[]} [protectedNames]
- * @returns {string[]} names of the expired backups, oldest last
+ * @returns {string[]} names of the expired backups, newest first
  */
 export function selectExpiredBackups(backups, policy, now, protectedNames = []) {
   const { keepCount, keepDays } = normalizeRetention(policy);
   const newestFirst = [...backups].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.name.localeCompare(a.name));
   const minimumAge = keepDays * DAY_MS;
-  return newestFirst
-    .filter((backup, index) => {
-      if (index < keepCount) return false;
-      if (protectedNames.includes(backup.name)) return false;
-      if (keepDays > 0 && now.getTime() - backup.createdAt.getTime() < minimumAge) return false;
-      return true;
-    })
-    .map((backup) => backup.name);
+  const youngEnough = (/** @type {BackupRef} */ backup) => keepDays > 0 && now.getTime() - backup.createdAt.getTime() < minimumAge;
+  const expired = new Set([
+    ...newestFirst.filter((backup) => !isOnDemandBackup(backup)).filter((backup, index) => index >= keepCount && !youngEnough(backup)),
+    ...newestFirst.filter(isOnDemandBackup).slice(ON_DEMAND_KEEP_COUNT),
+  ]);
+  return newestFirst.filter((backup) => expired.has(backup) && !protectedNames.includes(backup.name)).map((backup) => backup.name);
 }
 
 /**
@@ -143,13 +164,15 @@ export async function listBackups(backupDir) {
     if (!createdAt) continue;
     const path = join(backupDir, entry.name);
     const verification = await readJson(join(path, VERIFICATION_FILE_NAME));
+    const manifest = await readJson(join(path, MANIFEST_FILE_NAME));
     backups.push({
       name: entry.name,
       createdAt,
+      trigger: typeof manifest?.trigger === "string" ? manifest.trigger : null,
       path,
       verified: verification?.ok === true,
       bytes: await directoryBytes(path),
-      manifest: await readJson(join(path, MANIFEST_FILE_NAME)),
+      manifest,
     });
   }
   return backups.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.name.localeCompare(a.name));
@@ -168,17 +191,44 @@ export async function pruneBackups(backupDir, policy, { now = new Date(), protec
   const backups = await listBackups(backupDir);
   const deleted = selectExpiredBackups(backups, policy, now, protectedNames);
   for (const name of deleted) await rm(join(backupDir, name), { recursive: true, force: true });
+  return { deleted, partialsRemoved: await removeStalePartials(backupDir, { now }) };
+}
 
+/**
+ * Removes partial directories left by interrupted backups. Without
+ * `exclusive`, partials younger than 12 hours are kept (they may belong to a
+ * backup that is still running); a caller holding the backup lock passes
+ * `exclusive: true`, because then no other backup can be writing.
+ *
+ * @param {string} backupDir
+ * @param {{ now?: Date, exclusive?: boolean }} [options]
+ * @returns {Promise<string[]>} the names of the removed directories
+ */
+export async function removeStalePartials(backupDir, { now = new Date(), exclusive = false } = {}) {
   /** @type {string[]} */
-  const partialsRemoved = [];
+  const removed = [];
   for (const entry of await readdir(backupDir, { withFileTypes: true })) {
     if (!entry.isDirectory() || !entry.name.startsWith(PARTIAL_PREFIX)) continue;
     const info = await lstat(join(backupDir, entry.name));
-    if (now.getTime() - info.mtimeMs < PARTIAL_GRACE_MS) continue;
+    if (!exclusive && now.getTime() - info.mtimeMs < PARTIAL_GRACE_MS) continue;
     await rm(join(backupDir, entry.name), { recursive: true, force: true });
-    partialsRemoved.push(entry.name);
+    removed.push(entry.name);
   }
-  return { deleted, partialsRemoved };
+  return removed;
+}
+
+/**
+ * Creates the backup directory with mode 0700, or tightens an existing one.
+ *
+ * @param {string} backupDir
+ */
+export async function ensurePrivateDirectory(backupDir) {
+  await mkdir(backupDir, { recursive: true, mode: PRIVATE_DIR_MODE });
+  // A mount point owned by another user cannot be tightened (EPERM); each
+  // backup's own directory is 0700 regardless, so that is no reason to fail.
+  await chmod(backupDir, PRIVATE_DIR_MODE).catch((error) => {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== "EPERM") throw error;
+  });
 }
 
 /**

@@ -19,7 +19,8 @@ name: servio
 #
 # SECURITY MODEL (details: updater/README.md)
 #  - The app (`web`) is internet-facing and can write everything on the shared
-#    `servio-data` volume. It never sees the Docker socket or the backups.
+#    `servio-data` volume, including its own built-in backups in /data/backups.
+#    It never sees the Docker socket or the updater's pre-update backups.
 #  - Only `docker-proxy` mounts the Docker socket. It serves a filtered copy as
 #    a unix socket on the `docker-api` volume, owned by a uid/gid (64999) that
 #    nothing else uses (socket 0660, directory 0750). Only the proxy and the

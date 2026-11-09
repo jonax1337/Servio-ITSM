@@ -90,6 +90,8 @@ const messages: ServerMessages = {
   // Backups
   "Only admins can start a backup.": "Nur Administratoren können eine Sicherung starten.",
   "A backup is already running.": "Es läuft bereits eine Sicherung.",
+  "A manual backup was made less than 15 minutes ago. Try again later.":
+    "Vor weniger als 15 Minuten wurde bereits eine manuelle Sicherung erstellt. Bitte später erneut versuchen.",
   "The built-in backup supports SQLite databases only.": "Die eingebaute Sicherung unterstützt nur SQLite-Datenbanken.",
   "Use a time between 00:00 and 23:59.": "Bitte eine Uhrzeit zwischen 00:00 und 23:59 angeben.",
   "Enter a daily time (HH:MM) or a cron expression with five fields.":

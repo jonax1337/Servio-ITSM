@@ -1206,16 +1206,18 @@ address in `details.email`. Changes are audited on the user.
 `GET /system/backups/latest` reports the built-in backup ([backup.md](./backup.md)) so an
 external monitor can alert on its age or failure. Agent tokens (AGENT, MANAGER, ADMIN) with the
 `read` scope; a USER token gets 403. Nothing about the backup files themselves (paths,
-contents) is exposed, and there is no download.
+contents, error messages) is exposed, and there is no download. Starting a backup is not part of
+the API (Settings › Backups or the command line).
 
 | Field | Meaning |
 | --- | --- |
 | `status` | Newest run: `RUNNING`, `SUCCESS` (created and verified), `FAILED`, or `NONE` before the first run. |
-| `trigger` | `SCHEDULE` or `MANUAL` (null without a run). |
+| `trigger` | `SCHEDULE`, `MANUAL` (Back up now) or `CLI` (`scripts/backup/run.mjs`); null without a run. |
 | `verified` | The newest run passed verification. |
 | `started_at`, `finished_at`, `age_seconds` | Timing of the newest run; `age_seconds` counts from `finished_at`. |
 | `size_bytes`, `database_bytes`, `uploads_bytes`, `uploads_files` | Sizes of the newest run (database copy plus uploads archive). |
-| `name`, `error` | Backup directory name; the failure reason of a failed run. |
+| `name` | Backup directory name of the newest run. |
+| `error_code` | Failure class of a failed run, else null: `database_missing`, `invalid_configuration`, `insufficient_space`, `verification_failed`, `timeout`, `process_failed`, `interrupted` or `backup_failed`. The full message (it names paths on the server) is shown only in Settings › Backups. |
 | `last_success_at`, `last_success_age_seconds`, `last_success_size_bytes` | The newest **verified** backup: alert on its age. |
 | `enabled`, `supported`, `schedule`, `timezone`, `next_run_at` | Configuration: scheduled backups on, database is SQLite, the schedule as entered (`HH:MM` or cron) and when it runs next. |
 
