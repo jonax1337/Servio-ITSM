@@ -1,11 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ok, preflight, paginate, pageMeta } from "@/lib/api";
-import { createVendor } from "@/lib/actions/contracts";
-import { formOf } from "@/lib/api-itsm-input";
 import { vendorCreateSchema } from "@/lib/api-asset-input";
 import { serializeVendor } from "../_serializers";
-import { agentGuard, asActor, readBody, refusal } from "../_itsm";
+import { agentGuard, readBody } from "../_itsm";
+import { managerOnly } from "../_manage";
+import { VENDOR_WHAT, createVendorRecord, prepareVendor, vendorResponse, vendorWriteConflict } from "../_vendors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,13 +32,20 @@ export async function GET(req: Request) {
   return ok(rows.map(serializeVendor), { meta: pageMeta(page, perPage, total) });
 }
 
-/** Create a vendor through the console's createVendor (MANAGER or above; names are unique, a duplicate is a 409). */
+/** Create a vendor (MANAGER or above). Names are unique: a duplicate name or `import_ref` is a 409 with the existing `id`. */
 export async function POST(req: Request) {
   const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
+  const refused = managerOnly(auth.principal, VENDOR_WHAT);
+  if (refused) return refused;
   const body = await readBody(req, vendorCreateSchema);
   if ("response" in body) return body.response;
-  const result = await asActor(auth.principal, () => createVendor(formOf(body.data)));
-  if (!result.ok || !result.id) return refusal(result.ok ? "The vendor could not be created." : result.error ?? "The request was refused.");
-  return ok(serializeVendor(await db.vendor.findUniqueOrThrow({ where: { id: result.id } })), { status: 201 });
+  const prepared = await prepareVendor(body.data, null);
+  if ("response" in prepared) return prepared.response;
+  try {
+    const vendor = await createVendorRecord({ ...prepared.data, name: body.data.name }, auth.principal.userId, "API");
+    return vendorResponse(vendor, { status: 201 });
+  } catch (err) {
+    return vendorWriteConflict(err);
+  }
 }

@@ -20,9 +20,12 @@ import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, artic
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
-  licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
+  licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema, vendorUpsertSchema,
 } from "@/lib/api-asset-input";
 import { LEGACY_SCOPES, RESOURCE_SCOPES, requiredScope, scopesGranting } from "@/lib/api-scopes";
+import { catalogItemCreateSchema, catalogItemPatchSchema, catalogItemUpsertSchema } from "@/lib/api-catalog-input";
+import { changeTemplateCreateSchema, changeTemplatePatchSchema, changeTemplateUpsertSchema } from "@/lib/api-change-template-input";
+import { contractCreateSchema, contractPatchSchema, contractUpsertSchema } from "@/lib/api-contract-input";
 
 export const runtime = "nodejs";
 
@@ -43,6 +46,59 @@ const pageParams = [
 const q = (name: string, description?: string) => ({ name, in: "query", schema: { type: "string" }, ...(description ? { description } : {}) });
 const refused = { "409": { description: "Refused by the workflow rules (message says why)" }, "422": { description: "Validation failed" } };
 const agentOnly = "Agent tokens only (AGENT, MANAGER, ADMIN); a USER token gets 403.";
+const managerWrites = `${agentOnly} Writes need a token owned by a MANAGER or ADMIN (403 otherwise), as in the console.`;
+
+/**
+ * The configuration resources MANAGER+ maintain (catalog items, change templates,
+ * contracts, vendors): list + create, get/patch/delete by id, get/upsert by origin
+ * reference. `meta.changed` names the fields a write changed; an unchanged write
+ * stores nothing and no audit row.
+ */
+function managedPaths(
+  path: string,
+  noun: string,
+  schemas: { create: z.ZodType; patch: z.ZodType; upsert: z.ZodType },
+  opts: { filters: object[]; createNote: string; upsertNote: string; deleteNote: string },
+) {
+  const conflict = { "409": { description: "A unique value (import_ref, or the name where names are unique) is already used; the existing id is in details" } };
+  return {
+    [`/${path}`]: {
+      get: { summary: `List ${noun}s`, description: agentOnly, parameters: [...opts.filters, ...pageParams], responses: { "200": { description: "OK (paginated)" } } },
+      post: {
+        summary: `Create a ${noun} (MANAGER+)`,
+        description: `${managerWrites} ${opts.createNote}`,
+        requestBody: body(schemas.create),
+        responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, ...conflict, "422": { description: "Validation failed or unknown ids" } },
+      },
+    },
+    [`/${path}/{id}`]: {
+      get: { summary: `Get a ${noun}`, description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: `Edit a ${noun} (MANAGER+)`,
+        description: "Fields left out keep their value; `null` clears a nullable one. `meta.changed` lists what changed.",
+        parameters: [strId],
+        requestBody: body(schemas.patch),
+        responses: { "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, ...conflict, "422": { description: "Validation failed or unknown ids" } },
+      },
+      delete: {
+        summary: `Delete a ${noun} (MANAGER+)`,
+        description: opts.deleteNote,
+        parameters: [strId],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" } },
+      },
+    },
+    [`/${path}/ref/{ref}`]: {
+      get: { summary: `Get a ${noun} by origin reference`, description: agentOnly, parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: `Create or update a ${noun} by origin reference (MANAGER+)`,
+        description: `${opts.upsertNote} Strict body; unchanged fields write nothing and no audit row. \`meta.created\` and \`meta.changed\` say what happened.`,
+        parameters: [refParam],
+        requestBody: body(schemas.upsert),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, ...conflict, "422": { description: "Validation failed, unknown ids, or required fields missing for a new record" } },
+      },
+    },
+  };
+}
 
 // Attachments: multipart bodies and binary downloads, described by hand.
 const ATTACHMENT_PARENTS = [
@@ -297,14 +353,21 @@ const spec = {
     "/assets/{id}/relations/{relation_id}": {
       delete: { summary: "Remove a dependency edge", parameters: [strId, { name: "relation_id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Removed" }, "404": { description: "Not an edge of this asset" } } },
     },
-    "/vendors": {
-      get: { summary: "List vendors", parameters: [q("name"), q("q"), q("active"), ...pageParams], responses: { "200": { description: "OK" } } },
-      post: { summary: "Create a vendor (MANAGER+)", requestBody: body(vendorCreateSchema), responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "Name taken" } } },
-    },
-    "/vendors/{id}": {
-      get: { summary: "Get a vendor", parameters: [strId], responses: { "200": { description: "OK" } } },
-      patch: { summary: "Edit a vendor (MANAGER+)", parameters: [strId], requestBody: body(vendorPatchSchema), responses: { "200": { description: "Updated" }, ...refused } },
-    },
+    ...managedPaths("vendors", "vendor", { create: vendorCreateSchema, patch: vendorPatchSchema, upsert: vendorUpsertSchema }, {
+      filters: [q("name", "Exact name"), q("q", "Substring of the name"), q("active", "true, false or all (default)")],
+      createNote: "Names are unique.",
+      upsertNote: "Creates the vendor (201; `name` required) when the reference is new, otherwise writes only the fields sent (200). A name another vendor has is a 409 with its id.",
+      deleteNote: "Its contracts and licenses stay, without a vendor.",
+    }),
+    ...managedPaths("contracts", "contract", { create: contractCreateSchema, patch: contractPatchSchema, upsert: contractUpsertSchema }, {
+      filters: [
+        q("q", "Substring of name or number"), q("vendor_id"), q("owner_id"), q("status"), q("type"),
+        q("asset_id", "Contracts covering this asset"), q("ends_before", "YYYY-MM-DD: end date before that day"),
+      ],
+      createNote: "Vendor, owner and assets must exist; the end date may not be before the start date. `asset_ids` sets the covered assets. Responses carry `expiry` (NONE | OK | EXPIRING | EXPIRED).",
+      upsertNote: "Creates the contract (201; `name` and `start_date` required) when the reference is new, otherwise writes only the fields sent (200); `asset_ids` replaces the covered assets.",
+      deleteNote: "Licenses under it stay, without a contract; covered assets lose the link.",
+    }),
     "/licenses": {
       get: { summary: "List licenses with seat usage", parameters: [q("vendor_id"), q("q"), q("asset_id"), q("user_id"), ...pageParams], responses: { "200": { description: "OK" } } },
       post: { summary: "Create a license (MANAGER+)", requestBody: body(licenseCreateSchema), responses: { "201": { description: "Created" }, ...refused } },
@@ -536,8 +599,21 @@ const spec = {
       post: { summary: "Move a problem along its lifecycle", parameters: [idParam], requestBody: body(problemTransitionSchema), responses: { "200": { description: "Moved" }, "404": { description: "Not found" }, ...refused } },
     },
     "/problems/{id}/comments": commentPaths("problem"),
+    ...managedPaths("catalog-items", "catalog item", { create: catalogItemCreateSchema, patch: catalogItemPatchSchema, upsert: catalogItemUpsertSchema }, {
+      filters: [q("q", "Substring of the name"), q("category_id"), q("service_id"), q("group_id"), q("published", "true or false (default both)")],
+      createNote:
+        "`questions` is the ordered request form. A question may carry `condition: { field, values }`: it is shown, and only then required, when the earlier select / multiselect / checkbox / urgency question `field` is answered with one of `values` (a checkbox answers \"true\" or \"false\"); hidden answers are not stored. `group_id` routes requests (else the service's team, else the category's). `requires_approval` needs `approver_id` (an active agent) or `approval_stages`.",
+      upsertNote: "Creates the item (201; `name` required) when the reference is new, otherwise writes only the fields sent (200); `questions` replaces the whole form.",
+      deleteNote: "Requests made from it keep their answers and history.",
+    }),
+    ...managedPaths("change-templates", "change template", { create: changeTemplateCreateSchema, patch: changeTemplatePatchSchema, upsert: changeTemplateUpsertSchema }, {
+      filters: [q("q", "Substring of the name"), q("type", "STANDARD or NORMAL"), q("service_id"), q("active", "true or false (default both)")],
+      createNote: "A STANDARD template (the default) is pre-authorized: changes made from it skip the CAB, so it needs `implementation_plan` and `rollback_plan`. Names are unique.",
+      upsertNote: "Creates the template (201; `name` and `title` required) when the reference is new, otherwise writes only the fields sent (200).",
+      deleteNote: "Changes created from it stay and lose the link.",
+    }),
     "/categories": {
-      get: { summary: "List categories", description: agentOnly, parameters: [q("include_archived", "true to include archived")], responses: { "200": { description: "OK" } } },
+      get: { summary: "List categories", description: `${agentOnly} Categories are shared by tickets, problems, changes, catalog items, change templates and articles (no separate change categories); a change carries one as \`category_id\`.`, parameters: [q("include_archived", "true to include archived")], responses: { "200": { description: "OK" } } },
       post: {
         summary: "Create a category (MANAGER+)",
         description: "`group_id` is the team that handles it (the default group of tickets created through the API); `portal_hidden` keeps it out of the self-service portal.",

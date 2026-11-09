@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { ASSET_RELATION_TYPES, ASSET_STATUSES, ASSET_TYPES, LICENSE_TYPES } from "@/lib/constants";
+import { externalRefSchema } from "@/lib/ticket-external-ref";
 
 /** Trimmed text; an empty string means "no value" (stored as null). */
 const text = z.string().trim().max(2000).transform((v) => (v === "" ? null : v));
@@ -104,24 +105,54 @@ export const relationCreateSchema = z.strictObject({
 
 // ── Vendors ──────────────────────────────────────────────────────────────────
 
-export const vendorCreateSchema = z.strictObject({
+const vendorFields = {
   name: z.string().trim().min(2).max(200),
-  website: z.string().trim().max(500).optional(),
-  email: z.email().optional(),
-  phone: z.string().trim().max(100).optional(),
-  notes: z.string().max(20_000).optional(),
+  website: z.string().trim().max(500).nullable(),
+  email: z.email().nullable(),
+  phone: z.string().trim().max(100).nullable(),
+  notes: z.string().max(20_000).nullable(),
+  active: z.boolean(),
+};
+const vendorOptional = {
+  website: vendorFields.website.optional(),
+  email: vendorFields.email.optional(),
+  phone: vendorFields.phone.optional(),
+  notes: vendorFields.notes.optional(),
+  active: vendorFields.active.optional(),
+};
+
+export const vendorCreateSchema = z.strictObject({
+  name: vendorFields.name,
+  ...vendorOptional,
+  /** Origin key for a script-maintained vendor; PUT /vendors/ref/{ref} upserts by it. */
+  import_ref: externalRefSchema.optional(),
 });
 
 export const vendorPatchSchema = z
-  .strictObject({
-    name: z.string().trim().min(2).max(200).optional(),
-    website: z.string().trim().max(500).nullable().optional(),
-    email: z.email().nullable().optional(),
-    phone: z.string().trim().max(100).nullable().optional(),
-    notes: z.string().max(20_000).nullable().optional(),
-    active: z.boolean().optional(),
-  })
+  .strictObject({ name: vendorFields.name.optional(), ...vendorOptional, import_ref: externalRefSchema.nullable().optional() })
   .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" });
+
+/** PUT /vendors/ref/{ref}: the fields to set; `name` is required only for a new vendor. */
+export const vendorUpsertSchema = z.strictObject({ name: vendorFields.name.optional(), ...vendorOptional });
+
+export type VendorPatch = z.infer<typeof vendorPatchSchema>;
+
+/** The Prisma columns for the fields present in a vendor body (absent keys stay untouched; blank text clears). */
+export function vendorData(b: Partial<VendorPatch>) {
+  const blank = (v: string | null) => (v?.trim() ? v.trim() : null);
+  return {
+    ...(b.name !== undefined && { name: b.name }),
+    ...(b.website !== undefined && { website: blank(b.website) }),
+    ...(b.email !== undefined && { email: blank(b.email) }),
+    ...(b.phone !== undefined && { phone: blank(b.phone) }),
+    ...(b.notes !== undefined && { notes: blank(b.notes) }),
+    ...(b.active !== undefined && { isActive: b.active }),
+    ...(b.import_ref !== undefined && { importRef: b.import_ref }),
+  };
+}
+
+/** Vendor columns whose API field is not simply their snake_case name. */
+export const VENDOR_FIELD_RENAMES: Record<string, string> = { isActive: "active" };
 
 // ── Licenses ─────────────────────────────────────────────────────────────────
 

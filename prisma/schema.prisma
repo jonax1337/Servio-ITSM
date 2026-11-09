@@ -373,22 +373,23 @@ model Group {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  manager          User?                @relation("GroupManager", fields: [managerId], references: [id])
-  members          GroupMember[]
-  tickets          Ticket[]
-  problems         Problem[]
-  changes          Change[]
-  assets           Asset[]
-  savedViews       SavedView[]
-  dashboards       Dashboard[]
-  ownedCategories  Category[]           @relation("CategoryTeam")
-  ownedServices    Service[]            @relation("ServiceTeam")
-  aiProjects       AiProject[]          @relation("AiProjectGroup")
-  freezeWindows    ChangeFreezeWindow[]
-  onCallSchedules  OnCallSchedule[]
-  releases         Release[]
-  changeTemplates  ChangeTemplate[]
-  recurringTickets RecurringTicket[]
+  manager           User?                @relation("GroupManager", fields: [managerId], references: [id])
+  members           GroupMember[]
+  tickets           Ticket[]
+  problems          Problem[]
+  changes           Change[]
+  assets            Asset[]
+  savedViews        SavedView[]
+  dashboards        Dashboard[]
+  ownedCategories   Category[]           @relation("CategoryTeam")
+  ownedServices     Service[]            @relation("ServiceTeam")
+  ownedCatalogItems CatalogItem[]        @relation("CatalogItemTeam")
+  aiProjects        AiProject[]          @relation("AiProjectGroup")
+  freezeWindows     ChangeFreezeWindow[]
+  onCallSchedules   OnCallSchedule[]
+  releases          Release[]
+  changeTemplates   ChangeTemplate[]
+  recurringTickets  RecurringTicket[]
 }
 
 /// A named, saved set of list filters (per-user, optionally shared with a team).
@@ -606,6 +607,7 @@ model CatalogItem {
   icon             String?
   categoryId       String?
   serviceId        String? // the service this request maps to (pre-routes the ticket)
+  groupId          String? // team requests of this item are routed to; null = the service's team, else the category's, else triage
   formSchema       String   @default("[]") // JSON: array of form field definitions
   ticketType       String   @default("REQUEST") // REQUEST | INCIDENT — what a request of this item becomes
   titleTemplate    String? // ticket title with {{item}}, {{requester}}, {{<question key>}}; null = "<Item> request"
@@ -615,11 +617,13 @@ model CatalogItem {
   estimatedDays    Int?
   isPublished      Boolean  @default(true)
   order            Int      @default(0)
+  importRef        String?  @unique // origin key of an item maintained through the API; PUT /api/v1/catalog-items/ref/{ref} upserts by it
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   category Category? @relation(fields: [categoryId], references: [id])
   service  Service?  @relation(fields: [serviceId], references: [id])
+  group    Group?    @relation("CatalogItemTeam", fields: [groupId], references: [id], onDelete: SetNull)
   approver User?     @relation("CatalogApprover", fields: [approverId], references: [id])
   tickets  Ticket[]
 
@@ -1739,6 +1743,7 @@ model ChangeTemplate {
   categoryId         String?
   serviceId          String?
   groupId            String?
+  importRef          String?  @unique // origin key of a template maintained through the API; PUT /api/v1/change-templates/ref/{ref} upserts by it
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1762,6 +1767,7 @@ model Vendor {
   phone     String?
   notes     String?
   isActive  Boolean  @default(true)
+  importRef String?  @unique // origin key of a vendor maintained through the API; PUT /api/v1/vendors/ref/{ref} upserts by it
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1788,6 +1794,7 @@ model Contract {
   autoRenew          Boolean   @default(false)
   notes              String?
   renewalNotifiedFor DateTime? // endDate the renewal reminder fired for (at-most-once marker)
+  importRef          String?   @unique // origin key of a contract maintained through the API; PUT /api/v1/contracts/ref/{ref} upserts by it
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

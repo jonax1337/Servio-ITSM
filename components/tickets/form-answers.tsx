@@ -1,6 +1,6 @@
 import { ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { parseFormSchema, type ServiceField } from "@/lib/service-forms";
+import { parseFormSchema, visibleFields, type ServiceField } from "@/lib/service-forms";
 import { LEVEL_META } from "@/lib/constants";
 import { getEnumT, getFormatter, getT } from "@/lib/i18n/server";
 
@@ -51,7 +51,7 @@ export async function FormAnswers({
   // rather than silently dropping the answers.
   const rows =
     fields.length > 0
-      ? fields.map((field) => ({ label: field.label, value: shown(field, values[field.key]) }))
+      ? visibleFields(fields, values).map((field) => ({ label: field.label, value: shown(field, values[field.key]) }))
       : Object.entries(values).map(([k, v]) => ({ label: humanize(k), value: typeof v === "boolean" ? yesNo(v) : v == null || v === "" ? "—" : String(v) }));
 
   if (rows.length === 0) return null;

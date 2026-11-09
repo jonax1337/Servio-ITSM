@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getCurrentUser, isAgent, hasRole, type Role } from "@/lib/session";
+import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { MAX_TITLE_LEN, catalogTicketType, parseApprovalStages, serializeApprovalStages, type ApprovalStage } from "@/lib/service-forms";
+import { MAX_TITLE_LEN, catalogTicketType, parseApprovalStages } from "@/lib/service-forms";
+import { catalogQuestionsSchema, questionsJson } from "@/lib/api-catalog-input";
+import { APPROVAL_WITHOUT_APPROVER, catalogReferenceError, checkApprovalStages, isActiveAgent } from "@/lib/catalog-items";
 
 // DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
 // demoted/deactivated manager loses write access immediately.
@@ -27,12 +29,20 @@ const schema = z.object({ name: z.string().min(2, "Name is required") });
 
 export type CatalogAdminState = { error?: string } | undefined;
 
-async function payload(formData: FormData, approverId: string | null, approvalStages: string | null) {
-  let formSchema = "[]";
+/** The posted form definition, checked like an API body (keys, options, conditions). */
+function parseQuestions(formData: FormData): { formSchema: string } | { error: string } {
+  let raw: unknown;
   try {
-    const a = JSON.parse(String(formData.get("formSchema") ?? "[]"));
-    formSchema = JSON.stringify(Array.isArray(a) ? a : []);
-  } catch { formSchema = "[]"; }
+    raw = JSON.parse(String(formData.get("formSchema") ?? "[]"));
+  } catch {
+    raw = [];
+  }
+  const parsed = catalogQuestionsSchema.safeParse(Array.isArray(raw) ? raw : []);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Please check the request form." };
+  return { formSchema: questionsJson(parsed.data) };
+}
+
+async function payload(formData: FormData, approverId: string | null, approvalStages: string | null, formSchema: string) {
   const days = parseInt(String(formData.get("estimatedDays") ?? ""), 10);
   return {
     name: String(formData.get("name")).trim(),
@@ -41,6 +51,7 @@ async function payload(formData: FormData, approverId: string | null, approvalSt
     icon: opt(formData.get("icon")),
     categoryId: rel(formData.get("categoryId")),
     serviceId: rel(formData.get("serviceId")),
+    groupId: rel(formData.get("groupId")),
     estimatedDays: Number.isFinite(days) ? days : null,
     isPublished: formData.get("isPublished") !== "false",
     requiresApproval: formData.get("requiresApproval") === "true",
@@ -52,84 +63,43 @@ async function payload(formData: FormData, approverId: string | null, approvalSt
   };
 }
 
-async function isActiveAgent(id: string) {
-  const u = await db.user.findUnique({ where: { id }, select: { role: true, isActive: true } });
-  return !!(u && u.isActive && isAgent(u.role as Role));
-}
-
 async function validApprover(formData: FormData) {
   const raw = rel(formData.get("approverId"));
   if (!raw) return null;
   return (await isActiveAgent(raw)) ? raw : null;
 }
 
-/** Pick a concrete active-agent id for a stage (used as the stage-0 fallback so
- *  the portal-tickets approver guard passes for group-first items). */
-async function stageApproverId(s: ApprovalStage): Promise<string | null> {
-  if (s.approverId) return (await isActiveAgent(s.approverId)) ? s.approverId : null;
-  if (s.groupId) {
-    const m = await db.groupMember.findFirst({
-      where: { groupId: s.groupId, user: { isActive: true, role: { in: ["ADMIN", "MANAGER", "AGENT"] } } },
-      select: { userId: true },
-      orderBy: [{ role: "asc" }],
-    });
-    return m?.userId ?? null;
-  }
-  return null;
+/** Validate + normalise the ORDERED approval stages posted by the editor (see checkApprovalStages). */
+function validApprovalStages(formData: FormData) {
+  return checkApprovalStages(parseApprovalStages(String(formData.get("approvalStages") ?? "")));
 }
 
-/**
- * Validate + normalise the ORDERED approval stages posted by the editor. Each
- * stage names an active-agent approver OR a real group. Returns the serialised
- * JSON (or null for no stages) plus a resolved stage-0 `fallbackApproverId`
- * (mirrored into CatalogItem.approverId for display; requests are routed by the
- * stages themselves, see createCatalogRequestFor), or an error string.
- */
-async function validApprovalStages(
-  formData: FormData,
-): Promise<{ stages: string | null; fallbackApproverId: string | null } | { error: string }> {
-  const stages = parseApprovalStages(String(formData.get("approvalStages") ?? ""));
-  const clean: ApprovalStage[] = [];
-  for (let i = 0; i < stages.length; i++) {
-    const s = stages[i];
-    if (s.approverId) {
-      if (!(await isActiveAgent(s.approverId))) {
-        return { error: `Stage ${i + 1}: the selected approver is not an active agent.` };
-      }
-      clean.push({ approverId: s.approverId });
-    } else if (s.groupId) {
-      const group = await db.group.findUnique({ where: { id: s.groupId }, select: { id: true } });
-      if (!group) return { error: `Stage ${i + 1}: the selected group no longer exists.` };
-      const memberCount = await db.groupMember.count({
-        where: { groupId: s.groupId, user: { isActive: true, role: { in: ["ADMIN", "MANAGER", "AGENT"] } } },
-      });
-      if (memberCount === 0) return { error: `Stage ${i + 1}: the selected group has no active agents to approve.` };
-      clean.push({ groupId: s.groupId });
-    } else {
-      return { error: `Stage ${i + 1}: choose an approver or a group.` };
-    }
-  }
-  const fallbackApproverId = clean.length > 0 ? await stageApproverId(clean[0]) : null;
-  return { stages: serializeApprovalStages(clean), fallbackApproverId };
-}
-
-export async function createCatalogItem(_prev: CatalogAdminState, formData: FormData): Promise<CatalogAdminState> {
-  const me = await requireManager();
-  if (!me) return { error: "Not authorised" };
+/** Everything the item editor posts, validated: the Prisma data or the first error. */
+async function itemPayload(formData: FormData): Promise<{ data: Awaited<ReturnType<typeof payload>> } | { error: string }> {
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const questions = parseQuestions(formData);
+  if ("error" in questions) return questions;
   const approverId = await validApprover(formData);
   const stagesResult = await validApprovalStages(formData);
   if ("error" in stagesResult) return { error: stagesResult.error };
   // With stages configured, mirror stage 0's concrete approver into approverId
   // (display only; requests are routed by the stages themselves).
   const effectiveApproverId = stagesResult.stages ? stagesResult.fallbackApproverId : approverId;
-  const data = await payload(formData, effectiveApproverId, stagesResult.stages);
-  if (data.requiresApproval && !effectiveApproverId && !data.approvalStages) {
-    return { error: "Approval is required for this item, but no approver or approval stage was configured." };
-  }
+  const data = await payload(formData, effectiveApproverId, stagesResult.stages, questions.formSchema);
+  if (data.requiresApproval && !effectiveApproverId && !data.approvalStages) return { error: APPROVAL_WITHOUT_APPROVER };
+  const missing = await catalogReferenceError(data);
+  if (missing) return { error: missing.message };
+  return { data };
+}
+
+export async function createCatalogItem(_prev: CatalogAdminState, formData: FormData): Promise<CatalogAdminState> {
+  const me = await requireManager();
+  if (!me) return { error: "Not authorised" };
+  const result = await itemPayload(formData);
+  if ("error" in result) return { error: result.error };
   const count = await db.catalogItem.count();
-  const item = await db.catalogItem.create({ data: { ...data, order: count } });
+  const item = await db.catalogItem.create({ data: { ...result.data, order: count } });
   await writeAudit({ userId: me.id, action: "CREATE", entity: "CatalogItem", entityId: item.id, summary: `Created catalog item "${item.name}"` });
   revalidatePath("/catalog");
   return undefined;
@@ -140,17 +110,9 @@ export async function updateCatalogItem(_prev: CatalogAdminState, formData: Form
   if (!me) return { error: "Not authorised" };
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing id" };
-  const parsed = schema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
-  const approverId = await validApprover(formData);
-  const stagesResult = await validApprovalStages(formData);
-  if ("error" in stagesResult) return { error: stagesResult.error };
-  const effectiveApproverId = stagesResult.stages ? stagesResult.fallbackApproverId : approverId;
-  const data = await payload(formData, effectiveApproverId, stagesResult.stages);
-  if (data.requiresApproval && !effectiveApproverId && !data.approvalStages) {
-    return { error: "Approval is required for this item, but no approver or approval stage was configured." };
-  }
-  await db.catalogItem.update({ where: { id }, data });
+  const result = await itemPayload(formData);
+  if ("error" in result) return { error: result.error };
+  await db.catalogItem.update({ where: { id }, data: result.data });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "CatalogItem", entityId: id, summary: "Updated catalog item" });
   revalidatePath("/catalog");
   return undefined;

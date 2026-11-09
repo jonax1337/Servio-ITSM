@@ -144,8 +144,8 @@ export function serializeAssetRelation(r: { id: string; type: string; sourceId: 
   };
 }
 
-export function serializeVendor(v: { id: string; name: string; website: string | null; email: string | null; phone: string | null; notes: string | null; isActive: boolean; createdAt: Date; updatedAt: Date }) {
-  return { id: v.id, name: v.name, website: v.website, email: v.email, phone: v.phone, notes: v.notes, active: v.isActive, created_at: v.createdAt.toISOString(), updated_at: v.updatedAt.toISOString() };
+export function serializeVendor(v: { id: string; name: string; website: string | null; email: string | null; phone: string | null; notes: string | null; isActive: boolean; importRef: string | null; createdAt: Date; updatedAt: Date }) {
+  return { id: v.id, name: v.name, website: v.website, email: v.email, phone: v.phone, notes: v.notes, active: v.isActive, import_ref: v.importRef, created_at: v.createdAt.toISOString(), updated_at: v.updatedAt.toISOString() };
 }
 
 export const LICENSE_INCLUDE = {

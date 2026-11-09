@@ -37,6 +37,10 @@ const messages: ServerMessages = {
   "Choose a service.": "Bitte einen Service auswählen.",
   "A service cannot depend on itself.": "Ein Service kann nicht von sich selbst abhängen.",
   // Catalog
+  "Every question needs a label": "Jede Frage braucht eine Beschriftung",
+  "Question keys are 1-100 characters: letters, digits, _ or -":
+    "Frageschlüssel bestehen aus 1–100 Zeichen: Buchstaben, Ziffern, _ oder -",
+  "Choose at least one answer that shows the question": "Bitte mindestens eine Antwort wählen, bei der die Frage angezeigt wird",
   "Approval is required for this item, but no approver or approval stage was configured.":
     "Für diesen Eintrag ist eine Genehmigung erforderlich, aber es wurde keine genehmigende Person und keine Genehmigungsstufe festgelegt.",
   "Item not found": "Eintrag nicht gefunden",

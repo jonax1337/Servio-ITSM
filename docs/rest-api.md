@@ -278,7 +278,17 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` / `POST` | `/assets/{id}/relations` | List / add dependency edges. | `cmdb:read` / `cmdb:write` |
 | `DELETE` | `/assets/{id}/relations/{relation_id}` | Remove an edge. | `cmdb:write` |
 | `GET` / `POST` | `/vendors` | List / create vendors (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
-| `GET` / `PATCH` | `/vendors/{id}` | Get / edit a vendor. | `cmdb:read` / `cmdb:write` |
+| `GET` / `PATCH` / `DELETE` | `/vendors/{id}` | Get / edit / delete a vendor. | `cmdb:read` / `cmdb:write` |
+| `GET` / `PUT` | `/vendors/ref/{ref}` | Get / upsert a vendor by its origin reference. | `cmdb:read` / `cmdb:write` |
+| `GET` / `POST` | `/contracts` | List / create vendor contracts (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
+| `GET` / `PATCH` / `DELETE` | `/contracts/{id}` | Get / edit / delete a contract. | `cmdb:read` / `cmdb:write` |
+| `GET` / `PUT` | `/contracts/ref/{ref}` | Get / upsert a contract by its origin reference. | `cmdb:read` / `cmdb:write` |
+| `GET` / `POST` | `/catalog-items` | List / create service catalog items with their request forms (writes: MANAGER+). | `catalog:read` / `catalog:write` |
+| `GET` / `PATCH` / `DELETE` | `/catalog-items/{id}` | Get / edit / delete a catalog item. | `catalog:read` / `catalog:write` |
+| `GET` / `PUT` | `/catalog-items/ref/{ref}` | Get / upsert a catalog item by its origin reference. | `catalog:read` / `catalog:write` |
+| `GET` / `POST` | `/change-templates` | List / create change templates (standard changes; writes: MANAGER+, HIGH-risk standard templates: ADMIN). | `catalog:read` / `catalog:write` |
+| `GET` / `PATCH` / `DELETE` | `/change-templates/{id}` | Get / edit / delete a change template. | `catalog:read` / `catalog:write` |
+| `GET` / `PUT` | `/change-templates/ref/{ref}` | Get / upsert a change template by its origin reference. | `catalog:read` / `catalog:write` |
 | `GET` / `POST` | `/licenses` | List / create software licenses (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
 | `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `cmdb:read` / `cmdb:write` |
 | `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `cmdb:write` |
@@ -320,9 +330,11 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `POST` | `/import/changes` | Import a historical change with its thread. | `import:write` + ADMIN owner |
 | `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `import:write` + ADMIN owner |
 
-There are no endpoints for releases yet, and no `DELETE` for whole records except
-recurring ticket schedules, articles and unreferenced services (only for relations,
-license seats and attachments otherwise).
+There are no endpoints for releases yet. Whole records can be deleted for
+articles, recurring ticket schedules, unreferenced services and the configuration
+records MANAGER+ maintain (vendors, contracts, catalog items, change templates);
+tickets, changes, problems and assets and licenses are not deleted through the API
+(only their relations, license seats and attachments).
 
 ### Tickets
 
@@ -535,12 +547,17 @@ Asset type and status enums are defined in [`lib/constants.ts`](../lib/constants
 ### Vendors & licenses
 
 Agent tokens only; writes need a token owned by a **MANAGER or above** (the
-console's rule for vendors, contracts and licenses; else `403`). Writes go through
-the console's actions in `lib/actions/contracts.ts`. Bodies are snake_case and strict.
+console's rule for vendors, contracts and licenses; else `403`). License writes go
+through the console's actions in `lib/actions/contracts.ts`; vendor and contract
+writes follow [Managed configuration records](#managed-configuration-records).
+Bodies are snake_case and strict.
 
 - `GET /vendors` (`name` exact, `q`, `active`), `POST /vendors` `{ name, website?,
-  email?, phone?, notes? }` (names are unique: duplicate `409`), `GET` / `PATCH
-  /vendors/{id}` (`active` to deactivate; fields left out keep their value).
+  email?, phone?, notes?, active?, import_ref? }` (names are unique: duplicate `409`
+  with the existing `id`), `GET` / `PATCH` / `DELETE /vendors/{id}` (`active` to
+  deactivate; fields left out keep their value; contracts and licenses of a
+  deleted vendor stay, without a vendor), `GET` / `PUT /vendors/ref/{ref}`.
+- Contracts: see [Contracts](#contracts).
 - `GET /licenses` (`vendor_id`, `q`, `asset_id` / `user_id` = licenses assigned to
   it), `POST /licenses` `{ name, license_type (default PER_USER), seats (default 1),
   vendor_id?, contract_id?, owner_id?, expires_at? (YYYY-MM-DD), cost?, notes? }`,
@@ -1046,11 +1063,108 @@ value (else `422`). The same checks apply (timeline, unknown ids → `422`).
   (no `importRef`) can never be addressed. The `POST` import is unchanged (an
   existing ref is still returned as is).
 
+### Managed configuration records
+
+Catalog items, change templates, contracts and vendors are configuration a
+MANAGER maintains in the console, so the endpoints share one shape:
+
+- **Reads** need an agent token; **writes** a token owned by a **MANAGER or ADMIN**
+  (else `403`). Bodies are snake_case and strict (unknown keys: `422`).
+- `POST /{resource}` creates; `GET` / `PATCH` / `DELETE /{resource}/{id}` read,
+  edit and delete. `PATCH` changes only the fields sent (`null` clears a nullable
+  one) and answers `meta.changed` with the field names that changed; an unchanged
+  body writes nothing and no audit row.
+- **Upsert by origin reference**: `import_ref` (optional, unique; same charset as
+  the asset reference, no `/`) is the key of the record in an external source.
+  `PUT /{resource}/ref/{ref}` creates the record (`201`, the fields a new record
+  needs must be present) when the reference is new, otherwise writes only the fields
+  sent (`200`); `meta.created` and `meta.changed` say what happened. The ref comes
+  from the path (the upsert body has no `import_ref`); `PATCH` with `import_ref`
+  adopts an existing record (`null` releases it). `GET /{resource}/ref/{ref}` reads it.
+- A unique value already in use (`import_ref`, and the name of vendors and change
+  templates) is a `409` with the existing record's `id` in `details`. Unknown ids
+  (category, service, group, vendor, owner, asset, approver) are a `422` naming the field.
+- Every write leaves an audit row (`… via API` or `… via API (<ref>)`).
+
+#### Catalog items
+
+`GET /catalog-items` (`q` name, `category_id`, `service_id`, `group_id`,
+`published=true|false`; ordered like the catalog). Fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string, 2–200 | required on create |
+| `description`, `short_description`, `icon` | string \| null | `icon` is a lucide icon name |
+| `category_id`, `service_id` | string \| null | the service pre-routes and prices the SLA of a request |
+| `group_id` | string \| null | team requests are routed to; `null` = the service's team, else the category's, else the triage team |
+| `ticket_type` | `REQUEST` \| `INCIDENT` | what a request becomes |
+| `title_template` | string \| null | `{{item}}`, `{{requester}}`, `{{<question key>}}`; `null` = "<Item> request" |
+| `estimated_days` | integer \| null | |
+| `published` | boolean | offered in the portal |
+| `order` | integer | position in the catalog; default: the end |
+| `requires_approval` | boolean | needs `approver_id` (an active agent) or `approval_stages` (else `422`) |
+| `approver_id` | string \| null | single approver |
+| `approval_stages` | `[{ approver_id } \| { group_id }]` | ordered stages; a group needs an active agent member. With stages, the stage-1 approver is mirrored into `approver_id` |
+| `questions` | array | the request form, replaced as a whole (see below) |
+
+A question is `{ key, label, type, required?, options?, placeholder?, help?,
+condition? }`. `key` (letters, digits, `_`, `-`) is unique in the form and names the
+answer; `type` is `text`, `textarea`, `select`, `multiselect`, `number`, `date`,
+`datetime`, `checkbox`, `urgency`, `asset` or `people`; `select` / `multiselect`
+need `options`.
+
+**Conditional questions**: `condition: { field, values }` shows the question — and
+only then requires it — when the earlier `select`, `multiselect`, `checkbox` or
+`urgency` question `field` is answered with one of `values` (any picked option for
+a multiselect; `"true"` / `"false"` for a checkbox; `LOW` / `MEDIUM` / `HIGH` for
+urgency). A condition on a question that is itself hidden hides it too. The portal
+form, the server-side validation and the portal assistant all honour it, and the
+answers to hidden questions are not stored. A condition that does not point at an
+earlier choice question, or names an answer it does not offer, is a `422`.
+
+```json
+"questions": [
+  { "key": "kind", "label": "Hardware or software?", "type": "select", "options": ["Hardware", "Software"], "required": true },
+  { "key": "model", "label": "Which model?", "type": "text", "required": true, "condition": { "field": "kind", "values": ["Hardware"] } }
+]
+```
+
+Deleting an item keeps the requests made from it with their answers.
+
+#### Change templates
+
+`GET /change-templates` (`q` name, `type`, `service_id`, `active=true|false`).
+Fields: `name` (3–80, unique), `title` (3–200; both required on create),
+`summary`, `active`, `type` (`STANDARD` default \| `NORMAL`), `description`,
+`reason`, `implementation_plan`, `rollback_plan`, `risk`, `priority`, `impact`,
+`category_id`, `service_id`, `group_id`. A **STANDARD** template is pre-authorized
+(changes made from it skip the CAB), so the template that results from a write must
+have both plans (else `422` on `implementation_plan` / `rollback_plan`). Deleting a
+template keeps the changes made from it.
+
+#### Contracts
+
+`GET /contracts` (`q` name or number, `vendor_id`, `owner_id`, `status`, `type`,
+`asset_id` = contracts covering it, `ends_before=YYYY-MM-DD`; ordered by end date).
+Fields: `name` (2–200) and `start_date` (YYYY-MM-DD; both required on create),
+`number`, `type` (`SUPPORT` default, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`,
+`WARRANTY`, `SERVICE`, `OTHER`), `status` (`ACTIVE` default, `DRAFT`, `EXPIRED`,
+`TERMINATED`), `vendor_id`, `owner_id` (receives the renewal reminder), `end_date`,
+`cost`, `renewal_notice_days` (default 30), `auto_renew`, `notes`, and `asset_ids` —
+the covered assets, replaced as a whole (each link and unlink is audited on the
+contract and the asset). The end date may not be before the start date (`422`).
+Responses add `vendor`, `owner`, `assets` and `expiry` (`NONE`, `OK`, `EXPIRING`
+within the notice period, `EXPIRED`). Deleting a contract keeps its licenses,
+without a contract.
+
 ### Lookups
 
 `GET /categories` (`id`, `name`, `description`, `icon`, `color`, `parent_id`,
 `group_id`, `archived`, `portal_hidden`; archived hidden unless
-`include_archived=true`; `GET /categories/{id}` returns one), `GET /groups` (`id`,
+`include_archived=true`; `GET /categories/{id}` returns one). Categories are one
+shared tree for tickets, problems, changes, catalog items, change templates and
+articles — there are no separate change categories; a change takes one as
+`category_id` on `POST` / `PATCH /changes` and is filtered by it on `GET /changes`. `GET /groups` (`id`,
 `name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
 `GET /users` (`id`, `name`, `email`, `role`, `active`; `q` matches name or email,
 `role`, `active=true|false|all`, paginated).

@@ -24,7 +24,26 @@ export type ServiceField = {
   options?: string[]; // for select / multiselect
   placeholder?: string;
   help?: string;
+  /** Show (and only then require) this question when an earlier question has one of the given answers. */
+  condition?: FieldCondition | null;
 };
+
+/** Question types whose answer can show or hide a later question. */
+export const CONDITION_SOURCE_TYPES = ["select", "multiselect", "checkbox", "urgency"] as const satisfies readonly FieldType[];
+
+/**
+ * "Show this question when question `field` is answered with one of `values`."
+ * Multiple choice matches when any picked option is listed; a checkbox answers
+ * "true" (ticked) or "false" (not ticked); urgency answers LOW, MEDIUM or HIGH.
+ */
+export type FieldCondition = { field: string; values: string[] };
+
+/** The answers a checkbox question offers to a condition. */
+export const CHECKBOX_CONDITION_VALUES = ["true", "false"] as const;
+
+export function isConditionSource(f: Pick<ServiceField, "type">): boolean {
+  return (CONDITION_SOURCE_TYPES as readonly string[]).includes(f.type);
+}
 
 /** What a catalog request becomes: a service request (the default) or an incident. */
 export const CATALOG_TICKET_TYPES = ["REQUEST", "INCIDENT"] as const;
@@ -65,10 +84,102 @@ export function parseFormSchema(json: string | null | undefined): ServiceField[]
   try {
     const arr = JSON.parse(json);
     if (!Array.isArray(arr)) return [];
-    return arr.filter((f) => f && typeof f.key === "string" && typeof f.label === "string");
+    return arr
+      .filter((f) => f && typeof f.key === "string" && typeof f.label === "string")
+      .map(({ condition, ...rest }: ServiceField) => {
+        const clean = parseCondition(condition);
+        return clean ? { ...rest, condition: clean } : rest;
+      });
   } catch {
     return [];
   }
+}
+
+/** A stored condition in its clean shape, or null when it is missing or malformed. */
+function parseCondition(raw: unknown): FieldCondition | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { field, values } = raw as { field?: unknown; values?: unknown };
+  if (typeof field !== "string" || !field || !Array.isArray(values)) return null;
+  return { field, values: values.filter((v): v is string => typeof v === "string") };
+}
+
+/**
+ * The answers a condition can match against, from a raw form value (portal form,
+ * assistant) or a stored one (booleans for checkboxes, arrays for multiple choice).
+ */
+export function conditionTokens(f: ServiceField, v: unknown): string[] {
+  if (f.type === "checkbox") return [v === true || v === "on" || v === "true" ? "true" : "false"];
+  if (Array.isArray(v)) return v.map((x) => String(x));
+  if (f.type === "multiselect") return parseMultiValue(typeof v === "string" ? v : "");
+  const text = typeof v === "string" ? v.trim() : "";
+  return text ? [text] : [];
+}
+
+/**
+ * The questions that apply to these answers, in form order. A conditional question
+ * shows when its controlling question is itself shown and answered with one of the
+ * condition's values, so a chain of conditions collapses as a whole. A condition
+ * that does not name an earlier choice question (a malformed legacy definition) is
+ * ignored rather than hiding the question for good.
+ *
+ * `answers` is keyed by question key, without the `f_` prefix.
+ */
+export function visibleFields(fields: ServiceField[], answers: Record<string, unknown>): ServiceField[] {
+  const earlier = new Map<string, { field: ServiceField; shown: boolean }>();
+  const out: ServiceField[] = [];
+  for (const f of fields) {
+    const c = f.condition;
+    const source = c ? earlier.get(c.field) : undefined;
+    const shown =
+      !c || !source || !isConditionSource(source.field) || !Array.isArray(c.values)
+        ? true
+        : source.shown && conditionTokens(source.field, answers[source.field.key]).some((v) => c.values.includes(v));
+    if (!earlier.has(f.key)) earlier.set(f.key, { field: f, shown });
+    if (shown) out.push(f);
+  }
+  return out;
+}
+
+/** Most questions one catalog form may have. */
+export const MAX_FORM_FIELDS = 100;
+
+/**
+ * Why a form definition cannot be saved, or [] when it can: duplicate keys,
+ * choice questions without options, and conditions that do not point at an
+ * EARLIER choice / multiple choice / checkbox / urgency question with answers it
+ * actually offers. Messages name the question by its 1-based position.
+ */
+export function formSchemaProblems(fields: ServiceField[]): string[] {
+  const problems: string[] = [];
+  if (fields.length > MAX_FORM_FIELDS) problems.push(`A form can have at most ${MAX_FORM_FIELDS} questions.`);
+  const earlier = new Map<string, ServiceField>();
+  fields.forEach((f, i) => {
+    const at = `Question ${i + 1}`;
+    if (earlier.has(f.key)) problems.push(`${at}: another question already uses this key.`);
+    if ((f.type === "select" || f.type === "multiselect") && !(f.options ?? []).length) {
+      problems.push(`${at}: add at least one option.`);
+    }
+    const c = f.condition;
+    if (c) {
+      const source = earlier.get(c.field);
+      if (!source) problems.push(`${at}: the condition must refer to an earlier question.`);
+      else if (!isConditionSource(source)) {
+        problems.push(`${at}: only a choice, multiple choice, checkbox or urgency question can show or hide another question.`);
+      } else if (!c.values.length) problems.push(`${at}: choose at least one answer that shows the question.`);
+      else if (c.values.some((v) => !conditionAnswers(source).includes(v))) {
+        problems.push(`${at}: the condition names an answer the earlier question does not offer.`);
+      }
+    }
+    if (!earlier.has(f.key)) earlier.set(f.key, f);
+  });
+  return problems;
+}
+
+/** The answers a controlling question offers to a condition. */
+export function conditionAnswers(source: ServiceField): string[] {
+  if (source.type === "checkbox") return [...CHECKBOX_CONDITION_VALUES];
+  if (source.type === "urgency") return [...FORM_URGENCY_LEVELS];
+  return source.options ?? [];
 }
 
 /** Upper bound on a single free-text answer, to cap stored form payloads. */
@@ -168,14 +279,20 @@ export function catalogApprovalPlan(
   return { stages };
 }
 
-/** Validate submitted answers against a schema. Returns {values, errors}. */
+/**
+ * Validate submitted answers against a schema. Returns {values, errors}. Only the
+ * questions shown for these answers count (see visibleFields): a hidden question
+ * is neither required nor stored, even when a value for it was posted.
+ */
 export function validateAnswers(
   fields: ServiceField[],
   data: Record<string, string>,
 ): { values: Record<string, unknown>; errors: Record<string, string> } {
   const values: Record<string, unknown> = {};
   const errors: Record<string, string> = {};
-  for (const f of fields) {
+  const raw: Record<string, string> = {};
+  for (const f of fields) raw[f.key] = data[`f_${f.key}`];
+  for (const f of visibleFields(fields, raw)) {
     const raw = data[`f_${f.key}`];
     if (f.type === "checkbox") {
       values[f.key] = raw === "on" || raw === "true";
@@ -273,9 +390,9 @@ export function renderCatalogTitle(
   return (rendered || fallback).slice(0, MAX_TITLE_LEN);
 }
 
-/** Render answers as a readable text block (for ticket description / email). */
+/** Render answers as a readable text block (for ticket description / email); hidden questions are left out. */
 export function answersToText(fields: ServiceField[], values: Record<string, unknown>) {
-  return fields
+  return visibleFields(fields, values)
     .map((f) => {
       return `• ${f.label}: ${answerText(f, values[f.key])}`;
     })

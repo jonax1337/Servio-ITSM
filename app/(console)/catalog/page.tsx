@@ -44,13 +44,13 @@ export default async function CatalogAdminPage() {
         title={t("title")}
         description={t("description")}
       >
-        <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
+        <CatalogEditor categories={catOpts} services={serviceOpts} groups={groupOpts} agents={agentOpts} />
       </PageHeader>
 
       <PageBody className="grid gap-3">
         {items.length === 0 ? (
           <EmptyState icon={ShoppingBag} title={t("emptyTitle")} description={t("emptyDescription")}>
-            <CatalogEditor categories={catOpts} services={serviceOpts} agents={agentOpts} />
+            <CatalogEditor categories={catOpts} services={serviceOpts} groups={groupOpts} agents={agentOpts} />
           </EmptyState>
         ) : (
           items.map((it) => (
@@ -89,10 +89,11 @@ export default async function CatalogAdminPage() {
                   <CatalogEditor
                     categories={catOpts}
                     services={serviceOpts}
+                    groups={groupOpts}
                     agents={agentOpts}
                     item={{
                       id: it.id, name: it.name, description: it.description, shortDescription: it.shortDescription,
-                      icon: it.icon, categoryId: it.categoryId, serviceId: it.serviceId, estimatedDays: it.estimatedDays,
+                      icon: it.icon, categoryId: it.categoryId, serviceId: it.serviceId, groupId: it.groupId, estimatedDays: it.estimatedDays,
                       isPublished: it.isPublished, requiresApproval: it.requiresApproval, approverId: it.approverId,
                       fields: parseFormSchema(it.formSchema),
                       ticketType: it.ticketType, titleTemplate: it.titleTemplate,
