@@ -45,6 +45,7 @@ describe("heartbeat", () => {
       dockerOk: true,
       container: CONTAINER_NAME,
       image: `${IMAGE_REPO}:${OLD_VERSION}`,
+      activeRequestId: null,
     });
   });
 

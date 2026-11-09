@@ -145,6 +145,16 @@ export async function guard(
   req: Request,
   scope: ResourceScope,
 ): Promise<{ principal: ApiPrincipal } | { response: NextResponse }> {
+  const auth = await authenticatedPrincipal(req);
+  if ("response" in auth) return auth;
+  if (!hasScope(auth.principal, scope)) {
+    return { response: apiError(403, `This token lacks the '${scope}' scope.`, { required_scope: scope }) };
+  }
+  return auth;
+}
+
+/** The token's principal, whatever its scopes (rate limited like `guard`), or the 401/429 response. */
+export async function authenticatedPrincipal(req: Request): Promise<{ principal: ApiPrincipal } | { response: NextResponse }> {
   // Throttle the Bearer entry point before doing any DB work. Key by the raw
   // token when present (so one noisy token can't exhaust the shared IP bucket),
   // else by client IP for unauthenticated/malformed requests.
@@ -167,9 +177,6 @@ export async function guard(
     return {
       response: apiError(401, "Missing or invalid API token. Send 'Authorization: Bearer <token>'."),
     };
-  }
-  if (!hasScope(principal, scope)) {
-    return { response: apiError(403, `This token lacks the '${scope}' scope.`, { required_scope: scope }) };
   }
   return { principal };
 }

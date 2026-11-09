@@ -42,6 +42,11 @@ const DOC_MAP = [
     docs: ['docs/data-model.md'],
   },
   {
+    label: 'Seed data and its guard',
+    code: ['prisma/seed'],
+    docs: ['docs/data-model.md', 'docs/development.md'],
+  },
+  {
     label: 'AI agent (Sable) & portal assistant',
     code: [
       'lib/ai.ts', 'lib/ai-tools.ts', 'lib/ai-admin-tools.ts', 'lib/ai-context.ts',
@@ -66,7 +71,7 @@ const DOC_MAP = [
   },
   {
     label: 'Public REST API (v1)',
-    code: ['app/api/v1/', 'lib/api.ts', 'lib/api-scopes.ts', 'lib/token-rules.ts'],
+    code: ['app/api/v1/', 'lib/api.ts', 'lib/api-scopes.ts', 'lib/token-rules.ts', 'lib/health-rules.ts'],
     docs: ['docs/rest-api.md'],
   },
   {
@@ -112,6 +117,7 @@ const DOC_MAP = [
     code: [
       'lib/maintenance', 'lib/updates.ts', 'lib/update-rules.ts', 'lib/state-dir.ts', 'lib/ticks/maintenance.ts',
       'lib/ticks/update-check.ts', 'lib/actions/maintenance.ts', 'updater/', 'docker-compose.release.yml',
+      'lib/registry-manifest.ts', 'tests/updater-e2e/',
       'app/maintenance', 'app/api/maintenance', 'app/(console)/settings/updates', 'components/maintenance/',
     ],
     docs: ['docs/updates.md'],

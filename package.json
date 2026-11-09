@@ -26,7 +26,7 @@
     "test:e2e": "playwright test"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts && tsx prisma/seed-extras.ts"
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.97",

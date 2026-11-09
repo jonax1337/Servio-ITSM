@@ -6,6 +6,7 @@ import { decryptSecret } from "@/lib/crypto";
 import type { Connector, ConnectorTestResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
 import { importUsers, errMessage, type ImportError, type ImportUser } from "./import";
+import { binaryExternalId, isBinaryAttr } from "./ldap-identifiers";
 
 /**
  * LDAP / Active Directory user import. Binds with a service account, pages
@@ -36,17 +37,29 @@ export const ldapConfigSchema = z.object({
 export type LdapConfig = z.infer<typeof ldapConfigSchema>;
 type AttrMap = Pick<LdapConfig, "externalId" | "email" | "name" | "jobTitle" | "phone" | "department">;
 
+/** The first value of an LDAP attribute. */
+function firstValue(value: Entry[string] | undefined): Buffer | string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /** Normalise an LDAP attribute value to a single string (hex for binary). */
 function first(value: Entry[string] | undefined): string {
-  const v: Buffer | string | undefined = Array.isArray(value) ? value[0] : value;
+  const v = firstValue(value);
   if (v == null) return "";
   if (Buffer.isBuffer(v)) return v.toString("hex");
   return String(v);
 }
 
-/** Binary attributes (objectGUID/objectSid) must be requested as Buffers. */
-function isBinaryAttr(name: string): boolean {
-  return /guid|sid/i.test(name);
+/**
+ * The external id of an entry. A binary objectGUID / objectSid becomes its
+ * canonical text form (see ldap-identifiers.ts); the hex an earlier release
+ * stored is passed along so those users are still recognised.
+ */
+function externalIdOf(entry: Entry, attribute: string): Pick<ImportUser, "externalId" | "legacyExternalIds"> {
+  const value = firstValue(entry[attribute]);
+  if (!Buffer.isBuffer(value)) return { externalId: first(entry[attribute]) };
+  const { externalId, legacy } = binaryExternalId(attribute, value);
+  return legacy.length > 0 ? { externalId, legacyExternalIds: legacy } : { externalId };
 }
 
 /**
@@ -55,12 +68,12 @@ function isBinaryAttr(name: string): boolean {
  * (blank mapping) are left untouched. Pure — unit-testable without a server.
  */
 export function mapEntry(entry: Entry, map: AttrMap): ImportUser | ImportError {
-  const externalId = first(entry[map.externalId]);
+  const id = externalIdOf(entry, map.externalId);
   const email = first(entry[map.email]).toLowerCase().trim();
-  if (!externalId || !email)
-    return { error: `missing ${!externalId ? "external id" : "email"}`, ref: entry.dn };
+  if (!id.externalId || !email)
+    return { error: `missing ${!id.externalId ? "external id" : "email"}`, ref: entry.dn };
 
-  const user: ImportUser = { externalId, email, name: first(entry[map.name]).trim() || null };
+  const user: ImportUser = { ...id, email, name: first(entry[map.name]).trim() || null };
   if (map.jobTitle) user.jobTitle = first(entry[map.jobTitle]).trim() || null;
   if (map.phone) user.phone = first(entry[map.phone]).trim() || null;
   if (map.department) user.department = first(entry[map.department]).trim() || null;

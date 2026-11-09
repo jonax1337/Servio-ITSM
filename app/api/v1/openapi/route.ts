@@ -419,6 +419,41 @@ const spec = {
         responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "409": { description: "Name or code already used" }, "422": { description: "Validation failed, unknown ids/refs, self-dependency or cycle" } },
       },
     },
+    "/health": {
+      get: {
+        summary: "Liveness and the running version",
+        description:
+          "Public and reachable during maintenance. `status` is `ok` while the app and its database answer (`unavailable` with 503 otherwise); " +
+          "`maintenance` tells whether maintenance mode blocks access. `version` (the running Servio release) is included only for a valid API token of any scope; " +
+          "an invalid token gets 401.",
+        security: [{}, { bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "Healthy",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      required: ["status", "maintenance"],
+                      properties: {
+                        status: { type: "string", enum: ["ok", "unavailable"] },
+                        maintenance: { type: "boolean" },
+                        version: { type: "string", example: "0.6.0", description: "Only with a valid API token" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "A token was sent and is invalid" },
+          "503": { description: "The database does not answer (`status: unavailable`)" },
+        },
+      },
+    },
     "/tickets/{id}/comments": commentPaths("ticket"),
     "/recurring-tickets": {
       get: { summary: "List recurring ticket schedules", description: agentOnly, parameters: [q("active", "true, false or all (default)"), q("q", "Name or title"), q("import_ref"), ...pageParams], responses: { "200": { description: "OK" } } },

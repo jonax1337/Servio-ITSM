@@ -16,9 +16,11 @@ import {
   heartbeatFresh,
   nextWindowStep,
   outcomeNotice,
+  updaterStaleMs,
   type WindowStep,
 } from "@/lib/maintenance-rules";
-import { readUpdaterHeartbeat, readUpdaterStatus, requestUpdate, syncMaintenanceFlag } from "@/lib/maintenance";
+import { readUpdaterHeartbeat, readUpdaterStatus, requestUpdate, syncMaintenanceFlag, withdrawUpdateRequest } from "@/lib/maintenance";
+import { fetchPullSizes, servioImage } from "@/lib/registry-manifest";
 
 type TickRow = Awaited<ReturnType<typeof loadOpenWindows>>[number];
 
@@ -49,6 +51,18 @@ async function finish(row: TickRow, status: MaintenanceStatus, result: string | 
   if (notice) await notifyAdmins({ type: "MAINTENANCE", ...notice });
 }
 
+/**
+ * A running update that fails here never got the updater's result: its request
+ * is withdrawn first, so a late updater cannot still take the app down for a
+ * window that already reads FAILED.
+ */
+async function failWindow(row: TickRow, result: string) {
+  if (row.kind === "UPDATE" && row.status === "IN_PROGRESS" && !withdrawUpdateRequest(row.id)) {
+    result += " The update request could not be withdrawn: if the updater comes back, it may still run it.";
+  }
+  await finish(row, "FAILED", result);
+}
+
 async function startWindow(row: TickRow) {
   if (!(await claim(row.id, "SCHEDULED", { status: "IN_PROGRESS", startedAt: new Date() }))) return;
   await writeAudit({
@@ -67,8 +81,15 @@ async function startUpdate(row: TickRow) {
   });
   // nextWindowStep only requests an update that has a valid target version.
   if (!claimed || !row.targetVersion) return;
+  // Best effort (null on any failure): lets the updater check the free space before it pulls.
+  const pullSizes = await fetchPullSizes(servioImage(), row.targetVersion, { installedTag: APP_VERSION });
   try {
-    requestUpdate({ id: row.id, targetVersion: row.targetVersion, requestedBy: row.createdBy?.email ?? "scheduler" });
+    requestUpdate({
+      id: row.id,
+      targetVersion: row.targetVersion,
+      requestedBy: row.createdBy?.email ?? "scheduler",
+      pullSizes,
+    });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     await finish({ ...row, status: "IN_PROGRESS" }, "FAILED", `Could not write the update request: ${reason}`);
@@ -86,18 +107,21 @@ async function syncProgress(row: TickRow, step: Extract<WindowStep, { kind: "syn
 async function applyStep(row: TickRow, step: WindowStep) {
   if (step.kind === "start") return startWindow(row);
   if (step.kind === "request-update") return startUpdate(row);
-  if (step.kind === "fail") return finish(row, "FAILED", step.result);
+  if (step.kind === "fail") return failWindow(row, step.result);
   if (step.kind === "complete") return finish(row, "COMPLETED", null);
   if (step.kind === "sync") return syncProgress(row, step);
 }
 
 export async function runMaintenanceTick(): Promise<void> {
   const now = new Date();
+  const heartbeat = readUpdaterHeartbeat();
   const context = {
     now,
-    heartbeatFresh: heartbeatFresh(readUpdaterHeartbeat(), now),
+    heartbeatFresh: heartbeatFresh(heartbeat, now),
     updaterStatus: readUpdaterStatus(),
     currentVersion: APP_VERSION,
+    updaterHeartbeat: heartbeat,
+    staleAfterMs: updaterStaleMs(process.env.UPDATER_STALE_MINUTES),
   };
   try {
     for (const row of await loadOpenWindows()) {

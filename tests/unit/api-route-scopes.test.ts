@@ -170,6 +170,11 @@ describe("OpenAPI scopes", () => {
     for (const [p, ops] of Object.entries(paths)) {
       for (const [method, op] of Object.entries(ops)) {
         const expected = requiredScope(p, method);
+        if (expected === null) {
+          // A public endpoint (e.g. /health) needs no scope.
+          if (op["x-required-scope"] !== undefined) wrong.push(`${method.toUpperCase()} ${p}`);
+          continue;
+        }
         const alternatives = op.security?.map((r) => r.bearerAuth[0]) ?? [];
         if (op["x-required-scope"] !== expected || !alternatives.includes(expected as string) || !alternatives.includes("admin")) {
           wrong.push(`${method.toUpperCase()} ${p}`);

@@ -409,7 +409,9 @@ Prisma migrations live in [`prisma/migrations/`](../prisma/migrations/). The see
 problems, changes, articles, a sync source, an API token, audit entries, notifications) and
 [`prisma/seed-extras.ts`](../prisma/seed-extras.ts) (locations, catalog items, automation rules, business
 calendars and escalation policies, macros, change templates, an on-call schedule, a release, vendors, contracts and
-licenses); `package.json` runs both via the `prisma.seed` hook (`tsx prisma/seed.ts && tsx prisma/seed-extras.ts`).
+licenses); the `prisma.seed` hook in `package.json` runs `tsx prisma/seed.ts`, which calls the extras. The seed
+wipes every table first and therefore refuses (logs and skips) when the database already holds users or tickets,
+whatever the container's `/data/.seeded` marker says ([`prisma/seed-guard.ts`](../prisma/seed-guard.ts)).
 
 | Command | Runs | Use when |
 | --- | --- | --- |
@@ -417,12 +419,12 @@ licenses); `package.json` runs both via the `prisma.seed` hook (`tsx prisma/seed
 | `pnpm db:migrate` | `prisma migrate dev` | Create + apply a new migration in development (prompts for a name) |
 | `pnpm db:push` | `prisma db push` | Push schema changes to the DB **without** a migration file (fast prototyping) |
 | `pnpm db:reset` | `prisma migrate reset --force` | Drop, re-apply all migrations, and re-seed from scratch |
-| `pnpm db:seed` | both seed scripts | (Re)populate demo data into the current DB |
+| `pnpm db:seed` | both seed scripts | Populate demo data into an **empty** DB (refused when users or tickets exist) |
 | `pnpm db:studio` | `prisma studio` | Browse/edit data in the Prisma Studio GUI |
 | `pnpm setup` | `prisma migrate deploy && prisma db seed` | Production/CI: apply pending migrations then seed |
 
-Typical local loop: edit `prisma/schema.prisma` → `pnpm db:migrate` (name the migration) → `pnpm db:seed` if
-you need fresh demo data. Use `pnpm db:reset` to get back to a known clean state.
+Typical local loop: edit `prisma/schema.prisma` → `pnpm db:migrate` (name the migration) → `pnpm db:reset` if
+you need fresh demo data (it drops, migrates and seeds; `pnpm db:seed` alone only seeds an empty database).
 
 The demo login created by the seed is `admin@servio.dev` / `servio123`.
 

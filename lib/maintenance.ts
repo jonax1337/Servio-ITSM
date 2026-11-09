@@ -1,5 +1,7 @@
+import { rmSync } from "node:fs";
 import { db } from "@/lib/db";
 import { MAINTENANCE_FLAG_FILE } from "@/lib/maintenance-flag";
+import type { PullSizes } from "@/lib/registry-manifest";
 import { readJsonFile, statePath, writeJsonAtomic } from "@/lib/state-dir";
 import {
   OPEN_MAINTENANCE_STATUSES,
@@ -28,9 +30,38 @@ export const readUpdaterStatus = (): UpdaterStatus | null => parseUpdaterStatus(
 export const readUpdaterHeartbeat = (): UpdaterHeartbeat | null =>
   parseUpdaterHeartbeat(readJsonFile(statePath(...HEARTBEAT_FILE)));
 
-/** Hand an update to the updater: it processes a request whose id differs from its last finished one. */
-export function requestUpdate(request: { id: string; targetVersion: string; requestedBy: string }): void {
-  writeJsonAtomic(statePath(...REQUEST_FILE), { ...request, requestedAt: new Date().toISOString() });
+/**
+ * Hand an update to the updater: it processes a request whose id differs from its last finished one.
+ * `pullSizes` (compressed sizes from the registry manifest: what the pull downloads and the whole
+ * image) let it check the free space on Docker's data root before it pulls; without them it estimates.
+ */
+export function requestUpdate(request: { id: string; targetVersion: string; requestedBy: string; pullSizes?: PullSizes | null }): void {
+  const { pullSizes, ...rest } = request;
+  writeJsonAtomic(statePath(...REQUEST_FILE), {
+    ...rest,
+    requestedAt: new Date().toISOString(),
+    ...(pullSizes ?? {}),
+  });
+}
+
+/**
+ * Take back the request of a window that ended without the updater's result, so
+ * an updater that comes back late (down, hung on Docker, busy recovering) does
+ * not still run it: it re-reads request.json before it stops the app and gives
+ * up when the request is gone. Only this window's request is removed. Best
+ * effort (deleting works on a full disk too); false when it could not be removed.
+ */
+export function withdrawUpdateRequest(windowId: string): boolean {
+  const file = statePath(...REQUEST_FILE);
+  const request = readJsonFile(file);
+  if (!request || typeof request !== "object" || (request as { id?: unknown }).id !== windowId) return true;
+  try {
+    rmSync(file, { force: true });
+    return true;
+  } catch (e) {
+    console.error(`[maintenance] could not withdraw the update request ${windowId}:`, e);
+    return false;
+  }
 }
 
 /** Make maintenance.json match the database: active while a blocking window is IN_PROGRESS. Rewrites only on change. */

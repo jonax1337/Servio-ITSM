@@ -136,7 +136,7 @@ describe("recovery after the updater was killed", () => {
     expect(harness.docker.containers.has(oldId)).toBe(false);
     const running = runningManaged();
     expect(running).toHaveLength(1);
-    expect(running[0].Config.Image).toMatch(/^sha256:/);
+    expect(running[0].Config.Image).toBe(`${IMAGE_REPO}:${NEW_VERSION}`);
     expect(await readFile(harness.dbFile, "utf8")).toBe("migrated-by-the-new-version");
     expect(await exists(journalPath())).toBe(false);
   });

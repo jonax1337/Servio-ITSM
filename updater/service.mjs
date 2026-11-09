@@ -26,7 +26,7 @@ export async function runUpdater({ config, docker, signal, clock = systemClock, 
 
   const paths = statePaths(config.stateDir);
   await prepareStateDirectories(paths, log);
-  const beat = createHeartbeat({ docker, config, paths, now: clock.now, log });
+  const beat = createHeartbeat({ docker, config, paths, now: clock.now, log, activeRequest: flow.activeRequest });
 
   log(`[updater] v${config.updaterVersion} managing ${config.containerName ?? "the labelled container"} (${config.image})`);
   await Promise.all([

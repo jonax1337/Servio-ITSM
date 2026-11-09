@@ -298,3 +298,37 @@ describe("docker client with an injected transport", () => {
     expect(result).toEqual({ seen: `GET /${DEFAULT_API_VERSION}/containers/x/json` });
   });
 });
+
+describe("docker client: image housekeeping calls", () => {
+  it("lists the images of one repository with a reference filter", async () => {
+    handler = (_request, response) => json(response, 200, [{ Id: "sha256:a", RepoTags: ["ghcr.io/jonax1337/servio:1.0.0"] }]);
+
+    const images = await client().listImages("ghcr.io/jonax1337/servio");
+
+    expect(images).toEqual([{ Id: "sha256:a", RepoTags: ["ghcr.io/jonax1337/servio:1.0.0"] }]);
+    const url = new URL(requests[0].url, "http://docker");
+    expect(`${requests[0].method} ${url.pathname}`).toBe(`GET /${DEFAULT_API_VERSION}/images/json`);
+    expect(JSON.parse(url.searchParams.get("filters") ?? "")).toEqual({ reference: ["ghcr.io/jonax1337/servio"] });
+  });
+
+  it("removes one reference without force, encoding each path segment", async () => {
+    handler = (_request, response) => json(response, 200, [{ Untagged: "ghcr.io/jonax1337/servio:1.0.0" }]);
+
+    await client().removeImage("ghcr.io/jonax1337/servio:1.0.0");
+    await client().removeImage(`ghcr.io/jonax1337/servio@sha256:${"a".repeat(64)}`);
+
+    expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+      `DELETE /${DEFAULT_API_VERSION}/images/ghcr.io/jonax1337/servio%3A1.0.0?force=false&noprune=false`,
+      `DELETE /${DEFAULT_API_VERSION}/images/ghcr.io/jonax1337/servio%40sha256%3A${"a".repeat(64)}?force=false&noprune=false`,
+    ]);
+  });
+
+  it("surfaces Docker's conflict for an image a container uses", async () => {
+    handler = (_request, response) => json(response, 409, { message: "conflict: unable to delete 0123 (must be forced)" });
+
+    const failure = await client().removeImage("ghcr.io/jonax1337/servio:1.0.0").catch((error) => error);
+
+    expect(failure).toBeInstanceOf(DockerApiError);
+    expect(failure.status).toBe(409);
+  });
+});

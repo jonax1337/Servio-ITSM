@@ -262,6 +262,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | --- | --- | --- | --- |
 | `GET` | `/` | API index: name, version, and resource links. **No auth.** | — |
 | `GET` | `/openapi` | OpenAPI 3.1 spec (JSON) — see [OpenAPI spec](#openapi-spec). **No auth.** | — |
+| `GET` | `/health` | Liveness, maintenance mode and (with a token) the running version — see [Health](#health). **No auth needed**, also during maintenance. | any token for `version` |
 | `GET` | `/tickets` | List tickets (paginated, filterable). Non-agents see only their own. | `tickets:read` |
 | `POST` | `/tickets` | Create a ticket (`source = API`). | `tickets:write` |
 | `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `tickets:read` |
@@ -735,6 +736,27 @@ itself), higher depths are dependency hops, and `via` (`{ kind: "asset" | "servi
 id, name }`) is what it was reached through. The rules are in
 [services.md](./services.md#impact).
 
+### Health
+
+`GET /health` is for load balancers, monitoring and update tooling. It needs no token and stays
+reachable while maintenance mode blocks everything else:
+
+```json
+{ "data": { "status": "ok", "maintenance": false } }
+```
+
+`status` is `ok` while the app and its database answer; when the database does not, the answer is
+`503` with `"status": "unavailable"`. `maintenance` is `true` while a blocking maintenance window
+runs. Send any valid API token (any scope) to also get the running release, e.g. to check what an
+update installed or what `SERVIO_VERSION` should say ([updates.md](./updates.md#compose-and-the-running-version)):
+
+```json
+{ "data": { "status": "ok", "maintenance": false, "version": "0.6.0" } }
+```
+
+Anonymous callers never see the version. A token that is sent but invalid gets `401`, like on
+every other endpoint.
+
 ### How the ITSM endpoints enforce the console's rules
 
 Changes, problems, ticket links and recurring tickets do not re-implement their business rules.
@@ -1092,6 +1114,9 @@ TOKEN=servio_demo_pat_0123456789abcdef
 
 # API index (no auth)
 curl -s $BASE
+
+# Running version (any token)
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/health
 
 # List open, high-priority tickets, page 1
 curl -s "$BASE/tickets?status=open&priority=HIGH&per_page=10" \

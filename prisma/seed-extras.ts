@@ -1,8 +1,10 @@
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 
-const db = new PrismaClient();
-
-async function main() {
+/**
+ * Additional demo data, run by prisma/seed.ts right after the core seed (and
+ * only then: the core seed refuses to touch a database that holds data).
+ */
+export async function seedExtras(db: PrismaClient) {
   // ---- Locations (tree) + link assets ----
   await db.location.deleteMany();
   const mk = (name: string, type: string, parentId: string | null, extra: Record<string, unknown> = {}) =>
@@ -306,4 +308,3 @@ async function main() {
   console.log("✅ Seed extras: locations, catalog items, automations, calendars, escalations, macros, contracts, templates, releases, on-call, CSAT.");
 }
 
-main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());

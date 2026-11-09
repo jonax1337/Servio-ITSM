@@ -203,6 +203,8 @@ export function createDockerClient({
   }
 
   const containerPath = (/** @type {string} */ id) => `/containers/${encodeURIComponent(id)}`;
+  /** `repo:tag`, `repo@digest` or an image id; each path segment is encoded on its own (the proxy matches the decoded path). */
+  const imagePath = (/** @type {string} */ ref) => `/images/${ref.split("/").map(encodeURIComponent).join("/")}`;
 
   return {
     /** Resolves when the daemon answers `GET /_ping`; rejects otherwise. */
@@ -217,7 +219,31 @@ export function createDockerClient({
 
     /** @param {string} ref image name, tag or id */
     inspectImage(ref) {
-      return callJson("GET", `/images/${ref.split("/").map(encodeURIComponent).join("/")}/json`, [200]);
+      return callJson("GET", `${imagePath(ref)}/json`, [200]);
+    },
+
+    /**
+     * Images of one repository, tagged or not (a digest reference counts).
+     *
+     * @param {string} repository e.g. `ghcr.io/owner/servio`
+     * @returns {Promise<Array<{ Id: string, RepoTags?: string[] | null, RepoDigests?: string[] | null,
+     *   Labels?: Record<string, string> | null, Created?: number, Size?: number }>>}
+     */
+    listImages(repository) {
+      return callJson("GET", "/images/json", [200], {
+        query: { filters: JSON.stringify({ reference: [repository] }) },
+      });
+    },
+
+    /**
+     * Removes one image reference (`repo:tag` or `repo@digest`), never by force:
+     * the daemon refuses (409) when that would delete an image a container uses.
+     * Removing the last reference deletes the image.
+     *
+     * @param {string} ref
+     */
+    removeImage(ref) {
+      return callVoid("DELETE", imagePath(ref), [200], { query: { force: "false", noprune: "false" } });
     },
 
     /**

@@ -10,6 +10,11 @@ import { SyncLog } from "./types";
  */
 export type ImportUser = {
   externalId: string;
+  /**
+   * Ids an earlier release stored for the same record (e.g. an objectGUID as raw
+   * hex). A user still carrying one is matched by it and moved to `externalId`.
+   */
+  legacyExternalIds?: string[];
   email: string;
   name: string | null;
   jobTitle?: string | null;
@@ -52,6 +57,9 @@ export async function importUsers(
     }
     seenExternalIds.add(rec.externalId);
     seen.push(rec.externalId);
+    // A legacy id is "seen" too: deactivation must never hit a user whose move failed.
+    const legacyIds = (rec.legacyExternalIds ?? []).filter((id) => id && id !== rec.externalId);
+    seen.push(...legacyIds);
 
     const profile = {
       name: rec.name,
@@ -63,10 +71,18 @@ export async function importUsers(
     try {
       // Prefer the identity this source already owns (unique key). Only fall back
       // to email adoption for a record we have never seen before.
-      const owned = await db.user.findUnique({
+      const current = await db.user.findUnique({
         where: { syncSourceId_externalId: { syncSourceId: source.id, externalId: rec.externalId } },
         select: { id: true },
       });
+      const legacy =
+        !current && legacyIds.length > 0
+          ? await db.user.findFirst({
+              where: { syncSourceId: source.id, externalId: { in: legacyIds } },
+              select: { id: true, externalId: true },
+            })
+          : null;
+      const owned = current ?? legacy;
 
       if (owned) {
         await db.user.update({
@@ -79,6 +95,7 @@ export async function importUsers(
             externalId: rec.externalId,
           },
         });
+        if (legacy) log.line(`Moved ${rec.email} from external id "${legacy.externalId}" to "${rec.externalId}".`);
         log.updated++;
         continue;
       }

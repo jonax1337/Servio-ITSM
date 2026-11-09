@@ -68,7 +68,10 @@ docker compose -f docker-compose.release.yml up -d
 
 Upgrades are installed from **Settings › Updates** (see [updates.md](./updates.md)). If you
 pinned `SERVIO_VERSION`, bump it in `.env` after an in-app update, or a later
-`docker compose up` recreates `web` from the old tag.
+`docker compose up` recreates `web` from the old tag: that is a **downgrade**, and the older
+image then refuses to start on the database the newer one migrated. Keep the tag in
+`SERVIO_VERSION` (never hard-code it in `image:`); `docker ps` and `GET /api/v1/health` (with
+an API token) show the version that runs ([updates.md](./updates.md#compose-and-the-running-version)).
 
 ### How the image behaves
 
@@ -84,7 +87,9 @@ pinned `SERVIO_VERSION`, bump it in `.env` after an in-app update, or a later
 - **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma migrate deploy`
   (the committed baseline migration is kept current), **refuses to start** when the
   database holds migrations the image does not ship (a newer version migrated it;
-  `ALLOW_UNKNOWN_MIGRATIONS=true` overrides), seeds once per volume (`/data/.seeded`),
+  `ALLOW_UNKNOWN_MIGRATIONS=true` overrides), seeds once per volume (`/data/.seeded`; the
+  seed itself refuses a database that already holds users or tickets, so a lost marker never
+  wipes data),
   then starts Next with `next start` (not `pnpm start`, whose dependency check would try to
   write to the read-only `/app`). Migration failures abort boot (`set -e`).
 - **Health.** The image defines a `HEALTHCHECK` (GET `/login`) and the compose file adds
@@ -112,7 +117,7 @@ CI builds this image and boots it on every pull request (see [releasing.md](./re
 
 ### Self-update
 
-`docker-compose.release.yml` runs the published images together with the **updater** sidecar, which lets admins schedule updates from Settings › Updates. The updater runs unprivileged and without a network, reaches Docker only through a filtering socket proxy's private unix socket (set `DOCKER_GID` in `.env`), shares `/data` with `web` and keeps its backups on its own volume; see [updates.md](./updates.md) for setup, security and rollback behaviour. `SERVIO_STATE_DIR` defaults to `/data/state` in the image.
+`docker-compose.release.yml` runs the published images together with the **updater** sidecar, which lets admins schedule updates from Settings › Updates. The updater runs unprivileged and without a network, reaches Docker only through a filtering socket proxy's private unix socket (set `DOCKER_GID` in `.env`), shares `/data` with `web` and keeps its backups on its own volume; see [updates.md](./updates.md) for setup, security and rollback behaviour. It checks the free space on Docker's data root before each pull and removes superseded images after a successful update, keeping the replaced release as rollback target ([updates.md](./updates.md#disk-space-and-old-images)). `SERVIO_STATE_DIR` defaults to `/data/state` in the image.
 
 ### Published images and tags
 
@@ -121,7 +126,8 @@ Every release publishes multi-arch (`linux/amd64`, `linux/arm64`) images to GHCR
 `X.Y` and `latest` (stable releases only; see [releasing.md](./releasing.md)). Pin
 `SERVIO_VERSION=X.Y.Z` in production if you want `docker compose up` to be reproducible.
 To run a published image with the source compose file instead, replace the `build:` block
-of the `web` service with `image: ghcr.io/jonax1337/servio:X.Y.Z`.
+of the `web` service with `image: ghcr.io/jonax1337/servio:${SERVIO_VERSION:-latest}` (a tag
+written into the file goes stale after the first in-app update).
 
 ---
 
@@ -176,10 +182,14 @@ pnpm setup
   command for production (unlike `prisma migrate dev`, which is a dev-only command that
   can generate new migrations).
 - `prisma db seed` then runs the seed defined under the `prisma.seed` key:
-  `tsx prisma/seed.ts && tsx prisma/seed-extras.ts`. This creates the initial admin
+  `tsx prisma/seed.ts` (it also runs `prisma/seed-extras.ts`). This creates the initial admin
   user and demo/reference data. Note that **tsx is a devDependency** — on a lean
   production box without devDependencies installed, install them or run the seed
-  through `npx tsx prisma/seed.ts && npx tsx prisma/seed-extras.ts`.
+  through `npx tsx prisma/seed.ts`.
+- The seed only ever runs on an **empty** database: it starts by deleting all data, so
+  it refuses (logs "Refusing to seed …", changes nothing, exits successfully) as soon as
+  users or tickets exist. Running `pnpm setup` against a production database, or losing
+  the container's `/data/.seeded` marker, therefore never wipes it.
 
 > **Seeding is optional and one-time.** On an existing production database you usually
 > want migrations only. Run `pnpm exec prisma migrate deploy` on its own for subsequent

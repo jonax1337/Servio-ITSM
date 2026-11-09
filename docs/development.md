@@ -110,15 +110,17 @@ All scripts live in [`package.json`](../package.json) and are run with `pnpm <sc
 | `db:generate` | `prisma generate` | Regenerate the Prisma Client after schema changes. |
 | `db:migrate` | `prisma migrate dev` | Create/apply a dev migration from `prisma/schema.prisma`. |
 | `db:push` | `prisma db push` | Push schema to the DB without a migration (prototyping). |
-| `db:seed` | `prisma db seed` | Run the seed (`tsx prisma/seed.ts && tsx prisma/seed-extras.ts`). |
+| `db:seed` | `prisma db seed` | Run the seed (`tsx prisma/seed.ts`, which also runs `prisma/seed-extras.ts`) on an **empty** database. |
 | `db:reset` | `prisma migrate reset --force` | Drop, re-migrate, and reseed the database. |
 | `db:studio` | `prisma studio` | Open Prisma Studio (visual DB browser). |
 | `setup` | `prisma migrate deploy && prisma db seed` | Non-interactive migrate + seed (CI / production bootstrap). |
 
-The seed entrypoint is configured under the `prisma.seed` key in `package.json` and runs
-**two** files in order: `prisma/seed.ts` (core users, groups, tickets, catalog) then
-`prisma/seed-extras.ts`. Re-running the seed is idempotent-ish but a clean slate is
-`pnpm db:reset`.
+The seed entrypoint is configured under the `prisma.seed` key in `package.json`:
+`prisma/seed.ts` (core users, groups, tickets, catalog) calls `seedExtras()` from
+`prisma/seed-extras.ts` when it is done. The seed starts by deleting all data, so it
+**refuses** (logs, skips, exits 0) when the database already holds users or tickets
+([`prisma/seed-guard.ts`](../prisma/seed-guard.ts)). To start over with fresh demo data use
+`pnpm db:reset`, which drops the database first.
 
 ---
 
@@ -172,8 +174,9 @@ prisma/
   schema.prisma       Data model. datasource provider = "sqlite" (swap to postgresql
                       for prod — see deployment.md). "Enums" are String columns.
   migrations/         Committed migration history.
-  seed.ts             Core demo data + login line.
-  seed-extras.ts      Additional demo data (runs after seed.ts).
+  seed.ts             Core demo data + login line (the seed entrypoint).
+  seed-extras.ts      Additional demo data (called by seed.ts).
+  seed-guard.ts       Refuses to seed a database that already holds data.
 
 types/
   next-auth.d.ts      Module augmentation adding `role` to the Auth.js session/JWT.

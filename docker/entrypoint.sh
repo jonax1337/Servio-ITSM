@@ -41,6 +41,9 @@ if [ "${ALLOW_UNKNOWN_MIGRATIONS:-false}" != "true" ]; then
 fi
 
 # Seed exactly once per data volume (guard file lives on the mounted /data).
+# The marker only saves the work: the seed itself refuses (logs, skips, exits 0)
+# whenever the database already holds users or tickets, so a deleted or lost
+# marker never wipes or reseeds a database with data (prisma/seed-guard.ts).
 if [ ! -f /data/.seeded ]; then
   echo "[servio] seeding initial data…"
   prisma db seed && touch /data/.seeded || echo "[servio] seed skipped/failed (continuing)"

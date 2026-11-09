@@ -156,6 +156,8 @@ file. The sample file is a starting point, not the full list.
 | `UPDATE_INCLUDE_PRERELEASES` | No | `false` | Also offer pre-releases. |
 | `UPDATE_CHECK_TICK_SECONDS` | No | `21600` | Interval of the update-check tick (floor 3600). |
 | `MAINTENANCE_TICK_SECONDS` | No | `15` | Interval of the maintenance tick that starts and ends windows and follows the updater (floor 5). |
+| `UPDATER_STALE_MINUTES` _(not in `.env.example`)_ | No | `10` | A running update window fails once nothing moved for this many minutes (1..1440) and the updater either stopped sending heartbeats or says it is not working on the window (its final status could not be written). A busy updater is never cut off. See [updates.md](./updates.md#how-it-works). |
+| `SERVIO_IMAGE` _(not in `.env.example`)_ | No | `ghcr.io/jonax1337/servio` | Image repository whose registry manifest the app reads to tell the updater the download size of a release, for its free-space check. Set it when the updater pulls from a mirror (same value as the updater's `SERVIO_IMAGE`). Anonymous pulls of public images only; on any failure the updater estimates instead. |
 | `NEXT_PUBLIC_DEMO_MODE` | No | `false` | Set `"true"` to keep the pre-filled demo credentials (`admin@servio.dev` / `servio123`) and their hint on the login page ([`../app/login/login-form.tsx`](../app/login/login-form.tsx)) visible in production builds. They always show outside production and are hidden in production unless this is set. The login form is a client component, so Next inlines the value **at build time**. |
 | `NODE_ENV` | No | — | Standard Node/Next env. Toggles Prisma query logging ([`../lib/db.ts`](../lib/db.ts)) and the HMR-safe singleton guards in `lib/db.ts` / `lib/storage.ts`. The Docker image sets `production`. |
 
@@ -322,10 +324,12 @@ A successful link is audited (`User`, "Linked SSO identity … (matched by email
 Use the claim when the IdP federates the same directory the sync reads, and map
 the attribute the connector uses as external id into the token (Keycloak: a
 **User Attribute** mapper). The value must match the stored `externalId`
-exactly. The LDAP connector stores binary attributes such as `objectGUID` as
-hex of the raw bytes, which is not the UUID form IdPs usually emit; with such a
-directory pick a text attribute as external id (e.g. `userPrincipalName`) or
-link by email. Turn on `email_verified` only for an IdP that verifies
+exactly. The LDAP connector stores `objectGUID` in the canonical GUID text
+form (`35918bc9-196d-40ea-9779-889d79b753f0`, lowercase), the form IdPs that
+federate Active Directory usually emit (Keycloak's LDAP federation keeps it as
+`LDAP_ID`), and `objectSid` as `S-1-5-…`. Earlier releases stored the raw
+bytes as hex; the database migration converts stored GUIDs and the next sync
+moves any it missed, so the claim matches after the upgrade. Turn on `email_verified` only for an IdP that verifies
 email addresses itself, such as one backed by your own directory.
 
 ### Worked example (generic OIDC provider)
@@ -502,7 +506,7 @@ that value minus ~1 MB for multipart overhead; above it, uploads fail.
 
 ## Updates & maintenance
 
-Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. Operator guide: [updates.md](./updates.md).
+Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. `UPDATER_STALE_MINUTES` and `SERVIO_IMAGE` are environment-only as well. The updater's own variables (`UPDATER_KEEP_IMAGES`, `PRUNE_IMAGES`, `PULL_SPACE_*`, …) are set on the updater container: [`updater/README.md`](../updater/README.md#configuration-environment-of-the-updater-container). Operator guide: [updates.md](./updates.md).
 
 ---
 

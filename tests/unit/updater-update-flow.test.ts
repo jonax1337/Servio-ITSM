@@ -63,18 +63,21 @@ describe("update flow: success", () => {
       `remove ${PRE_NAME} {"force":true}`,
     ]);
     expect(docker.byName(PRE_NAME)).toBeUndefined();
-    expect(docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`sha256:id-of-${IMAGE_REPO}:${NEW_VERSION}`);
+    expect(docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`${IMAGE_REPO}:${NEW_VERSION}`);
+    expect(docker.byName(CONTAINER_NAME)?.Image).toBe(`sha256:id-of-${IMAGE_REPO}:${NEW_VERSION}`);
     expect(docker.byName("unrelated")).toBeDefined();
   });
 
-  it("creates the container from the pulled image's id and logs the digest", async () => {
+  it("creates the container by tag, pinned to the pulled image's id, and logs the digest", async () => {
     await runRequest();
 
     const status = await harness.readStatus();
     const pulled = status.log.find((entry: { message: string }) => entry.message.startsWith("Pulled "));
     expect(pulled.message).toContain(`image sha256:id-of-${IMAGE_REPO}:${NEW_VERSION}`);
     expect(pulled.message).toContain(`digest ${IMAGE_REPO}@sha256:digest-of-${IMAGE_REPO}:${NEW_VERSION}`);
-    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toMatch(/^sha256:/);
+    // Operators and tooling see the release (repo:version), not a bare image id.
+    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`${IMAGE_REPO}:${NEW_VERSION}`);
+    expect(harness.docker.byName(CONTAINER_NAME)?.Image).toBe(`sha256:id-of-${IMAGE_REPO}:${NEW_VERSION}`);
   });
 
   it("writes a backup of the database and its WAL into the backup directory", async () => {

@@ -2,8 +2,8 @@
 // so the whole flow (including rollback and crash recovery) runs against an
 // in-memory fake in tests.
 //
-//   validate -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED
-//                                            \--> rollback -> ROLLED_BACK (or FAILED if the rollback breaks)
+//   validate -> space check -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED -> image cleanup (a note)
+//                                                          \--> rollback -> ROLLED_BACK (or FAILED if the rollback breaks)
 //
 // Before the old container is stopped, a journal is written to the updater-only
 // backup volume and updated at every step. If the updater dies mid-update, the
@@ -15,6 +15,7 @@ import { readdir, rename, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { assertFreeSpace, createBackup, findBackupSources, freeBytesOn, pruneBackups, restoreBackup } from "./backup.mjs";
 import { isTransientDockerError, retryWhileUnreachable, withRetries } from "./docker-retry.mjs";
+import { describePrune, downloadHint, formatBytes, pruneSupersededImages, pullSpaceNeeded } from "./image-housekeeping.mjs";
 import { createLedger } from "./ledger.mjs";
 import { UPDATE_REQUEST_LABEL, VERSION_LABEL, containerNameOf, findManagedContainer, installedVersionOf } from "./managed-container.mjs";
 import { buildCreateSpec } from "./recreate.mjs";
@@ -53,6 +54,7 @@ const PRE_SWITCH_STEPS = new Set(["STOPPING", "BACKED_UP"]);
 /**
  * @typedef {"PENDING" | "PULLING" | "BACKING_UP" | "SWITCHING" | "HEALTH_CHECK" | "SUCCEEDED" | "FAILED" | "ROLLED_BACK"} UpdaterState
  * @typedef {{ now: () => number, sleep: (ms: number) => Promise<void>, timeoutSignal: (ms: number) => AbortSignal }} Clock
+ * @typedef {{ id: string, state: UpdaterState }} ActiveRequest the request the updater is working on, reported in the heartbeat
  * @typedef {{ state: UpdaterState, message: string, manual?: boolean, pending?: boolean }} Outcome
  *   `pending`: Docker did not answer, so the update could not be finished or undone yet; the journal stays and it is retried
  * @typedef {{ at: string, state: UpdaterState, message: string }} LogEntry
@@ -63,9 +65,10 @@ const PRE_SWITCH_STEPS = new Set(["STOPPING", "BACKED_UP"]);
  * @typedef {"STOPPING" | "BACKED_UP" | "SWITCHING" | "STARTED" | "SWITCHED" | "RESTORED"} JournalStep
  * @typedef {{
  *   requestId: string, targetVersion: string, fromVersion: string | null, name: string, preName: string,
- *   oldId: string, newId: string | null, newImageId: string, restartPolicy: RestartPolicy | null,
+ *   oldId: string, newId: string | null, newImageId: string, oldImageId?: string, restartPolicy: RestartPolicy | null,
  *   backup: import("./backup.mjs").Backup | null, step: JournalStep, served?: ServingInstance,
  * }} JournalData
+ *   `oldImageId`: the image the old container ran, kept as rollback target by the cleanup (absent in journals of older updaters)
  * @typedef {{ data: JournalData, save: (changes: Partial<JournalData>) => Promise<void> }} Journal
  */
 
@@ -106,6 +109,10 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   let lastIgnored = "";
   /** Request ids this process already started; the ledger covers restarts. */
   const attempted = new Set();
+  /** @type {ActiveRequest | null} */
+  let active = null;
+  /** @type {Status | null} a status whose last write failed (e.g. a full disk); written again on every poll until it lands */
+  let unwrittenStatus = null;
 
   const readRequest = () => readJsonFile(paths.request, MAX_SMALL_JSON_BYTES);
   /** @param {string} file @param {unknown} value */
@@ -123,6 +130,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    * @returns {Promise<"idle" | "ignored" | "processed">}
    */
   async function processPendingRequest() {
+    await retryUnwrittenStatus();
     if (await regularFileExists(journalFile)) {
       // A rollback that Docker interrupted (or an outcome whose journal could not be set aside).
       await recoverInterrupted();
@@ -174,6 +182,9 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
 
   /** @param {any} request */
   async function runUpdate(request) {
+    active = { id: request.id, state: "PENDING" };
+    // A status of an earlier request that never landed must not overwrite this one's.
+    unwrittenStatus = null;
     const run = {
       reporter: createReporter(newStatus(request.id, String(request.targetVersion).slice(0, MAX_VERSION_LENGTH), null)),
       /** @type {Journal | null} set once the journal exists, i.e. once the app may be taken down */
@@ -205,6 +216,107 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     if (!outcome.manual) {
       await rm(journalFile, { force: true });
       await syncDirectory(config.backupDir);
+    }
+    // The update is done once it is reported; the cleanup only adds a note and can never undo the success.
+    if (outcome.state === "SUCCEEDED" && journal) {
+      const cleanup = await pruneImagesAfterSuccess(journal.data);
+      if (cleanup) await reporter.note(message + cleanup);
+    }
+  }
+
+  /** Writes a status whose earlier write failed; quiet while it keeps failing. */
+  async function retryUnwrittenStatus() {
+    const pending = unwrittenStatus;
+    if (!pending) return;
+    try {
+      await writeState(paths.status, pending);
+    } catch {
+      return;
+    }
+    unwrittenStatus = null;
+    log(`[updater] status.json written after an earlier failure (${pending.state})`);
+  }
+
+  /**
+   * After a successful update: removes superseded Servio and updater images,
+   * keeping the image the old container ran (the rollback target, by id) and the
+   * newest others up to UPDATER_KEEP_IMAGES. Never fails the update.
+   *
+   * @param {JournalData} data
+   * @returns {Promise<string>} a note for the status
+   */
+  async function pruneImagesAfterSuccess(data) {
+    if (!config.pruneImages) return "";
+    return pruneImages([
+      { repository: config.image, runningVersion: data.targetVersion, protectedIds: [data.newImageId], rollbackImageId: data.oldImageId ?? null },
+      { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
+    ]);
+  }
+
+  /**
+   * @param {Array<{ repository: string, runningVersion: string | null, protectedIds: string[], rollbackImageId: string | null }>} targets
+   * @returns {Promise<string>} a note for the status ("" when nothing was removed or kept)
+   */
+  async function pruneImages(targets) {
+    const notes = [];
+    for (const target of targets) {
+      try {
+        const result = await pruneSupersededImages({ docker, keep: config.keepImages, ...target });
+        const note = describePrune(result);
+        if (note) notes.push(note);
+      } catch (error) {
+        notes.push(`Superseded images of ${target.repository} could not be cleaned up (${messageOf(error)}).`);
+      }
+    }
+    return notes.length > 0 ? ` ${notes.join(" ")}` : "";
+  }
+
+  /**
+   * Refuses to pull when Docker's data root lacks room for the image: a pull that
+   * runs out of space fails half-way and can leave the host with a full disk.
+   * When space is short, superseded images are cleaned up first and the space is
+   * measured again. An image that is already present needs no room.
+   *
+   * @param {{ request: any, imageRef: string, current: any, currentImage: any, fromVersion: string | null,
+   *   reporter: ReturnType<typeof createReporter> }} ctx
+   */
+  async function assertRoomForPull({ request, imageRef, current, currentImage, fromVersion, reporter }) {
+    if (!config.pullSpaceCheck || (await imageIsPresent(imageRef))) return;
+    const hint = downloadHint(request.downloadBytes);
+    const need = pullSpaceNeeded({
+      downloadBytes: hint,
+      imageBytes: downloadHint(request.imageBytes),
+      installedBytes: currentImage.Size,
+      marginBytes: config.pullSpaceMarginBytes,
+    });
+    let free = await freeBytes(config.pullSpaceProbeDir);
+    if (free >= need.total) return;
+    if (config.pruneImages) {
+      const note = await pruneImages([
+        { repository: config.image, runningVersion: fromVersion, protectedIds: [current.Image], rollbackImageId: null },
+        { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
+      ]);
+      if (note) await reporter.note(`Low on space before the pull.${note}`);
+      free = await freeBytes(config.pullSpaceProbeDir);
+      if (free >= need.total) return;
+    }
+    throw new Error(
+      `Not enough free space for the image pull: ${formatBytes(free)} free on the filesystem of ${config.pullSpaceProbeDir} ` +
+        `(Docker's data root), ${formatBytes(need.total)} needed for ${imageRef} (${formatBytes(need.download)} ` +
+        `${hint === null ? "estimated download" : "download"}, ${formatBytes(need.unpacked)} unpacked, ${formatBytes(need.margin)} margin). ` +
+        "Free up space (for example remove unused images with `docker image prune`) and schedule the update again, " +
+        "or adjust PULL_SPACE_MARGIN_MB. Nothing was changed.",
+    );
+  }
+
+  /** @param {string} imageRef */
+  async function imageIsPresent(imageRef) {
+    try {
+      await docker.inspectImage(imageRef);
+      return true;
+    } catch (error) {
+      if (/** @type {{ status?: number }} */ (error).status === 404) return false;
+      throw error;
     }
   }
 
@@ -300,10 +412,17 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
         status.log = [...status.log, { at, state, message }].slice(-MAX_LOG_ENTRIES);
         Object.assign(status, { state, message, updatedAt: at });
         log(`[updater] ${state}: ${message}`);
-        // Best effort: an unwritable status file (e.g. a swapped directory) must not stop a rollback.
-        await writeState(paths.status, status).catch((/** @type {Error} */ error) => {
-          log(`[updater] could not write status.json: ${error.message}`);
-        });
+        active = TERMINAL_STATES.has(state) ? null : { id: status.id, state };
+        // Best effort: an unwritable status file (e.g. a swapped directory, a full disk) must not stop a
+        // rollback. It is written again on every poll, so the app still learns the outcome once it can be.
+        try {
+          await writeState(paths.status, status);
+          // Any status that lands is newer than one that did not, which must not overwrite it later.
+          unwrittenStatus = null;
+        } catch (error) {
+          unwrittenStatus = status;
+          log(`[updater] could not write status.json (retried on every poll): ${messageOf(error)}`);
+        }
       },
       /** Log a step without changing the state. @param {string} message */
       note(message) {
@@ -334,9 +453,10 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     assertBindMountsAllowed(current);
     const preName = `${name}-pre-${(fromVersion ?? "unknown").replace(/[^0-9A-Za-z.-]/g, "_")}`;
     await assertNameFree(preName);
+    const currentImage = await docker.inspectImage(current.Image);
+    await assertRoomForPull({ request, imageRef, current, currentImage, fromVersion, reporter });
 
     const image = await pullAndPin(imageRef, targetVersion, reporter);
-    const currentImage = await docker.inspectImage(current.Image);
     await assertRequestStillCurrent(request);
     if (backupMode === "file") await assertFreeSpace({ dbFile: config.dbFile, backupDir: config.backupDir, freeBytes });
     const latest = await assertUnchangedSincePull(current);
@@ -350,6 +470,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       oldId: current.Id,
       newId: null,
       newImageId: image.Id,
+      oldImageId: current.Image,
       restartPolicy: latest.HostConfig?.RestartPolicy ?? null,
       backup: null,
       step: "STOPPING",
@@ -660,10 +781,13 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       await journal.save({ step: "SWITCHING" });
       await reporter.report("SWITCHING", `Renaming ${name} to ${preName} and creating a new ${name} from ${imageRef} (${image.Id})`);
       await docker.renameContainer(current.Id, preName);
-      const { body, extraNetworks } = buildCreateSpec(current, currentImage, image.Id);
+      // By tag, so `docker ps`, compose and monitoring show the release; the check below
+      // keeps the guarantee that the pulled image (by id) is what runs.
+      const { body, extraNetworks } = buildCreateSpec(current, currentImage, imageRef);
       body.Labels = { ...body.Labels, [UPDATE_REQUEST_LABEL]: requestId };
       const created = await docker.createContainer(name, body);
       await journal.save({ newId: created.Id });
+      await assertCreatedFromPulledImage(created.Id, imageRef, image.Id);
       for (const network of extraNetworks) await docker.connectNetwork(network.name, created.Id, network.endpointConfig);
       await docker.startContainer(created.Id);
       await journal.save({ step: "STARTED" });
@@ -676,6 +800,23 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       return rollBack(journal, messageOf(error), reporter);
     }
     return completeSwitch(journal.data);
+  }
+
+  /**
+   * The tag could have been moved (a pull by someone else) between our pull and the
+   * create; the new container must run exactly the image that was pulled and checked.
+   *
+   * @param {string} id
+   * @param {string} imageRef
+   * @param {string} imageId
+   */
+  async function assertCreatedFromPulledImage(id, imageRef, imageId) {
+    const created = await docker.inspectContainer(id);
+    if (created.Image !== imageId) {
+      throw new Error(
+        `${imageRef} pointed at image ${shortId(String(created.Image))} instead of the pulled ${shortId(imageId)} when the container was created`,
+      );
+    }
   }
 
   /**
@@ -864,6 +1005,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
 
   /** @param {JournalData} data */
   async function recoverFromJournal(data) {
+    active = { id: data.requestId, state: "SWITCHING" };
     const status = await readStatusOrNull();
     const ours = status?.id === data.requestId ? status : null;
     const reporter = createReporter({
@@ -922,7 +1064,10 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     }
   }
 
-  return { processPendingRequest, recoverInterrupted };
+  /** @returns {ActiveRequest | null} the request being worked on (including a rollback waiting for Docker) */
+  const activeRequest = () => (active ? { ...active } : null);
+
+  return { processPendingRequest, recoverInterrupted, activeRequest };
 }
 
 /**
@@ -978,6 +1123,7 @@ function isJournal(value) {
     JOURNAL_STEPS.has(value.step) &&
     optionalString(value.newId) &&
     optionalString(value.fromVersion) &&
+    (value.oldImageId === undefined || typeof value.oldImageId === "string") &&
     (value.restartPolicy === null || typeof value.restartPolicy?.Name === "string") &&
     (value.served === undefined || (typeof value.served?.startedAt === "string" && Number.isInteger(value.served.restartCount))) &&
     (backup === null || (typeof backup?.path === "string" && Array.isArray(backup.sidecars) && backup.sidecars.every((/** @type {unknown} */ s) => typeof s === "string")))
