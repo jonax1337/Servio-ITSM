@@ -9,7 +9,8 @@ import { writeAudit } from "@/lib/audit";
 import type { ActionResult } from "@/lib/action-result";
 import { createChangeFromTemplate } from "@/lib/change-templates";
 import { distinctIds } from "@/lib/utils";
-import { templateProblem } from "@/lib/change-template-rules";
+import { standardTemplateApprovalProblem, templateProblem, type TemplateApprovalState } from "@/lib/change-template-rules";
+import { approverRolesForRisk } from "@/lib/cab";
 import { CHANGE_TEMPLATE_TYPES, IMPACT_URGENCY, PRIORITIES, RISKS } from "@/lib/constants";
 
 export type TemplateActionState =
@@ -82,6 +83,12 @@ async function parseTemplate(formData: FormData): Promise<Parsed> {
   return { data: parsed.data };
 }
 
+/** Refusal state when `role` may not save the resulting active STANDARD (pre-approved) template. */
+function approvalRefusal(role: string, current: TemplateApprovalState | null, data: TemplateData): TemplateActionState {
+  const refusal = standardTemplateApprovalProblem(role, current, data, approverRolesForRisk);
+  return refusal ? { error: refusal } : undefined;
+}
+
 const DUPLICATE_NAME_STATE = { error: "Please fix the errors below.", fieldErrors: { name: ["A template with this name already exists."] } };
 
 const isDuplicateName = (e: unknown) => (e as { code?: string })?.code === "P2002";
@@ -91,6 +98,8 @@ export async function createChangeTemplate(_prev: TemplateActionState, formData:
   if (!me) return { error: NOT_AUTHORISED };
   const parsed = await parseTemplate(formData);
   if ("state" in parsed) return parsed.state;
+  const refused = approvalRefusal(me.role, null, parsed.data);
+  if (refused) return refused;
 
   try {
     const template = await db.changeTemplate.create({ data: parsed.data, select: { id: true, name: true } });
@@ -110,6 +119,10 @@ export async function updateChangeTemplate(_prev: TemplateActionState, formData:
   if (!id.success) return { error: "Invalid request." };
   const parsed = await parseTemplate(formData);
   if ("state" in parsed) return parsed.state;
+  const current = await db.changeTemplate.findUnique({ where: { id: id.data } });
+  if (!current) return { error: "Template not found." };
+  const refused = approvalRefusal(me.role, current, parsed.data);
+  if (refused) return refused;
 
   try {
     await db.changeTemplate.update({ where: { id: id.data }, data: parsed.data });

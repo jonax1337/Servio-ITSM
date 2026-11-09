@@ -3,7 +3,8 @@ import { apiError, ok, preflight } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { categoryData, categoryPatchSchema } from "@/lib/api-category-input";
 import { agentGuard, readBody } from "../../_itsm";
-import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, managerRefusal, serializeCategory } from "../../_categories";
+import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, serializeCategory } from "../../_categories";
+import { managerOnly } from "../../_manage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
-  const refused = managerRefusal(auth.principal);
+  const refused = managerOnly(auth.principal, "categories");
   if (refused) return refused;
   const { id } = await ctx.params;
   const current = await db.category.findUnique({ where: { id }, select: { id: true, name: true, parentId: true } });

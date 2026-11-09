@@ -325,7 +325,11 @@ Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`)
 | `asset` | One of the requester's own devices (`Asset.ownerId`, not retired or disposed — `listOwnAssets` in `lib/catalog-form-links.ts`); linked as `TicketAsset`, stored as "tag · name". Matched by id, tag, name or label, so assistant answers and re-requests work |
 | `people` | Colleagues' email addresses (at most 10); each must be an active account, becomes a `TicketParticipant` and gets the *Added as participant* email |
 
-Conditional questions (show a question only for certain answers) are not supported yet.
+**Conditional questions**: a question can carry `condition: { field, values }` (`FieldCondition` in `lib/service-forms.ts`). It is shown — and only then required — when an *earlier* `select`, `multiselect`, `checkbox` (`"true"`/`"false"`) or `urgency` question is answered with one of the values; a condition on a hidden question hides it too. `visibleFields` decides it in one place for the portal form (`components/portal/service-request-form.tsx` renders only the visible questions), the server-side validation (`validateAnswers` ignores and does not store answers to hidden questions), the ticket text and the request-details card (`answersToText`, `components/tickets/form-answers.tsx`), and the portal assistant (`get_service_form` returns a `showIf` per conditional question, `propose_service_request` drafts only the visible ones). The editor (`components/catalog/catalog-editor.tsx`) offers "Show only if …" on every question after a choice question; a key rename carries its conditions along. Saving a form (editor or API) checks it with `catalogQuestionsSchema` / `formSchemaProblems`: unique keys, options for choice questions, and conditions that point at an earlier choice question with answers it offers.
+
+**Routing team**: `CatalogItem.groupId` (editor: *Routing team*) sends requests to that team; without it the service's team, then the category's, then the triage team.
+
+**REST API**: `/api/v1/catalog-items` (with `PUT /catalog-items/ref/{ref}` upsert by `CatalogItem.importRef`), see [rest-api.md](rest-api.md#catalog-items). The DB checks shared by the editor and the API (approval stages, references) live in `lib/catalog-items.ts`; the body schemas in `lib/api-catalog-input.ts`.
 
 ### Assets (CMDB)
 

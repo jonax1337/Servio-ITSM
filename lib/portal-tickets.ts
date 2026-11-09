@@ -228,8 +228,8 @@ export async function createCatalogRequestFor(
   const description = detailText
     ? `Catalog request: ${item.name}.\n\n${detailText}`
     : `Catalog request: ${item.name}.`;
-  // Pre-route: the service's team, else the category's team, else the triage team.
-  const routeGroupId = item.service?.groupId ?? item.category?.groupId ?? (await triageGroupId());
+  // Pre-route: the item's own team, else the service's, else the category's, else the triage team.
+  const routeGroupId = item.groupId ?? item.service?.groupId ?? item.category?.groupId ?? (await triageGroupId());
   const needsApproval = plan.stages.length > 0;
   const type = catalogTicketType(item.ticketType);
   const urgency = formUrgency(fields, values);

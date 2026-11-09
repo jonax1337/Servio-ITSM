@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { PORTAL_CATALOG_ITEM_WHERE, PORTAL_CATEGORY_WHERE } from "@/lib/categories";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
-import { parseFormSchema } from "@/lib/service-forms";
+import { parseFormSchema, visibleFields } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
 import { listPublicIncidents } from "@/lib/status-incidents";
 
@@ -52,6 +52,7 @@ const portalCatalogTool = tool({
       orderBy: [{ order: "asc" }, { name: "asc" }],
       select: {
         id: true, name: true, shortDescription: true, description: true, requiresApproval: true, formSchema: true,
+        group: { select: { name: true } },
         service: { select: { group: { select: { name: true } } } },
         category: { select: { group: { select: { name: true } } } },
       },
@@ -64,7 +65,7 @@ const portalCatalogTool = tool({
           description: r.shortDescription ?? r.description ?? "",
           requiresApproval: r.requiresApproval,
           hasForm: parseFormSchema(r.formSchema).length > 0,
-          handledBy: r.service?.group?.name ?? r.category?.group?.name ?? null,
+          handledBy: r.group?.name ?? r.service?.group?.name ?? r.category?.group?.name ?? null,
         }))
       : [{ id: "", name: "No matching services", url: "", description: "", requiresApproval: false, hasForm: false, handledBy: null }];
   },
@@ -88,7 +89,7 @@ const listCategoriesTool = tool({
 
 const getServiceFormTool = tool({
   description:
-    "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form. Answer formats by type: multiselect = options separated by commas; datetime = YYYY-MM-DDTHH:mm; urgency = LOW, MEDIUM or HIGH; asset = the asset tag or name of one of the user's own devices; people = colleagues' email addresses separated by commas.",
+    "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form. Answer formats by type: multiselect = options separated by commas; datetime = YYYY-MM-DDTHH:mm; urgency = LOW, MEDIUM or HIGH; asset = the asset tag or name of one of the user's own devices; people = colleagues' email addresses separated by commas. A field with a `showIf` is conditional: ask it ONLY when the answer to the field `showIf.field` is one of `showIf.anyOf` (a checkbox answers true or false); otherwise skip it — its answer would be ignored and it is not required.",
   inputSchema: z.object({ itemId: z.string().describe("the catalog item id from search_catalog") }),
   execute: async ({ itemId }) => {
     const item = await db.catalogItem.findUnique({ where: { id: itemId }, select: { name: true, formSchema: true, isPublished: true } });
@@ -97,7 +98,14 @@ const getServiceFormTool = tool({
     return {
       ok: true,
       service: item.name,
-      fields: fields.map((f) => ({ key: f.key, label: f.label, type: f.type, required: !!f.required, options: f.options ?? [] })),
+      fields: fields.map((f) => ({
+        key: f.key,
+        label: f.label,
+        type: f.type,
+        required: !!f.required,
+        options: f.options ?? [],
+        ...(f.condition && { showIf: { field: f.condition.field, anyOf: f.condition.values } }),
+      })),
     };
   },
 });
@@ -164,7 +172,7 @@ function proposeReplyToolFor(userId: string, attachments: ProposalAttachment[]) 
 function proposeServiceRequestToolFor(attachments: ProposalAttachment[]) {
   return tool({
     description:
-      "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field has an answer.",
+      "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field that applies has an answer (a conditional field whose showIf does not hold does not apply).",
     inputSchema: z.object({
       itemId: z.string().describe("the catalog item id from search_catalog"),
       answers: z
@@ -318,7 +326,7 @@ What you can do, in order of preference:
 0b. KNOWN ISSUES: when the user says something is down, slow or not working, call list_status_incidents first. If an active incident matches, tell them it is already a known issue, share the latest update, and link [the status page](/portal/status), where the "This affects me too" button lets them register without filing a duplicate. Only open a new request if nothing matches or they have a different problem.
 1. ANSWER: for a problem or "how do I…" question, call search_knowledge first and answer from it, linking the article by its url, e.g. [Reset your password](/portal/knowledge/reset-password). If the help center has nothing and it's a general how-to, you may use web_search (and fetch_url to read a result) and give a short, safe answer, noting it's from the public web.
 2. GUIDE TO A SERVICE: when the user wants to obtain something, call search_catalog and point them to the matching service.
-3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know, then call propose_service_request with the answers so they can confirm and submit in one click.
+3. FILL A FORM FOR THEM: if that service has a request form (hasForm=true), call get_service_form, ask the user for any required fields you don't already know (skip conditional fields whose showIf does not hold), then call propose_service_request with the answers so they can confirm and submit in one click.
 4. OPEN A REQUEST: if the issue needs a person and isn't a catalog service, gather a clear title and short description, optionally call list_categories to pick a fitting categoryId, then call propose_request. Use INCIDENT for problems, REQUEST to obtain something. Judge impact (how many people are affected: just them, a team, or many) and urgency (how time-sensitive it is) from what the user tells you, and set priority accordingly (MEDIUM by default; CRITICAL only for outages or many blocked users). If a knowledge-base article is relevant to the issue, reference it in the description (its markdown link) so the assignee has that context.
 5. REPLY TO A TICKET: if the user wants to add information or respond on an existing request of theirs (e.g. "tell them it's still happening"), find it with list_my_tickets/get_my_ticket, then call propose_reply with the ticket ref and the message. Call propose_reply directly once you have the ref and text — do not ask for permission in plain text first; the confirm button the user sees IS the confirmation. It only works on their own open tickets.
 
@@ -414,7 +422,8 @@ async function buildServiceProposal(input: unknown): Promise<RequestProposal | n
   if (!item || !item.isPublished) return null;
   const fields = parseFormSchema(item.formSchema);
   const byKey = new Map(raw.data.answers.map((a) => [a.key, a.value]));
-  const answers = fields.map((f) => ({ key: f.key, label: f.label, value: byKey.get(f.key) ?? "" }));
+  // Only the questions that apply to these answers: a skipped conditional question is not shown on the card.
+  const answers = visibleFields(fields, Object.fromEntries(byKey)).map((f) => ({ key: f.key, label: f.label, value: byKey.get(f.key) ?? "" }));
   return { kind: "service", itemId: raw.data.itemId, itemName: item.name, requiresApproval: item.requiresApproval, answers };
 }
 

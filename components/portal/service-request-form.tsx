@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useCallback, useEffect, useState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
 import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
-import { FORM_URGENCY_LEVELS, type ServiceField } from "@/lib/service-forms";
+import { FORM_URGENCY_LEVELS, visibleFields, type ServiceField } from "@/lib/service-forms";
 import { LEVEL_META } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import { useEnumT, useServerMessage, useT } from "@/lib/i18n/client";
 
 /** Select field for a dynamic catalog form: submits an empty value until chosen,
  * matching the previous <Select name=…> (no auto-selected first option). */
-function SelectField({ name, options }: { name: string; options: ComboOption[] }) {
+function SelectField({ name, options, onValueChange }: { name: string; options: ComboOption[]; onValueChange?: (value: string) => void }) {
   const [value, setValue] = useState("");
   const t = useT("portal");
   return (
@@ -26,7 +26,10 @@ function SelectField({ name, options }: { name: string; options: ComboOption[] }
       name={name}
       options={options}
       value={value}
-      onChange={setValue}
+      onChange={(v) => {
+        setValue(v);
+        onValueChange?.(v);
+      }}
       placeholder={t("choose")}
       searchPlaceholder={t("search")}
     />
@@ -34,8 +37,13 @@ function SelectField({ name, options }: { name: string; options: ComboOption[] }
 }
 
 /** Multiple choice: one checkbox per option, submitted as a JSON array. */
-function MultiSelectField({ name, options }: { name: string; options: string[] }) {
+function MultiSelectField({ name, options, onValueChange }: { name: string; options: string[]; onValueChange?: (picked: string[]) => void }) {
   const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (o: string, on: boolean) => {
+    const next = on ? [...picked.filter((x) => x !== o), o] : picked.filter((x) => x !== o);
+    setPicked(next);
+    onValueChange?.(next);
+  };
   return (
     <div className="grid gap-1.5 pt-1">
       <input type="hidden" name={name} value={JSON.stringify(picked)} />
@@ -43,13 +51,22 @@ function MultiSelectField({ name, options }: { name: string; options: string[] }
         <label key={o} className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={picked.includes(o)}
-            onCheckedChange={(v) => setPicked((p) => (v ? [...p, o] : p.filter((x) => x !== o)))}
+            onCheckedChange={(v) => toggle(o, !!v)}
           />
           {o}
         </label>
       ))}
     </div>
   );
+}
+
+/**
+ * Forgets a question's answer when the question unmounts: its input state is gone
+ * with it, so a stale answer would keep showing (or hiding) the questions that depend on it.
+ */
+function ForgetAnswerOnUnmount({ fieldKey, onForget }: { fieldKey: string; onForget: (key: string) => void }) {
+  useEffect(() => () => onForget(fieldKey), [fieldKey, onForget]);
+  return null;
 }
 
 export function ServiceRequestForm({
@@ -74,6 +91,20 @@ export function ServiceRequestForm({
   const te = useEnumT();
   const fe = state?.fieldErrors ?? {};
   const urgencyOpts: ComboOption[] = FORM_URGENCY_LEVELS.map((l) => ({ value: l, label: te(LEVEL_META, l) }));
+  // Answers of the questions others depend on; a conditional question is only
+  // rendered (and so only submitted and required) while its condition holds.
+  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  const setAnswer = (key: string) => (value: unknown) => setAnswers((a) => ({ ...a, [key]: value }));
+  const forgetAnswer = useCallback(
+    (key: string) =>
+      setAnswers((a) => {
+        if (!(key in a)) return a;
+        const { [key]: _gone, ...rest } = a;
+        return rest;
+      }),
+    [],
+  );
+  const shown = visibleFields(fields, answers);
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">
@@ -91,8 +122,9 @@ export function ServiceRequestForm({
           <Textarea name="f_details" placeholder={t("describeNeed")} className="min-h-28" />
         </div>
       ) : (
-        fields.map((f) => (
+        shown.map((f) => (
           <div key={f.key} className="grid gap-1.5">
+            <ForgetAnswerOnUnmount fieldKey={f.key} onForget={forgetAnswer} />
             <Label htmlFor={`f_${f.key}`}>
               {f.label}
               {f.required ? <span className="text-destructive"> *</span> : null}
@@ -101,11 +133,11 @@ export function ServiceRequestForm({
             {f.type === "textarea" ? (
               <Textarea id={`f_${f.key}`} name={`f_${f.key}`} placeholder={f.placeholder} className="min-h-24" />
             ) : f.type === "select" ? (
-              <SelectField name={`f_${f.key}`} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} />
+              <SelectField name={`f_${f.key}`} options={(f.options ?? []).map((o) => ({ value: o, label: o }))} onValueChange={setAnswer(f.key)} />
             ) : f.type === "multiselect" ? (
-              <MultiSelectField name={`f_${f.key}`} options={f.options ?? []} />
+              <MultiSelectField name={`f_${f.key}`} options={f.options ?? []} onValueChange={setAnswer(f.key)} />
             ) : f.type === "urgency" ? (
-              <SelectField name={`f_${f.key}`} options={urgencyOpts} />
+              <SelectField name={`f_${f.key}`} options={urgencyOpts} onValueChange={setAnswer(f.key)} />
             ) : f.type === "asset" ? (
               ownAssets.length > 0 ? (
                 <SelectField name={`f_${f.key}`} options={ownAssets} />
@@ -116,7 +148,7 @@ export function ServiceRequestForm({
               <Input id={`f_${f.key}`} name={`f_${f.key}`} type="text" placeholder={f.placeholder || t("peoplePlaceholder")} autoComplete="off" />
             ) : f.type === "checkbox" ? (
               <div className="flex items-center gap-2 pt-1">
-                <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} />
+                <Checkbox id={`f_${f.key}`} name={`f_${f.key}`} onCheckedChange={(v) => setAnswer(f.key)(!!v)} />
                 <Label htmlFor={`f_${f.key}`} className="text-sm font-normal text-muted-foreground">
                   {f.help ?? t("yes")}
                 </Label>

@@ -3,7 +3,8 @@ import { apiError, ok, preflight } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { categoryCreateSchema, categoryData } from "@/lib/api-category-input";
 import { agentGuard, readBody } from "../_itsm";
-import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, managerRefusal, serializeCategory } from "../_categories";
+import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, serializeCategory } from "../_categories";
+import { managerOnly } from "../_manage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
-  const refused = managerRefusal(auth.principal);
+  const refused = managerOnly(auth.principal, "categories");
   if (refused) return refused;
   const body = await readBody(req, categoryCreateSchema);
   if ("response" in body) return body.response;

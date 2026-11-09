@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyTemplate,
   isPreAuthorized,
+  STANDARD_TEMPLATE_APPROVER_MESSAGE,
   STANDARD_TEMPLATE_PLANS_MESSAGE,
+  standardTemplateApprovalProblem,
   templateProblem,
   type ChangeTemplateDefaults,
 } from "@/lib/change-template-rules";
@@ -108,5 +110,40 @@ describe("applyTemplate", () => {
       implementationPlan: "custom",
       rollbackPlan: null,
     });
+  });
+});
+
+describe("standardTemplateApprovalProblem", () => {
+  const roles = (risk: string) => (risk === "HIGH" ? ["ADMIN"] : ["ADMIN", "MANAGER"]);
+  const base = { type: "STANDARD", isActive: true, risk: "LOW", impact: "LOW", implementationPlan: "do", rollbackPlan: "undo" };
+  const check = (role: string, current: typeof base | null, patch: Partial<typeof base>) =>
+    standardTemplateApprovalProblem(role, current, { ...(current ?? base), ...patch }, roles);
+
+  it("lets a manager create an active standard template up to MEDIUM risk, not HIGH", () => {
+    expect(check("MANAGER", null, { risk: "MEDIUM" })).toBeNull();
+    expect(check("MANAGER", null, { risk: "HIGH" })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+    expect(check("ADMIN", null, { risk: "HIGH" })).toBeNull();
+  });
+
+  it("guards activation, type, impact and plan changes of a HIGH-risk template", () => {
+    const high = { ...base, risk: "HIGH" };
+    expect(check("MANAGER", high, { implementationPlan: "other" })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+    expect(check("MANAGER", high, { impact: "HIGH" })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+    expect(check("MANAGER", { ...high, isActive: false }, { isActive: true })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+    expect(check("MANAGER", { ...high, type: "NORMAL" }, { type: "STANDARD" })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+  });
+
+  it("does not let a manager lower the risk of an existing HIGH template", () => {
+    expect(check("MANAGER", { ...base, risk: "HIGH" }, { risk: "LOW" })).toBe(STANDARD_TEMPLATE_APPROVER_MESSAGE);
+    expect(check("ADMIN", { ...base, risk: "HIGH" }, { risk: "LOW" })).toBeNull();
+  });
+
+  it("leaves untouched fields, NORMAL and inactive templates alone", () => {
+    const high = { ...base, risk: "HIGH" };
+    expect(check("MANAGER", high, {})).toBeNull(); // a rename or a re-sent identical body
+    expect(check("MANAGER", null, { risk: "HIGH", type: "NORMAL" })).toBeNull();
+    expect(check("MANAGER", null, { risk: "HIGH", isActive: false })).toBeNull();
+    expect(check("MANAGER", high, { isActive: false })).toBeNull(); // switching it off is always safe
+    expect(check("MANAGER", high, { type: "NORMAL" })).toBeNull();
   });
 });

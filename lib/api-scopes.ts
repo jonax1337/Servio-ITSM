@@ -123,6 +123,10 @@ export const RESOURCE_BY_SEGMENT: Record<string, ApiResource> = {
   services: "cmdb",
   licenses: "cmdb",
   vendors: "cmdb",
+  contracts: "cmdb",
+  "catalog-items": "catalog",
+  // Standard change templates are pre-approved changes: a changes:write integration must not redefine them.
+  "change-templates": "catalog",
   articles: "kb",
   categories: "catalog",
   groups: "directory",

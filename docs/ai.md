@@ -677,7 +677,8 @@ limiter.
 - **Read tools (public / own only):** `search_knowledge` (published **public** articles),
   `search_catalog`, `list_categories`, `get_service_form` (its description tells the model the answer
   format of each question type: comma lists for multiple choice and people, `YYYY-MM-DDTHH:mm`,
-  `LOW`/`MEDIUM`/`HIGH`, an own device's tag or name), the same `web_search` / `fetch_url` as the
+  `LOW`/`MEDIUM`/`HIGH`, an own device's tag or name; a conditional question carries
+  `showIf: { field, anyOf }` and is asked only when it holds), the same `web_search` / `fetch_url` as the
   console (so `WEB_SEARCH_PROVIDER` and its keys apply here too), and
   the caller's **own** tickets — `list_my_tickets` / `get_my_ticket` (public content only; internal
   notes are excluded by the same `isInternal: false` filter the portal UI uses), and
@@ -687,7 +688,9 @@ limiter.
   create route re-validates server-side before acting as the signed-in user:
   - `propose_request` → `createPortalTicketFor` (routed ticket with type / priority / impact /
     urgency and an optional category),
-  - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form),
+  - `propose_service_request` → `createCatalogRequestFor` (fills a catalog item's dynamic form;
+    the confirm card lists only the questions that apply, and answers to hidden conditional
+    questions are dropped by the server-side validation),
   - `propose_reply` → `addPortalReply` (a **public** reply on one of the user's own open tickets).
 
   Portal/Sable tickets carry `source: "SABLE"` — a neutral "Sable" badge (`SOURCE_META.SABLE`, whose
@@ -698,7 +701,7 @@ limiter.
   flattened to text; the built-in proxy forwards them as `image_url` parts to OpenAI-compatible models.
 
 The shared creation core (`lib/portal-tickets.ts`) routes catalog requests to the item's
-**service team → category team → triage team**, runs automations, then auto-assigns; free-form
+**own routing team → service team → category team → triage team**, runs automations, then auto-assigns; free-form
 tickets default to the triage team (*Settings › General › Triage team*, else the group named
 “Service Desk”). Team ownership on `Service` / `Category` (`groupId`) is surfaced to Sable and
 *pre-routes* catalog requests — it never routes free-form portal tickets. Categories marked

@@ -47,6 +47,8 @@ const fixed: ServerMessages = {
   "Standard changes are created from an approved template.": "Standard-Changes werden aus einer genehmigten Vorlage angelegt.",
   "Team not found.": "Team nicht gefunden.",
   "Template not found.": "Vorlage nicht gefunden.",
+  "Only a role that may approve changes of this risk can save an active standard template, because its changes skip CAB review.":
+    "Nur eine Rolle, die Changes dieses Risikos genehmigen darf, kann eine aktive Standard-Vorlage speichern, weil deren Changes das CAB überspringen.",
   "That approval request was already decided or removed. Reload and try again.": "Diese Genehmigungsanfrage wurde bereits entschieden oder entfernt. Laden Sie die Seite neu und versuchen Sie es erneut.",
   "The approval rule can only be changed while the change is a draft or in approval.": "Die Genehmigungsregel kann nur geändert werden, solange der Change ein Entwurf oder in Genehmigung ist.",
   "The assignee must be a member of the change's group.": "Die bearbeitende Person muss Mitglied der Gruppe des Changes sein.",
