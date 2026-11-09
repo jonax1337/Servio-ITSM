@@ -29,6 +29,8 @@ export type CatalogItemData = {
   isPublished: boolean; requiresApproval: boolean; approverId: string | null;
   fields: ServiceField[];
   ticketType: string; titleTemplate: string | null;
+  /** Restricted to the members of `visibleToGroupIds` (empty while restricted = every listed group was deleted: visible to nobody). */
+  restrictToGroups: boolean; visibleToGroupIds: string[];
 };
 
 /** Field types whose answers pick from the options the admin types in. */
@@ -133,6 +135,10 @@ export function CatalogEditor({
   const [requiresApproval, setRequiresApproval] = useState(item?.requiresApproval ?? false);
   const [fields, setFields] = useState<ServiceField[]>(item?.fields ?? []);
   const [ticketType, setTicketType] = useState(item?.ticketType ?? "REQUEST");
+  const [restrictToGroups, setRestrictToGroups] = useState(item?.restrictToGroups ?? false);
+  const [visibleGroupIds, setVisibleGroupIds] = useState<string[]>(item?.visibleToGroupIds ?? []);
+  const toggleVisibleGroup = (id: string, on: boolean) =>
+    setVisibleGroupIds((ids) => (on ? [...ids.filter((x) => x !== id), id] : ids.filter((x) => x !== id)));
   const ticketTypeOpts: ComboOption[] = CATALOG_TICKET_TYPES.map((tt) => ({ value: tt, label: t(`ticketType.${tt}`) }));
 
   const catOpts: ComboOption[] = [{ value: "none", label: t("noCategory") }, ...categories];
@@ -200,6 +206,8 @@ export function CatalogEditor({
           <input type="hidden" name="requiresApproval" value={String(requiresApproval)} />
           <input type="hidden" name="formSchema" value={JSON.stringify(normalized)} />
           <input type="hidden" name="ticketType" value={ticketType} />
+          <input type="hidden" name="restrictToGroups" value={String(restrictToGroups)} />
+          {restrictToGroups ? visibleGroupIds.map((id) => <input key={id} type="hidden" name="visibleToGroupIds" value={id} />) : null}
 
           {state?.error ? <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{tm(state.error)}</p> : null}
 
@@ -263,6 +271,31 @@ export function CatalogEditor({
               <Combobox options={approverOpts} value={approverId} onChange={setApproverId} searchPlaceholder={t("searchPeople")} />
             </div>
           ) : null}
+
+          <div className="grid gap-2 rounded-lg border p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={restrictToGroups} onCheckedChange={(v) => setRestrictToGroups(!!v)} /> {t("restrictToGroups")}
+            </label>
+            <p className="text-xs text-muted-foreground">{restrictToGroups ? t("restrictToGroupsHint") : t("visibleToEveryone")}</p>
+            {restrictToGroups ? (
+              <>
+                {item?.restrictToGroups && item.visibleToGroupIds.length === 0 ? (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">{t("restrictedNoGroups")}</p>
+                ) : null}
+                {groups.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("noGroupsToChoose")}</p>
+                ) : (
+                  <div className="grid max-h-40 gap-1.5 overflow-y-auto sm:grid-cols-2">
+                    {groups.map((g) => (
+                      <label key={g.value} className="flex items-center gap-2 text-sm">
+                        <Checkbox checked={visibleGroupIds.includes(g.value)} onCheckedChange={(on) => toggleVisibleGroup(g.value, !!on)} /> {g.label}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
 
           <div className="grid gap-2">
             <div className="flex items-center justify-between">

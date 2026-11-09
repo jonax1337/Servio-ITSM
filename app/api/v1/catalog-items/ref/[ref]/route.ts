@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { apiError, preflight, type ApiPrincipal } from "@/lib/api";
-import { CATALOG_FIELD_RENAMES, catalogItemUpsertSchema, type CatalogItemUpsert } from "@/lib/api-catalog-input";
+import { CATALOG_FIELD_RENAMES, CATALOG_ITEM_INCLUDE, catalogItemUpsertSchema, type CatalogItemUpsert } from "@/lib/api-catalog-input";
 import { apiFieldNames } from "@/lib/api-record-diff";
 import { agentGuard, readBody } from "../../../_itsm";
 import { invalidRef, isUniqueOn, managerOnly, refOf } from "../../../_manage";
@@ -20,7 +20,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
   const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
-  const item = ref ? await db.catalogItem.findUnique({ where: { importRef: ref } }) : null;
+  const item = ref ? await db.catalogItem.findUnique({ where: { importRef: ref }, include: CATALOG_ITEM_INCLUDE }) : null;
   if (!item) return catalogItemNotFound();
   return catalogItemResponse(item);
 }
@@ -51,15 +51,15 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
 }
 
 async function upsert(principal: ApiPrincipal, ref: string, b: CatalogItemUpsert) {
-  const current = await db.catalogItem.findUnique({ where: { importRef: ref } });
+  const current = await db.catalogItem.findUnique({ where: { importRef: ref }, include: CATALOG_ITEM_INCLUDE });
   if (!current && !b.name) return apiError(422, "Validation failed", { name: ["Required to create a new catalog item"] });
   const prepared = await prepareCatalogItem(b, current);
   if ("response" in prepared) return prepared.response;
   const via = `API (${ref})`;
   if (!current) {
-    const item = await createCatalogItemRecord({ ...prepared.data, name: b.name!, importRef: ref }, principal.userId, via);
-    return catalogItemResponse(item, { status: 201, meta: { created: true, changed: apiFieldNames(Object.keys(prepared.data), CATALOG_FIELD_RENAMES) } });
+    const item = await createCatalogItemRecord({ ...prepared.data, name: b.name!, importRef: ref }, prepared.groupIds, principal.userId, via);
+    return catalogItemResponse(item, { status: 201, meta: { created: true, changed: apiFieldNames(Object.keys(prepared.data), CATALOG_FIELD_RENAMES).concat(prepared.groupIds?.length ? ["visible_to_group_ids"] : []) } });
   }
-  const { item, changed } = await updateCatalogItemRecord(current, prepared.data, principal.userId, via);
+  const { item, changed } = await updateCatalogItemRecord(current, prepared.data, prepared.groupIds, principal.userId, via);
   return catalogItemResponse(item, { meta: { created: false, changed } });
 }

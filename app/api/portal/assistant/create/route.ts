@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       const answers: Record<string, string> = {};
       for (const a of parsed.data.answers) answers[a.key] = a.value;
       const result = await createCatalogRequestFor(me, parsed.data.itemId, answers, "SABLE");
-      if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.forbidden ? 403 : 400 });
       await linkStagedAttachments(me.id, result.ticket.id, attachmentIds);
       await attachDataUrlsToTicket(me.id, result.ticket.id, attachments);
       return NextResponse.json({

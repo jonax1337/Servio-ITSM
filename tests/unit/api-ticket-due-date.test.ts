@@ -218,6 +218,6 @@ describe("PATCH /tickets/{id}", () => {
 function ticketRow() {
   return {
     id: 1, title: "Printer", description: "", type: "INCIDENT", status: "OPEN", priority: "MEDIUM", impact: "MEDIUM", urgency: "MEDIUM", source: "API",
-    categoryId: null, serviceId: null, dueAt: null, resolvedAt: null, createdAt: new Date(0), updatedAt: new Date(0),
+    categoryId: null, serviceId: null, catalogItem: null, dueAt: null, resolvedAt: null, createdAt: new Date(0), updatedAt: new Date(0),
   };
 }

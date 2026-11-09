@@ -25,7 +25,7 @@ export default async function CatalogAdminPage() {
   await requireRole("MANAGER");
   const [t, tc] = await Promise.all([getT("catalog"), getT("common")]);
   const [items, categories, services, agents, groups] = await Promise.all([
-    db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, _count: { select: { tickets: true } } } }),
+    db.catalogItem.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }], include: { category: true, visibleTo: { select: { groupId: true, group: { select: { name: true } } } }, _count: { select: { tickets: true } } } }),
     db.category.findMany({ where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER", "AGENT"] }, isActive: true }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
@@ -68,6 +68,12 @@ export default async function CatalogAdminPage() {
                       <ToneBadge meta={{ label: t("stagesBadge", { count: parseApprovalStages(it.approvalStages).length }), tone: "indigo" }} icon={false} />
                     ) : null}
                     {!it.isPublished ? <ToneBadge meta={{ label: t("unpublished"), tone: "neutral" }} icon={false} /> : null}
+                    {it.restrictToGroups ? (
+                      <ToneBadge
+                        meta={{ label: it.visibleTo.length ? t("restrictedTo", { groups: it.visibleTo.map((v) => v.group.name).sort().join(", ") }) : t("restrictedNoGroupsBadge"), tone: it.visibleTo.length ? "indigo" : "warning" }}
+                        icon={false}
+                      />
+                    ) : null}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">{it.shortDescription ?? it.description ?? "—"}</p>
                   <p className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
@@ -97,6 +103,7 @@ export default async function CatalogAdminPage() {
                       isPublished: it.isPublished, requiresApproval: it.requiresApproval, approverId: it.approverId,
                       fields: parseFormSchema(it.formSchema),
                       ticketType: it.ticketType, titleTemplate: it.titleTemplate,
+                      restrictToGroups: it.restrictToGroups, visibleToGroupIds: it.visibleTo.map((v) => v.groupId),
                     }}
                   />
                   <ConfirmButton

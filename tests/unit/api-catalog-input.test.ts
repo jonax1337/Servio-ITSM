@@ -108,14 +108,16 @@ describe("serializeCatalogItem", () => {
       groupId: "g1", ticketType: "REQUEST", titleTemplate: null, estimatedDays: 3, isPublished: true, order: 0,
       requiresApproval: true, approverId: "u1", approvalStages: catalogItemData(parsed).approvalStages ?? null,
       formSchema: catalogItemData(parsed).formSchema!, importRef: "catalog:laptop", createdAt: now, updatedAt: now,
+      restrictToGroups: true, visibleTo: [{ groupId: "g2" }, { groupId: "g1" }],
     });
     expect(out.approval_stages).toEqual([{ approver_id: "u1" }]);
     expect(out.questions[1]).toEqual({ key: "model", label: "Model", type: "text", required: true, condition: { field: "kind", values: ["Hardware"] } });
     expect(out.questions[0].condition).toBeNull();
+    expect(out).toMatchObject({ restricted: true, visible_to_group_ids: ["g1", "g2"] });
     expect(out).toMatchObject({ group_id: "g1", published: true, import_ref: "catalog:laptop", created_at: now.toISOString() });
     // What GET returns is accepted back by PATCH (minus the read-only fields).
     const writable: Record<string, unknown> = { ...out };
-    for (const readOnly of ["id", "created_at", "updated_at"]) delete writable[readOnly];
+    for (const readOnly of ["id", "created_at", "updated_at", "restricted"]) delete writable[readOnly];
     expect(catalogItemPatchSchema.safeParse(writable).success).toBe(true);
   });
 });

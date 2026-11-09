@@ -9,6 +9,13 @@ function user(u: Userish) {
   return u ? { id: u.id, name: u.name, email: u.email } : null;
 }
 
+/** Relations loaded for a ticket by the /tickets endpoints (and the history import). */
+export const TICKET_INCLUDE = {
+  requester: true,
+  assignee: true,
+  catalogItem: { select: { id: true, name: true, importRef: true } },
+} as const;
+
 export function serializeTicket(t: {
   id: number;
   title: string;
@@ -22,6 +29,8 @@ export function serializeTicket(t: {
   source: string;
   requester?: Userish;
   assignee?: Userish;
+  /** The catalog item the ticket was ordered from (TICKET_INCLUDE loads it); null = not from the catalog. */
+  catalogItem: { id: string; name: string; importRef: string | null } | null;
   categoryId: string | null;
   serviceId: string | null;
   groupId?: string | null;
@@ -55,6 +64,8 @@ export function serializeTicket(t: {
     category_id: t.categoryId,
     service_id: t.serviceId,
     group_id: t.groupId ?? null,
+    // The catalog item the ticket was ordered from (import_ref = the item's origin key, when it has one), else null.
+    catalog_item: t.catalogItem ? { id: t.catalogItem.id, name: t.catalogItem.name, import_ref: t.catalogItem.importRef } : null,
     problem_id: t.problemId ?? null,
     change_id: t.changeId ?? null,
     import_ref: t.importRef ?? null,

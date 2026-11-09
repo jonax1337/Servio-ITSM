@@ -242,6 +242,11 @@ const spec = {
           priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
           external_ref: { type: ["string", "null"], description: "Integration key (monitoring dedup); kept after resolution" },
           external_ref_open: { type: "boolean", description: "This is the open ticket new POSTs with the key land in" },
+          catalog_item: {
+            type: ["object", "null"],
+            description: "The service catalog item the ticket was ordered from (portal form or assistant), null for every other ticket. Read-only. `import_ref` is the item's origin key (see /catalog-items/ref/{ref}), null when it has none. Filter the list with `catalog_item_ref`.",
+            properties: { id: { type: "string" }, name: { type: "string" }, import_ref: { type: ["string", "null"] } },
+          },
           due_at: { type: ["string", "null"], format: "date-time", description: "Due date: the manual one when an agent set it (`due_at_source` MANUAL), else the SLA resolution deadline (SLA). Settable with `due_at` on POST and PATCH /tickets; it never moves the SLA clock." },
           due_at_source: { type: ["string", "null"], enum: ["MANUAL", "SLA", null], description: "Where `due_at` comes from" },
           sla_due_at: { type: ["string", "null"], format: "date-time", description: "The SLA resolution deadline, whatever `due_at` shows" },
@@ -283,6 +288,7 @@ const spec = {
           { name: "q", in: "query", schema: { type: "string" } },
           q("import_ref"),
           q("external_ref", "Every ticket that carried this key, open or resolved"),
+          q("catalog_item_ref", "Tickets ordered from the catalog item with this origin key (`import_ref`); an unknown key matches nothing"),
           { name: "page", in: "query", schema: { type: "integer" } },
           { name: "per_page", in: "query", schema: { type: "integer" } },
         ],
@@ -617,8 +623,8 @@ const spec = {
     ...managedPaths("catalog-items", "catalog item", { create: catalogItemCreateSchema, patch: catalogItemPatchSchema, upsert: catalogItemUpsertSchema }, {
       filters: [q("q", "Substring of the name"), q("category_id"), q("service_id"), q("group_id"), q("published", "true or false (default both)")],
       createNote:
-        "`questions` is the ordered request form. A question may carry `condition: { field, values }`: it is shown, and only then required, when the earlier select / multiselect / checkbox / urgency question `field` is answered with one of `values` (a checkbox answers \"true\" or \"false\"); hidden answers are not stored. `group_id` routes requests (else the service's team, else the category's). `requires_approval` needs `approver_id` (an active agent) or `approval_stages`.",
-      upsertNote: "Creates the item (201; `name` required) when the reference is new, otherwise writes only the fields sent (200); `questions` replaces the whole form.",
+        "`questions` is the ordered request form. A question may carry `condition: { field, values }`: it is shown, and only then required, when the earlier select / multiselect / checkbox / urgency question `field` is answered with one of `values` (a checkbox answers \"true\" or \"false\"); hidden answers are not stored. `group_id` routes requests (else the service's team, else the category's). `requires_approval` needs `approver_id` (an active agent) or `approval_stages`. `visible_to_group_ids` restricts the item to the members of those groups (portal list, request page, search, assistant and ordering all enforce it server-side); an empty list, or leaving it out on create, keeps the item visible to everyone. The response also carries `restricted`: true with no group left means every listed group was deleted and nobody can see the item until groups are set again.",
+      upsertNote: "Creates the item (201; `name` required) when the reference is new, otherwise writes only the fields sent (200); `questions` replaces the whole form and `visible_to_group_ids` the set of groups (it is idempotent: the same list writes nothing).",
       deleteNote: "Requests made from it keep their answers and history.",
     }),
     ...managedPaths("change-templates", "change template", { create: changeTemplateCreateSchema, patch: changeTemplatePatchSchema, upsert: changeTemplateUpsertSchema }, {

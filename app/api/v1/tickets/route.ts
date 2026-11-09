@@ -7,7 +7,7 @@ import { slaCreateData } from "@/lib/sla";
 import { autoAssignTicket } from "@/lib/assignment";
 import { duplicateCommentText, dueDateAuditSummary, ticketCreateSchema, type TicketCreate } from "@/lib/api-ticket-input";
 import { isOpenExternalRefConflict } from "@/lib/ticket-external-ref";
-import { serializeComment, serializeTicket } from "../_serializers";
+import { TICKET_INCLUDE, serializeComment, serializeTicket } from "../_serializers";
 import { authorizeTicketComment, writeTicketComment } from "../_ticket-comments";
 import { openTicketByRef } from "../_ticket-ref";
 import { OPEN_TICKET_STATUSES, prefixForType } from "@/lib/constants";
@@ -44,12 +44,15 @@ export async function GET(req: Request) {
   // Every ticket that ever carried this key (open and resolved); see /tickets/ref/{ref} for "the" one.
   const externalRef = url.searchParams.get("external_ref");
   if (externalRef) where.externalRef = externalRef;
+  // Tickets ordered from the catalog item with this origin key (see /catalog-items/ref/{ref}); none when no item has it.
+  const catalogItemRef = url.searchParams.get("catalog_item_ref");
+  if (catalogItemRef) where.catalogItem = { is: { importRef: catalogItemRef } };
 
   const [total, tickets] = await Promise.all([
     db.ticket.count({ where }),
     db.ticket.findMany({
       where,
-      include: { requester: true, assignee: true },
+      include: TICKET_INCLUDE,
       orderBy: { updatedAt: "desc" },
       skip,
       take,
@@ -175,7 +178,7 @@ async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAge
       };
   let ticket = await db.ticket.create({
     data,
-    include: { requester: true, assignee: true },
+    include: TICKET_INCLUDE,
   });
   await writeAudit({
     userId: principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id,
@@ -186,7 +189,7 @@ async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAge
   }
   // Like a console-routed ticket: the group's auto-assign strategy picks an agent.
   if (ticket.groupId && !ticket.assigneeId && (await autoAssignTicket(ticket.id))) {
-    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: { requester: true, assignee: true } });
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: TICKET_INCLUDE });
   }
 
   return ok(serializeTicket(ticket), { status: 201, ...(externalRef && { meta: { deduplicated: false } }) });
@@ -200,7 +203,7 @@ async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAge
  * with the ticket in `details`.
  */
 async function deduplicated(principal: ApiPrincipal, ticketId: number, onDuplicate: TicketCreate["onDuplicate"], fields: { title: string; description?: string }) {
-  const include = { requester: true, assignee: true } as const;
+  const include = TICKET_INCLUDE;
   if (onDuplicate !== "comment") {
     const ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include });
     return ok(serializeTicket(ticket), { meta: { deduplicated: true, comment: null } });

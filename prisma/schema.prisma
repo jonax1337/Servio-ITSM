@@ -386,6 +386,7 @@ model Group {
   ownedCategories   Category[]           @relation("CategoryTeam")
   ownedServices     Service[]            @relation("ServiceTeam")
   ownedCatalogItems CatalogItem[]        @relation("CatalogItemTeam")
+  catalogVisibility CatalogItemGroup[]
   aiProjects        AiProject[]          @relation("AiProjectGroup")
   freezeWindows     ChangeFreezeWindow[]
   onCallSchedules   OnCallSchedule[]
@@ -619,17 +620,31 @@ model CatalogItem {
   estimatedDays    Int?
   isPublished      Boolean  @default(true)
   order            Int      @default(0)
+  restrictToGroups Boolean  @default(false) // true = only members of the groups in `visibleTo` see and may request it; fails closed (nobody) if every listed group was deleted
   importRef        String?  @unique // origin key of an item maintained through the API; PUT /api/v1/catalog-items/ref/{ref} upserts by it
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  category Category? @relation(fields: [categoryId], references: [id])
-  service  Service?  @relation(fields: [serviceId], references: [id])
-  group    Group?    @relation("CatalogItemTeam", fields: [groupId], references: [id], onDelete: SetNull)
-  approver User?     @relation("CatalogApprover", fields: [approverId], references: [id])
-  tickets  Ticket[]
+  category  Category?          @relation(fields: [categoryId], references: [id])
+  service   Service?           @relation(fields: [serviceId], references: [id])
+  group     Group?             @relation("CatalogItemTeam", fields: [groupId], references: [id], onDelete: SetNull)
+  approver  User?              @relation("CatalogApprover", fields: [approverId], references: [id])
+  tickets   Ticket[]
+  visibleTo CatalogItemGroup[]
 
   @@index([isPublished])
+}
+
+// Who may see and request a restricted catalog item: members of any listed group (CatalogItem.restrictToGroups).
+model CatalogItemGroup {
+  catalogItemId String
+  groupId       String
+
+  catalogItem CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  group       Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([catalogItemId, groupId])
+  @@index([groupId])
 }
 
 // ---------------------------------------------------------------------------

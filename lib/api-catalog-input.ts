@@ -92,6 +92,8 @@ const fields = {
   approver_id: z.string().min(1).nullable(),
   approval_stages: z.array(approvalStageSchema).max(MAX_APPROVAL_STAGES),
   questions: catalogQuestionsSchema,
+  /** Groups whose members may see and request the item; [] = visible to everyone (restriction lifted). Replaces the set. */
+  visible_to_group_ids: z.array(z.string().min(1)).max(100),
 };
 
 type Fields = typeof fields;
@@ -167,7 +169,16 @@ export type CatalogItemRow = {
   categoryId: string | null; serviceId: string | null; groupId: string | null; ticketType: string; titleTemplate: string | null;
   estimatedDays: number | null; isPublished: boolean; order: number; requiresApproval: boolean; approverId: string | null;
   approvalStages: string | null; formSchema: string; importRef: string | null; createdAt: Date; updatedAt: Date;
+  restrictToGroups: boolean; visibleTo: { groupId: string }[];
 };
+
+/** Load an item with the groups it is restricted to (what `CatalogItemRow` needs). */
+export const CATALOG_ITEM_INCLUDE = { visibleTo: { select: { groupId: true } } } as const;
+
+/** The group ids, in a stable order (the order they are stored in is not meaningful). */
+export function visibleGroupIdsOf(c: Pick<CatalogItemRow, "visibleTo">): string[] {
+  return c.visibleTo.map((g) => g.groupId).sort();
+}
 
 /** A question as the API returns it (the stored shape is already snake_case-safe). */
 function serializeQuestion(f: ServiceField) {
@@ -202,6 +213,9 @@ export function serializeCatalogItem(c: CatalogItemRow) {
     approver_id: c.approverId,
     approval_stages: parseApprovalStages(c.approvalStages).map((s) => (s.approverId ? { approver_id: s.approverId } : { group_id: s.groupId })),
     questions: parseFormSchema(c.formSchema).map(serializeQuestion),
+    visible_to_group_ids: visibleGroupIdsOf(c),
+    // true = only members of visible_to_group_ids see it; restricted with no group left (all deleted) = visible to nobody
+    restricted: c.restrictToGroups,
     import_ref: c.importRef,
     created_at: c.createdAt.toISOString(),
     updated_at: c.updatedAt.toISOString(),

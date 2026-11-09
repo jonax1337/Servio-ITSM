@@ -108,7 +108,8 @@ All scripts live in [`package.json`](../package.json) and are run with `pnpm <sc
 | `docs:check` | `node scripts/check-doc-drift.mjs --working` | Report code changes whose owning doc was not updated ([maintaining-docs.md](./maintaining-docs.md)). |
 | `brand:check` / `brand:sync` | `node scripts/sync-brand-assets.mjs [--check]` | Validate / regenerate application brand assets ([branding.md](./branding.md)). |
 | `db:generate` | `prisma generate` | Regenerate the Prisma Client after schema changes. |
-| `db:migrate` | `prisma migrate dev` | Create/apply a dev migration from `prisma/schema.prisma`. |
+| `db:migrate` | `prisma migrate dev` | Apply pending migrations to the dev DB. To **create** one, use `db:migrate:new` (below). |
+| `db:migrate:new` | `node scripts/new-migration.mjs <name>` | Create the next migration (`--create-only`) with a folder name that sorts after every existing one, then apply it with `db:migrate`. |
 | `db:push` | `prisma db push` | Push schema to the DB without a migration (prototyping). |
 | `db:seed` | `prisma db seed` | Run the seed (`tsx prisma/seed.ts`, which also runs `prisma/seed-extras.ts`) on an **empty** database. |
 | `db:reset` | `prisma migrate reset --force` | Drop, re-migrate, and reseed the database. |
@@ -343,11 +344,30 @@ Copy this structure for new modules; see [modules.md](./modules.md) for the full
 - **Prisma Client:** after any change to `schema.prisma`, run `pnpm db:generate` (and
   `pnpm db:migrate` to persist a migration) before the new types are available.
 
+## Creating a migration
+
+```bash
+# edit prisma/schema.prisma, then:
+pnpm db:migrate:new add_widget     # writes prisma/migrations/<stamp>_add_widget/migration.sql
+pnpm db:migrate                    # review the SQL, then apply it to your dev DB
+```
+
+Use `db:migrate:new` rather than `prisma migrate dev --name …` to create a migration. Prisma stamps the folder with
+your **wall clock**, and migrations in this repository are numbered ahead of the calendar. A migration created with
+an earlier stamp lands in the middle of the history; it was generated against the full current schema, so it
+already contains columns that later migrations add. The next `migrate dev` then replays the history on its shadow
+database and fails with `duplicate column name: importRef` (or reports drift), while `migrate deploy` on a fresh DB
+and the CI drift check stay green because they only see the committed, correctly ordered folders.
+
+If you already have such a migration, rename its folder so it sorts last (the name is its position), delete your
+dev DB (`pnpm db:reset`) and run `pnpm db:migrate` again. Never rename a migration that has been merged: databases
+that applied it know it by name.
+
 ## Common workflows
 
 | I want to… | Do this |
 |------------|---------|
-| Change the data model | Edit `prisma/schema.prisma` → `pnpm db:migrate` → `pnpm db:generate`. |
+| Change the data model | Edit `prisma/schema.prisma` → `pnpm db:migrate:new <name>` → `pnpm db:migrate` → `pnpm db:generate`. |
 | Add an "enum" value | Add it to the array + `*_META` map in `lib/constants.ts` (no migration needed). |
 | Add a UI mutation | Add a Server Action in `lib/actions/<module>.ts`, wire a `<form>` with `useActionState`. |
 | Expose it to the API | Add/extend a handler under `app/api/v1/**/route.ts` using `guard()` + shared Zod schema. |

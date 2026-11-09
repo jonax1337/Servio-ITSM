@@ -10,6 +10,7 @@ import {
   catalogTicketType, formUrgency, renderCatalogTitle,
 } from "@/lib/service-forms";
 import { resolveCatalogFormLinks } from "@/lib/catalog-form-links";
+import { canSeeCatalogItem } from "@/lib/catalog-visibility";
 import { resolveStageApprover, seatCatalogStage } from "@/lib/approval-seating";
 import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
@@ -175,7 +176,7 @@ async function linkCatalogFormRecords(
 
 export type CatalogRequestResult =
   | { ok: true; ticket: Awaited<ReturnType<typeof db.ticket.create>> }
-  | { ok: false; error: string; fieldErrors?: Record<string, string> };
+  | { ok: false; error: string; fieldErrors?: Record<string, string>; forbidden?: true };
 
 /**
  * Shared core for ordering a catalog item (a service request with a dynamic
@@ -201,6 +202,8 @@ export async function createCatalogRequestFor(
     include: { service: { select: { groupId: true } }, category: { select: { groupId: true } } },
   });
   if (!item || !item.isPublished) return { ok: false, error: "This item can't be requested." };
+  // Enforced here, where every way of ordering (portal form, re-request, assistant) passes through.
+  if (!(await canSeeCatalogItem(item.id, me.id))) return { ok: false, error: "This item can't be requested.", forbidden: true };
   // Judge approval on the item's ordered stages at REQUEST time, not at edit time:
   // a named approver may have been deactivated or demoted since, and a group stage
   // only needs one active agent member (not the one mirrored into approverId).

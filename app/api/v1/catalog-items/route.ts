@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ok, pageMeta, paginate, preflight } from "@/lib/api";
-import { catalogItemCreateSchema, serializeCatalogItem } from "@/lib/api-catalog-input";
+import { CATALOG_ITEM_INCLUDE, catalogItemCreateSchema, serializeCatalogItem } from "@/lib/api-catalog-input";
 import { agentGuard, readBody } from "../_itsm";
 import { importRefTaken, managerOnly } from "../_manage";
 import { CATALOG_WHAT, catalogItemResponse, catalogWriteConflict, createCatalogItemRecord, prepareCatalogItem } from "../_catalog-items";
@@ -15,7 +15,8 @@ export function OPTIONS() {
 
 /**
  * Service catalog items with their request forms. Filters: `q` (name), `category_id`,
- * `service_id`, `group_id`, `published` (true | false, default both). Ordered like the catalog.
+ * `service_id`, `group_id`, `published` (true | false, default both). Ordered like the catalog. Each item
+ * carries `visible_to_group_ids` / `restricted` (who may see it in the portal).
  */
 export async function GET(req: Request) {
   const auth = await agentGuard(req, "catalog:read");
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
   if (published === "true" || published === "false") where.isPublished = published === "true";
   const [total, rows] = await Promise.all([
     db.catalogItem.count({ where }),
-    db.catalogItem.findMany({ where, orderBy: [{ order: "asc" }, { name: "asc" }], skip, take }),
+    db.catalogItem.findMany({ where, orderBy: [{ order: "asc" }, { name: "asc" }], skip, take, include: CATALOG_ITEM_INCLUDE }),
   ]);
   return ok(rows.map(serializeCatalogItem), { meta: pageMeta(page, perPage, total) });
 }
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
   if ("response" in prepared) return prepared.response;
 
   try {
-    const item = await createCatalogItemRecord({ ...prepared.data, name: body.data.name }, auth.principal.userId, "API");
+    const item = await createCatalogItemRecord({ ...prepared.data, name: body.data.name }, prepared.groupIds, auth.principal.userId, "API");
     return catalogItemResponse(item, { status: 201 });
   } catch (err) {
     return catalogWriteConflict(err);
