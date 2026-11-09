@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ArrowLeft, Clock } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { isPortalCatalogItem, portalCatalogItemName } from "@/lib/portal-access";
 import { parseFormSchema } from "@/lib/service-forms";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { LinkButton } from "@/components/link-button";
@@ -20,9 +21,10 @@ export async function generateMetadata({
   params: Promise<{ serviceId: string }>;
 }): Promise<Metadata> {
   const { serviceId } = await params;
-  const it = await db.catalogItem.findUnique({ where: { id: serviceId }, select: { name: true } });
+  // Same rule as the page: an unpublished item's name must not leak.
+  const name = await portalCatalogItemName(serviceId);
   const t = await getT("portal");
-  return { title: it ? t("requestTitle", { name: it.name }) : t("request") };
+  return { title: name ? t("requestTitle", { name }) : t("request") };
 }
 
 export default async function CatalogRequestPage({
@@ -33,7 +35,7 @@ export default async function CatalogRequestPage({
   const me = await requireUser();
   const { serviceId } = await params;
   const item = await db.catalogItem.findUnique({ where: { id: serviceId } });
-  if (!item || !item.isPublished) notFound();
+  if (!item || !isPortalCatalogItem(item)) notFound();
 
   const maxUploadMb = await getMaxUploadMb();
   const t = await getT("portal");

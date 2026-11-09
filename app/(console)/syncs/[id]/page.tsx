@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, RefreshCw, Clock, Settings2, Pencil } from "lucide-react";
@@ -28,6 +29,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle("MANAGER"))) return {};
   const { id } = await params;
   const s = await db.syncSource.findUnique({
     where: { id },

@@ -9,6 +9,8 @@ import { getLocale, getT } from "@/lib/i18n/server";
 import { LOCALES, LOCALE_NAMES } from "@/lib/i18n/config";
 import { setSignedOutLocale } from "@/lib/actions/locale";
 import { cn } from "@/lib/utils";
+import { db } from "@/lib/db";
+import { passwordLoginMode, showPasswordForm } from "@/lib/login-methods";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT("auth");
@@ -22,8 +24,24 @@ export const dynamic = "force-dynamic";
 
 const HIGHLIGHTS = ["highlightItil", "highlightCmdb", "highlightSso", "highlightSable"] as const;
 
-export default async function LoginPage() {
-  const [t, locale] = await Promise.all([getT("auth"), getLocale()]);
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ local?: string | string[] }>;
+}) {
+  const [t, locale, sp] = await Promise.all([getT("auth"), getLocale(), searchParams]);
+  const mode = passwordLoginMode(process.env.AUTH_PASSWORD_LOGIN);
+  // Only look at the accounts when the answer can change the outcome.
+  const needsAccountCheck = ssoEnabled && mode === "auto";
+  const hasPasswordAccounts = needsAccountCheck
+    ? (await db.user.count({ where: { isActive: true, passwordHash: { not: null } } })) > 0
+    : true;
+  const passwordForm = showPasswordForm({
+    mode,
+    ssoEnabled,
+    hasPasswordAccounts,
+    breakGlass: sp.local === "1",
+  });
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       {/* Left: brand / marketing panel */}
@@ -72,7 +90,7 @@ export default async function LoginPage() {
               </p>
             </div>
             <Suspense>
-              <LoginForm ssoEnabled={ssoEnabled} ssoName={ssoProviderName} />
+              <LoginForm ssoEnabled={ssoEnabled} ssoName={ssoProviderName} passwordForm={passwordForm} />
             </Suspense>
           </div>
           {/* Language for signed-out visitors (cookie); signed-in users pick it in Account settings. */}

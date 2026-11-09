@@ -93,7 +93,7 @@ const portal = {
   categoryOptional: "Category (optional)",
   submitRequest: "Submit request",
   // Catalog request
-  requestTitle: "Request {name}",
+  requestTitle: "Request: {name}",
   request: "Request",
   backToCatalog: "Back to catalog",
   deliveredIn: "Usually delivered in ~{count, plural, one {# day} other {# days}}",

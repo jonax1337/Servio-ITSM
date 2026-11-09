@@ -15,6 +15,8 @@ import { prefixForType, ticketRef } from "@/lib/constants";
 import { attachDataUrlsToTicket, type IntakeFile } from "@/lib/attachment-intake";
 import { notifyAssigneeAndWatchers, reopenOnCustomerReply } from "@/lib/ticket-core";
 import { checkReplyRate } from "@/lib/rate-limit";
+import { getInstanceLocale } from "@/lib/i18n/instance";
+import { catalogRequestDescription } from "@/lib/catalog-request-text";
 import { getSetting, PORTAL_TRIAGE_GROUP_SETTING } from "@/lib/settings";
 
 /** @deprecated Use IntakeFile from @/lib/attachment-intake. Re-exported for callers. */
@@ -225,9 +227,7 @@ export async function createCatalogRequestFor(
   const freeText = fields.length === 0 ? String(rawAnswers.details ?? "").trim().slice(0, MAX_ANSWER_LEN) : "";
   if (freeText) values.details = freeText;
   const detailText = summary || freeText;
-  const description = detailText
-    ? `Catalog request: ${item.name}.\n\n${detailText}`
-    : `Catalog request: ${item.name}.`;
+  const description = catalogRequestDescription(await getInstanceLocale(), item.name, detailText);
   // Pre-route: the item's own team, else the service's, else the category's, else the triage team.
   const routeGroupId = item.groupId ?? item.service?.groupId ?? item.category?.groupId ?? (await triageGroupId());
   const needsApproval = plan.stages.length > 0;

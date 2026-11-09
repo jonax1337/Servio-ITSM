@@ -68,6 +68,7 @@ file. The sample file is a starting point, not the full list.
 | `AUTH_OIDC_SECRET` | No | — | OIDC client secret. Passed to the provider; not part of the enable gate. |
 | `AUTH_OIDC_ISSUER` | No | — | OIDC issuer URL (the IdP's discovery base, e.g. `https://idp/realms/main`). Required to enable SSO. |
 | `AUTH_OIDC_NAME` | No | `SSO` | Display name for the SSO button ("Continue with _{name}_"). |
+| `AUTH_PASSWORD_LOGIN` | No | `auto` | Whether the login page shows the email/password form: `on` always, `off` never, `auto` hides it when SSO is configured and no active account has a password (SSO-only installs). `?local=1` on the login URL shows the form in every mode, as the break-glass path. This only controls the form; see [SSO-only login](#sso-only-login). |
 | `AUTH_OIDC_ROLE_MAP` | No | — | Map IdP groups/roles to Servio roles, e.g. `it-admins=ADMIN,service-desk=AGENT`. Unset = roles are managed in Servio only. See [Role mapping](#role-mapping-from-the-idp). |
 | `AUTH_OIDC_ROLES_CLAIM` | No | `groups` | Claim holding the groups/roles; dot paths allowed (`realm_access.roles`). |
 | `AUTH_OIDC_DEFAULT_ROLE` | No | `USER` | Role when the claim is present but no entry matches. |
@@ -107,6 +108,7 @@ file. The sample file is a starting point, not the full list.
 | `ATTACHMENT_EXTRA_EXTENSIONS` _(not in `.env.example`)_ | No | — | Comma-separated file extensions accepted on top of the built-in allow-list (e.g. `dwg, step`), for uploads, assistant attachments and inbound mail attachments. Stored and served as `application/octet-stream` downloads (no content check is possible). A hard deny-list of executables, scripts, installers, shortcuts and disk images (`exe`, `bat`, `ps1`, `msi`, `jar`, `lnk`, `svg`, `iso`, `img`, `vhd`, `chm`, `cab`, `xll`, … — modelled on the types Outlook blocks) can never be added — Settings › Uploads refuses them and an env value that lists them is filtered. See [`../lib/files.ts`](../lib/files.ts). |
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. The upload route enforces the Settings › Uploads value (falling back to the env value); [`../lib/files.ts`](../lib/files.ts) derives the client-side mirror `MAX_UPLOAD_BYTES` from the env value only. |
 | `PROXY_MAX_BODY_MB` | No (**build time**) | `32` | How much of a request body Next.js buffers for `proxy.ts` (`experimental.proxyClientMaxBodySize` in [`../next.config.ts`](../next.config.ts)). Must exceed the upload cap plus multipart overhead, or larger uploads fail. Baked into the build: the published image uses 32 MB, so an upload cap above ~31 MB needs a source build with a higher value. |
+| `AI_ENABLED` | No | `true` | **Master switch** for the AI assistant. `false` hides the assistant button, the ticket AI actions and the teaser previews for everyone, whatever provider is configured. Also in Settings › AI assistant. |
 | `AI_PROVIDER` | No | `anthropic` | Sable's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Sable)](#ai-service-agent-sable). |
 | `AI_ALLOW_EXTERNAL` | No | `false` | **Privacy gate.** Must be exactly `"true"` to allow an external provider (`anthropic`/`openai`); `ollama`/`claude-code` are not gated. |
 | `AI_MODEL` | No | provider default | Explicit model id. Blank falls back to `claude-sonnet-5` / `gpt-4o` / `$OLLAMA_MODEL` / `sonnet` (claude-code). |
@@ -340,6 +342,28 @@ federate Active Directory usually emit (Keycloak's LDAP federation keeps it as
 bytes as hex; the database migration converts stored GUIDs and the next sync
 moves any it missed, so the claim matches after the upgrade. Turn on `email_verified` only for an IdP that verifies
 email addresses itself, such as one backed by your own directory.
+
+### SSO-only login
+
+With SSO configured and no password accounts (typical when everyone comes from a
+directory and the IdP), the email/password form is useless clutter. `AUTH_PASSWORD_LOGIN`
+(logic in [`../lib/login-methods.ts`](../lib/login-methods.ts)) controls it:
+
+| Value | Login page |
+| --- | --- |
+| `auto` (default) | SSO button only when SSO is configured **and** no active account has a password; otherwise both. |
+| `on` | Always both. |
+| `off` | SSO button only. |
+
+Without SSO configured the form is always shown. The setting decides what the page
+renders, nothing more: accounts that have a password can still sign in, and
+`https://your-servio-host/login?local=1` shows the form in every mode. That URL is the
+documented **break-glass path** for a locked-out administrator, for example while the IdP
+is down (the admin needs a password set beforehand). To remove password sign-in for an
+account altogether, clear its password.
+
+A successful SSO sign-in stamps `lastLoginAt` and writes a `LOGIN` audit entry, like a
+password sign-in does.
 
 ### Worked example (generic OIDC provider)
 

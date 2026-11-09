@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, MessagesSquare, RotateCcw } from "lucide-react";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/session";
+import { getSessionUser, requireUser } from "@/lib/session";
+import { portalTicketTitle, portalTicketWhere } from "@/lib/portal-access";
 import { LinkButton } from "@/components/link-button";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -29,8 +30,10 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const t = await db.ticket.findUnique({ where: { id: Number(id) }, select: { title: true } });
-  return { title: t?.title ?? (await getT("portal"))("ticket") };
+  // Same access rule as the page below: a foreign ticket's title must not leak into the tab.
+  const me = await getSessionUser();
+  const title = await portalTicketTitle(id, me?.id ?? null);
+  return { title: title ?? (await getT("portal"))("ticket") };
 }
 
 export default async function PortalTicketDetail({
@@ -45,7 +48,7 @@ export default async function PortalTicketDetail({
 
   const ticket = await db.ticket.findFirst({
     // Requester OR participant (e.g. a CC'd manager) may view the ticket.
-    where: { id: Number(id), OR: [{ requesterId: me.id }, { participants: { some: { userId: me.id } } }] },
+    where: portalTicketWhere(Number(id), me.id),
     include: {
       assignee: true,
       service: true,

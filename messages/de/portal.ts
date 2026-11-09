@@ -91,7 +91,7 @@ const portal: Translations<typeof en> = {
   relatedServiceOptional: "Betroffener Service (optional)",
   categoryOptional: "Kategorie (optional)",
   submitRequest: "Anfrage absenden",
-  requestTitle: "{name} anfordern",
+  requestTitle: "Anfordern: {name}",
   request: "Anfordern",
   backToCatalog: "Zurück zum Katalog",
   deliveredIn: "Üblicherweise geliefert in ~{count, plural, one {# Tag} other {# Tagen}}",

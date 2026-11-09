@@ -174,6 +174,7 @@ export type SettingsOverview = { rows: SettingsOverviewRow[] };
 const SHOWN_SETTING_KEYS = [
   "APP_NAME",
   "APP_URL",
+  "AI_ENABLED",
   "AI_PROVIDER",
   "AI_MODEL",
   "OLLAMA_BASE_URL",

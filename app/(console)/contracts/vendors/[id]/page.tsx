@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Trash2 } from "lucide-react";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
 type VendorTab = "overview" | "contracts" | "licenses";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const vendor = await db.vendor.findUnique({ where: { id }, select: { name: true } });
   return { title: vendor?.name ?? (await getT("contracts"))("entity.vendor") };

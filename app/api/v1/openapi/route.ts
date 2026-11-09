@@ -15,6 +15,7 @@ import {
 } from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-input";
+import { groupMemberAddSchema } from "@/lib/api-group-input";
 import { serviceCreateSchema, servicePatchSchema, serviceUpsertSchema } from "@/lib/api-service-input";
 import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, articleUpsertSchema } from "@/lib/api-article-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
@@ -632,6 +633,28 @@ const spec = {
       },
     },
     "/groups": { get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } } },
+    "/groups/{id}": {
+      get: { summary: "Get a group with its members", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+    },
+    "/groups/{id}/members": {
+      post: {
+        summary: "Add a user to a group (MANAGER+)",
+        description:
+          "Needs the `directory:write` scope (the legacy `write` works too) and a token owned by a MANAGER or ADMIN. Idempotent: an existing membership answers 200 " +
+          "(`meta.created` false) and keeps its role; a new one answers 201. `role` (MEMBER default, or LEAD) applies only to a new membership.",
+        parameters: [strId],
+        requestBody: body(groupMemberAddSchema),
+        responses: { "201": { description: "Added" }, "200": { description: "Already a member" }, "403": { description: "Token owner is not a manager" }, "404": { description: "Group not found" }, "422": { description: "Validation failed or unknown user" } },
+      },
+    },
+    "/groups/{id}/members/{userId}": {
+      delete: {
+        summary: "Remove a user from a group (MANAGER+)",
+        description: "Needs the `directory:write` scope and a token owned by a MANAGER or ADMIN. Idempotent: a user who is not a member answers 200 with `removed` false.",
+        parameters: [strId, { name: "userId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Removed (or was not a member)" }, "403": { description: "Token owner is not a manager" }, "404": { description: "Group not found" } },
+      },
+    },
     ...Object.fromEntries(
       ([["tickets", ticketImportSchema], ["problems", problemImportSchema], ["changes", changeImportSchema]] as const).map(([path, schema]) => [
         `/import/${path}`,

@@ -90,8 +90,8 @@ scope of every operation.
 | `kb:read` / `kb:write` | `/articles/**` |
 | `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
-| `directory:read` | `/groups`, `/users` and `/users/{id}` (lookups) |
-| `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN). Not privileged: the legacy `write` covers it |
+| `directory:read` | `/groups`, `/groups/{id}`, `/users` and `/users/{id}` (lookups) |
+| `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`; the owner must be a MANAGER or ADMIN). Not privileged: the legacy `write` covers it |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
 **Legacy scopes** keep exactly the rights they always had, so existing tokens work
@@ -323,6 +323,9 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `POST` | `/categories` | Create a category (MANAGER+). | `catalog:write` |
 | `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
+| `GET` | `/groups/{id}` | One group with its members (`user_id`, `name`, `email`, `active`, `role`). Agent tokens only. | `directory:read` |
+| `POST` | `/groups/{id}/members` | Add a user: body `{ "user_id": "…", "role"?: "MEMBER" \| "LEAD" }`. Idempotent: 201 when added, 200 (`meta.created` false, role unchanged) when already a member. MANAGER+ owner. | `directory:write` |
+| `DELETE` | `/groups/{id}/members/{userId}` | Remove a user. Idempotent: 200 with `removed` false when they were not a member. MANAGER+ owner. | `directory:write` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
 | `GET` / `PATCH` | `/users/{id}` | Get one user / replace their secondary email addresses (edit: ADMIN owner). | `directory:read` / `directory:write` |
 | `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
@@ -474,7 +477,12 @@ console's rules](#how-the-itsm-endpoints-enforce-the-consoles-rules)): the
 configured workflow map and role gates (a refused move is `409`), the merge and
 approval rules, SLA stamping (`resolvedAt`, `resolveBreached`, a paused clock is
 resumed first), the resolution comment and mail, and automations. Only someone
-who may act on the ticket can resolve it (`403`).
+who may act on the ticket can resolve it (`403`): a manager or admin, the assignee, a
+member of its group, or the account that **filed the ticket through the API** (its
+requester with source `API`, or the account that created it on someone's behalf). The
+last rule lets a monitoring integration close its own alert even when its account is
+not a member of the group the ticket was routed to; it covers resolving only (comments,
+merges and deletes still need the usual rights).
 
 Ticket status enum: `NEW`, `OPEN`, `IN_PROGRESS`, `PENDING`, `ON_HOLD`, `RESOLVED`,
 `CLOSED`, `CANCELLED`. Open statuses (matched by `?status=open`): `NEW`, `OPEN`,
