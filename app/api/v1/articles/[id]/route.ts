@@ -16,7 +16,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "kb:read");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const article = await db.article.findUnique({ where: { id }, select: ARTICLE_SELECT });
@@ -30,7 +30,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
  * MANAGER goes back to review.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "kb:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const current = await db.article.findUnique({ where: { id }, select: { id: true, title: true, excerpt: true, body: true, status: true } });
@@ -72,7 +72,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** Delete an article with its revisions and links (any agent, as in the console). */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "kb:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const article = await db.article.findUnique({ where: { id }, select: { title: true } });

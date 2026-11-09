@@ -19,7 +19,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "changes:read");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const change = id ? await db.change.findUnique({ where: { id }, include: CHANGE_INCLUDE }) : null;
@@ -72,7 +72,7 @@ async function applyStep(id: number, step: EditStep, current: Current): Promise<
  * and lists `applied`, and the change is returned as it now is in `details.change`.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "changes:write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const current = id

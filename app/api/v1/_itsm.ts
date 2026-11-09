@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { NextResponse } from "next/server";
 import { guard, apiError, principalIsAgent, type ApiPrincipal } from "@/lib/api";
+import type { ResourceScope } from "@/lib/api-scopes";
 import { runAsApiActor } from "@/lib/api-actor";
 import { refusalStatus } from "@/lib/api-itsm-input";
 
@@ -11,7 +12,7 @@ import { refusalStatus } from "@/lib/api-itsm-input";
  */
 export async function agentGuard(
   req: Request,
-  scope: "read" | "write",
+  scope: ResourceScope,
 ): Promise<{ principal: ApiPrincipal } | { response: NextResponse }> {
   const auth = await guard(req, scope);
   if ("response" in auth) return auth;

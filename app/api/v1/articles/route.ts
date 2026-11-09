@@ -20,7 +20,7 @@ export function OPTIONS() {
  * time) and `q` (title or excerpt).
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "kb:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
 
 /** Create an article as a DRAFT authored by the token's owner (publishing goes through the review: POST /articles/{id}/transitions). */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "kb:write");
   if ("response" in auth) return auth.response;
   const parsed = await readBody(req, articleCreateSchema);
   if ("response" in parsed) return parsed.response;

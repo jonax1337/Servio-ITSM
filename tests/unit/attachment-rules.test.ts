@@ -86,10 +86,12 @@ describe("attachment permissions", () => {
     expect(ticketTakesFiles("CANCELLED")).toBe(false);
   });
 
-  it("allows history fields only for admin-scope tokens of an ADMIN, like /import/*", () => {
+  it("allows history fields only for import-capable tokens (import:write or admin) of an ADMIN, like /import/*", () => {
     expect(mayImportHistory({ scopes: ["read", "write", "admin"], role: "ADMIN" })).toBe(true);
     expect(mayImportHistory({ scopes: ["read", "write"], role: "ADMIN" })).toBe(false);
     expect(mayImportHistory({ scopes: ["admin"], role: "MANAGER" })).toBe(false);
+    expect(mayImportHistory({ scopes: ["import:write"], role: "ADMIN" })).toBe(true);
+    expect(mayImportHistory({ scopes: ["tickets:write"], role: "ADMIN" })).toBe(false);
   });
 });
 

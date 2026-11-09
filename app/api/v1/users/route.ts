@@ -16,7 +16,7 @@ export function OPTIONS() {
  * `active` (default true; `all` for both).
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "directory:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);

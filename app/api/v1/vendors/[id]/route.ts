@@ -14,7 +14,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const vendor = await db.vendor.findUnique({ where: { id: (await ctx.params).id } });
   if (!vendor) return apiError(404, "Vendor not found");
@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
 /** Edit a vendor (MANAGER or above). Fields left out keep their value; `null` clears one. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const current = await db.vendor.findUnique({ where: { id } });

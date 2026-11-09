@@ -1,6 +1,7 @@
 // Pure attachment rules: who may write files on which parent, and the fields of
 // a REST upload. No DB, no Node-only APIs — unit-tested in tests/unit.
 import { z } from "zod";
+import { scopeGrants } from "@/lib/api-scopes";
 
 const RANK: Record<string, number> = { USER: 0, AGENT: 1, MANAGER: 2, ADMIN: 3 };
 
@@ -120,7 +121,7 @@ export function parseUploadFields(
   };
 }
 
-/** Whether a token may write history fields: the `/api/v1/import/*` rule (admin scope AND an ADMIN owner). */
+/** Whether a token may write history fields: the `/api/v1/import/*` rule (`import:write` scope AND an ADMIN owner). */
 export function mayImportHistory(principal: { scopes: string[]; role: string }): boolean {
-  return principal.scopes.includes("admin") && principal.role === "ADMIN";
+  return scopeGrants(principal.scopes, "import:write") && principal.role === "ADMIN";
 }

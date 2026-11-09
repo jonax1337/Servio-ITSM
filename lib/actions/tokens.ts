@@ -7,11 +7,14 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
-import { TOKEN_SCOPE_VALUES, tokenExpiry, tokenOwnerRefusal } from "@/lib/token-rules";
+import { TOKEN_PRESET_VALUES, tokenExpiry, tokenOwnerRefusal, tokenScopes } from "@/lib/token-rules";
 
 const createSchema = z.object({
   name: z.string().min(1, "Name is required").max(60),
-  scopes: z.enum(TOKEN_SCOPE_VALUES).default("read"),
+  /** A scope preset, or `custom` for the per-resource selection in `scope`. */
+  preset: z.enum(TOKEN_PRESET_VALUES).default("read"),
+  /** The picked resource scopes of a `custom` token (repeated field). */
+  scope: z.array(z.string()).default([]),
   /** Owner of the token (e.g. a service account); defaults to the admin issuing it. */
   userId: z.string().optional(),
   /** YYYY-MM-DD, valid through the end of that day (UTC); empty = never expires. */
@@ -33,7 +36,8 @@ export async function createApiToken(
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
-    scopes: formData.get("scopes") ?? "read",
+    preset: formData.get("preset") ?? "read",
+    scope: formData.getAll("scope").map(String),
     userId: formData.get("userId") || undefined,
     expiresOn: formData.get("expiresOn") ?? "",
   });
@@ -43,13 +47,15 @@ export async function createApiToken(
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
+  const scopes = tokenScopes(parsed.data.preset, parsed.data.scope);
+  if ("error" in scopes) return { error: "Please fix the errors below.", fieldErrors: { scope: [scopes.error] } };
   const expiresAt = tokenExpiry(parsed.data.expiresOn);
   if (expiresAt && "error" in expiresAt) return { error: "Please fix the errors below.", fieldErrors: { expiresOn: [expiresAt.error] } };
   const owner = await db.user.findUnique({
     where: { id: parsed.data.userId ?? me.id },
     select: { id: true, email: true, isActive: true, role: true },
   });
-  const refusal = tokenOwnerRefusal(owner, parsed.data.scopes);
+  const refusal = tokenOwnerRefusal(owner, scopes);
   if (refusal || !owner) return { error: "Please fix the errors below.", fieldErrors: { userId: [refusal ?? ""] } };
 
   const raw = "servio_pat_" + nanoid(32);
@@ -61,7 +67,7 @@ export async function createApiToken(
       name: parsed.data.name.trim(),
       prefix,
       tokenHash,
-      scopes: parsed.data.scopes,
+      scopes: scopes.join(","),
       userId: owner.id,
       expiresAt,
     },
@@ -72,8 +78,8 @@ export async function createApiToken(
     action: "CREATE",
     entity: "ApiToken",
     entityId: token.id,
-    summary: `Created API token "${token.name}"${owner.id === me.id ? "" : ` for ${owner.email}`}${expiresAt ? `, expires ${expiresAt.toISOString().slice(0, 10)}` : ""}`,
-    meta: { ownerId: owner.id, scopes: parsed.data.scopes, expiresAt: expiresAt?.toISOString() ?? null },
+    summary: `Created API token "${token.name}"${owner.id === me.id ? "" : ` for ${owner.email}`} with scopes ${scopes.join(", ")}${expiresAt ? `, expires ${expiresAt.toISOString().slice(0, 10)}` : ""}`,
+    meta: { ownerId: owner.id, preset: parsed.data.preset, scopes, expiresAt: expiresAt?.toISOString() ?? null },
   });
 
   revalidatePath("/settings/api");

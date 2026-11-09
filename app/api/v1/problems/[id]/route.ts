@@ -13,7 +13,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "problems:read");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const problem = id ? await db.problem.findUnique({ where: { id }, include: PROBLEM_INCLUDE }) : null;
@@ -46,7 +46,7 @@ async function applyStep(id: number, step: EditStep, current: { title: string; d
  * on a refusal the earlier edits stay, see `details.applied`.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "problems:write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const current = id ? await db.problem.findUnique({ where: { id }, select: { title: true, description: true } }) : null;

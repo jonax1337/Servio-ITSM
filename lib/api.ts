@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { checkApiRate } from "@/lib/rate-limit";
+import { parseStoredScopes, scopeGrants, type ResourceScope } from "@/lib/api-scopes";
 
 // A pre-computed bcrypt hash of a fixed dummy string. When no token matches the
 // presented prefix we still run one bcrypt.compare against this so the failure
@@ -58,7 +59,7 @@ export async function authenticateApi(req: Request): Promise<ApiPrincipal | null
       return {
         tokenId: t.id,
         userId: t.userId,
-        scopes: t.scopes.split(",").map((s) => s.trim()),
+        scopes: parseStoredScopes(t.scopes),
         role: user.role,
       };
     }
@@ -66,8 +67,9 @@ export async function authenticateApi(req: Request): Promise<ApiPrincipal | null
   return null;
 }
 
-export function requireScope(principal: ApiPrincipal, scope: string) {
-  return principal.scopes.includes(scope) || principal.scopes.includes("admin");
+/** Whether the token may use an endpoint that needs `scope` (see lib/api-scopes.ts). */
+export function hasScope(principal: ApiPrincipal, scope: ResourceScope) {
+  return scopeGrants(principal.scopes, scope);
 }
 
 /**
@@ -134,10 +136,14 @@ function clientIp(req: Request): string {
   return req.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
-/** Standard auth guard used by every protected route. */
+/**
+ * Standard auth guard used by every protected route. `scope` is the resource
+ * scope the handler needs; the legacy `read`/`write`/`admin` scopes satisfy it
+ * as described in lib/api-scopes.ts.
+ */
 export async function guard(
   req: Request,
-  scope: "read" | "write",
+  scope: ResourceScope,
 ): Promise<{ principal: ApiPrincipal } | { response: NextResponse }> {
   // Throttle the Bearer entry point before doing any DB work. Key by the raw
   // token when present (so one noisy token can't exhaust the shared IP bucket),
@@ -162,8 +168,8 @@ export async function guard(
       response: apiError(401, "Missing or invalid API token. Send 'Authorization: Bearer <token>'."),
     };
   }
-  if (!requireScope(principal, scope)) {
-    return { response: apiError(403, `This token lacks the '${scope}' scope.`) };
+  if (!hasScope(principal, scope)) {
+    return { response: apiError(403, `This token lacks the '${scope}' scope.`, { required_scope: scope }) };
   }
   return { principal };
 }

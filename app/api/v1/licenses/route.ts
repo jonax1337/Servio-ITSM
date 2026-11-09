@@ -16,7 +16,7 @@ export function OPTIONS() {
 
 /** Software licenses with their seat assignments. Filters: `vendor_id`, `q` (name), `asset_id` / `user_id` (licenses assigned to it). */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
 /** Create a license through the console's createLicense (MANAGER or above; vendor, contract and owner must exist). */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const body = await readBody(req, licenseCreateSchema);
   if ("response" in body) return body.response;

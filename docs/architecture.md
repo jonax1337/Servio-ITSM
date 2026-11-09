@@ -131,8 +131,10 @@ CRUD, folders, and `applyAssistantProposal` remain Server Actions in
 
 Public API routes authenticate with a **Bearer token** (not the session cookie)
 via `guard()` from [`lib/api.ts`](../lib/api.ts), which resolves an
-`ApiPrincipal` (token id, acting user, scopes, role) and enforces `read`/`write`
-scopes. Agent principals act org-wide; non-agent tokens are scoped to the
+`ApiPrincipal` (token id, acting user, scopes, role) and enforces the resource
+scope each handler declares (`tickets:write`, `cmdb:read`, …; the legacy
+`read`/`write`/`admin` scopes still satisfy them, see
+[`lib/api-scopes.ts`](../lib/api-scopes.ts)). Agent principals act org-wide; non-agent tokens are scoped to the
 caller's own objects. Full detail in [rest-api.md](./rest-api.md).
 
 ```ts
@@ -141,7 +143,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "tickets:read");
   if ("response" in auth) return auth.response;
   const where = principalIsAgent(auth.principal) ? {} : { requesterId: auth.principal.userId };
   // ...paginate + serialize...
@@ -332,8 +334,9 @@ Layouts and pages call `requireRole("AGENT")` (console) or `requireUser()`
 e.g. `requireAdmin()` in `lib/actions/syncs.ts`).
 
 **3. API token scopes — [`lib/api.ts`](../lib/api.ts).** The REST API is orthogonal
-to sessions: `guard(req, "read"|"write")` authenticates a Bearer token, checks the
-token's scopes, and yields an `ApiPrincipal`. `principalIsAgent()` decides whether
+to sessions: `guard(req, "<resource>:read"|"<resource>:write")` authenticates a
+Bearer token, checks that the token's scopes grant the handler's resource scope
+([`lib/api-scopes.ts`](../lib/api-scopes.ts)), and yields an `ApiPrincipal`. `principalIsAgent()` decides whether
 a token sees org-wide data or only the owner's objects. See [rest-api.md](./rest-api.md).
 
 ## 🔄 Sync / integrations engine

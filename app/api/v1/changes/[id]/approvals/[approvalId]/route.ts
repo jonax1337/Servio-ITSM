@@ -18,7 +18,7 @@ export function OPTIONS() {
  * rule (unanimous / quorum / percent) settles the change to APPROVED or REJECTED.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; approvalId: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "changes:write");
   if ("response" in auth) return auth.response;
   const params = await ctx.params;
   const id = recordId(params.id);

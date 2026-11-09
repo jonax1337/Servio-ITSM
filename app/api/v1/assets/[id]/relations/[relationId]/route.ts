@@ -13,7 +13,7 @@ export function OPTIONS() {
 
 /** Remove one edge. It must touch this asset (either end), so an id from another asset is a 404. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; relationId: string }> }) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id, relationId } = await ctx.params;

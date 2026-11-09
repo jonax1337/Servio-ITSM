@@ -22,7 +22,7 @@ async function refOf(ctx: { params: Promise<{ ref: string }> }) {
 
 /** The asset with this origin reference (e.g. `inventory:host:pc-042`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const ref = await refOf(ctx);
@@ -38,7 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * audit row; `meta.changed` lists what did change. The body is strict.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const ref = await refOf(ctx);

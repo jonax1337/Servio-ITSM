@@ -16,7 +16,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** A ticket's thread. Agents see every comment; a USER token sees the public replies on its own tickets. */
 export async function GET(req: Request, ctx: Ctx) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "tickets:read");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const ticket = id ? await db.ticket.findUnique({ where: { id }, select: { requesterId: true } }) : null;
@@ -41,7 +41,7 @@ export async function GET(req: Request, ctx: Ctx) {
  * in the console. `internal` defaults to true.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "tickets:write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const ticket = id ? await db.ticket.findUnique({ where: { id }, select: { assigneeId: true, groupId: true } }) : null;

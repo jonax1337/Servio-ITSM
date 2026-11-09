@@ -19,7 +19,7 @@ export function OPTIONS() {
  * count are allowed and show as `over_allocated`.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   if (!(await db.softwareLicense.findUnique({ where: { id }, select: { id: true } }))) return apiError(404, "License not found");

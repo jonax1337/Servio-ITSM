@@ -14,7 +14,7 @@ export function OPTIONS() {
 
 /** Categories (shared by tickets, problems and changes), to resolve a `category_id`. `include_archived=true` adds archived ones. */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const includeArchived = new URL(req.url).searchParams.get("include_archived") === "true";
   const rows = await db.category.findMany({
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
 
 /** Create a category (MANAGER+). A name already used under the same parent is a 409 with the existing `id`. */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerRefusal(auth.principal);
   if (refused) return refused;

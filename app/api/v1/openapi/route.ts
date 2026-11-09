@@ -21,6 +21,7 @@ import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
   licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema,
 } from "@/lib/api-asset-input";
+import { LEGACY_SCOPES, RESOURCE_SCOPES, requiredScope, scopesGranting } from "@/lib/api-scopes";
 
 export const runtime = "nodejs";
 
@@ -62,12 +63,12 @@ const uploadBody = {
         properties: {
           file: { type: "string", format: "binary", description: "One file. Size cap MAX_UPLOAD_MB; type, extension and content checked against the allow-list." },
           comment_id: { type: "string", description: "Tickets only: attach to this comment of the ticket (USER tokens: their own public reply)." },
-          created_at: { type: "string", format: "date-time", description: "History import: original upload time (ISO with offset). Needs the admin scope and an ADMIN owner." },
-          uploaded_by_id: { type: "string", description: "History import: the original uploader (an existing user id). Needs the admin scope and an ADMIN owner." },
+          created_at: { type: "string", format: "date-time", description: "History import: original upload time (ISO with offset). Needs the import:write scope and an ADMIN owner." },
+          uploaded_by_id: { type: "string", description: "History import: the original uploader (an existing user id). Needs the import:write scope and an ADMIN owner." },
           import_ref: {
             type: "string",
             maxLength: 200,
-            description: "History import: the file's source id (unique). A re-upload with a ref already on this record returns that file (200, meta.created false) instead of storing a copy; a ref used on another record is a 409. Needs the admin scope and an ADMIN owner.",
+            description: "History import: the file's source id (unique). A re-upload with a ref already on this record returns that file (200, meta.created false) instead of storing a copy; a ref used on another record is a 409. Needs the import:write scope and an ADMIN owner.",
           },
         },
       },
@@ -94,7 +95,7 @@ function attachmentPaths(): Record<string, unknown> {
         responses: {
           "201": { description: "Stored (with import_ref: meta.created true)", content: attachmentRef },
           "200": { description: "import_ref already stored on this record: that file, meta.created false", content: attachmentRef },
-          "403": { description: "Not allowed to write here, or history fields without an admin token" },
+          "403": { description: "Not allowed to write here, or history fields without import:write and an ADMIN owner" },
           "404": { description: "Not found" },
           "409": { description: "Ticket closed or cancelled, or import_ref already used on another record" },
           "413": { description: "Larger than MAX_UPLOAD_MB" },
@@ -128,18 +129,47 @@ function commentPaths(entity: string) {
   };
 }
 
+const METHODS = ["get", "put", "post", "patch", "delete"] as const;
+
+/**
+ * Annotate every operation with the scopes that satisfy it, from the same rule
+ * the handlers are held to (lib/api-scopes.ts requiredScope; enforced per route
+ * by tests/unit/api-route-scopes.test.ts). OpenAPI 3.1 allows role names in the
+ * requirement of a non-OAuth scheme; alternatives are separate requirements.
+ */
+function withScopes(paths: Record<string, Record<string, Record<string, unknown>>>) {
+  for (const [path, ops] of Object.entries(paths)) {
+    for (const method of METHODS) {
+      const op = ops[method];
+      const scope = op ? requiredScope(path, method) : null;
+      if (!op || !scope) continue;
+      op["x-required-scope"] = scope;
+      op.security = scopesGranting(scope).map((s) => ({ bearerAuth: [s] }));
+    }
+  }
+  return paths;
+}
+
 const spec = {
   openapi: "3.1.0",
   info: {
     title: "Servio API",
     version: "1.0.0",
-    description: "Public REST API for Servio ITSM. Authenticate with a Bearer token (Settings › API Tokens).",
+    description:
+      "Public REST API for Servio ITSM. Authenticate with a Bearer token (Settings › API Tokens).\n\n" +
+      "Every operation lists the token scopes that satisfy it in `security` (any one is enough) and the resource scope it needs in `x-required-scope`. " +
+      "Resource scopes (`tickets:write`, `cmdb:read`, …) grant one resource; a resource write includes its read. " +
+      "The legacy scopes keep their meaning: `read` grants every read, `write` every write except `import:write`, `admin` everything.",
   },
   servers: [{ url: "/api/v1" }],
   security: [{ bearerAuth: [] }],
   components: {
     securitySchemes: {
-      bearerAuth: { type: "http", scheme: "bearer" },
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        description: `Personal access token. Scopes: ${[...LEGACY_SCOPES, ...RESOURCE_SCOPES].join(", ")}.`,
+      },
     },
     schemas: {
       Ticket: {
@@ -180,7 +210,7 @@ const spec = {
       },
     },
   },
-  paths: {
+  paths: withScopes({
     "/tickets": {
       get: {
         summary: "List tickets",
@@ -317,10 +347,10 @@ const spec = {
       get: { summary: "Get the article with this origin reference", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       put: {
         summary: "Upsert an article by origin reference (idempotent)",
-        description: "Creates the article (201) or writes the fields that differ as one revision (200); the same content again changes nothing (`meta.changed` empty). `status` skips the review and needs the admin scope and an ADMIN owner.",
+        description: "Creates the article (201) or writes the fields that differ as one revision (200); the same content again changes nothing (`meta.changed` empty). `status` skips the review and needs the import:write scope and an ADMIN owner.",
         parameters: [refParam],
         requestBody: body(articleUpsertSchema),
-        responses: { "200": { description: "Updated or unchanged" }, "201": { description: "Created" }, "403": { description: "status without admin scope/ADMIN owner" }, "422": { description: "Validation failed" } },
+        responses: { "200": { description: "Updated or unchanged" }, "201": { description: "Created" }, "403": { description: "status without import:write scope/ADMIN owner" }, "422": { description: "Validation failed" } },
       },
     },
     "/services": {
@@ -433,9 +463,9 @@ const spec = {
         {
           post: {
             summary: `Import a historical ${path.slice(0, -1)} with its thread`,
-            description: `Needs the \`admin\` scope and an ADMIN owner. Bypasses the lifecycle on purpose; \`import_ref\` makes re-runs idempotent (200, meta.created false). To bring an imported record up to date use PUT /import/${path}/{import_ref}.`,
+            description: `Needs the \`import:write\` scope (or \`admin\`) and an ADMIN owner. Bypasses the lifecycle on purpose; \`import_ref\` makes re-runs idempotent (200, meta.created false). To bring an imported record up to date use PUT /import/${path}/{import_ref}.`,
             requestBody: body(schema),
-            responses: { "201": { description: "Imported" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Not an admin token" }, "422": { description: "Validation failed or unknown ids" } },
+            responses: { "201": { description: "Imported" }, "200": { description: "Already imported (import_ref exists)" }, "403": { description: "Token lacks import:write, or its owner is not an ADMIN" }, "422": { description: "Validation failed or unknown ids" } },
           },
         },
       ]),
@@ -447,7 +477,7 @@ const spec = {
           put: {
             summary: `Create or re-import a historical ${path.slice(0, -1)} by its import_ref (update mode)`,
             description:
-              "Needs the `admin` scope and an ADMIN owner. Same body as the POST import; `import_ref` comes from the path (in the body only if equal). " +
+              "Needs the `import:write` scope (or `admin`) and an ADMIN owner. Same body as the POST import; `import_ref` comes from the path (in the body only if equal). " +
               "Creates the record when the ref is new, otherwise replaces the imported fields with the given state and appends only the comments the record lacks " +
               "(matched by comment `import_ref`, else by body + created_at). `meta.result` is created | updated | unchanged, `meta.changed` lists the fields, " +
               "`meta.comments_added` counts new comments. Unchanged input writes nothing and no audit row. Only records carrying that importRef are matched.",
@@ -456,7 +486,7 @@ const spec = {
             responses: {
               "201": { description: "Created (meta.result created)" },
               "200": { description: "Updated or unchanged (meta.result, meta.changed, meta.comments_added)" },
-              "403": { description: "Not an admin token" },
+              "403": { description: "Token lacks import:write, or its owner is not an ADMIN" },
               "422": { description: "Validation failed, unknown ids, or a body import_ref that differs from the path" },
             },
           },
@@ -465,7 +495,7 @@ const spec = {
     ),
     ...attachmentPaths(),
     "/users": { get: { summary: "Look up users (minimal fields)", description: agentOnly, parameters: [q("q", "Name or email"), q("role"), q("active", "true (default), false or all"), ...pageParams], responses: { "200": { description: "OK" } } } },
-  },
+  }),
 };
 
 export function GET() {

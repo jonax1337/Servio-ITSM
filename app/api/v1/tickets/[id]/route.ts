@@ -24,7 +24,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "tickets:read");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const ticketId = Number(id);
@@ -55,7 +55,7 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "tickets:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const ticketId = Number(id);

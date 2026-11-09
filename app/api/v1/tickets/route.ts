@@ -20,7 +20,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "tickets:read");
   if ("response" in auth) return auth.response;
 
   const url = new URL(req.url);
@@ -63,7 +63,7 @@ export async function GET(req: Request) {
 const DEDUP_ATTEMPTS = 3;
 
 export async function POST(req: Request) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "tickets:write");
   if ("response" in auth) return auth.response;
 
   let body: unknown;

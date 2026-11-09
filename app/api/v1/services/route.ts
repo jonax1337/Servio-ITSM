@@ -9,7 +9,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   // The service catalog is agent data. Non-agent tokens must not enumerate it (BOLA).
   if (!principalIsAgent(auth.principal)) return apiError(403, "Services are restricted to agent tokens.");

@@ -14,7 +14,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const license = await db.softwareLicense.findUnique({ where: { id: (await ctx.params).id }, include: LICENSE_INCLUDE });
   if (!license) return apiError(404, "License not found");
@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
 /** Edit a license (MANAGER or above). Fields left out keep their value; `null` clears a nullable one. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const current = await db.softwareLicense.findUnique({ where: { id } });

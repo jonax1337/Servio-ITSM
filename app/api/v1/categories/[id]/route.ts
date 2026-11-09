@@ -13,7 +13,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const category = await db.category.findUnique({ where: { id }, select: CATEGORY_SELECT });
@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
 /** Update a category (MANAGER+). Only the fields sent change; `null` clears parent, group, description and icon. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerRefusal(auth.principal);
   if (refused) return refused;

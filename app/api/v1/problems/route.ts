@@ -22,7 +22,7 @@ export function OPTIONS() {
  * over title, description, root cause, workaround and comments.
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "problems:read");
   if ("response" in auth) return auth.response;
 
   const url = new URL(req.url);
@@ -64,7 +64,7 @@ export async function GET(req: Request) {
 
 /** Create a problem through the console's createProblem action (same validation, audit and notification). */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "problems:write");
   if ("response" in auth) return auth.response;
   const body = await readBody(req, problemCreateSchema);
   if ("response" in body) return body.response;

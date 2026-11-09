@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { apiError, ok, preflight, requireScope, type ApiPrincipal } from "@/lib/api";
+import { apiError, hasScope, ok, preflight, type ApiPrincipal } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { hasRole, type Role } from "@/lib/session";
 import { statusAfterEdit } from "@/lib/article-rules";
@@ -23,7 +23,7 @@ async function refOf(ctx: { params: Promise<{ ref: string }> }) {
 
 /** The article with this origin reference (e.g. `faq:vpn-setup`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "kb:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   const article = ref ? await db.article.findUnique({ where: { importRef: ref }, select: ARTICLE_SELECT }) : null;
@@ -38,21 +38,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * content writes nothing; `meta.changed` lists what changed.
  *
  * Setting `status` skips the review (it publishes directly), so it needs the
- * `admin` scope and an ADMIN token owner, like the history import. Without
+ * `import:write` scope and an ADMIN token owner, like the history import. Without
  * `status`, a new article is a DRAFT and an existing one keeps its status,
  * except that a published article changed by a token below MANAGER goes back
  * to review, as in the console.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "kb:write");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   if (!ref) return apiError(422, "Validation failed", { ref: [EXTERNAL_REF_HINT] });
   const parsed = await readBody(req, articleUpsertSchema);
   if ("response" in parsed) return parsed.response;
   const b = parsed.data;
-  if (b.status && !(requireScope(auth.principal, "admin") && auth.principal.role === "ADMIN")) {
-    return apiError(403, "Setting status skips the review; it needs the admin scope and a token owned by an ADMIN.");
+  if (b.status && !(hasScope(auth.principal, "import:write") && auth.principal.role === "ADMIN")) {
+    return apiError(403, "Setting status skips the review; it needs the import:write scope and a token owned by an ADMIN.");
   }
   const invalidCategory = await categoryError(b.category_id);
   if (invalidCategory) return invalidCategory;
