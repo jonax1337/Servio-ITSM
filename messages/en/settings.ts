@@ -301,7 +301,7 @@ const settings = {
   "token.resourceHint.cmdb": "Assets, relations, services, licenses, contracts and vendors",
   "token.resourceHint.kb": "Knowledge articles; publishing without review needs the extra publish access",
   "token.resourceHint.catalog": "Categories, catalog items and change templates",
-  "token.resourceHint.directory": "Users and groups (write: secondary email addresses of a person; the token owner must be an admin)",
+  "token.resourceHint.directory": "Users and groups (write: secondary email addresses of a person, owner must be an admin; group membership, owner must be a manager or admin)",
   "token.resourceHint.import": "Import past records",
   "token.created": "API token created",
   "token.copyTitle": "Copy your new token now",

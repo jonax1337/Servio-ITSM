@@ -23,12 +23,41 @@ export type ImportUser = {
   department?: string | null;
 };
 
+/**
+ * The subset of `desired` that differs from `current`. `undefined` means "leave untouched"
+ * and is never a change; `null` is a real value (clear it). Empty result = nothing to write.
+ */
+export function changedFields<T extends Record<string, unknown>>(
+  current: Record<string, unknown>,
+  desired: T,
+): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [key, value] of Object.entries(desired) as [keyof T & string, unknown][]) {
+    if (value === undefined) continue;
+    if (current[key] !== value) (out as Record<string, unknown>)[key] = value;
+  }
+  return out;
+}
+
 /** A record that could not be mapped (missing required field, etc.). */
 export type ImportError = { error: string; ref?: string };
 
 export function errMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/** What the sync compares an owned account against (see changedFields). */
+const OWNED_SELECT = {
+  id: true,
+  email: true,
+  name: true,
+  jobTitle: true,
+  phone: true,
+  department: true,
+  isActive: true,
+  syncSourceId: true,
+  externalId: true,
+} as const;
 
 /**
  * Upsert a batch of users for a sync source and optionally deactivate the ones
@@ -74,13 +103,13 @@ export async function importUsers(
       // to email adoption for a record we have never seen before.
       const current = await db.user.findUnique({
         where: { syncSourceId_externalId: { syncSourceId: source.id, externalId: rec.externalId } },
-        select: { id: true },
+        select: OWNED_SELECT,
       });
       const legacy =
         !current && legacyIds.length > 0
           ? await db.user.findFirst({
               where: { syncSourceId: source.id, externalId: { in: legacyIds } },
-              select: { id: true, externalId: true },
+              select: OWNED_SELECT,
             })
           : null;
       const owned = current ?? legacy;
@@ -96,16 +125,20 @@ export async function importUsers(
       if (owned) {
         // The source made one of this person's secondary addresses the primary one.
         if (secondaryOwner) await releaseOwnSecondary(owned.id, rec.email);
-        await db.user.update({
-          where: { id: owned.id },
-          data: {
-            ...profile,
-            email: rec.email,
-            isActive: true,
-            syncSourceId: source.id,
-            externalId: rec.externalId,
-          },
+        // Write (and count) only real changes: a run over an unchanged directory
+        // reports everything as unchanged instead of "updated" for every account.
+        const changes = changedFields(owned, {
+          ...profile,
+          email: rec.email,
+          isActive: true,
+          syncSourceId: source.id,
+          externalId: rec.externalId,
         });
+        if (Object.keys(changes).length === 0) {
+          log.unchanged++;
+          continue;
+        }
+        await db.user.update({ where: { id: owned.id }, data: changes });
         if (legacy) log.line(`Moved ${rec.email} from external id "${legacy.externalId}" to "${rec.externalId}".`);
         log.updated++;
         continue;
@@ -209,7 +242,7 @@ export async function importUsers(
     }
   }
 
-  log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.failed} failed.`);
+  log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.unchanged} unchanged, ${log.failed} failed.`);
 }
 
 /**
@@ -231,6 +264,23 @@ export type ImportAsset = {
   os?: string | null;
   location?: string | null;
 };
+
+const ASSET_SELECT = {
+  id: true,
+  name: true,
+  assetTag: true,
+  serial: true,
+  model: true,
+  manufacturer: true,
+  ipAddress: true,
+  macAddress: true,
+  os: true,
+  location: true,
+  type: true,
+  status: true,
+  syncSourceId: true,
+  externalId: true,
+} as const;
 
 /**
  * Upsert a batch of assets for a sync source and stamp `lastSeenAt`. Assets that
@@ -287,14 +337,14 @@ export async function importAssets(
             ...(rec.assetTag ? [{ syncSourceId: source.id, assetTag: rec.assetTag }] : []),
           ],
         },
-        select: { id: true },
+        select: ASSET_SELECT,
       });
       if (existing) {
-        await db.asset.update({
-          where: { id: existing.id },
-          data: { ...data, syncSourceId: source.id, externalId: rec.externalId, lastSeenAt: now },
-        });
-        log.updated++;
+        const changes = changedFields(existing, { ...data, syncSourceId: source.id, externalId: rec.externalId });
+        // lastSeenAt is bookkeeping for "vanished" detection, not a change of the asset.
+        await db.asset.update({ where: { id: existing.id }, data: { ...changes, lastSeenAt: now } });
+        if (Object.keys(changes).length === 0) log.unchanged++;
+        else log.updated++;
       } else {
         await db.asset.create({
           data: { ...data, syncSourceId: source.id, externalId: rec.externalId, lastSeenAt: now },
@@ -325,5 +375,5 @@ export async function importAssets(
     }
   }
 
-  log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.failed} failed.`);
+  log.line(`Done: ${log.created} created, ${log.updated} updated, ${log.unchanged} unchanged, ${log.failed} failed.`);
 }

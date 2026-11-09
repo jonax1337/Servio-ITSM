@@ -39,6 +39,8 @@ export class SyncLog {
   created = 0;
   updated = 0;
   failed = 0;
+  /** Records that matched what is stored; not written, not part of `updated`. */
+  unchanged = 0;
 
   line(msg: string): void {
     this.lines.push(msg);
@@ -50,7 +52,7 @@ export class SyncLog {
 
   /** Derive a run status from the counters. */
   status(): SyncRunStatus {
-    if (this.failed > 0 && this.created === 0 && this.updated === 0)
+    if (this.failed > 0 && this.created === 0 && this.updated === 0 && this.unchanged === 0)
       return "FAILED";
     return this.failed > 0 ? "PARTIAL" : "SUCCESS";
   }

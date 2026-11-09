@@ -304,7 +304,7 @@ const settings: Translations<typeof en> = {
   "token.resourceHint.cmdb": "Assets, Beziehungen, Services, Lizenzen, Verträge und Hersteller",
   "token.resourceHint.kb": "Wissensartikel; Veröffentlichen ohne Prüfung braucht den zusätzlichen Zugriff",
   "token.resourceHint.catalog": "Kategorien, Katalogeinträge und Änderungsvorlagen",
-  "token.resourceHint.directory": "Benutzer und Gruppen (Schreiben: zusätzliche E-Mail-Adressen einer Person; der Token-Inhaber muss Admin sein)",
+  "token.resourceHint.directory": "Benutzer und Gruppen (Schreiben: zusätzliche E-Mail-Adressen einer Person, Inhaber muss Admin sein; Gruppenmitgliedschaft, Inhaber muss Manager oder Admin sein)",
   "token.resourceHint.import": "Frühere Vorgänge importieren",
   "token.created": "API-Token erstellt",
   "token.copyTitle": "Kopieren Sie Ihr neues Token jetzt",

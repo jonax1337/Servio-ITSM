@@ -1,3 +1,4 @@
+import { db } from "@/lib/db";
 import { isGroupMember } from "@/lib/assignment";
 import { hasRole, type Role } from "@/lib/session";
 
@@ -43,4 +44,39 @@ export async function canActOnTicket(user: ActingUser, ticket: ActingTicket): Pr
  */
 export async function assertCanActOnTicket(user: ActingUser, ticket: ActingTicket): Promise<boolean> {
   return canActOnTicket(user, ticket);
+}
+
+/**
+ * A ticket filed through the REST API by this very account: the account is its
+ * requester and the source is API (an integration filing its own alert), or the
+ * account's `Created via API` audit entry says it filed it on someone's behalf.
+ * Pure rule; `createdViaApi` is the audit lookup's answer.
+ */
+export function filedOwnApiTicket(
+  user: { id: string },
+  ticket: { requesterId?: string | null; source?: string | null },
+  createdViaApi: boolean,
+): boolean {
+  return createdViaApi || (ticket.requesterId === user.id && ticket.source === "API");
+}
+
+/**
+ * Whether `user` may resolve (or close, cancel) `ticket`: whoever may act on it, plus the
+ * account that filed it through the API. A monitoring integration must be able to close
+ * the alert it opened even when its account is not a member of the group the ticket was
+ * routed to. Everything else on the ticket (comments, merges, deletes …) keeps
+ * {@link canActOnTicket}.
+ */
+export async function canResolveTicket(
+  user: ActingUser,
+  ticket: ActingTicket & { id: number; requesterId?: string | null; source?: string | null },
+): Promise<boolean> {
+  if (await canActOnTicket(user, ticket)) return true;
+  if (!hasRole(user.role as Role, "AGENT")) return false;
+  if (filedOwnApiTicket(user, ticket, false)) return true;
+  const created = await db.auditLog.findFirst({
+    where: { entity: "Ticket", entityId: String(ticket.id), action: "CREATE", userId: user.id, summary: { startsWith: "Created via API" } },
+    select: { id: true },
+  });
+  return filedOwnApiTicket(user, ticket, created !== null);
 }

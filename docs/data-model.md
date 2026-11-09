@@ -204,7 +204,7 @@ The business-time math lives in [`lib/business-hours.ts`](../lib/business-hours.
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
 | `SyncSource` | External system to import/export from | `name` (unique), `type` (8 values: LDAP … GLPI), `direction` (`IMPORT`/`EXPORT`/`BIDIRECTIONAL`), `scope` (`USERS`/`ASSETS`/`TICKETS`/`ALL`), `config` (JSON as TEXT), `schedule` (cron), `isActive`, `lastRunAt`, `lastStatus`; has runs, imported users & assets |
-| `SyncRun` | One execution of a sync source | `status`, `trigger` (`MANUAL`/`SCHEDULE`; `API` is reserved — no code path yet, `sync-runner.ts` only ever writes `MANUAL` or `SCHEDULE`), counters `created`/`updated`/`failed`, `log`, `startedAt`/`finishedAt` |
+| `SyncRun` | One execution of a sync source | `status`, `trigger` (`MANUAL`/`SCHEDULE`; `API` is reserved — no code path yet, `sync-runner.ts` only ever writes `MANUAL` or `SCHEDULE`), counters `created`/`updated`/`failed` (records that already match are not written and not counted; the run log's last line also reports them as `unchanged`), `log`, `startedAt`/`finishedAt` |
 
 ### Attachments, audit, notifications, email
 

@@ -26,7 +26,7 @@ import { sanitizeCommentHtml, htmlToText } from "@/lib/markdown";
 import { format } from "date-fns";
 import { runAutomations } from "@/lib/automations";
 import { autoAssignTicket, isGroupMember } from "@/lib/assignment";
-import { canActOnTicket, mayActOnTicket } from "@/lib/authz";
+import { canActOnTicket, canResolveTicket, mayActOnTicket } from "@/lib/authz";
 import { ensureDraftStatusIncident, notifyOnCallOfMajorIncident } from "@/lib/status-incidents";
 import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import {
@@ -1166,7 +1166,7 @@ async function applyResolution(
     include: { sla: { select: { businessCalendarId: true } } },
   });
   if (!current) return refused(TICKET_NOT_FOUND);
-  if (!(await canActOnTicket(me, current))) return refused(NOT_YOUR_TICKET);
+  if (!(await canResolveTicket(me, current))) return refused(NOT_YOUR_TICKET);
   const mergedRefusal = mergedStatusRefusal(current, status);
   if (mergedRefusal) return refused(mergedRefusal);
   if (!approvalAllowsStatus(current.approvalState, status)) return refused(AWAITING_APPROVAL);

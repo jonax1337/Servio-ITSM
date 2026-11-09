@@ -171,7 +171,7 @@ async function run(source: SyncSource): Promise<SyncResult> {
     await importUsers(source, records, cfg.deactivateMissing, log);
   } catch (e) {
     log.line(`Sync error: ${errMessage(e)}`);
-    if (log.created === 0 && log.updated === 0) {
+    if (log.created === 0 && log.updated === 0 && log.unchanged === 0) {
       log.failed = Math.max(log.failed, 1);
       return {
         status: "FAILED",
