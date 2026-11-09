@@ -88,3 +88,39 @@ export function applyTemplate(template: ChangeTemplateDefaults, overrides: Chang
     plannedEnd: overrides.plannedEnd ?? null,
   };
 }
+
+/** What the pre-approval depends on: a template's type, switch, risk, impact and procedure. */
+export type TemplateApprovalState = {
+  type: string;
+  isActive: boolean;
+  risk: string;
+  impact: string;
+  implementationPlan: string | null;
+  rollbackPlan: string | null;
+};
+
+const APPROVAL_FIELDS = ["type", "isActive", "risk", "impact", "implementationPlan", "rollbackPlan"] as const;
+
+export const STANDARD_TEMPLATE_APPROVER_MESSAGE =
+  "Only a role that may approve changes of this risk can save an active standard template, because its changes skip CAB review.";
+
+/**
+ * A standard template is a pre-approved change: whoever defines it approves every
+ * change made from it. So writing an active STANDARD template (creating it, activating it, or
+ * touching its type, risk, impact or procedure) takes a role that may sit on the CAB for its
+ * risk (only ADMIN for HIGH). `current` is the stored template (null on create); `next` the
+ * result of the write. Returns the refusal message, or null when the write is fine.
+ */
+export function standardTemplateApprovalProblem(
+  role: string,
+  current: TemplateApprovalState | null,
+  next: TemplateApprovalState,
+  approverRolesForRisk: (risk: string) => string[],
+): string | null {
+  if (!isPreAuthorized(next.type) || !next.isActive) return null;
+  const touched = !current || APPROVAL_FIELDS.some((k) => current[k] !== next[k]);
+  if (!touched) return null;
+  // Lowering the risk of an existing pre-approved template needs the rank its old risk demanded.
+  const risks = current && isPreAuthorized(current.type) && current.isActive ? [current.risk, next.risk] : [next.risk];
+  return risks.every((r) => approverRolesForRisk(r).includes(role)) ? null : STANDARD_TEMPLATE_APPROVER_MESSAGE;
+}

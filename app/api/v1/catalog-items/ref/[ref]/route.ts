@@ -5,7 +5,7 @@ import { apiFieldNames } from "@/lib/api-record-diff";
 import { agentGuard, readBody } from "../../../_itsm";
 import { invalidRef, isUniqueOn, managerOnly, refOf } from "../../../_manage";
 import {
-  CATALOG_WHAT, catalogItemNotFound, catalogItemResponse, createCatalogItemRecord, prepareCatalogItem, updateCatalogItemRecord,
+  CATALOG_WHAT, catalogItemNotFound, catalogItemResponse, catalogWriteConflict, createCatalogItemRecord, prepareCatalogItem, updateCatalogItemRecord,
 } from "../../../_catalog-items";
 
 export const runtime = "nodejs";
@@ -45,8 +45,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
     return await upsert(auth.principal, ref, body.data);
   } catch (err) {
     // Two runs creating the same ref at once: the loser retries as an update.
-    if (isUniqueOn(err, "importRef")) return upsert(auth.principal, ref, body.data);
-    throw err;
+    if (isUniqueOn(err, "importRef")) return upsert(auth.principal, ref, body.data).catch(catalogWriteConflict);
+    return catalogWriteConflict(err);
   }
 }
 

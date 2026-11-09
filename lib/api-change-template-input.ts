@@ -44,6 +44,8 @@ export const changeTemplateCreateSchema = z.strictObject({
   ...allOptional,
   name: fields.name,
   title: fields.title,
+  /** Required: it decides whether the template's changes skip the CAB. */
+  type: fields.type,
   /** Origin key for a script-maintained template; PUT /change-templates/ref/{ref} upserts by it. */
   import_ref: externalRefSchema.optional(),
 });

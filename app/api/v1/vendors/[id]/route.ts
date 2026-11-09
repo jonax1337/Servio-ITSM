@@ -51,7 +51,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const { id } = await ctx.params;
   const vendor = await db.vendor.findUnique({ where: { id }, select: { name: true } });
   if (!vendor) return vendorNotFound();
-  await db.vendor.delete({ where: { id } });
+  // deleteMany: a concurrent delete between the lookup and here is a 404, not a 500.
+  const { count } = await db.vendor.deleteMany({ where: { id } });
+  if (count === 0) return vendorNotFound();
   await writeAudit({ userId: auth.principal.userId, action: "DELETE", entity: "Vendor", entityId: id, summary: `Deleted vendor "${vendor.name}" via API` });
   revalidatePath("/contracts");
   return ok({ id, deleted: true });

@@ -38,6 +38,13 @@ function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60) || "field";
 }
 
+/** `base`, or `base_2`, `base_3` … when another question already has the key. */
+function uniqueKey(base: string, taken: Set<string>) {
+  let key = base;
+  for (let n = 2; taken.has(key); n++) key = `${base}_${n}`;
+  return key;
+}
+
 /**
  * "Show only if": pick an earlier choice / multiple choice / checkbox / urgency
  * question and the answers that show this one. Controlled by the editor's field list.
@@ -132,14 +139,22 @@ export function CatalogEditor({
   const serviceOpts: ComboOption[] = [{ value: "none", label: t("noService") }, ...services];
   const groupOpts: ComboOption[] = [{ value: "none", label: t("routeByService") }, ...groups];
   const approverOpts: ComboOption[] = [{ value: "none", label: t("noApprover") }, ...agents.map((a) => ({ ...a, avatar: a.label.slice(0, 2).toUpperCase() }))];
-  const normalized = fields.filter((f) => f.label.trim()).map((f) => ({ ...f, key: f.key || slug(f.label) }));
+  const normalized = (() => {
+    const taken = new Set(fields.map((f) => f.key).filter(Boolean));
+    return fields.filter((f) => f.label.trim()).map((f) => {
+      if (f.key) return f;
+      const key = uniqueKey(slug(f.label), taken);
+      taken.add(key);
+      return { ...f, key };
+    });
+  })();
 
   const update = (i: number, patch: Partial<ServiceField>) => setFields((f) => f.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
   /** A new label renames the key; conditions that pointed at the old key follow it. */
   const relabel = (i: number, label: string) =>
     setFields((list) => {
       const oldKey = list[i].key;
-      const key = slug(label);
+      const key = uniqueKey(slug(label), new Set(list.filter((_, idx) => idx !== i).map((x) => x.key).filter(Boolean)));
       return list.map((x, idx) =>
         idx === i ? { ...x, label, key }
           : oldKey && x.condition?.field === oldKey ? { ...x, condition: { ...x.condition, field: key } } : x,

@@ -27,8 +27,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
 
 /**
  * Upsert by origin reference (MANAGER+), for keeping standard changes in step
- * with a source such as a runbook collection. Creates the template (201; `name`
- * and `title` required) when the reference is new, otherwise writes only the
+ * with a source such as a runbook collection. Creates the template (201; `name`,
+ * `title` and `type` required) when the reference is new, otherwise writes only the
  * fields sent (200). Unchanged fields write nothing and no audit row.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
@@ -52,13 +52,14 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
 
 async function upsert(principal: ApiPrincipal, ref: string, b: ChangeTemplateUpsert) {
   const current = await db.changeTemplate.findUnique({ where: { importRef: ref } });
-  if (!current && (!b.name || !b.title)) {
+  if (!current && (!b.name || !b.title || !b.type)) {
     return apiError(422, "Validation failed", {
       ...(!b.name && { name: ["Required to create a new change template"] }),
       ...(!b.title && { title: ["Required to create a new change template"] }),
+      ...(!b.type && { type: ["Required to create a new change template (STANDARD skips the CAB, NORMAL does not)"] }),
     });
   }
-  const prepared = await prepareChangeTemplate(b, current);
+  const prepared = await prepareChangeTemplate(b, current, principal.role);
   if ("response" in prepared) return prepared.response;
   const via = `API (${ref})`;
   if (!current) {

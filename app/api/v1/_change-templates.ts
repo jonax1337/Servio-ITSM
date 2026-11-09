@@ -5,6 +5,8 @@ import { apiError, ok } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { apiFieldNames, changedColumns } from "@/lib/api-record-diff";
 import { catalogReferenceError } from "@/lib/catalog-items";
+import { approverRolesForRisk } from "@/lib/cab";
+import { standardTemplateApprovalProblem, type TemplateApprovalState } from "@/lib/change-template-rules";
 import {
   CHANGE_TEMPLATE_FIELD_RENAMES, changeTemplateData, changeTemplateProblem, serializeChangeTemplate,
   type ChangeTemplatePatch, type ChangeTemplateRow,
@@ -24,17 +26,21 @@ type Data = ReturnType<typeof changeTemplateData>;
 /**
  * The Prisma data for a body on top of `current` (absent on create): 422 for an
  * unknown category, service or team, or a STANDARD template without both plans;
- * 409 for a name another template already has.
+ * 403 when the token owner may not define the resulting pre-approved template
+ * (see `approvalRefusal`); 409 for a name another template already has.
  */
 export async function prepareChangeTemplate(
   b: Partial<ChangeTemplatePatch>,
   current: ChangeTemplateRow | null,
+  role: string,
 ): Promise<{ data: Data } | { response: ReturnType<typeof apiError> }> {
   const data = changeTemplateData(b);
   const missing = await catalogReferenceError(data);
   if (missing) return { response: apiError(422, "Validation failed", { [missing.field]: [missing.message] }) };
   const problem = changeTemplateProblem(current, data);
   if (problem) return { response: apiError(422, "Validation failed", problem) };
+  const refusal = approvalRefusal(role, current, data);
+  if (refusal) return { response: apiError(403, refusal) };
   if (data.name && data.name !== current?.name) {
     const clash = await db.changeTemplate.findUnique({ where: { name: data.name }, select: { id: true } });
     if (clash && clash.id !== current?.id) return { response: duplicateName(clash.id) };
@@ -44,6 +50,22 @@ export async function prepareChangeTemplate(
     if (taken && taken.id !== current?.id) return { response: importRefTaken(taken.id) };
   }
   return { data };
+}
+
+/**
+ * An active STANDARD template pre-approves its changes, so writing one takes a role
+ * that may approve changes of its risk: a MANAGER cannot define a HIGH-risk one.
+ */
+export function approvalRefusal(role: string, current: ChangeTemplateRow | null, data: Data): string | null {
+  const next: TemplateApprovalState = {
+    type: data.type ?? current?.type ?? "STANDARD",
+    isActive: data.isActive ?? current?.isActive ?? true,
+    risk: data.risk ?? current?.risk ?? "LOW",
+    impact: data.impact ?? current?.impact ?? "MEDIUM",
+    implementationPlan: data.implementationPlan !== undefined ? data.implementationPlan : (current?.implementationPlan ?? null),
+    rollbackPlan: data.rollbackPlan !== undefined ? data.rollbackPlan : (current?.rollbackPlan ?? null),
+  };
+  return standardTemplateApprovalProblem(role, current, next, approverRolesForRisk);
 }
 
 function duplicateName(id?: string) {

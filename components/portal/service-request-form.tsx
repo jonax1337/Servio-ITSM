@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useCallback, useEffect, useState } from "react";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Send, ShieldCheck } from "lucide-react";
 import { createCatalogRequest, type CatalogState } from "@/lib/actions/catalog";
@@ -60,6 +60,15 @@ function MultiSelectField({ name, options, onValueChange }: { name: string; opti
   );
 }
 
+/**
+ * Forgets a question's answer when the question unmounts: its input state is gone
+ * with it, so a stale answer would keep showing (or hiding) the questions that depend on it.
+ */
+function ForgetAnswerOnUnmount({ fieldKey, onForget }: { fieldKey: string; onForget: (key: string) => void }) {
+  useEffect(() => () => onForget(fieldKey), [fieldKey, onForget]);
+  return null;
+}
+
 export function ServiceRequestForm({
   serviceId,
   fields,
@@ -86,6 +95,15 @@ export function ServiceRequestForm({
   // rendered (and so only submitted and required) while its condition holds.
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const setAnswer = (key: string) => (value: unknown) => setAnswers((a) => ({ ...a, [key]: value }));
+  const forgetAnswer = useCallback(
+    (key: string) =>
+      setAnswers((a) => {
+        if (!(key in a)) return a;
+        const { [key]: _gone, ...rest } = a;
+        return rest;
+      }),
+    [],
+  );
   const shown = visibleFields(fields, answers);
 
   return (
@@ -106,6 +124,7 @@ export function ServiceRequestForm({
       ) : (
         shown.map((f) => (
           <div key={f.key} className="grid gap-1.5">
+            <ForgetAnswerOnUnmount fieldKey={f.key} onForget={forgetAnswer} />
             <Label htmlFor={`f_${f.key}`}>
               {f.label}
               {f.required ? <span className="text-destructive"> *</span> : null}

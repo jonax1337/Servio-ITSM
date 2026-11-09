@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   if (refused) return refused;
   const body = await readBody(req, changeTemplateCreateSchema);
   if ("response" in body) return body.response;
-  const prepared = await prepareChangeTemplate(body.data, null);
+  const prepared = await prepareChangeTemplate(body.data, null, auth.principal.role);
   if ("response" in prepared) return prepared.response;
 
   try {

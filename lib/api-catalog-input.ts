@@ -23,7 +23,16 @@ import {
 export const QUESTION_KEY_RE = /^[A-Za-z0-9_-]{1,100}$/;
 const QUESTION_KEY_HINT = "Question keys are 1-100 characters: letters, digits, _ or -";
 
-const answer = z.string().trim().min(1).max(200);
+/**
+ * An option or condition answer. `,` `;` and line breaks are refused because stored answers
+ * are joined with them (multiple choice, ticket text), which would split one choice into two.
+ */
+const answer = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((v) => !/[,;\r\n]/.test(v), { message: "Options and answers cannot contain commas, semicolons or line breaks" });
 
 export const catalogConditionSchema = z.strictObject({
   /** Key of an EARLIER select, multiselect, checkbox or urgency question. */

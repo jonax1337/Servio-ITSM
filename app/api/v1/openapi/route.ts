@@ -608,8 +608,8 @@ const spec = {
     }),
     ...managedPaths("change-templates", "change template", { create: changeTemplateCreateSchema, patch: changeTemplatePatchSchema, upsert: changeTemplateUpsertSchema }, {
       filters: [q("q", "Substring of the name"), q("type", "STANDARD or NORMAL"), q("service_id"), q("active", "true or false (default both)")],
-      createNote: "A STANDARD template (the default) is pre-authorized: changes made from it skip the CAB, so it needs `implementation_plan` and `rollback_plan`. Names are unique.",
-      upsertNote: "Creates the template (201; `name` and `title` required) when the reference is new, otherwise writes only the fields sent (200).",
+      createNote: "`name`, `title` and `type` are required. A STANDARD template is pre-authorized: changes made from it skip the CAB, so it needs `implementation_plan` and `rollback_plan`, and writing an active one (creating or activating it, or changing its type, risk, impact or plans) needs a token owned by a role that may approve changes of its risk: a manager for LOW and MEDIUM, only an admin for HIGH (else 403). Names are unique.",
+      upsertNote: "Creates the template (201; `name`, `title` and `type` required) when the reference is new, otherwise writes only the fields sent (200). The same approval rule as on create applies to STANDARD templates.",
       deleteNote: "Changes created from it stay and lose the link.",
     }),
     "/categories": {

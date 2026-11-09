@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
-import { apiError, type ApiPrincipal } from "@/lib/api";
-import { hasRole, type Role } from "@/lib/session";
+import { apiError } from "@/lib/api";
 import { parentCreatesCycle } from "@/lib/categories";
 import type { CategoryPatch } from "@/lib/api-category-input";
 
@@ -25,13 +24,6 @@ export function serializeCategory(c: {
     archived: c.archived,
     portal_hidden: c.portalHidden,
   };
-}
-
-/** Category management is a MANAGER+ operation, as in the console. */
-export function managerRefusal(principal: ApiPrincipal) {
-  return hasRole(principal.role as Role, "MANAGER")
-    ? null
-    : apiError(403, "Managing categories needs a token owned by a manager or admin.");
 }
 
 /**

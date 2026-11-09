@@ -4,6 +4,7 @@ import {
   catalogItemData,
   catalogItemPatchSchema,
   catalogItemUpsertSchema,
+  catalogQuestionSchema,
   catalogQuestionsSchema,
   questionsJson,
   serializeCatalogItem,
@@ -116,5 +117,22 @@ describe("serializeCatalogItem", () => {
     const writable: Record<string, unknown> = { ...out };
     for (const readOnly of ["id", "created_at", "updated_at"]) delete writable[readOnly];
     expect(catalogItemPatchSchema.safeParse(writable).success).toBe(true);
+  });
+});
+
+describe("separators in options and condition values", () => {
+  const question = { key: "q", label: "Q", type: "select" as const };
+
+  it("refuses a comma, semicolon or line break in an option", () => {
+    for (const bad of ["a,b", "a;b", "a\nb"]) {
+      expect(catalogQuestionSchema.safeParse({ ...question, options: [bad] }).success, bad).toBe(false);
+    }
+    expect(catalogQuestionSchema.safeParse({ ...question, options: ["Laptop", "Dock 2"] }).success).toBe(true);
+  });
+
+  it("refuses them in a condition value too", () => {
+    const condition = (v: string) => ({ ...question, key: "r", condition: { field: "q", values: [v] } });
+    expect(catalogQuestionSchema.safeParse(condition("a,b")).success).toBe(false);
+    expect(catalogQuestionSchema.safeParse(condition("Laptop")).success).toBe(true);
   });
 });

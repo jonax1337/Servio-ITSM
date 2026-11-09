@@ -34,7 +34,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!current) return templateNotFound();
   const body = await readBody(req, changeTemplatePatchSchema);
   if ("response" in body) return body.response;
-  const prepared = await prepareChangeTemplate(body.data, current);
+  const prepared = await prepareChangeTemplate(body.data, current, auth.principal.role);
   if ("response" in prepared) return prepared.response;
 
   try {
@@ -54,7 +54,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const { id } = await ctx.params;
   const template = await db.changeTemplate.findUnique({ where: { id }, select: { name: true } });
   if (!template) return templateNotFound();
-  await db.changeTemplate.delete({ where: { id } });
+  // deleteMany: a concurrent delete between the lookup and here is a 404, not a 500.
+  const { count } = await db.changeTemplate.deleteMany({ where: { id } });
+  if (count === 0) return templateNotFound();
   await writeAudit({ userId: auth.principal.userId, action: "DELETE", entity: "ChangeTemplate", entityId: id, summary: `Deleted change template "${template.name}" via API` });
   revalidatePath("/changes/templates");
   return ok({ id, deleted: true });

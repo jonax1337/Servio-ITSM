@@ -1134,12 +1134,16 @@ Deleting an item keeps the requests made from it with their answers.
 #### Change templates
 
 `GET /change-templates` (`q` name, `type`, `service_id`, `active=true|false`).
-Fields: `name` (3–80, unique), `title` (3–200; both required on create),
-`summary`, `active`, `type` (`STANDARD` default \| `NORMAL`), `description`,
+Fields: `name` (3–80, unique), `title` (3–200) and `type` (`STANDARD` \| `NORMAL`;
+all three required on create), `summary`, `active`, `description`,
 `reason`, `implementation_plan`, `rollback_plan`, `risk`, `priority`, `impact`,
 `category_id`, `service_id`, `group_id`. A **STANDARD** template is pre-authorized
 (changes made from it skip the CAB), so the template that results from a write must
-have both plans (else `422` on `implementation_plan` / `rollback_plan`). Deleting a
+have both plans (else `422` on `implementation_plan` / `rollback_plan`). Because that
+pre-approval stands in for the CAB, writing an **active** STANDARD template (creating
+or activating it, or changing its `type`, `risk`, `impact` or plans) needs a token
+owned by a role that may approve changes of its risk: a manager for `LOW` and
+`MEDIUM`, only an admin for `HIGH` (else `403`). The console applies the same rule. Deleting a
 template keeps the changes made from it.
 
 #### Contracts
