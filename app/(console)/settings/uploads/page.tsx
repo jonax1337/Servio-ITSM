@@ -6,6 +6,7 @@ import { PageHeader, PageBody } from "@/components/page-header";
 import { SettingsForm } from "@/components/settings/settings-form";
 import { saveUploadSettings } from "@/lib/actions/settings";
 import { getT } from "@/lib/i18n/server";
+import { ATTACHMENT_EXTRA_EXTENSIONS_SETTING } from "@/lib/files";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT("settings");
@@ -16,9 +17,10 @@ export const dynamic = "force-dynamic";
 export default async function UploadSettingsPage() {
   await requireRole("ADMIN");
   const t = await getT("settings");
-  const [maxMb, gotenbergUrl] = await Promise.all([
+  const [maxMb, gotenbergUrl, extraExtensions] = await Promise.all([
     getSetting("MAX_UPLOAD_MB", "15"),
     getSetting("GOTENBERG_URL", ""),
+    getSetting(ATTACHMENT_EXTRA_EXTENSIONS_SETTING, ""),
   ]);
 
   return (
@@ -39,6 +41,14 @@ export default async function UploadSettingsPage() {
               defaultValue: maxMb ?? "15",
               placeholder: "15",
               hint: t("uploads.maxMbHint"),
+            },
+            {
+              type: "text",
+              name: ATTACHMENT_EXTRA_EXTENSIONS_SETTING,
+              label: t("uploads.extraExtensions"),
+              defaultValue: extraExtensions ?? "",
+              placeholder: "dwg, step",
+              hint: t("uploads.extraExtensionsHint"),
             },
             {
               type: "text",

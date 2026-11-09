@@ -76,8 +76,13 @@ const DOC_MAP = [
   },
   {
     label: 'Configuration & settings',
-    code: ['lib/settings.ts', 'lib/crypto.ts', 'lib/actions/settings.ts'],
+    code: ['lib/settings.ts', 'lib/crypto.ts', 'lib/actions/settings.ts', 'lib/files.ts'],
     docs: ['docs/configuration.md'],
+  },
+  {
+    label: 'People & email addresses',
+    code: ['lib/person-rules.ts', 'lib/user-email-rules.ts', 'lib/user-emails.ts', 'lib/actions/people.ts'],
+    docs: ['docs/modules.md'],
   },
   {
     label: 'Architecture / auth / middleware',

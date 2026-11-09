@@ -219,7 +219,7 @@ Coverage by module:
 
 | Module | File | Operations (write) |
 | --- | --- | --- |
-| Tickets | `modules/tickets.ts` | create, update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), parent/child (`ticket.set_parent`), merge / undo merge (`ticket.merge`, `ticket.unmerge`), tasks, work-log, watch, major-incident |
+| Tickets | `modules/tickets.ts` | create (a `requesterEmail` matches a person's primary or secondary address), update field/status/priority/type, comment, resolve, escalate, link/unlink (`ticket.unlink`), parent/child (`ticket.set_parent`), merge / undo merge (`ticket.merge`, `ticket.unmerge`), tasks, work-log, watch, major-incident |
 | Categories | `modules/taxonomy.ts` | category create/update |
 | Groups & Users | `modules/org.ts` | `group.list` (read), group create / auto-assign (MANAGER), user field (`role` / `isActive` / `isVip`, ADMIN) |
 | Services & Catalog | `modules/catalog-services.ts` | service create/update, catalog item create/publish/delete |

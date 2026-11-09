@@ -42,6 +42,7 @@ model User {
 
   accounts           Account[]
   sessions           Session[]
+  secondaryEmails    UserEmail[]
   memberships        GroupMember[]
   requestedTickets   Ticket[]                @relation("TicketRequester")
   requestedOnBehalf  Ticket[]                @relation("TicketRequestedBy")
@@ -1408,6 +1409,21 @@ model Notification {
   @@index([userId, read])
 }
 
+// Extra email addresses of a person (e.g. an alias or a second mailbox). Used to
+// recognise inbound mail and thread replies; notifications still go to
+// User.email. An address is unique across User.email and UserEmail.email —
+// the cross-table half is enforced in lib/user-emails.ts.
+model UserEmail {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model EmailMessage {
   id         String    @id @default(cuid())
   direction  String    @default("OUTBOUND") // OUTBOUND | INBOUND
@@ -1422,8 +1438,8 @@ model EmailMessage {
   body       String // plaintext twin
   bodyHtml   String? // HTML variant (multipart/alternative)
   template   String    @default("generic")
-  status     String    @default("QUEUED") // QUEUED | SENT | SIMULATED | FAILED | RECEIVED
-  error      String?
+  status     String    @default("QUEUED") // QUEUED | SENT | SIMULATED | FAILED | RECEIVED | REJECTED | ARCHIVED
+  error      String? // outbound: delivery error; inbound: reject reason code or skipped attachments
   // ── RFC 2822 threading metadata (the load-bearing part of a real mail thread) ──
   messageId  String?   @unique // generated on send, captured on receive
   inReplyTo  String?

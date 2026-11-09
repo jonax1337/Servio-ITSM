@@ -9,6 +9,8 @@ import { writeAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
 import { AUTOMATION_EMAIL } from "@/lib/system-user";
 import { isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules";
+import { normalizeSecondaryEmails, splitEmailList } from "@/lib/user-email-rules";
+import { EMAIL_TAKEN, emailTakenByOther, replaceSecondaryEmails } from "@/lib/user-emails";
 import { distinctIds } from "@/lib/utils";
 
 // Fresh DB row (not the possibly-stale JWT): only active ADMINs may manage people.
@@ -96,7 +98,6 @@ const createSchema = profileSchema.extend({
   password: z.string().default(""),
 });
 
-const EMAIL_TAKEN = "A person with this email already exists.";
 const EMAIL_RESERVED = "This address is reserved for the system.";
 const UNKNOWN_GROUP = "One of the selected groups no longer exists.";
 
@@ -105,14 +106,25 @@ const fieldError = (field: string, message: string): PersonState => ({
   fieldErrors: { [field]: [message] },
 });
 
-/** Why `email` cannot be used for a person (other than `exceptId`), or null. */
+/** Why `email` cannot be used for a person (other than `exceptId`), or null. Covers primary and secondary addresses. */
 async function emailProblem(email: string, exceptId?: string): Promise<string | null> {
   if (email === AUTOMATION_EMAIL) return EMAIL_RESERVED;
-  const taken = await db.user.findFirst({
-    where: { email, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
-    select: { id: true },
-  });
-  return taken ? EMAIL_TAKEN : null;
+  return (await emailTakenByOther(email, exceptId)) ? EMAIL_TAKEN : null;
+}
+
+/** The submitted secondary addresses, validated against the primary and every other person's addresses. */
+async function secondaryEmailsFrom(
+  formData: FormData,
+  primary: string,
+  exceptId?: string,
+): Promise<{ emails: string[] } | { state: PersonState }> {
+  const parsed = normalizeSecondaryEmails(splitEmailList(String(formData.get("secondaryEmails") ?? "")), primary);
+  if (!parsed.ok) return { state: fieldError("secondaryEmails", parsed.error) };
+  for (const email of parsed.emails) {
+    const problem = await emailProblem(email, exceptId);
+    if (problem) return { state: fieldError("secondaryEmails", problem) };
+  }
+  return { emails: parsed.emails };
 }
 
 /** True when a write failed on the unique email index (lost a race with another admin). */
@@ -133,6 +145,8 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
   if (badPassword) return fieldError("password", badPassword);
   const emailIssue = await emailProblem(profile.email);
   if (emailIssue) return fieldError("email", emailIssue);
+  const secondary = await secondaryEmailsFrom(formData, profile.email);
+  if ("state" in secondary) return secondary.state;
   const groupIds = distinctIds(formData.getAll("groupIds"));
   if (groupIds.length && (await db.group.count({ where: { id: { in: groupIds } } })) !== groupIds.length) {
     return fieldError("groupIds", UNKNOWN_GROUP);
@@ -145,6 +159,7 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
         ...profile,
         passwordHash: password ? await bcrypt.hash(password, 10) : null,
         memberships: { create: groupIds.map((groupId) => ({ groupId })) },
+        secondaryEmails: { create: secondary.emails.map((email) => ({ email })) },
       },
       select: { id: true },
     });
@@ -159,6 +174,7 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
     entity: "User",
     entityId: created.id,
     summary: `Created ${profile.role} ${profile.email} (${password ? "local password" : "no local password"}, ${groupIds.length} ${groupIds.length === 1 ? "group" : "groups"})`,
+    meta: secondary.emails.length ? { secondaryEmails: secondary.emails } : undefined,
   });
   revalidatePath("/people");
   return { ok: true };
@@ -180,20 +196,34 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
   }
   const profile = parsed.data;
 
-  const changed = PROFILE_FIELDS.filter((f) => (target[f] ?? null) !== profile[f]);
-  if (changed.length === 0) return { ok: true };
+  const changed: string[] = PROFILE_FIELDS.filter((f) => (target[f] ?? null) !== profile[f]);
 
   if (changed.includes("email")) {
     const emailIssue = await emailProblem(profile.email, id);
     if (emailIssue) return fieldError("email", emailIssue);
   }
+  const secondary = await secondaryEmailsFrom(formData, profile.email, id);
+  if ("state" in secondary) return secondary.state;
 
+  let secondaryChange: { added: string[]; removed: string[] };
   try {
-    await db.user.update({ where: { id }, data: profile });
+    // One transaction: if the primary update loses a race for its address, the
+    // secondary addresses are not left half-saved. Secondary first: promoting a
+    // secondary address to primary removes its row before User.email takes it,
+    // so the address is never held twice.
+    const replaced = await db.$transaction(async (tx) => {
+      const result = await replaceSecondaryEmails(id, secondary.emails, tx);
+      if (result.ok && changed.length) await tx.user.update({ where: { id }, data: profile });
+      return result;
+    });
+    if (!replaced.ok) return fieldError("secondaryEmails", replaced.error);
+    secondaryChange = replaced;
   } catch (e) {
     if (isUniqueViolation(e)) return fieldError("email", EMAIL_TAKEN);
     throw e;
   }
+  if (secondaryChange.added.length || secondaryChange.removed.length) changed.push("secondaryEmails");
+  if (changed.length === 0) return { ok: true };
 
   await writeAudit({
     userId: me.id,
@@ -201,7 +231,11 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
     entity: "User",
     entityId: id,
     summary: `Edited profile: ${changed.join(", ")}`,
-    meta: changed.includes("email") ? { emailFrom: target.email, emailTo: profile.email } : undefined,
+    meta: {
+      ...(changed.includes("email") ? { emailFrom: target.email, emailTo: profile.email } : {}),
+      ...(secondaryChange.added.length ? { secondaryAdded: secondaryChange.added } : {}),
+      ...(secondaryChange.removed.length ? { secondaryRemoved: secondaryChange.removed } : {}),
+    },
   });
   revalidatePath(`/people/${id}`);
   revalidatePath("/people");

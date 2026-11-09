@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { format } from "date-fns";
+import { findUserByAnyEmail } from "@/lib/user-emails";
 import { db } from "@/lib/db";
 import { writeAudit, notify, type NotificationContent } from "@/lib/audit";
 import {
@@ -319,7 +320,7 @@ async function addReplyParticipants(ticketId: number, emails: string[], actorId:
       select: { id: true },
     });
     if (notified) continue;
-    let user = await db.user.findUnique({ where: { email }, select: { id: true } });
+    let user = await findUserByAnyEmail(email, { id: true });
     // Auto-provisioned from an outbound recipient → inactive contact, not an
     // active login. This avoids silently creating usable accounts for arbitrary
     // addresses an agent CC's.

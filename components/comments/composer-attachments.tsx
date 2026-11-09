@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Paperclip, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes } from "@/lib/attachments-ui";
+import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, formatBytes } from "@/lib/attachments-ui";
+import { useUploadAccept } from "@/components/attachments/upload-accept";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
 type Staged = { id: string; filename: string };
@@ -33,6 +34,7 @@ export function ComposerAttachments({
   const [error, setError] = useState<string | null>(null);
   const [, startDelete] = useTransition();
   const maxBytes = maxUploadBytes(maxMb);
+  const accept = useUploadAccept();
   const t = useT("tickets");
   const tm = useServerMessage();
 
@@ -90,7 +92,7 @@ export function ComposerAttachments({
 
   const hiddenInputs = (
     <>
-      <input ref={inputRef} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden" onChange={(e) => onFiles(e.target.files)} />
+      <input ref={inputRef} type="file" multiple accept={accept} className="hidden" onChange={(e) => onFiles(e.target.files)} />
       {files.map((f) => (
         <input key={f.id} type="hidden" name="attachmentIds" value={f.id} />
       ))}

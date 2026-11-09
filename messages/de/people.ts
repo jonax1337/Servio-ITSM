@@ -22,6 +22,8 @@ const people: Translations<typeof en> = {
   person: "Person",
   backToPeople: "Zurück zu Personen",
   email: "E-Mail",
+  secondaryEmails: "Weitere Adressen",
+  secondaryEmailsHint: "Eine pro Zeile. E-Mails von diesen Adressen werden dieser Person zugeordnet; Benachrichtigungen gehen weiterhin an die Hauptadresse.",
   phone: "Telefon",
   jobTitle: "Position",
   department: "Abteilung",

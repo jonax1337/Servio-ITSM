@@ -11,6 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { getFormatter, getT } from "@/lib/i18n/server";
+import { parseInboundLogNote } from "@/lib/mail-inbound/log-note";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT("settings");
@@ -23,6 +24,9 @@ const MAIL_STATUS_META = {
   SENT: { label: "Sent", tone: "success" as const },
   FAILED: { label: "Failed", tone: "danger" as const },
   RECEIVED: { label: "Received", tone: "purple" as const },
+  SIMULATED: { label: "Simulated", tone: "neutral" as const },
+  REJECTED: { label: "Rejected", tone: "warning" as const },
+  ARCHIVED: { label: "Archived", tone: "neutral" as const },
 };
 
 /** cc is stored as a JSON array string; parse it defensively for display. */
@@ -99,6 +103,7 @@ export default async function MailSettingsPage() {
                 {messages.map((m) => {
                   const inbound = m.direction === "INBOUND";
                   const cc = parseList(m.cc);
+                  const note = parseInboundLogNote(m.error);
                   return (
                   <TableRow key={m.id}>
                     <TableCell className="whitespace-nowrap text-sm">
@@ -125,6 +130,13 @@ export default async function MailSettingsPage() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge map={statusMeta} value={m.status} />
+                      {inbound && note ? (
+                        <div className="mt-1 max-w-[220px] text-xs text-muted-foreground">
+                          {note.kind === "reason"
+                            ? t.dyn(`mail.reason.${note.reason}`)
+                            : t("mail.skippedAttachments", { names: note.filenames })}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right text-xs text-muted-foreground">
                       {f.relative(m.createdAt)}

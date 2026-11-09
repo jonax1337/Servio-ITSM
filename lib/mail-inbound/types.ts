@@ -3,6 +3,8 @@
 // this and handed to processInboundMail (lib/mail-inbound/process.ts). Keeping the
 // transport out of the processor is what lets a webhook slot in without a rewrite.
 
+import type { InboundDisposition } from "./disposition";
+
 export type InboundAttachment = {
   filename: string;
   content: Buffer;
@@ -35,4 +37,10 @@ export type InboundConfig = {
   folder: string;
   /** false → accept self-signed TLS (local test servers like GreenMail). */
   tlsRejectUnauthorized?: boolean;
+  /** What happens to a processed message on the server (lib/mail-inbound/disposition.ts). */
+  disposition: InboundDisposition;
+  /** Target folder of the "move" disposition. */
+  processedFolder: string;
+  /** Delete processed messages older than this many days; 0 = keep them. */
+  retentionDays: number;
 };

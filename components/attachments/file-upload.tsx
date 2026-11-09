@@ -4,7 +4,8 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
+import { DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, formatBytes, type AttachmentTarget } from "@/lib/attachments-ui";
+import { useUploadAccept } from "@/components/attachments/upload-accept";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** The single form field naming the upload's parent (see app/api/files/upload). */
@@ -14,7 +15,7 @@ function targetField(target: AttachmentTarget): [string, string] {
 }
 
 export function FileUpload({
-  target, disabled, accept = UPLOAD_ACCEPT, label, maxMb = DEFAULT_MAX_UPLOAD_MB,
+  target, disabled, accept: acceptProp, label, maxMb = DEFAULT_MAX_UPLOAD_MB,
 }: {
   target: AttachmentTarget;
   disabled?: boolean;
@@ -24,6 +25,8 @@ export function FileUpload({
   maxMb?: number;
 }) {
   const maxBytes = maxUploadBytes(maxMb);
+  const defaultAccept = useUploadAccept();
+  const accept = acceptProp ?? defaultAccept;
   const router = useRouter();
   const t = useT("tickets");
   const tm = useServerMessage();

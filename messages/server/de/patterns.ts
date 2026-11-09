@@ -30,6 +30,14 @@ export const patterns: ServerMessagePattern[] = [
   [/^A form can have at most (\d+) questions\.$/, "Ein Formular kann höchstens $1 Fragen haben."],
   [/^Action (\d+): choose an action\.$/, "Aktion $1: Bitte eine Aktion wählen."],
   [/^Condition (\d+): (.+)$/, "Bedingung $1: $2"],
+  // Inbound mail and uploads settings
+  [/^Not a valid domain: (.+)\.$/, "Keine gültige Domain: $1."],
+  [/^Not a valid address or domain: (.+)\.$/, "Keine gültige Adresse oder Domain: $1."],
+  [/^These file types can never be allowed: (.+)\.$/, "Diese Dateitypen können nie erlaubt werden: $1."],
+  [/^Not a valid file extension: (.+)\.$/, "Keine gültige Dateiendung: $1."],
+  // People: secondary addresses
+  [/^"(.+)" is not a valid email address\.$/, "„$1“ ist keine gültige E-Mail-Adresse."],
+  [/^A person can have at most (\d+) secondary addresses\.$/, "Eine Person kann höchstens $1 weitere Adressen haben."],
   [/^Action (\d+) \((.+)\): (.+)$/, "Aktion $1 ($2): $3"],
   [/^The (.+) list could not be read\.$/, "Die Liste „$1“ konnte nicht gelesen werden."],
   // Recurring tickets: leadTimeError() and the bounds of lib/recurring-ticket-input.ts

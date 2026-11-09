@@ -4,7 +4,7 @@
 import { db } from "@/lib/db";
 import { UPLOAD_ERROR_STATUS, validateUpload } from "@/lib/files";
 import { buildStorageKey, storage } from "@/lib/storage";
-import { getNumberSetting } from "@/lib/settings";
+import { getExtraUploadExtensions, getNumberSetting } from "@/lib/settings";
 
 /** The admin-configurable per-file cap (Admin Settings → MAX_UPLOAD_MB, env default). */
 export async function maxUploadBytes(): Promise<number> {
@@ -91,7 +91,7 @@ export async function readUploadFile(file: FormDataEntryValue | null, maxBytes: 
   if (!(file instanceof File)) return { status: 422, message: "No file provided." };
   if (file.size > maxBytes) return { status: 413, message: "File is too large." };
   const buf = Buffer.from(await file.arrayBuffer());
-  const v = validateUpload(file.name, file.type, buf, maxBytes);
+  const v = validateUpload(file.name, file.type, buf, maxBytes, await getExtraUploadExtensions());
   if (!v.ok) {
     const status = UPLOAD_ERROR_STATUS[v.code] ?? 400;
     const message = status === 413 ? "File is too large." : v.code === "EMPTY" ? "The file is empty." : "This file type is not allowed.";

@@ -174,6 +174,62 @@ function magicMatches(data: Buffer, spec: MimeSpec, mime: string): boolean {
   return true;
 }
 
+// ---- Admin-added extensions (Settings › Uploads, env ATTACHMENT_EXTRA_EXTENSIONS) ----
+export const ATTACHMENT_EXTRA_EXTENSIONS_SETTING = "ATTACHMENT_EXTRA_EXTENSIONS";
+
+/** Extra types have no magic signature to check, so they are stored and served as opaque downloads. */
+export const EXTRA_EXTENSION_MIME = "application/octet-stream";
+
+/**
+ * Executable, installer, script and shortcut types that can never be added as an
+ * extra extension, whatever the admin configures. (The built-in allow-list's
+ * source-code entries — js, sh, py, … — are stored for reference only and always
+ * served as downloads; they are not affected.) SVG stays out for the XSS reason
+ * noted on ALLOWED_MIME.
+ */
+export const HARD_DENIED_EXTENSIONS: ReadonlySet<string> = new Set([
+  // Windows executables, libraries, installers, control-panel and screensaver files
+  "exe", "dll", "com", "scr", "pif", "cpl", "sys", "drv", "ocx", "msi", "msp", "mst", "msc",
+  "appx", "appxbundle", "msix", "msixbundle", "application", "gadget", "xbap",
+  // Windows scripting hosts and shells
+  "bat", "cmd", "ps1", "psm1", "psd1", "ps1xml", "psc1", "vb", "vbs", "vbe", "jse", "wsf", "wsh", "wsc", "ws",
+  "hta", "sct", "scf", "reg", "inf", "lnk", "url", "settingcontent-ms", "library-ms",
+  "msh", "msh1", "msh2", "mshxml", "msh1xml", "msh2xml", "ps2", "ps2xml", "psc2", "csh", "ksh",
+  "appref-ms", "diagcab", "search-ms", "ade", "adp", "mde", "mda", "ins", "isp", "shb", "shs", "osd", "prf", "ops", "printer",
+  "website", "webpnp", "theme", "themepack", "msu", "xll", "chm", "hlp", "cab",
+  // Disk images and virtual disks Windows mounts on a double click
+  "iso", "img", "vhd", "vhdx",
+  // Java / cross-platform runtimes
+  "jar", "jnlp", "class",
+  // macOS / Linux / mobile packages and binaries
+  "app", "dmg", "pkg", "command", "run", "bin", "elf", "so", "dylib", "deb", "rpm", "apk", "ipa", "xpi", "crx",
+  // Active content that would render inline
+  "svg", "svgz", "xhtml", "xht", "mht", "mhtml",
+]);
+
+const EXTENSION_SHAPE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+export type ExtraExtensions = {
+  /** Usable extensions (lower-case, no dot, not built in, not hard-denied). */
+  extensions: string[];
+  /** Entries on the hard deny-list — refused, never allowed. */
+  denied: string[];
+  /** Entries that are not a plain extension. */
+  invalid: string[];
+};
+
+/** Parse an admin-entered extension list ("dwg, .step igs"). Built-in types are dropped as redundant. */
+export function parseExtraExtensions(raw: string | null | undefined): ExtraExtensions {
+  const out: ExtraExtensions = { extensions: [], denied: [], invalid: [] };
+  const entries = new Set((raw ?? "").split(/[\s,;]+/).map((e) => e.trim().toLowerCase().replace(/^\*?\./, "")).filter(Boolean));
+  for (const ext of entries) {
+    if (!EXTENSION_SHAPE.test(ext)) out.invalid.push(ext);
+    else if (HARD_DENIED_EXTENSIONS.has(ext)) out.denied.push(ext);
+    else if (!(ext in EXT_TO_MIME)) out.extensions.push(ext);
+  }
+  return out;
+}
+
 export type ValidationResult =
   | { ok: true; mime: string; safeName: string }
   | { ok: false; code: "TOO_LARGE" | "EMPTY" | "MIME_NOT_ALLOWED" | "EXT_MISMATCH" | "MAGIC_MISMATCH" };
@@ -187,6 +243,7 @@ export function validateUpload(
   declaredMime: string,
   data: Buffer,
   maxBytes: number = MAX_UPLOAD_BYTES,
+  extraExtensions: readonly string[] = [],
 ): ValidationResult {
   if (data.length === 0) return { ok: false, code: "EMPTY" };
   if (data.length > maxBytes) return { ok: false, code: "TOO_LARGE" };
@@ -194,6 +251,13 @@ export function validateUpload(
   const safeName = sanitizeFilename(filename);
   const declared = (declaredMime || "").split(";")[0].trim().toLowerCase();
   const ext = extOf(safeName);
+
+  // An admin-added extension: only for types the built-in list does not know (a
+  // known type keeps its magic check) and never for a hard-denied one, even if a
+  // stale setting still lists it.
+  if (ext && !(ext in EXT_TO_MIME) && extraExtensions.includes(ext) && !HARD_DENIED_EXTENSIONS.has(ext)) {
+    return { ok: true, mime: EXTRA_EXTENSION_MIME, safeName };
+  }
 
   // When the browser sends a generic/empty type for a known extension, resolve
   // the canonical MIME from the extension. We still validate magic + ext below

@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { htmlToText } from "@/lib/markdown";
 import { renderEmailHtml, quoteHtml, textToHtmlParagraphs, type MailBrand } from "@/lib/mail-template";
 import type { Locale } from "@/lib/i18n/config";
-import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, noticeLinkDe, noticeTextDe, surveyCtaDe } from "@/messages/emails/de";
+import { approvalStageDe, autoCloseNoticeDe, emailTemplatesDe, noticeLinkDe, noticeTextDe, portalLinkDe, surveyCtaDe } from "@/messages/emails/de";
 import { createFormatter } from "@/lib/i18n/format";
 import { noticeTextEn, type EmailNotice, type NoticeTextFn, type NoticeTicket } from "@/lib/notification-email-rules";
 
@@ -29,6 +29,7 @@ export const TEMPLATE_KEYS = [
   "request_approved",
   "request_rejected",
   "notification",
+  "inbound_rejected",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 
@@ -43,6 +44,7 @@ export const TEMPLATE_META: Record<TemplateKey, { label: string; description: st
   request_approved: { label: "Request approved", description: "To the requester when the last approval stage approved their catalog request, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
   notification: { label: "Notification", description: "Email copy of an in-app notification (new unassigned ticket, requester reply, SLA, contracts and licenses, recurring tickets) for people who switched it on in their account settings. {{subject}}, {{message}} and {{details}} are written in the recipient's language; {{link}} opens the record.", vars: ["appName", "recipientName", "subject", "message", "details", "link"] },
   request_rejected: { label: "Request declined", description: "To the requester when their catalog request was declined, with the approver's comment ({{comment}}).", vars: ["ref", "title", "itemName", "requesterName", "comment"] },
+  inbound_rejected: { label: "Email not accepted", description: "Automatic answer when the inbound sender policy did not let an email open a ticket ({{link}} points to the portal). Only sent when it is switched on under Settings › Inbound mail; never to automatic or bulk mail. The default text repeats nothing the sender wrote: the From address of a turned-away email can be forged, so {{senderName}} and {{subject}} (shortened, plain text) are best left out.", vars: ["appName", "senderName", "subject", "link"] },
 };
 
 export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml: string }> = {
@@ -119,6 +121,14 @@ export const DEFAULT_TEMPLATES: Record<TemplateKey, { subject: string; bodyHtml:
       `{{comment}}` +
       `<p>If you still need it, you can submit a new request from the portal.</p>`,
   },
+  inbound_rejected: {
+    subject: "Your email could not be accepted",
+    bodyHtml:
+      `<p>Hello,</p>` +
+      `<p>thanks for your message. This mailbox only accepts new requests from registered addresses, so your email has not been turned into a ticket.</p>` +
+      `<p>Please submit your request through the {{appName}} portal instead.</p>` +
+      `{{link}}`,
+  },
 };
 
 /**
@@ -158,6 +168,11 @@ const NOTICE_TEXT: Record<Locale, NoticeTextFn> = { en: noticeTextEn, de: notice
 const NOTICE_LINK: Record<Locale, (appName: string) => string> = {
   en: (appName) => `Open in ${appName}`,
   de: noticeLinkDe,
+};
+
+const PORTAL_LINK: Record<Locale, (appName: string) => string> = {
+  en: (appName) => `Open the ${appName} portal`,
+  de: portalLinkDe,
 };
 
 /** The {{autoCloseNotice}} paragraph of the resolved email (empty when automatic closing is off). */
@@ -334,6 +349,30 @@ export function renderNotificationEmail(ctx: {
       message: escapeHtml(text.message),
       details: quotedTextHtml(text.details),
       link,
+    },
+  });
+}
+
+/** The {{link}} paragraph pointing to the portal; empty when no public URL is configured. */
+export function portalLinkHtml(url: string | null | undefined, appName: string, locale: Locale = "en"): string {
+  if (!url) return "";
+  const label = (PORTAL_LINK[locale] ?? PORTAL_LINK.en)(appName);
+  return `<p><a href="${escapeHtml(url)}" style="color:#3559E8;text-decoration:underline;">${escapeHtml(label)}</a></p>`;
+}
+
+/**
+ * The automatic answer to an email the inbound sender policy did not accept.
+ * `portalUrl` is the absolute portal address (omitted when APP_URL is unset).
+ */
+export function renderInboundRejectedEmail(ctx: { brand?: MailBrand; senderName: string; subject: string; portalUrl?: string | null }) {
+  const appName = ctx.brand?.appName ?? "Servio";
+  return renderTicketEmail("inbound_rejected", {
+    brand: ctx.brand,
+    vars: {
+      appName,
+      senderName: ctx.senderName,
+      subject: ctx.subject,
+      link: portalLinkHtml(ctx.portalUrl, appName, ctx.brand?.locale),
     },
   });
 }

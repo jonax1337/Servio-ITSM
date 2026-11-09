@@ -96,6 +96,14 @@ const messages: ServerMessages = {
   "Header names may not contain spaces or special characters.": "Header-Namen dürfen keine Leer- oder Sonderzeichen enthalten.",
   "Header value is too long.": "Der Header-Wert ist zu lang.",
   "At most 20 headers.": "Höchstens 20 Header.",
+  // Inbound mail (lib/mail-inbound/policy.ts, lib/mail-inbound/disposition.ts)
+  "Pick a sender policy.": "Wählen Sie eine Absenderrichtlinie.",
+  "Pick what happens to processed messages.": "Wählen Sie, was mit verarbeiteten Nachrichten geschieht.",
+  "Enter a valid folder name for processed messages.": "Geben Sie einen gültigen Ordnernamen für verarbeitete Nachrichten ein.",
+  "Processed messages must go to a different folder than the one that is polled.": "Verarbeitete Nachrichten müssen in einen anderen Ordner als den abgerufenen verschoben werden.",
+  "Enter a whole number of days between 0 and 3650 (0 keeps processed messages).": "Geben Sie eine ganze Zahl von Tagen zwischen 0 und 3650 ein (0 behält verarbeitete Nachrichten).",
+  // People: secondary addresses (lib/user-email-rules.ts)
+  "The primary address cannot also be a secondary address.": "Die Hauptadresse kann nicht zugleich eine weitere Adresse sein.",
 };
 
 export default messages;

@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { authConfig } from "@/auth.config";
 import { loginRetryAfter, recordLoginFailure, recordLoginSuccess } from "@/lib/rate-limit";
 import { writeAudit } from "@/lib/audit";
+import { guardAdapter } from "@/lib/auth-adapter-guard";
 import { oidcRoleConfig, resolveOidcRole, shouldSyncRole, type OidcRoleConfig } from "@/lib/oidc-roles";
 import {
   decideOidcLink,
@@ -264,7 +265,7 @@ async function linkPrecreatedAccount(account: Account, profile: Record<string, u
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
-  adapter: PrismaAdapter(db),
+  adapter: guardAdapter(PrismaAdapter(db)),
   providers,
   callbacks: {
     ...authConfig.callbacks,

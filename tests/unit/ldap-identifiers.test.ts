@@ -35,6 +35,8 @@ vi.mock("@/lib/db", () => {
   const copy = (row: Record<string, unknown> | undefined) => (row ? { ...row } : null);
   return {
     db: {
+      // The sync also asks whether an address is somebody's secondary address; nobody has one here.
+      userEmail: { findUnique: async () => null },
       user: {
         findUnique: async ({ where }: { where: { syncSourceId_externalId: { syncSourceId: string; externalId: string } } }) =>
           copy(users.rows.find((row) => matches(row, where.syncSourceId_externalId))),

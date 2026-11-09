@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
-import { CHANGE_SELF_APPROVAL_SETTING, PORTAL_TRIAGE_GROUP_SETTING, TICKET_CLOSED_EMAIL_SETTING, setSetting } from "@/lib/settings";
+import { CHANGE_SELF_APPROVAL_SETTING, PORTAL_TRIAGE_GROUP_SETTING, TICKET_CLOSED_EMAIL_SETTING, getSetting, setSetting } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { CHANGE_SELF_APPROVAL_MODES } from "@/lib/approval-rules";
 import { TICKET_AUTO_CLOSE_DAYS_SETTING, parseAutoCloseDaysInput } from "@/lib/auto-close-rules";
@@ -12,6 +12,21 @@ import { aiConfigured, generateAiText, type AiProvider } from "@/lib/ai";
 import { listModels, type AiModelList } from "@/lib/ai-models";
 import { checkForUpdates, updateChecksEnabled } from "@/lib/updates";
 import { normalizeLocale } from "@/lib/i18n/config";
+import {
+  INBOUND_ALLOWED_DOMAINS_SETTING,
+  INBOUND_DENY_LIST_SETTING,
+  INBOUND_REJECT_AUTOREPLY_SETTING,
+  INBOUND_REJECT_REQUIRE_AUTH_SETTING,
+  INBOUND_SENDER_POLICY_SETTING,
+  senderPolicyInput,
+} from "@/lib/mail-inbound/policy";
+import {
+  IMAP_PROCESSED_ACTION_SETTING,
+  IMAP_PROCESSED_FOLDER_SETTING,
+  IMAP_RETENTION_DAYS_SETTING,
+  processingInput,
+} from "@/lib/mail-inbound/disposition";
+import { ATTACHMENT_EXTRA_EXTENSIONS_SETTING, parseExtraExtensions } from "@/lib/files";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -146,6 +161,59 @@ export async function saveInboundSettings(
   );
 }
 
+/** Who may open a ticket by email, the deny-list and the rejection answer (Settings › Inbound mail). */
+export async function saveInboundPolicySettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const input = senderPolicyInput({
+    policy: str(fd, INBOUND_SENDER_POLICY_SETTING),
+    allowedDomains: str(fd, INBOUND_ALLOWED_DOMAINS_SETTING),
+    denyList: str(fd, INBOUND_DENY_LIST_SETTING),
+  });
+  if (!input.ok) return { error: input.error };
+  return persist(
+    me.id,
+    [
+      { key: INBOUND_SENDER_POLICY_SETTING, value: input.policy },
+      { key: INBOUND_ALLOWED_DOMAINS_SETTING, value: input.allowedDomains.join(", ") },
+      { key: INBOUND_DENY_LIST_SETTING, value: input.denyList.join(", ") },
+      { key: INBOUND_REJECT_AUTOREPLY_SETTING, value: bool(fd, INBOUND_REJECT_AUTOREPLY_SETTING) },
+      { key: INBOUND_REJECT_REQUIRE_AUTH_SETTING, value: bool(fd, INBOUND_REJECT_REQUIRE_AUTH_SETTING) },
+    ],
+    `Updated inbound sender policy (${input.policy}, ${input.allowedDomains.length} allowed domains, ${input.denyList.length} deny-list entries)`,
+    "/settings/inbound",
+  );
+}
+
+/** What happens to fetched messages on the mail server, and how long they are kept (Settings › Inbound mail). */
+export async function saveInboundProcessingSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const input = processingInput({
+    disposition: str(fd, IMAP_PROCESSED_ACTION_SETTING),
+    folder: str(fd, IMAP_PROCESSED_FOLDER_SETTING),
+    retentionDays: str(fd, IMAP_RETENTION_DAYS_SETTING),
+    pollFolder: (await getSetting("IMAP_FOLDER")) ?? "INBOX",
+  });
+  if (!input.ok) return { error: input.error };
+  return persist(
+    me.id,
+    [
+      { key: IMAP_PROCESSED_ACTION_SETTING, value: input.disposition },
+      { key: IMAP_PROCESSED_FOLDER_SETTING, value: input.folder },
+      { key: IMAP_RETENTION_DAYS_SETTING, value: input.retentionDays ? String(input.retentionDays) : "" },
+    ],
+    `Updated processed-mail handling (${input.disposition}, retention ${input.retentionDays || "off"})`,
+    "/settings/inbound",
+  );
+}
+
 export async function saveAiSettings(
   _prev: ActionState,
   fd: FormData,
@@ -241,11 +309,15 @@ export async function saveUploadSettings(
 ): Promise<ActionState> {
   const me = await requireAdmin();
   if (!me) return { error: "Not authorised" };
+  const extra = parseExtraExtensions(str(fd, ATTACHMENT_EXTRA_EXTENSIONS_SETTING));
+  if (extra.denied.length) return { error: `These file types can never be allowed: ${extra.denied.join(", ")}.` };
+  if (extra.invalid.length) return { error: `Not a valid file extension: ${extra.invalid.join(", ")}.` };
   return persist(
     me.id,
     [
       { key: "MAX_UPLOAD_MB", value: str(fd, "MAX_UPLOAD_MB") },
       { key: "GOTENBERG_URL", value: str(fd, "GOTENBERG_URL") },
+      { key: ATTACHMENT_EXTRA_EXTENSIONS_SETTING, value: extra.extensions.join(", ") },
     ],
     "Updated upload settings",
     "/settings/uploads",

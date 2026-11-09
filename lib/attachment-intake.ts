@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { validateUpload } from "@/lib/files";
 import { buildStorageKey, storage } from "@/lib/storage";
-import { getNumberSetting } from "@/lib/settings";
+import { getExtraUploadExtensions, getNumberSetting } from "@/lib/settings";
 
 /**
  * Server-side intake for inline `data:` attachments the assistant chat runtimes
@@ -14,8 +14,11 @@ import { getNumberSetting } from "@/lib/settings";
 
 export type IntakeFile = { name: string; type: string; dataUrl: string };
 
-async function maxUploadBytes(): Promise<number> {
-  return (await getNumberSetting("MAX_UPLOAD_MB", 15)) * 1024 * 1024;
+type UploadLimits = { maxBytes: number; extraExtensions: string[] };
+
+async function uploadLimits(): Promise<UploadLimits> {
+  const [maxMb, extraExtensions] = await Promise.all([getNumberSetting("MAX_UPLOAD_MB", 15), getExtraUploadExtensions()]);
+  return { maxBytes: maxMb * 1024 * 1024, extraExtensions };
 }
 
 /**
@@ -27,7 +30,7 @@ async function storeDataUrl(
   userId: string,
   file: IntakeFile,
   fk: { ticketId?: number },
-  maxBytes: number,
+  limits: UploadLimits,
 ): Promise<string | null> {
   if (!file?.dataUrl?.startsWith("data:")) return null;
   const comma = file.dataUrl.indexOf(",");
@@ -54,7 +57,7 @@ async function storeDataUrl(
     if (sub) name = `${name}.${sub === "jpeg" ? "jpg" : sub}`;
   }
 
-  const v = validateUpload(name, declaredMime, buf, maxBytes);
+  const v = validateUpload(name, declaredMime, buf, limits.maxBytes, limits.extraExtensions);
   if (!v.ok) return null;
 
   const key = buildStorageKey(v.safeName);
@@ -93,10 +96,10 @@ async function storeDataUrl(
 export async function stageDataUrls(userId: string, files: IntakeFile[]): Promise<string[]> {
   const list = (files ?? []).slice(0, 10);
   if (list.length === 0) return [];
-  const maxBytes = await maxUploadBytes();
+  const limits = await uploadLimits();
   const ids: string[] = [];
   for (const f of list) {
-    const id = await storeDataUrl(userId, f, {}, maxBytes);
+    const id = await storeDataUrl(userId, f, {}, limits);
     if (id) ids.push(id);
   }
   return ids;
@@ -114,9 +117,9 @@ export async function attachDataUrlsToTicket(
 ): Promise<void> {
   const list = (files ?? []).slice(0, 10);
   if (list.length === 0) return;
-  const maxBytes = await maxUploadBytes();
+  const limits = await uploadLimits();
   for (const f of list) {
-    await storeDataUrl(userId, f, { ticketId }, maxBytes);
+    await storeDataUrl(userId, f, { ticketId }, limits);
   }
 }
 

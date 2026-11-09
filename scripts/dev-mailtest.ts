@@ -7,10 +7,12 @@
  *
  * --send flags: --from --to --subject --text --inreplyto
  * Override endpoints: --smtp-host --smtp-port --imap-host --imap-port --user --pass
+ * --poll flags: --folder --disposition seen|move|delete --processed-folder
  */
 import nodemailer from "nodemailer";
 import { db } from "@/lib/db";
 import { pollImap } from "@/lib/mail-inbound/imap";
+import { parseDisposition } from "@/lib/mail-inbound/disposition";
 import { processInboundMail } from "@/lib/mail-inbound/process";
 import { setSetting } from "@/lib/settings";
 
@@ -52,10 +54,14 @@ async function poll() {
       pass: arg("pass", "test")!,
       folder: arg("folder", "INBOX")!,
       tlsRejectUnauthorized: false,
+      disposition: parseDisposition(arg("disposition", "seen")),
+      processedFolder: arg("processed-folder", "Processed")!,
+      retentionDays: 0,
     },
     async (mail) => {
       const r = await processInboundMail(mail);
-      console.log(`  · ${mail.fromEmail} "${mail.subject}" → ${r.action}${"ticketId" in r && r.ticketId ? ` #${r.ticketId}` : ""}`);
+      const detail = "ticketId" in r && r.ticketId ? ` #${r.ticketId}` : "reason" in r ? ` (${r.reason})` : "";
+      console.log(`  · ${mail.fromEmail} "${mail.subject}" → ${r.action}${detail}`);
     },
   );
   console.log(`✓ poll done — processed=${res.processed} failed=${res.failed}`);

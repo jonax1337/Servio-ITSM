@@ -18,6 +18,7 @@ import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-in
 import { serviceCreateSchema, servicePatchSchema, serviceUpsertSchema } from "@/lib/api-service-input";
 import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, articleUpsertSchema } from "@/lib/api-article-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
+import { userPatchSchema } from "@/lib/api-user-input";
 import {
   assetCreateSchema, assetPatchSchema, assetUpsertSchema, licenseAssignSchema, licenseCreateSchema,
   licensePatchSchema, relationCreateSchema, vendorCreateSchema, vendorPatchSchema, vendorUpsertSchema,
@@ -118,7 +119,7 @@ const uploadBody = {
         required: ["file"],
         additionalProperties: false,
         properties: {
-          file: { type: "string", format: "binary", description: "One file. Size cap MAX_UPLOAD_MB; type, extension and content checked against the allow-list." },
+          file: { type: "string", format: "binary", description: "One file. Size cap MAX_UPLOAD_MB; type, extension and content checked against the allow-list (plus the admin-added extensions of Settings › Uploads, stored as application/octet-stream; executables and scripts are never accepted)." },
           comment_id: { type: "string", description: "Tickets only: attach to this comment of the ticket (USER tokens: their own public reply)." },
           created_at: { type: "string", format: "date-time", description: "History import: original upload time (ISO with offset). Needs the import:write scope and an ADMIN owner." },
           uploaded_by_id: { type: "string", description: "History import: the original uploader (an existing user id). Needs the import:write scope and an ADMIN owner." },
@@ -668,7 +669,32 @@ const spec = {
       ]),
     ),
     ...attachmentPaths(),
-    "/users": { get: { summary: "Look up users (minimal fields)", description: agentOnly, parameters: [q("q", "Name or email"), q("role"), q("active", "true (default), false or all"), ...pageParams], responses: { "200": { description: "OK" } } } },
+    "/users": {
+      get: {
+        summary: "Look up users (minimal fields)",
+        description: `${agentOnly} Each user carries \`secondary_emails\`: extra addresses that inbound mail is matched on (notifications go to \`email\`).`,
+        parameters: [q("q", "Name, primary or secondary email"), q("role"), q("active", "true (default), false or all"), ...pageParams],
+        responses: { "200": { description: "OK" } },
+      },
+    },
+    "/users/{id}": {
+      get: { summary: "Get a user (minimal fields)", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Replace a user's secondary email addresses (ADMIN)",
+        description:
+          "Needs the `directory:write` scope (the legacy `write` works too) and a token owned by an ADMIN. `secondary_emails` replaces the whole list (`[]` removes all). " +
+          "An address must not be the user's own primary address and must not belong to anyone else, as primary or secondary address.",
+        parameters: [strId],
+        requestBody: body(userPatchSchema),
+        responses: {
+          "200": { description: "Updated (or unchanged)" },
+          "403": { description: "Token owner is not an ADMIN" },
+          "404": { description: "Not found" },
+          "409": { description: "An address already belongs to another person" },
+          "422": { description: "Validation failed (malformed address, the primary address, too many, unknown fields)" },
+        },
+      },
+    },
   }),
 };
 

@@ -50,6 +50,8 @@ type SendInput = {
   references?: string;
   /** Stored blobs to attach (read from storage at send time). */
   attachments?: { filename: string; storageKey: string }[];
+  /** Extra wire headers, e.g. `Auto-Submitted` on automatic answers (RFC 3834). */
+  headers?: Record<string, string>;
 };
 
 export async function sendMail(input: SendInput): Promise<void> {
@@ -102,7 +104,7 @@ export async function sendMail(input: SendInput): Promise<void> {
             input.attachments.map(async (a) => ({ filename: a.filename, content: (await storage.get(a.storageKey)).body })),
           )
         : undefined;
-      const headers: Record<string, string> = { "Message-ID": messageId };
+      const headers: Record<string, string> = { ...input.headers, "Message-ID": messageId };
       if (input.inReplyTo) headers["In-Reply-To"] = input.inReplyTo;
       if (input.references) headers["References"] = input.references;
       // Retry with exponential backoff so a transient SMTP blip (connection
@@ -187,11 +189,16 @@ export async function recordInboundEmail(input: {
   headers?: Record<string, unknown> | null;
   ticketId?: number | null;
   commentId?: string | null;
+  /** RECEIVED (default) for ingested mail; REJECTED / ARCHIVED when the sender policy kept it out. */
+  status?: "RECEIVED" | "REJECTED" | "ARCHIVED";
+  /** Reject reason code or skipped-attachment note (lib/mail-inbound/log-note.ts). */
+  error?: string | null;
 }) {
   return db.emailMessage.create({
     data: {
       direction: "INBOUND",
-      status: "RECEIVED",
+      status: input.status ?? "RECEIVED",
+      error: input.error ?? null,
       fromEmail: input.fromEmail,
       fromName: input.fromName ?? null,
       toEmail: input.toEmail,

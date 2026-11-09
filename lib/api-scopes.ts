@@ -35,6 +35,7 @@ export const RESOURCE_SCOPES = [
   "catalog:read",
   "catalog:write",
   "directory:read",
+  "directory:write",
   "import:write",
 ] as const;
 export type ResourceScope = (typeof RESOURCE_SCOPES)[number];
