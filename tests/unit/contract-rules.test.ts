@@ -168,6 +168,11 @@ describe("contractDateError", () => {
     expect(contractDateError(day("2026-06-01"), day("2027-06-01"))).toBeNull();
     expect(contractDateError(day("2026-06-01"), null)).toBeNull();
   });
+
+  it("has nothing to contradict while the start date is unknown", () => {
+    expect(contractDateError(null, day("2026-05-31"))).toBeNull();
+    expect(contractDateError(null, null)).toBeNull();
+  });
 });
 
 describe("assignmentError", () => {

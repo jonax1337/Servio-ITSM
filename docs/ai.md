@@ -232,7 +232,7 @@ Coverage by module:
 | On-call | `modules/oncall.ts` | `oncall.who` (read, AGENT), `oncall.override` (write, MANAGER) |
 | Status page | `modules/status.ts` | `status_incident.list` (read, AGENT), `status_incident.create` / `.update` / `.post_update` (write, AGENT; publishing needs MANAGER, checked inside `run`, and the ops reuse the shared actions so the ticket-link checks apply) |
 | Releases & templates | `modules/releases.ts` | `release.create`, `release.add_change`, `change.create_from_template` (write, AGENT), `change_template.list` (read, AGENT) |
-| Contracts & licenses | `modules/contracts.ts` | `contract.expiring`, `license.compliance` (read, AGENT), `contract.create` (write, MANAGER; owner defaults to the acting user) |
+| Contracts & licenses | `modules/contracts.ts` | `contract.expiring`, `license.compliance` (read, AGENT), `contract.create` (write, MANAGER; owner defaults to the acting user; the start date is optional) |
 | Insights | `modules/insights.ts` | `ticket.find_similar`, `insight.list` (read, AGENT), `insight.problem_from_cluster` (write, AGENT) |
 | Integrations | `modules/mcp.ts` | `mcp.call` — run a tool on a remote MCP server; never a model tool: the harness creates the proposal for `APPROVAL`-mode servers, and approving re-checks the server's config and the approver's role (see [Remote MCP servers](#remote-mcp-servers-libsable-mcpts-libsable-mcp-policyts)) |
 

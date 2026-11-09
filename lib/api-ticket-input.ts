@@ -11,6 +11,12 @@ import { externalRefSchema } from "@/lib/ticket-external-ref";
 /** What POST /tickets does when an OPEN ticket already carries the `externalRef`. */
 export const ON_DUPLICATE = ["return", "comment"] as const;
 
+/**
+ * The manual due date of a ticket: a full ISO 8601 timestamp with offset (`Z` or `+02:00`).
+ * It is an agent's own target and never moves the SLA clock (see docs/rest-api.md, "Due date").
+ */
+export const dueAtSchema = z.iso.datetime({ offset: true });
+
 export const ticketCreateSchema = z.object({
   title: z.string().min(3),
   description: z.string().optional().default(""),
@@ -25,6 +31,8 @@ export const ticketCreateSchema = z.object({
   groupId: z.string().optional(),
   categoryId: z.string().optional(),
   serviceId: z.string().optional(),
+  /** Manual due date, agent tokens only (see {@link dueAtSchema}). */
+  dueAt: dueAtSchema.optional(),
   /** Integration key (e.g. "zabbix:event:12345"): at most one OPEN ticket carries it. Agent tokens only. */
   externalRef: externalRefSchema.optional(),
   /** `return` (default): answer with the open ticket; `comment`: also add the description to it as an internal note. */
@@ -45,4 +53,16 @@ export const ticketResolveSchema = z.strictObject({
 export function duplicateCommentText(input: { title: string; description?: string | null }): string {
   const text = (input.description ?? "").trim() || input.title.trim();
   return text.slice(0, 50_000);
+}
+
+/** The ticket's due date as the API presents it: the manual date when set, else the SLA resolution deadline. */
+export function effectiveDue(t: { dueDate?: Date | null; resolveDueAt?: Date | null; dueAt?: Date | null }): { at: Date | null; source: "MANUAL" | "SLA" | null } {
+  if (t.dueDate) return { at: t.dueDate, source: "MANUAL" };
+  const sla = t.resolveDueAt ?? t.dueAt ?? null;
+  return sla ? { at: sla, source: "SLA" } : { at: null, source: null };
+}
+
+/** The audit summary of a manual due date change made through the API. */
+export function dueDateAuditSummary(next: Date | null): string {
+  return next ? `Set due date to ${next.toISOString()} via API` : "Cleared due date via API";
 }

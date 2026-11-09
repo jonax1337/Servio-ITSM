@@ -28,10 +28,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
 
 /**
  * Upsert by origin reference (MANAGER+), for keeping contracts in step with a
- * procurement or ERP source. Creates the contract (201; `name` and `start_date`
- * required) when the reference is new, otherwise writes only the fields sent
- * (200). Unchanged fields write nothing and no audit row; `meta.changed` lists
- * what changed.
+ * procurement or ERP source. Creates the contract (201; `name` required) when
+ * the reference is new, otherwise writes only the fields sent (200). Unchanged
+ * fields write nothing and no audit row; `meta.changed` lists what changed.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
   const auth = await agentGuard(req, "cmdb:write");
@@ -54,18 +53,15 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
 
 async function upsert(principal: ApiPrincipal, ref: string, b: ContractUpsert) {
   const current = await db.contract.findUnique({ where: { importRef: ref }, include: CONTRACT_INCLUDE });
-  if (!current && (!b.name || !b.start_date)) {
-    return apiError(422, "Validation failed", {
-      ...(!b.name && { name: ["Required to create a new contract"] }),
-      ...(!b.start_date && { start_date: ["Required to create a new contract"] }),
-    });
+  if (!current && !b.name) {
+    return apiError(422, "Validation failed", { name: ["Required to create a new contract"] });
   }
   const prepared = await prepareContract(b, current);
   if ("response" in prepared) return prepared.response;
   const { data, assetIds } = prepared;
   const via = `API (${ref})`;
   if (!current) {
-    const contract = await createContractRecord({ ...data, name: b.name!, startDate: data.startDate!, importRef: ref }, assetIds, principal.userId, via);
+    const contract = await createContractRecord({ ...data, name: b.name!, importRef: ref }, assetIds, principal.userId, via);
     const changed = [...apiFieldNames(Object.keys(data)), ...(assetIds ? ["asset_ids"] : [])];
     return contractResponse(contract, { status: 201, meta: { created: true, changed } });
   }

@@ -5,6 +5,9 @@ import {
   STANDARD_TEMPLATE_APPROVER_MESSAGE,
   STANDARD_TEMPLATE_PLANS_MESSAGE,
   standardTemplateApprovalProblem,
+  TEMPLATE_PROCEDURE_FIXED_MESSAGE,
+  TEMPLATE_TYPE_FIXED_MESSAGE,
+  templateOverrideConflicts,
   templateProblem,
   type ChangeTemplateDefaults,
 } from "@/lib/change-template-rules";
@@ -145,5 +148,27 @@ describe("standardTemplateApprovalProblem", () => {
     expect(check("MANAGER", null, { risk: "HIGH", isActive: false })).toBeNull();
     expect(check("MANAGER", high, { isActive: false })).toBeNull(); // switching it off is always safe
     expect(check("MANAGER", high, { type: "NORMAL" })).toBeNull();
+  });
+});
+
+describe("templateOverrideConflicts", () => {
+  it("accepts a request that overrides nothing the template fixes", () => {
+    expect(templateOverrideConflicts(standard, {})).toEqual({});
+    expect(templateOverrideConflicts(standard, { type: "STANDARD", risk: "LOW", impact: "LOW", implementation_plan: " 1. Install new cert ", rollback_plan: "1. Reinstall old cert" })).toEqual({});
+  });
+
+  it("names every field of a pre-authorized template that the request would change", () => {
+    expect(templateOverrideConflicts(standard, { risk: "HIGH", impact: "HIGH", implementation_plan: "other", rollback_plan: "" })).toEqual({
+      risk: [TEMPLATE_PROCEDURE_FIXED_MESSAGE],
+      impact: [TEMPLATE_PROCEDURE_FIXED_MESSAGE],
+      implementation_plan: [TEMPLATE_PROCEDURE_FIXED_MESSAGE],
+      rollback_plan: [TEMPLATE_PROCEDURE_FIXED_MESSAGE],
+    });
+  });
+
+  it("lets a NORMAL template's change differ in risk, impact and plans, but never in type", () => {
+    expect(templateOverrideConflicts(normal, { risk: "HIGH", impact: "HIGH", implementation_plan: "other", rollback_plan: "other" })).toEqual({});
+    expect(templateOverrideConflicts(normal, { type: "STANDARD" })).toEqual({ type: [TEMPLATE_TYPE_FIXED_MESSAGE] });
+    expect(templateOverrideConflicts(standard, { type: "EMERGENCY" })).toEqual({ type: [TEMPLATE_TYPE_FIXED_MESSAGE] });
   });
 });

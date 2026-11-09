@@ -32,8 +32,10 @@ describe("contractCreateSchema", () => {
     expect(parsed.asset_ids).toEqual(["a1", "a2"]);
   });
 
-  it("needs a name and a start day, and is strict", () => {
-    expect(contractCreateSchema.safeParse({ name: "Support" }).success).toBe(false);
+  it("needs a name; the start day is optional, may be null, and must be a calendar day", () => {
+    expect(contractCreateSchema.safeParse({}).success).toBe(false);
+    expect(contractCreateSchema.safeParse({ name: "Support" }).success).toBe(true);
+    expect(contractCreateSchema.parse({ name: "Support", start_date: null }).start_date).toBeNull();
     expect(contractCreateSchema.safeParse({ name: "Support", start_date: "01.01.2026" }).success).toBe(false);
     expect(contractCreateSchema.safeParse({ name: "Support", start_date: "2026-01-01", vendorId: "v1" }).success).toBe(false);
     expect(contractCreateSchema.safeParse({ name: "Support", start_date: "2026-01-01", cost: -1 }).success).toBe(false);
@@ -59,6 +61,15 @@ describe("contractData / contractDateProblem", () => {
     expect(contractDateProblem(current, contractData({ start_date: "2027-01-01" }))).toEqual({ end_date: [CONTRACT_END_BEFORE_START] });
     expect(contractDateProblem(current, contractData({ end_date: null }))).toBeNull();
     expect(contractDateProblem(null, contractData({ start_date: "2026-01-01" }))).toBeNull();
+  });
+
+  it("clears the start date with null and has no date conflict while it is unknown", () => {
+    expect(contractData({ start_date: null })).toEqual({ startDate: null });
+    const current = { startDate: new Date("2026-03-01"), endDate: new Date("2026-12-31") };
+    expect(contractDateProblem(current, contractData({ start_date: null, end_date: "2026-02-01" }))).toBeNull();
+    // A contract that never had a start accepts any end date, and a later start is still checked.
+    expect(contractDateProblem({ startDate: null, endDate: null }, contractData({ end_date: "2020-01-01" }))).toBeNull();
+    expect(contractDateProblem({ startDate: null, endDate: new Date("2026-12-31") }, contractData({ start_date: "2027-01-01" }))).toEqual({ end_date: [CONTRACT_END_BEFORE_START] });
   });
 });
 
@@ -86,6 +97,21 @@ describe("serializeContract", () => {
       start_date: "2026-01-01", end_date: "2026-12-01", expiry: "EXPIRING", vendor: { id: "v1", name: "Acme" },
       asset_ids: ["a1"], assets: [{ id: "a1", name: "Printer" }], import_ref: "erp:contract:1",
     });
+  });
+});
+
+describe("serializeContract without a start date", () => {
+  it("answers start_date null and still reports the expiry from the end date", () => {
+    const at = new Date("2026-11-21T10:00:00Z");
+    const out = serializeContract(
+      {
+        id: "k2", name: "Legacy", number: null, type: "SUPPORT", status: "ACTIVE", vendorId: null, ownerId: null,
+        startDate: null, endDate: new Date("2026-12-01"), cost: null, renewalNoticeDays: 30, autoRenew: false,
+        notes: null, importRef: null, createdAt: at, updatedAt: at,
+      },
+      at,
+    );
+    expect(out).toMatchObject({ start_date: null, end_date: "2026-12-01", expiry: "EXPIRING" });
   });
 });
 

@@ -242,6 +242,9 @@ const spec = {
           priority: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
           external_ref: { type: ["string", "null"], description: "Integration key (monitoring dedup); kept after resolution" },
           external_ref_open: { type: "boolean", description: "This is the open ticket new POSTs with the key land in" },
+          due_at: { type: ["string", "null"], format: "date-time", description: "Due date: the manual one when an agent set it (`due_at_source` MANUAL), else the SLA resolution deadline (SLA). Settable with `due_at` on POST and PATCH /tickets; it never moves the SLA clock." },
+          due_at_source: { type: ["string", "null"], enum: ["MANUAL", "SLA", null], description: "Where `due_at` comes from" },
+          sla_due_at: { type: ["string", "null"], format: "date-time", description: "The SLA resolution deadline, whatever `due_at` shows" },
         },
       },
       Asset: {
@@ -287,7 +290,7 @@ const spec = {
       },
       post: {
         summary: "Create a ticket (or land in the open one carrying `external_ref`)",
-        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one. `group_id` (agent tokens) routes the ticket; without it the category's team becomes the group. An assignee must be a member of the group; without one, the group's auto-assign strategy picks an agent.",
+        description: "Keys are camelCase or snake_case. With `external_ref` (agent tokens only) at most one OPEN ticket carries the key: a repeat answers 200 with that ticket and `meta.deduplicated: true` (with `on_duplicate: \"comment\"` the description is added as an internal note), concurrent repeats included. After the ticket is resolved/closed/cancelled the next POST opens a new one. `group_id` (agent tokens) routes the ticket; without it the category's team becomes the group. An assignee must be a member of the group; without one, the group's auto-assign strategy picks an agent. `due_at` (agent tokens, ISO 8601 with offset; a USER token gets 403) sets the manual due date, which never changes the SLA deadlines.",
         requestBody: body(ticketCreateSchema),
         responses: {
           "201": { description: "Created" },
@@ -301,7 +304,7 @@ const spec = {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: {
         summary: "Update a ticket",
-        description: "Agent tokens. Fields: `title`, `description`, `status`, `priority`, `assignee_id`, `group_id`, `service_id`, `problem_id`, `change_id` (null clears). A new `group_id` clears an assignee who is not a member and runs the group's auto-assign. A new `service_id` (or `priority`) re-prices the SLA deadlines of an open ticket; an unknown service is a 422.",
+        description: "Agent tokens. Fields: `title`, `description`, `status`, `priority`, `assignee_id`, `group_id`, `service_id`, `problem_id`, `change_id` (null clears). A new `group_id` clears an assignee who is not a member and runs the group's auto-assign. A new `service_id` (or `priority`) re-prices the SLA deadlines of an open ticket; an unknown service is a 422. `due_at` (ISO 8601 with offset; null clears it) sets the manual due date like the console's picker (403 unless the owner may act on the ticket); it never changes the SLA deadlines.",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
         responses: { "200": { description: "Updated" }, ...refused },
       },
@@ -366,8 +369,8 @@ const spec = {
         q("q", "Substring of name or number"), q("vendor_id"), q("owner_id"), q("status"), q("type"),
         q("asset_id", "Contracts covering this asset"), q("ends_before", "YYYY-MM-DD: end date before that day"),
       ],
-      createNote: "Vendor, owner and assets must exist; the end date may not be before the start date. `asset_ids` sets the covered assets. Responses carry `expiry` (NONE | OK | EXPIRING | EXPIRED).",
-      upsertNote: "Creates the contract (201; `name` and `start_date` required) when the reference is new, otherwise writes only the fields sent (200); `asset_ids` replaces the covered assets.",
+      createNote: "Vendor, owner and assets must exist; `start_date` is optional (null = unknown); a known start date may not be after the end date. `asset_ids` sets the covered assets. Responses carry `expiry` (NONE | OK | EXPIRING | EXPIRED).",
+      upsertNote: "Creates the contract (201; `name` required) when the reference is new, otherwise writes only the fields sent (200); `asset_ids` replaces the covered assets.",
       deleteNote: "Licenses under it stay, without a contract; covered assets lose the link.",
     }),
     "/licenses": {
@@ -547,7 +550,17 @@ const spec = {
         ],
         responses: { "200": { description: "A paginated list of changes" } },
       },
-      post: { summary: "Create a change (in DRAFT)", description: agentOnly, requestBody: body(changeCreateSchema), responses: { "201": { description: "Created" }, ...refused } },
+      post: {
+        summary: "Create a change (in DRAFT), optionally from a change template",
+        description:
+          agentOnly +
+          " With `template_id` or `template_ref` (the template's `import_ref`) the change starts from the template like \"new change from template\" in the console: `title` becomes optional and every other field an override. " +
+          "A STANDARD template fixes type, risk, impact and both plans (a different value is a 422, the template's own is accepted); the change is STANDARD, records `template_id` and is pre-approved through the same submit path as in the console (`meta.pre_approved`). " +
+          "If that pre-approval is refused (for example by a freeze window) the change stays a draft and `meta.approval_error` says why. A NORMAL template yields a draft for the CAB. An inactive template is a 409, an unknown one a 422. " +
+          "Find templates with GET /change-templates (catalog read scope); creating from one needs only changes:write.",
+        requestBody: body(changeCreateSchema),
+        responses: { "201": { description: "Created (with a template: `meta.template_id`, `meta.pre_approved`, `meta.approval_error`)" }, ...refused },
+      },
     },
     "/changes/{id}": {
       get: { summary: "Get a change (with approvals and affected CIs)", parameters: [idParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },

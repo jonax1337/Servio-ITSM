@@ -9,6 +9,8 @@
  * (`rollback_plna`) fails loudly instead of losing the rollback plan.
  */
 import { z } from "zod";
+import { externalRefSchema } from "@/lib/ticket-external-ref";
+import type { ChangeTemplateOverrides } from "@/lib/change-template-rules";
 import {
   CHANGE_OUTCOMES,
   CHANGE_STATUSES,
@@ -25,24 +27,48 @@ const text = z.string();
 const isoDate = z.iso.datetime({ offset: true }).nullable();
 const customFields = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
-export const changeCreateSchema = z.strictObject({
-  title: z.string().min(3),
-  description: text.optional(),
-  type: z.enum(CHANGE_TYPES).optional().default("NORMAL"),
-  risk: z.enum(RISKS).optional().default("MEDIUM"),
-  priority: z.enum(PRIORITIES).optional().default("MEDIUM"),
-  impact: z.enum(IMPACT_URGENCY).optional().default("MEDIUM"),
-  reason: text.optional(),
-  implementation_plan: text.optional(),
-  rollback_plan: text.optional(),
-  assignee_id: id.optional(),
-  group_id: id.optional(),
-  category_id: id.optional(),
-  planned_start: isoDate.optional(),
-  planned_end: isoDate.optional(),
-  asset_ids: z.array(id).max(200).optional(),
-  custom_fields: customFields.optional(),
-});
+/** What a change created without a template starts with (the console form's defaults). */
+export const CHANGE_CREATE_DEFAULTS = { type: "NORMAL", risk: "MEDIUM", priority: "MEDIUM", impact: "MEDIUM" } as const;
+
+/**
+ * POST /changes. Without a template the defaults of {@link CHANGE_CREATE_DEFAULTS} apply and `title`
+ * is required. With `template_id` / `template_ref` every field is an optional override of the
+ * template's value (an absent key keeps it; the rules for what may be overridden live in
+ * lib/change-template-rules.ts), so no default is applied here: an explicit value must be told
+ * apart from an absent one.
+ */
+export const changeCreateSchema = z
+  .strictObject({
+    title: z.string().min(3).optional(),
+    description: text.optional(),
+    type: z.enum(CHANGE_TYPES).optional(),
+    risk: z.enum(RISKS).optional(),
+    priority: z.enum(PRIORITIES).optional(),
+    impact: z.enum(IMPACT_URGENCY).optional(),
+    reason: text.optional(),
+    implementation_plan: text.optional(),
+    rollback_plan: text.optional(),
+    assignee_id: id.optional(),
+    /** With a template, `null` clears the template's team / category. */
+    group_id: nullableId.optional(),
+    category_id: nullableId.optional(),
+    planned_start: isoDate.optional(),
+    planned_end: isoDate.optional(),
+    asset_ids: z.array(id).max(200).optional(),
+    custom_fields: customFields.optional(),
+    /** Create from this change template (GET /change-templates lists them). Exclusive with `template_ref`. */
+    template_id: id.optional(),
+    /** Create from the change template carrying this `import_ref`. Exclusive with `template_id`. */
+    template_ref: externalRefSchema.optional(),
+  })
+  .superRefine((b, ctx) => {
+    if (b.template_id && b.template_ref) {
+      ctx.addIssue({ code: "custom", path: ["template_ref"], message: "Send either template_id or template_ref, not both." });
+    }
+    if (!b.template_id && !b.template_ref && !b.title) {
+      ctx.addIssue({ code: "custom", path: ["title"], message: "Required (it comes from the template only when template_id or template_ref is given)." });
+    }
+  });
 
 export const changePatchSchema = z
   .strictObject({
@@ -147,10 +173,10 @@ export function changeCreateForm(b: ChangeCreate): FormData {
     {
       title: b.title,
       description: b.description ?? "",
-      type: b.type,
-      risk: b.risk,
-      priority: b.priority,
-      impact: b.impact,
+      type: b.type ?? CHANGE_CREATE_DEFAULTS.type,
+      risk: b.risk ?? CHANGE_CREATE_DEFAULTS.risk,
+      priority: b.priority ?? CHANGE_CREATE_DEFAULTS.priority,
+      impact: b.impact ?? CHANGE_CREATE_DEFAULTS.impact,
       reason: b.reason,
       implementationPlan: b.implementation_plan,
       rollbackPlan: b.rollback_plan,
@@ -163,6 +189,26 @@ export function changeCreateForm(b: ChangeCreate): FormData {
     },
     b.custom_fields,
   );
+}
+
+/** The template overrides a POST /changes body stands for (an absent key keeps the template's value). */
+export function templateOverridesFrom(b: ChangeCreate): ChangeTemplateOverrides {
+  const date = (v: string | null | undefined) => (v ? new Date(v) : null);
+  return {
+    ...(b.title !== undefined && { title: b.title }),
+    ...(b.description !== undefined && { description: b.description }),
+    ...(b.reason !== undefined && { reason: b.reason }),
+    ...(b.implementation_plan !== undefined && { implementationPlan: b.implementation_plan }),
+    ...(b.rollback_plan !== undefined && { rollbackPlan: b.rollback_plan }),
+    ...(b.risk !== undefined && { risk: b.risk }),
+    ...(b.priority !== undefined && { priority: b.priority }),
+    ...(b.impact !== undefined && { impact: b.impact }),
+    ...(b.assignee_id !== undefined && { assigneeId: b.assignee_id }),
+    ...(b.group_id !== undefined && { groupId: b.group_id }),
+    ...(b.category_id !== undefined && { categoryId: b.category_id }),
+    ...(b.planned_start !== undefined && { plannedStart: date(b.planned_start) }),
+    ...(b.planned_end !== undefined && { plannedEnd: date(b.planned_end) }),
+  };
 }
 
 /** The createProblem action's form, from an API body. */

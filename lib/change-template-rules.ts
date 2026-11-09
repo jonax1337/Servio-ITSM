@@ -124,3 +124,37 @@ export function standardTemplateApprovalProblem(
   const risks = current && isPreAuthorized(current.type) && current.isActive ? [current.risk, next.risk] : [next.risk];
   return risks.every((r) => approverRolesForRisk(r).includes(role)) ? null : STANDARD_TEMPLATE_APPROVER_MESSAGE;
 }
+
+export const TEMPLATE_TYPE_FIXED_MESSAGE = "A change made from a template has the template's type; omit it or send the template's own.";
+export const TEMPLATE_PROCEDURE_FIXED_MESSAGE =
+  "Fixed by the standard template (its changes skip CAB review); omit it or send the template's own value.";
+
+/** The API fields a pre-authorized template fixes: the pre-approval is earned by exactly this procedure. */
+const FIXED_BY_PRE_AUTHORIZATION = [
+  ["risk", "risk"],
+  ["impact", "impact"],
+  ["implementation_plan", "implementationPlan"],
+  ["rollback_plan", "rollbackPlan"],
+] as const;
+
+/**
+ * Fields of a create-from-template request that contradict the template, as API field errors
+ * (empty when none). `applyTemplate` ignores such overrides; the API refuses them instead, so a
+ * client never believes it changed something that stayed as the template says. Sending the
+ * template's own value is accepted.
+ */
+export function templateOverrideConflicts(
+  template: Pick<ChangeTemplateDefaults, "type" | "risk" | "impact" | "implementationPlan" | "rollbackPlan">,
+  body: { type?: string; risk?: string; impact?: string; implementation_plan?: string; rollback_plan?: string },
+): Record<string, string[]> {
+  const errors: Record<string, string[]> = {};
+  if (body.type !== undefined && body.type !== template.type) errors.type = [TEMPLATE_TYPE_FIXED_MESSAGE];
+  if (!isPreAuthorized(template.type)) return errors;
+  for (const [field, column] of FIXED_BY_PRE_AUTHORIZATION) {
+    const sent = body[field];
+    if (sent === undefined) continue;
+    const sameText = (blankToNull(sent) ?? "") === (blankToNull(template[column]) ?? "");
+    if (!sameText) errors[field] = [TEMPLATE_PROCEDURE_FIXED_MESSAGE];
+  }
+  return errors;
+}

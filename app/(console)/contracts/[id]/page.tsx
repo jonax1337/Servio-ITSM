@@ -81,7 +81,7 @@ export default async function ContractDetailPage({
             <MetaRow label={tc("updated")}>{day(contract.updatedAt)}</MetaRow>
           </RailCard>
           <RailCard title={t("termAndCost")}>
-            <MetaRow label={t("field.starts")}>{day(contract.startDate)}</MetaRow>
+            <MetaRow label={t("field.starts")}>{contract.startDate ? day(contract.startDate) : t("startUnknown")}</MetaRow>
             <MetaRow label={t("col.ends")}>{contract.endDate ? day(contract.endDate) : t("noEndDate")}</MetaRow>
             <MetaRow label={t("field.renewalNotice")}>{t("days", { count: contract.renewalNoticeDays })}</MetaRow>
             <MetaRow label={t("field.autoRenews")}>{contract.autoRenew ? tc("yes") : tc("no")}</MetaRow>

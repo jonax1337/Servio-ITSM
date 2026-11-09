@@ -10,6 +10,8 @@ import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import { mergedStatusRefusal } from "@/lib/merge-rules";
 import { serializeTicket } from "../../_serializers";
+import { dueAtSchema, dueDateAuditSummary } from "@/lib/api-ticket-input";
+import { canActOnTicket } from "@/lib/authz";
 import { setTicketChange, setTicketProblem } from "@/lib/actions/tickets";
 import { formOf } from "@/lib/api-itsm-input";
 import { asActor, refusal } from "../../_itsm";
@@ -51,6 +53,8 @@ const patchSchema = z.object({
   groupId: z.string().nullable().optional(),
   // The affected service; a change re-prices the SLA deadlines like the console does (null clears it).
   serviceId: z.string().min(1).nullable().optional(),
+  // The manual due date (ISO 8601 with offset; null clears it). It never changes the SLA deadlines.
+  dueAt: dueAtSchema.nullable().optional(),
   // Links, applied through the console's setTicketProblem / setTicketChange (null unlinks).
   problemId: z.number().int().positive().nullable().optional(),
   changeId: z.number().int().positive().nullable().optional(),
@@ -97,8 +101,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (reason) return apiError(422, "Validation failed", { assigneeId: [reason] });
   }
 
-  const { problemId, changeId, ...fields } = parsed.data;
+  const { problemId, changeId, dueAt, ...fields } = parsed.data;
   const data = { ...fields } as Record<string, unknown>;
+  // Manual due date: stored in `dueDate` (`dueAt` is the SLA mirror column). Same right as the console's picker.
+  if (dueAt !== undefined) {
+    if (!(await canActOnTicket({ id: auth.principal.userId, role: auth.principal.role }, existing))) {
+      return apiError(403, "Only the assignee, a member of the ticket's group or a manager may change the due date.");
+    }
+    data.dueDate = dueAt === null ? null : new Date(dueAt);
+  }
   const regrouped = groupId !== undefined && groupId !== existing.groupId;
   if (regrouped && groupId && parsed.data.assigneeId === undefined && existing.assigneeId && !(await isGroupMember(groupId, existing.assigneeId))) {
     data.assigneeId = null;
@@ -141,6 +152,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   });
   await withdrawPendingApprovals(ticketId, data);
   await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: "Updated via API" });
+  if (dueAt !== undefined) {
+    await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: dueDateAuditSummary(dueAt === null ? null : new Date(dueAt)) });
+  }
   // As in the console, a re-routed ticket without an assignee gets one from the group's strategy.
   if (regrouped && groupId && (await autoAssignTicket(ticketId))) {
     ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: { requester: true, assignee: true } });

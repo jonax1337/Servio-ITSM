@@ -11,12 +11,35 @@ import {
   problemPatchSchema,
   refusalStatus,
   snakeKeys,
+  templateOverridesFrom,
 } from "@/lib/api-itsm-input";
 
 describe("change bodies", () => {
-  it("fills create defaults like the console form", () => {
+  it("fills create defaults like the console form, without baking them into the parsed body", () => {
     const b = changeCreateSchema.parse({ title: "Patch DC" });
-    expect(b).toMatchObject({ type: "NORMAL", risk: "MEDIUM", priority: "MEDIUM", impact: "MEDIUM" });
+    expect(b).toEqual({ title: "Patch DC" });
+    const fd = changeCreateForm(b);
+    expect(Object.fromEntries(["type", "risk", "priority", "impact"].map((k) => [k, fd.get(k)]))).toEqual({
+      type: "NORMAL", risk: "MEDIUM", priority: "MEDIUM", impact: "MEDIUM",
+    });
+  });
+
+  it("takes a template instead of a title, but not both references", () => {
+    expect(changeCreateSchema.safeParse({}).success).toBe(false);
+    expect(changeCreateSchema.safeParse({ template_id: "t1" }).success).toBe(true);
+    expect(changeCreateSchema.safeParse({ template_ref: "tpl:rotate" }).success).toBe(true);
+    expect(changeCreateSchema.safeParse({ template_id: "t1", template_ref: "tpl:rotate" }).success).toBe(false);
+    expect(changeCreateSchema.safeParse({ template_ref: "bad ref" }).success).toBe(false);
+    expect(changeCreateSchema.safeParse({ title: "ab", template_id: "t1" }).success).toBe(false);
+  });
+
+  it("turns a template body into overrides, keeping absent keys absent", () => {
+    expect(templateOverridesFrom(changeCreateSchema.parse({ template_id: "t1" }))).toEqual({});
+    expect(
+      templateOverridesFrom(changeCreateSchema.parse({
+        template_id: "t1", title: "Rotate the portal certificate", group_id: null, planned_start: "2026-12-01T10:00:00Z", assignee_id: "u2", rollback_plan: "",
+      })),
+    ).toEqual({ title: "Rotate the portal certificate", groupId: null, plannedStart: new Date("2026-12-01T10:00:00Z"), assigneeId: "u2", rollbackPlan: "" });
   });
 
   it("rejects unknown fields, so a typo cannot drop a rollback plan silently", () => {

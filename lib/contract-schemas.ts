@@ -22,12 +22,6 @@ const checkbox = z
   .optional()
   .transform((v) => v === "on" || v === "true");
 
-const requiredDate = (label: string) =>
-  z
-    .string({ error: `${label} is required` })
-    .min(1, `${label} is required`)
-    .pipe(z.coerce.date({ error: `${label} is not a valid date` }));
-
 const optionalDate = (label: string) =>
   optionalText
     .transform((v) => (v === null ? null : new Date(v)))
@@ -66,7 +60,8 @@ export const contractSchema = z.object({
   status: z.enum(CONTRACT_STATUSES, { error: "Choose a contract status" }),
   vendorId: optionalId,
   ownerId: optionalId,
-  startDate: requiredDate("Start date"),
+  /** Optional: a contract recorded after the fact often has no known start. */
+  startDate: optionalDate("Start date"),
   endDate: optionalDate("End date"),
   cost: optionalCost,
   renewalNoticeDays: wholeNumber("Renewal notice", 0, 3650, DEFAULT_RENEWAL_NOTICE_DAYS),
