@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { apiError, ok, type ApiPrincipal } from "@/lib/api";
-import { hasRole, type Role } from "@/lib/session";
+import { canManageServices } from "@/lib/service-access";
 import type { ServicePatch } from "@/lib/api-service-input";
 import type { ServiceImpactRow } from "@/lib/service-graph";
 import {
@@ -12,7 +12,7 @@ import {
 
 /** Service management is a MANAGER+ operation, like categories. */
 export function managerRefusal(principal: ApiPrincipal) {
-  return hasRole(principal.role as Role, "MANAGER")
+  return canManageServices(principal.role)
     ? null
     : apiError(403, "Managing services needs a token owned by a manager or admin.");
 }

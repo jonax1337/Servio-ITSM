@@ -74,11 +74,18 @@ For a failed **service**, only step 3 applies, starting from that service.
 | Asset detail (`/assets/{id}`) | Sidebar: the services running on the item and, below, the services also affected when it fails. The *Relationships & impact* tab lists the affected services under the CI blast radius. |
 | Ticket, problem and change detail | A read-only **Affected services** card: the services hit through the record's CIs (a ticket's linked assets, a change's affected CIs, a problem's incidents' and changes' CIs). Solid badges run directly on a linked CI; dashed ones are affected indirectly. |
 
-The console actions (`lib/actions/services.ts`) are open to agents, like the rest
-of the service page: `createService` / `updateService` (with `code`),
-`addServiceDependency` (re-adding updates the note), `removeServiceDependency`,
-`linkServiceAsset` / `unlinkServiceAsset`, `deleteService`. Each writes an audit
-row on both ends of a link.
+The console actions (`lib/actions/services.ts`) follow the same rule as the API:
+managing services needs the role **MANAGER or ADMIN** (like categories), checked
+against the database on every call. Agents see the service pages read-only, with
+one exception: they may still set a service's **status**, which is part of
+incident handling. The actions are `createService` / `updateService` (with
+`code`), `addServiceDependency` (re-adding updates the note),
+`updateDependencyNote`, `removeServiceDependency`, `linkServiceAsset` /
+`unlinkServiceAsset` and `deleteService`. Deleting refuses, like the API, while
+tickets, catalog items or other services still refer to the service, and
+suggests status `RETIRED`. Each write audits both ends of a link, in the console
+and through the API. Adding a dependency checks for a cycle and writes in one
+transaction.
 
 ## REST API
 

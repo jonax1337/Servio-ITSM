@@ -5,17 +5,17 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { requireAgentUser } from "@/lib/session";
+import { requireAgentUser, requireManagerUser } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { SERVICE_STATUSES, CRITICALITIES } from "@/lib/constants";
 import type { ActionResult } from "@/lib/action-result";
 import { SERVICE_CODE_HINT, SERVICE_CODE_RE } from "@/lib/api-service-input";
-import { dependencyCycle } from "@/lib/service-graph-rules";
-import { loadServiceEdges } from "@/lib/service-graph";
+import { ServiceWriteRefused, saveDependency, serviceReferences } from "@/lib/service-records";
+import { agentMayUpdateField, inUseRefusal } from "@/lib/service-access";
 
-async function requireAgent() {
-  // DB-truth guard (role + isActive rehydrated) — see requireAgentUser.
-  return requireAgentUser();
+/** Managing services is MANAGER+ (like the API and categories); DB-truth, see requireManagerUser. */
+async function requireManager() {
+  return requireManagerUser();
 }
 
 const optionalId = z
@@ -65,7 +65,7 @@ export async function createService(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return { error: "Not authorised" };
 
   const parsed = createSchema.safeParse(Object.fromEntries(formData));
@@ -105,11 +105,12 @@ const updateSchema = z.object({
 });
 
 export async function updateServiceField(formData: FormData) {
-  const me = await requireAgent();
-  if (!me) return;
   const parsed = updateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return;
   const { id, field, value } = parsed.data;
+  // The status is part of incident handling, so agents may set it; everything else is management.
+  const me = agentMayUpdateField(field) ? await requireAgentUser() : await requireManager();
+  if (!me) return;
 
   const isRelation = field.endsWith("Id");
   const v = isRelation && (value === "none" || value === "") ? null : value;
@@ -158,7 +159,7 @@ export async function updateService(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return { error: "Not authorised" };
 
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
@@ -192,12 +193,12 @@ export async function updateService(
 
 // ── Supporting CIs (service ↔ asset) ─────────────────────────────────────────
 
-const NOT_AUTHORISED = "You are not signed in as an agent.";
+const NOT_AUTHORISED = "Managing services needs a manager or admin.";
 const refused = (error: string): ActionResult => ({ ok: false, error });
 
 /** Attach an asset to a service as a supporting configuration item. Idempotent. */
 export async function linkServiceAsset(formData: FormData): Promise<ActionResult> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return refused(NOT_AUTHORISED);
   const serviceId = String(formData.get("serviceId") ?? "").trim();
   const assetId = String(formData.get("assetId") ?? "").trim();
@@ -223,7 +224,7 @@ export async function linkServiceAsset(formData: FormData): Promise<ActionResult
 }
 
 export async function unlinkServiceAsset(formData: FormData): Promise<ActionResult> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return refused(NOT_AUTHORISED);
   const serviceId = String(formData.get("serviceId") ?? "").trim();
   const assetId = String(formData.get("assetId") ?? "").trim();
@@ -246,6 +247,12 @@ export async function unlinkServiceAsset(formData: FormData): Promise<ActionResu
 
 // ── Service dependencies (service → service) ─────────────────────────────────
 
+/** The refusal's message for the UI: the cycle path when there is one. */
+function refusalText(e: ServiceWriteRefused): string {
+  const detail = (e.refusal.details?.depends_on as string[] | undefined)?.[0];
+  return detail ?? e.refusal.message;
+}
+
 /**
  * Record that a service depends on another one, with an optional note.
  * Re-adding an existing dependency only updates its note. Refuses a
@@ -253,7 +260,7 @@ export async function unlinkServiceAsset(formData: FormData): Promise<ActionResu
  * the API, lib/service-graph-rules.ts).
  */
 export async function addServiceDependency(formData: FormData): Promise<ActionResult> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return refused(NOT_AUTHORISED);
   const serviceId = String(formData.get("serviceId") ?? "").trim();
   const toServiceId = String(formData.get("toServiceId") ?? "").trim();
@@ -267,18 +274,12 @@ export async function addServiceDependency(formData: FormData): Promise<ActionRe
   ]);
   if (!from || !to) return refused("Service not found.");
 
-  const cycle = dependencyCycle(await loadServiceEdges(), serviceId, [toServiceId]);
-  if (cycle) {
-    const names = await db.service.findMany({ where: { id: { in: cycle } }, select: { id: true, name: true } });
-    const path = cycle.map((id) => names.find((n) => n.id === id)?.name ?? id).join(" → ");
-    return refused(`This would close a dependency cycle: ${path}`);
+  try {
+    await saveDependency(serviceId, toServiceId, note);
+  } catch (e) {
+    if (e instanceof ServiceWriteRefused) return refused(refusalText(e));
+    throw e;
   }
-
-  await db.serviceDependency.upsert({
-    where: { fromServiceId_toServiceId: { fromServiceId: serviceId, toServiceId } },
-    create: { fromServiceId: serviceId, toServiceId, note },
-    update: { note },
-  });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: serviceId, summary: `Depends on "${to.name}"` });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: toServiceId, summary: `Used by "${from.name}"` });
   revalidatePath(`/services/${serviceId}`);
@@ -286,8 +287,28 @@ export async function addServiceDependency(formData: FormData): Promise<ActionRe
   return { ok: true };
 }
 
+/** Change the note of an existing dependency (the cycle check is moot: the edge exists already). */
+export async function updateDependencyNote(formData: FormData): Promise<ActionResult> {
+  const me = await requireManager();
+  if (!me) return refused(NOT_AUTHORISED);
+  const serviceId = String(formData.get("serviceId") ?? "").trim();
+  const toServiceId = String(formData.get("toServiceId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim().slice(0, 500) || null;
+  const row = await db.serviceDependency.findUnique({
+    where: { fromServiceId_toServiceId: { fromServiceId: serviceId, toServiceId } },
+    select: { note: true, toService: { select: { name: true } } },
+  });
+  if (!row) return refused("Missing link.");
+  if (row.note === note) return { ok: true };
+  await db.serviceDependency.update({ where: { fromServiceId_toServiceId: { fromServiceId: serviceId, toServiceId } }, data: { note } });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "Service", entityId: serviceId, summary: `Updated note of dependency on "${row.toService.name}"` });
+  revalidatePath(`/services/${serviceId}`);
+  revalidatePath(`/services/${toServiceId}`);
+  return { ok: true };
+}
+
 export async function removeServiceDependency(formData: FormData): Promise<ActionResult> {
-  const me = await requireAgent();
+  const me = await requireManager();
   if (!me) return refused(NOT_AUTHORISED);
   const serviceId = String(formData.get("serviceId") ?? "").trim();
   const toServiceId = String(formData.get("toServiceId") ?? "").trim();
@@ -309,21 +330,23 @@ export async function removeServiceDependency(formData: FormData): Promise<Actio
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────────
-// Tickets and catalog items keep their rows with serviceId=null (the relations
-// are optional → Prisma default SetNull), so history and requests aren't
-// destroyed; dependency edges in both directions go with the service.
-// Redirects to the list on success. (The REST API is stricter: it refuses to
-// delete a referenced service and suggests RETIRED, see app/api/v1/services.)
+// Like the REST API, a service that is still referenced (tickets, catalog items,
+// dependent services, ...) is not deleted: the answer suggests status RETIRED
+// (lib/service-records.ts serviceReferences). Its own CI links and dependencies
+// go with it. Redirects to the list on success.
 
-export async function deleteService(formData: FormData) {
-  const me = await requireAgent();
-  if (!me) return;
+export async function deleteService(formData: FormData): Promise<ActionResult | void> {
+  const me = await requireManager();
+  if (!me) return refused(NOT_AUTHORISED);
   const id = String(formData.get("id") ?? "");
   const service = await db.service.findUnique({
     where: { id },
     select: { name: true, usedBy: { select: { fromServiceId: true } }, dependsOn: { select: { toServiceId: true } } },
   });
   if (!service) return;
+  // Same rule as the API: a referenced service is retired, not deleted.
+  const inUse = inUseRefusal(await serviceReferences(id));
+  if (inUse) return refused(inUse.message);
   // The polymorphic Approval has no FK to Service — clean its rows so the
   // /approvals queue doesn't fill with dangling, still-actionable sign-offs.
   await db.approval.deleteMany({ where: { entityType: "SERVICE", entityId: id } });

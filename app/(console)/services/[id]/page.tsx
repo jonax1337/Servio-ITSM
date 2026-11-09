@@ -92,14 +92,14 @@ export default async function ServiceDetailPage({
   const dependsOn = service.dependsOn.map((d) => ({ ...d.toService, note: d.note }));
   const usedBy = service.usedBy.map((d) => ({ ...d.fromService, note: d.note }));
   const [availableAssets, availableServices, impact] = await Promise.all([
-    isAgentUser
+    canManage
       ? db.asset.findMany({
           where: { id: { notIn: supportingCis.map((a) => a.id) } },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         })
       : [],
-    isAgentUser
+    canManage
       ? db.service.findMany({
           where: { id: { notIn: [service.id, ...dependsOn.map((d) => d.id)] } },
           orderBy: { name: "asc" },
@@ -123,7 +123,7 @@ export default async function ServiceDetailPage({
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={CRITICALITY_META} value={service.criticality} dot />
             <StatusBadge map={SERVICE_STATUS_META} value={service.status} />
-            {isAgentUser ? (
+            {canManage ? (
               <>
                 <ServiceEditDialog service={service} />
                 <DeleteServiceButton serviceId={service.id} serviceName={service.name} />
@@ -200,7 +200,7 @@ export default async function ServiceDetailPage({
             serviceId={service.id}
             assets={supportingCis}
             options={availableAssets.map((a) => ({ value: a.id, label: a.name }))}
-            canEdit={isAgentUser}
+            canEdit={canManage}
           />
 
           <ServiceDependencies
@@ -208,7 +208,7 @@ export default async function ServiceDetailPage({
             dependsOn={dependsOn}
             usedBy={usedBy}
             options={availableServices.map((s) => ({ value: s.id, label: serviceLabel(s) }))}
-            canEdit={isAgentUser}
+            canEdit={canManage}
           />
 
           <Card className="mt-4">
@@ -278,7 +278,7 @@ export default async function ServiceDetailPage({
             <CardTitle className="text-sm">{tc("properties")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ServiceProperties service={service} options={options} />
+            <ServiceProperties service={service} options={options} canManage={canManage} canSetStatus={isAgentUser} />
           </CardContent>
         </Card>
 

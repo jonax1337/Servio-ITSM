@@ -115,7 +115,7 @@ async function resolveDependencies(entries: DependencyEntry[]): Promise<{ deps: 
 }
 
 /** The 422 for a dependency set that would depend on itself or close a cycle, naming the services on the cycle. */
-async function cycleError(serviceId: string, targetIds: string[], client: Prisma.TransactionClient | typeof db = db): Promise<ServiceWriteError | null> {
+export async function cycleError(serviceId: string, targetIds: string[], client: Prisma.TransactionClient | typeof db = db): Promise<ServiceWriteError | null> {
   const edges = (await client.serviceDependency.findMany({ select: { fromServiceId: true, toServiceId: true } })).map((r) => ({
     from: r.fromServiceId,
     to: r.toServiceId,
@@ -168,6 +168,7 @@ export async function writeService(input: {
     const changed = changedCols.map(apiName);
 
     const assetChanges = { add: [] as string[], remove: [] as string[] };
+    const dependencyChanges = { add: [] as string[], remove: [] as string[] };
     if (input.links.assetIds) {
       const current = await tx.serviceAsset.findMany({ where: { serviceId: service.id }, select: { assetId: true } });
       const plan = planAssetSet(current.map((c) => c.assetId), input.links.assetIds);
@@ -189,11 +190,13 @@ export async function writeService(input: {
         await tx.serviceDependency.update({ where: { fromServiceId_toServiceId: { fromServiceId: service.id, toServiceId: d.toServiceId } }, data: { note: d.note } });
       }
       if (plan.changed) changed.push("depends_on");
+      dependencyChanges.add = plan.add.map((d) => d.toServiceId);
+      dependencyChanges.remove = plan.remove;
     }
-    return { service, created: !before, changed, assetChanges };
+    return { service, created: !before, changed, assetChanges, dependencyChanges };
   });
 
-  const { service, created, changed, assetChanges } = result;
+  const { service, created, changed, assetChanges, dependencyChanges } = result;
   if (created || changed.length) {
     await writeAudit({
       userId: input.userId,
@@ -209,7 +212,31 @@ export async function writeService(input: {
   for (const assetId of assetChanges.remove) {
     await writeAudit({ userId: input.userId, action: "UPDATE", entity: "Asset", entityId: assetId, summary: `Removed from service "${service.name}" ${input.via}` });
   }
+  // The other end of a dependency keeps a trace as well (the console does the same).
+  for (const toId of dependencyChanges.add) {
+    await writeAudit({ userId: input.userId, action: "UPDATE", entity: "Service", entityId: toId, summary: `Used by "${service.name}" ${input.via}` });
+  }
+  for (const toId of dependencyChanges.remove) {
+    await writeAudit({ userId: input.userId, action: "UPDATE", entity: "Service", entityId: toId, summary: `No longer used by "${service.name}" ${input.via}` });
+  }
   return { service, created, changed };
+}
+
+/**
+ * Record (or re-note) one dependency edge for the console: the cycle check and
+ * the upsert run in one transaction, so a concurrent edit cannot slip a cycle
+ * past the check. Throws ServiceWriteRefused when it would close a cycle.
+ */
+export async function saveDependency(fromServiceId: string, toServiceId: string, note: string | null) {
+  await db.$transaction(async (tx) => {
+    const cycle = await cycleError(fromServiceId, [toServiceId], tx);
+    if (cycle) throw new ServiceWriteRefused(cycle);
+    await tx.serviceDependency.upsert({
+      where: { fromServiceId_toServiceId: { fromServiceId, toServiceId } },
+      create: { fromServiceId, toServiceId, note },
+      update: { note },
+    });
+  });
 }
 
 const API_NAMES: Record<string, string> = { categoryId: "category_id", ownerId: "owner_id", slaId: "sla_id", groupId: "group_id" };

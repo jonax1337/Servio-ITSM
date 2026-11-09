@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
 import { apiError, ok, preflight } from "@/lib/api";
 import { serviceUpsertSchema, type ServicePatch } from "@/lib/api-service-input";
-import { SERVICE_ERROR_CODES } from "@/lib/service-records";
 import { EXTERNAL_REF_HINT, parseExternalRef } from "@/lib/ticket-external-ref";
 import type { ApiPrincipal } from "@/lib/api";
 import { agentGuard, readBody } from "../../../_itsm";
@@ -45,9 +44,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
 
   const res = await upsert(auth.principal, ref, body.data);
   if (res.status !== 409) return res;
-  // Two runs creating the same ref at once: the loser retries as an update.
-  const refusal = (await res.clone().json()) as { error?: { details?: { code?: string } } };
-  return refusal.error?.details?.code === SERVICE_ERROR_CODES.importRefTaken ? upsert(auth.principal, ref, body.data) : res;
+  // Two runs creating the same ref at once: the loser's insert is refused (any unique clash
+  // reports 409). If the ref exists now, retry once as an update; otherwise the 409 is genuine.
+  return (await db.service.findUnique({ where: { importRef: ref }, select: { id: true } })) ? upsert(auth.principal, ref, body.data) : res;
 }
 
 async function upsert(principal: ApiPrincipal, ref: string, body: ServicePatch) {

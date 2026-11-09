@@ -4,6 +4,7 @@ import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getSessionUser, hasRole, type Role } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
 import { getParam, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
@@ -34,6 +35,8 @@ export default async function ServicesPage({
 }) {
   const sp = await searchParams;
   const options = await getFormOptions();
+  const me = await getSessionUser();
+  const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const [t, tc, te] = await Promise.all([getT("services"), getT("common"), getEnumT()]);
   const q = getParam(sp, "q");
   const status = getParam(sp, "status");
@@ -78,7 +81,7 @@ export default async function ServicesPage({
         <LinkButton href="/services/impact" variant="outline" size="sm">
           <Radar className="size-4" /> {t("impact.open")}
         </LinkButton>
-        <CreateServiceDialog options={options} />
+        {canManage ? <CreateServiceDialog options={options} /> : null}
       </PageHeader>
 
       <PageBody className="grid gap-4">
@@ -90,7 +93,7 @@ export default async function ServicesPage({
             title={t("emptyTitle")}
             description={t("emptyDescription")}
           >
-            <CreateServiceDialog options={options} size="sm" />
+            {canManage ? <CreateServiceDialog options={options} size="sm" /> : null}
           </EmptyState>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

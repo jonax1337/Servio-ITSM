@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import { useState, useTransition } from "react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Pencil } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { readActionResult } from "@/lib/action-result";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
 import { LinkPicker } from "@/components/link-picker";
 import { UnlinkButton } from "@/components/linked-records";
-import { addServiceDependency, removeServiceDependency } from "@/lib/actions/services";
+import { addServiceDependency, removeServiceDependency, updateDependencyNote } from "@/lib/actions/services";
 import { SERVICE_STATUS_META } from "@/lib/constants";
 import type { ComboOption } from "@/components/combobox";
-import { useT } from "@/lib/i18n/client";
+import { useServerMessage, useT } from "@/lib/i18n/client";
 
 export type ServiceLinkRow = { id: string; name: string; code: string | null; status: string; note: string | null };
 
@@ -26,6 +32,54 @@ function LinkedService({ s, children }: { s: ServiceLinkRow; children?: React.Re
       <StatusBadge map={SERVICE_STATUS_META} value={s.status} />
       {children}
     </div>
+  );
+}
+
+/** Pencil on a dependency row: edit its note in a small dialog. */
+function EditNoteButton({ serviceId, s }: { serviceId: string; s: ServiceLinkRow }) {
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const t = useT("services");
+  const tc = useT("common");
+  const tm = useServerMessage();
+  const tl = useT("components");
+  return (
+    <>
+      <Button type="button" variant="ghost" size="icon-xs" aria-label={t("editDependencyNote")} title={t("editDependencyNote")} onClick={() => setOpen(true)}>
+        <Pencil className="size-3.5" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("editDependencyNoteTitle")}</DialogTitle>
+          </DialogHeader>
+          <form
+            action={(fd) =>
+              start(async () => {
+                const result = readActionResult(await updateDependencyNote(fd));
+                if (result?.ok) {
+                  toast.success(t("dependencyNoteSaved"));
+                  setOpen(false);
+                } else if (result) toast.error(result.error ? tm(result.error) : tl("link.unlinkFailed"));
+              })
+            }
+          >
+            <input type="hidden" name="serviceId" value={serviceId} />
+            <input type="hidden" name="toServiceId" value={s.id} />
+            <Input name="note" defaultValue={s.note ?? ""} maxLength={500} placeholder={t("dependencyNotePlaceholder")} />
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
+                {tc("cancel")}
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {tc("save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -85,11 +139,14 @@ export function ServiceDependencies({
             dependsOn.map((s) => (
               <LinkedService key={s.id} s={s}>
                 {canEdit ? (
-                  <UnlinkButton
-                    action={removeServiceDependency}
-                    fields={{ serviceId, toServiceId: s.id }}
-                    successMessage={t("dependencyRemoved")}
-                  />
+                  <>
+                    <EditNoteButton serviceId={serviceId} s={s} />
+                    <UnlinkButton
+                      action={removeServiceDependency}
+                      fields={{ serviceId, toServiceId: s.id }}
+                      successMessage={t("dependencyRemoved")}
+                    />
+                  </>
                 ) : null}
               </LinkedService>
             ))

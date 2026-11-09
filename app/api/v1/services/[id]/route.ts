@@ -3,6 +3,7 @@ import { apiError, ok, preflight } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { servicePatchSchema } from "@/lib/api-service-input";
 import { SERVICE_ERROR_CODES, serviceReferences } from "@/lib/service-records";
+import { inUseRefusal } from "@/lib/service-access";
 import { agentGuard, readBody } from "../../_itsm";
 import { managerRefusal, saveService, serviceDetail } from "../../_services";
 
@@ -51,12 +52,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const service = await db.service.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!service) return apiError(404, "Service not found");
   const references = await serviceReferences(id);
-  if (Object.keys(references).length > 0) {
-    return apiError(409, "The service is still referenced. Set its status to RETIRED instead of deleting it.", {
-      code: SERVICE_ERROR_CODES.inUse,
-      references,
-      suggestion: { status: "RETIRED" },
-    });
+  const inUse = inUseRefusal(references);
+  if (inUse) {
+    return apiError(409, inUse.message, { code: SERVICE_ERROR_CODES.inUse, references: inUse.references, suggestion: inUse.suggestion });
   }
   // The polymorphic Approval has no FK to Service (see deleteService in lib/actions/services.ts).
   await db.approval.deleteMany({ where: { entityType: "SERVICE", entityId: id } });
