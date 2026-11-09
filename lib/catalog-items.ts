@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { isAgent, type Role } from "@/lib/session";
 import { serializeApprovalStages, type ApprovalStage } from "@/lib/service-forms";
@@ -65,6 +66,31 @@ export async function checkApprovalStages(
 
 export const APPROVAL_WITHOUT_APPROVER =
   "Approval is required for this item, but no approver or approval stage was configured.";
+
+/** The ids among `groupIds` that are no group (deduplicated input expected). */
+export async function unknownGroupIds(groupIds: string[]): Promise<string[]> {
+  if (groupIds.length === 0) return [];
+  const found = await db.group.findMany({ where: { id: { in: groupIds } }, select: { id: true } });
+  const known = new Set(found.map((g) => g.id));
+  return groupIds.filter((id) => !known.has(id));
+}
+
+/**
+ * Replace the groups an item is visible to. An empty list lifts the restriction;
+ * otherwise the item is restricted to exactly these groups. Callers validate the ids
+ * first (`unknownGroupIds`) and own the transaction, if any.
+ */
+export async function setCatalogItemGroups(
+  client: Prisma.TransactionClient,
+  itemId: string,
+  groupIds: string[],
+) {
+  await client.catalogItemGroup.deleteMany({ where: { catalogItemId: itemId } });
+  if (groupIds.length > 0) {
+    await client.catalogItemGroup.createMany({ data: groupIds.map((groupId) => ({ catalogItemId: itemId, groupId })) });
+  }
+  await client.catalogItem.update({ where: { id: itemId }, data: { restrictToGroups: groupIds.length > 0 } });
+}
 
 /** The field (snake_case) and message of the first category, service or team that does not exist, or null. */
 export async function catalogReferenceError(refs: {

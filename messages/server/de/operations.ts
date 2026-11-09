@@ -44,6 +44,9 @@ const messages: ServerMessages = {
   "Approval is required for this item, but no approver or approval stage was configured.":
     "Für diesen Eintrag ist eine Genehmigung erforderlich, aber es wurde keine genehmigende Person und keine Genehmigungsstufe festgelegt.",
   "Item not found": "Eintrag nicht gefunden",
+  "Choose at least one group, or lift the restriction.": "Wählen Sie mindestens eine Gruppe oder entfernen Sie die Beschränkung.",
+  "A selected group no longer exists.": "Eine ausgewählte Gruppe existiert nicht mehr.",
+  "Group not found.": "Gruppe nicht gefunden.",
   // Status page
   "Status incident not found.": "Störungsmeldung nicht gefunden.",
   "You can't link a ticket you can't act on.": "Sie können kein Ticket verknüpfen, das Sie nicht bearbeiten dürfen.",

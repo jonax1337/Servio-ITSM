@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ok, preflight } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
-import { catalogItemPatchSchema } from "@/lib/api-catalog-input";
+import { CATALOG_ITEM_INCLUDE, catalogItemPatchSchema } from "@/lib/api-catalog-input";
 import { agentGuard, readBody } from "../../_itsm";
 import { importRefTaken, managerOnly } from "../../_manage";
 import {
@@ -19,7 +19,7 @@ export function OPTIONS() {
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
-  const item = await db.catalogItem.findUnique({ where: { id: (await ctx.params).id } });
+  const item = await db.catalogItem.findUnique({ where: { id: (await ctx.params).id }, include: CATALOG_ITEM_INCLUDE });
   if (!item) return catalogItemNotFound();
   return catalogItemResponse(item);
 }
@@ -27,14 +27,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 /**
  * Edit a catalog item (MANAGER+). Fields left out keep their value, `null` clears
  * a nullable one, `questions` replaces the whole form. `meta.changed` lists what
- * changed; an unchanged body writes nothing.
+ * changed; an unchanged body writes nothing. `visible_to_group_ids` replaces the groups the item is
+ * restricted to ([] lifts the restriction).
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CATALOG_WHAT);
   if (refused) return refused;
-  const current = await db.catalogItem.findUnique({ where: { id: (await ctx.params).id } });
+  const current = await db.catalogItem.findUnique({ where: { id: (await ctx.params).id }, include: CATALOG_ITEM_INCLUDE });
   if (!current) return catalogItemNotFound();
   const body = await readBody(req, catalogItemPatchSchema);
   if ("response" in body) return body.response;
@@ -46,7 +47,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ("response" in prepared) return prepared.response;
 
   try {
-    const { item, changed } = await updateCatalogItemRecord(current, prepared.data, auth.principal.userId, "API");
+    const { item, changed } = await updateCatalogItemRecord(current, prepared.data, prepared.groupIds, auth.principal.userId, "API");
     return catalogItemResponse(item, { meta: { changed } });
   } catch (err) {
     return catalogWriteConflict(err);

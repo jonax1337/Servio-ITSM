@@ -7,7 +7,9 @@ import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { MAX_TITLE_LEN, catalogTicketType, parseApprovalStages } from "@/lib/service-forms";
 import { catalogQuestionsSchema, questionsJson } from "@/lib/api-catalog-input";
-import { APPROVAL_WITHOUT_APPROVER, catalogReferenceError, checkApprovalStages, isActiveAgent } from "@/lib/catalog-items";
+import {
+  APPROVAL_WITHOUT_APPROVER, catalogReferenceError, checkApprovalStages, isActiveAgent, setCatalogItemGroups, unknownGroupIds,
+} from "@/lib/catalog-items";
 
 // DB-truth (not the stale JWT): role/isActive rehydrate from the user row so a
 // demoted/deactivated manager loses write access immediately.
@@ -74,8 +76,23 @@ function validApprovalStages(formData: FormData) {
   return checkApprovalStages(parseApprovalStages(String(formData.get("approvalStages") ?? "")));
 }
 
-/** Everything the item editor posts, validated: the Prisma data or the first error. */
-async function itemPayload(formData: FormData): Promise<{ data: Awaited<ReturnType<typeof payload>> } | { error: string }> {
+/**
+ * The groups the item is restricted to, as posted by the editor: [] = visible to everyone.
+ * "Restrict" ticked without a group is refused, so an item whose groups were all deleted
+ * (restricted, visible to nobody) is never opened up by accident.
+ */
+async function visibleGroupIds(formData: FormData): Promise<{ groupIds: string[] } | { error: string }> {
+  const restrict = formData.get("restrictToGroups") === "true";
+  const groupIds = restrict ? [...new Set(formData.getAll("visibleToGroupIds").map(String).filter(Boolean))] : [];
+  if (restrict && groupIds.length === 0) return { error: "Choose at least one group, or lift the restriction." };
+  if ((await unknownGroupIds(groupIds)).length > 0) return { error: "A selected group no longer exists." };
+  return { groupIds };
+}
+
+/** Everything the item editor posts, validated: the Prisma data (and the groups the item is visible to) or the first error. */
+async function itemPayload(
+  formData: FormData,
+): Promise<{ data: Awaited<ReturnType<typeof payload>>; groupIds: string[] } | { error: string }> {
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid" };
   const questions = parseQuestions(formData);
@@ -90,7 +107,9 @@ async function itemPayload(formData: FormData): Promise<{ data: Awaited<ReturnTy
   if (data.requiresApproval && !effectiveApproverId && !data.approvalStages) return { error: APPROVAL_WITHOUT_APPROVER };
   const missing = await catalogReferenceError(data);
   if (missing) return { error: missing.message };
-  return { data };
+  const visibility = await visibleGroupIds(formData);
+  if ("error" in visibility) return visibility;
+  return { data, groupIds: visibility.groupIds };
 }
 
 export async function createCatalogItem(_prev: CatalogAdminState, formData: FormData): Promise<CatalogAdminState> {
@@ -99,8 +118,12 @@ export async function createCatalogItem(_prev: CatalogAdminState, formData: Form
   const result = await itemPayload(formData);
   if ("error" in result) return { error: result.error };
   const count = await db.catalogItem.count();
-  const item = await db.catalogItem.create({ data: { ...result.data, order: count } });
-  await writeAudit({ userId: me.id, action: "CREATE", entity: "CatalogItem", entityId: item.id, summary: `Created catalog item "${item.name}"` });
+  const item = await db.$transaction(async (tx) => {
+    const created = await tx.catalogItem.create({ data: { ...result.data, order: count } });
+    await setCatalogItemGroups(tx, created.id, result.groupIds);
+    return created;
+  });
+  await writeAudit({ userId: me.id, action: "CREATE", entity: "CatalogItem", entityId: item.id, summary: `Created catalog item "${item.name}"`, meta: { visibleToGroupIds: result.groupIds } });
   revalidatePath("/catalog");
   return undefined;
 }
@@ -112,8 +135,11 @@ export async function updateCatalogItem(_prev: CatalogAdminState, formData: Form
   if (!id) return { error: "Missing id" };
   const result = await itemPayload(formData);
   if ("error" in result) return { error: result.error };
-  await db.catalogItem.update({ where: { id }, data: result.data });
-  await writeAudit({ userId: me.id, action: "UPDATE", entity: "CatalogItem", entityId: id, summary: "Updated catalog item" });
+  await db.$transaction(async (tx) => {
+    await tx.catalogItem.update({ where: { id }, data: result.data });
+    await setCatalogItemGroups(tx, id, result.groupIds);
+  });
+  await writeAudit({ userId: me.id, action: "UPDATE", entity: "CatalogItem", entityId: id, summary: "Updated catalog item", meta: { visibleToGroupIds: result.groupIds } });
   revalidatePath("/catalog");
   return undefined;
 }

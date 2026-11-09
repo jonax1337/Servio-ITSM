@@ -310,6 +310,7 @@ The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-s
 | | |
 | --- | --- |
 | Route | `app/(console)/catalog/page.tsx` |
+| Visibility | `lib/catalog-visibility.ts` — `catalogVisibleToWhere`, `portalCatalogItemWhere`, `canSeeCatalogItem`: an item can be restricted to the members of selected groups (`CatalogItem.restrictToGroups` + `CatalogItemGroup`); applied in the portal list/home/search, the request page (`404`) and its title, the assistant tools and `createCatalogRequestFor` (so form, re-request and assistant order alike) |
 | Actions | `lib/actions/catalog-admin.ts` — `createCatalogItem`, `updateCatalogItem`, `toggleCatalogPublished`, `deleteCatalogItem`, `updateApprovalStages` (ordered multi-stage / group approvals) |
 | Components | `components/catalog/` — `catalog-editor`, `catalog-browser`, `catalog-icon`, `publish-toggle` |
 
@@ -329,7 +330,7 @@ Catalog request forms are defined via `lib/service-forms.ts` (`parseFormSchema`)
 
 **Routing team**: `CatalogItem.groupId` (editor: *Routing team*) sends requests to that team; without it the service's team, then the category's, then the triage team.
 
-**REST API**: `/api/v1/catalog-items` (with `PUT /catalog-items/ref/{ref}` upsert by `CatalogItem.importRef`), see [rest-api.md](rest-api.md#catalog-items). The DB checks shared by the editor and the API (approval stages, references) live in `lib/catalog-items.ts`; the body schemas in `lib/api-catalog-input.ts`.
+**REST API**: `/api/v1/catalog-items` (with `PUT /catalog-items/ref/{ref}` upsert by `CatalogItem.importRef`), see [rest-api.md](rest-api.md#catalog-items). The DB checks shared by the editor and the API (approval stages, references, the groups an item is visible to) live in `lib/catalog-items.ts`; the body schemas in `lib/api-catalog-input.ts`.
 
 ### Assets (CMDB)
 

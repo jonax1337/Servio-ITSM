@@ -5,7 +5,7 @@ import { formOf } from "@/lib/api-itsm-input";
 import { ticketResolveSchema } from "@/lib/api-ticket-input";
 import { parseExternalRef } from "@/lib/ticket-external-ref";
 import { setTicketResolution } from "@/lib/actions/tickets";
-import { serializeTicket } from "../../../../_serializers";
+import { TICKET_INCLUDE, serializeTicket } from "../../../../_serializers";
 import { agentGuard, asActor, refusal } from "../../../../_itsm";
 import { openTicketByRef } from "../../../../_ticket-ref";
 
@@ -63,6 +63,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ ref: string }>
   );
   if (!result.ok) return refusal(result.error ?? "The resolution was refused.", { ticket: serializeTicket(open) });
 
-  const ticket = await db.ticket.findUniqueOrThrow({ where: { id: open.id }, include: { requester: true, assignee: true } });
+  const ticket = await db.ticket.findUniqueOrThrow({ where: { id: open.id }, include: TICKET_INCLUDE });
   return ok(serializeTicket(ticket));
 }

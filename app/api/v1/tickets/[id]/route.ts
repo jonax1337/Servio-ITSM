@@ -9,7 +9,7 @@ import { withdrawPendingApprovals } from "@/lib/approval-seating";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { approvalAllowsStatus } from "@/lib/transitions";
 import { mergedStatusRefusal } from "@/lib/merge-rules";
-import { serializeTicket } from "../../_serializers";
+import { TICKET_INCLUDE, serializeTicket } from "../../_serializers";
 import { dueAtSchema, dueDateAuditSummary } from "@/lib/api-ticket-input";
 import { canActOnTicket } from "@/lib/authz";
 import { setTicketChange, setTicketProblem } from "@/lib/actions/tickets";
@@ -34,7 +34,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const ticket = await db.ticket.findUnique({
     where: { id: ticketId },
-    include: { requester: true, assignee: true },
+    include: TICKET_INCLUDE,
   });
   if (!ticket) return apiError(404, "Ticket not found");
   // Non-agents may only read their own tickets (404, not 403, to avoid leaking existence).
@@ -148,7 +148,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   let ticket = await db.ticket.update({
     where: { id: ticketId },
     data,
-    include: { requester: true, assignee: true },
+    include: TICKET_INCLUDE,
   });
   await withdrawPendingApprovals(ticketId, data);
   await writeAudit({ userId: auth.principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: "Updated via API" });
@@ -157,7 +157,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   // As in the console, a re-routed ticket without an assignee gets one from the group's strategy.
   if (regrouped && groupId && (await autoAssignTicket(ticketId))) {
-    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: { requester: true, assignee: true } });
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: TICKET_INCLUDE });
   }
 
   // Same permission as the console: only someone who may act on the ticket links it.
@@ -173,7 +173,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return null;
   });
   if (problemId !== undefined || changeId !== undefined) {
-    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: { requester: true, assignee: true } });
+    ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: TICKET_INCLUDE });
   }
   if (linkError) return refusal(linkError, { ticket: serializeTicket(ticket) });
 

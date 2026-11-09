@@ -245,7 +245,7 @@ Pagination applies to every list endpoint except `GET /services`, `/services/{id
 
 | Endpoint | Filters |
 | --- | --- |
-| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved) |
+| `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved), `catalog_item_ref` (tickets ordered from the catalog item with that `import_ref`) |
 | `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
 | `GET /services` | `q` (substring match on `name` or `code`); exact: `status`, `criticality`, `code`, `import_ref` |
 
@@ -375,6 +375,7 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "category_id": null,
   "service_id": null,
   "group_id": null,
+  "catalog_item": null,
   "problem_id": null,
   "change_id": null,
   "import_ref": null,
@@ -388,6 +389,12 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "updated_at": "2026-08-09T10:00:00.000Z"
 }
 ```
+
+`catalog_item` is read-only: for a ticket ordered from the service catalog (portal form or
+assistant) it is `{ "id": "…", "name": "New laptop", "import_ref": "catalog:new-laptop" }`
+(`import_ref` is `null` for an item without an origin key), for every other ticket `null`.
+Use it instead of parsing the first description line, and `GET /tickets?catalog_item_ref=catalog:new-laptop`
+to list the requests of one item.
 
 **`POST /tickets` body** (validated by Zod; see enums in
 [`lib/constants.ts`](../lib/constants.ts)):
@@ -1189,6 +1196,7 @@ MANAGER maintains in the console, so the endpoints share one shape:
 | `approver_id` | string \| null | single approver |
 | `approval_stages` | `[{ approver_id } \| { group_id }]` | ordered stages; a group needs an active agent member. With stages, the stage-1 approver is mirrored into `approver_id` |
 | `questions` | array | the request form, replaced as a whole (see below) |
+| `visible_to_group_ids` | string[] | restricts the item to the members of these groups (see below); `[]` or left out on create = visible to everyone. Replaces the set; unknown ids are a `422` |
 
 A question is `{ key, label, type, required?, options?, placeholder?, help?,
 condition? }`. `key` (letters, digits, `_`, `-`) is unique in the form and names the
@@ -1210,6 +1218,23 @@ earlier choice question, or names an answer it does not offer, is a `422`.
   { "key": "kind", "label": "Hardware or software?", "type": "select", "options": ["Hardware", "Software"], "required": true },
   { "key": "model", "label": "Which model?", "type": "text", "required": true, "condition": { "field": "kind", "values": ["Hardware"] } }
 ]
+```
+
+**Visibility per group**: with `visible_to_group_ids` set, only members of at least one of
+those groups see the item and may request it; everyone else gets neither the card, the search
+hit, the assistant's description nor the form. This is enforced on the server in the portal
+list, the request page (`404` for non-members, and the page title does not reveal the name),
+the search, the portal assistant and the order itself (`403` from the assistant's order
+endpoint). Agents are not exempt in the portal: the rule is plain group membership. The console
+catalog editor and this API are not affected, so a manager sees every item. Responses carry
+`visible_to_group_ids` and `restricted`. `restricted: true` with an empty list means every
+listed group was deleted: the item stays hidden from everybody (deleting a group never opens
+an item up) until `visible_to_group_ids` is set again - `[]` lifts the restriction on purpose.
+The upsert is idempotent: re-sending the same list writes nothing, and `meta.changed` names
+`visible_to_group_ids` when it changed.
+
+```bash
+curl -X PUT "$BASE/api/v1/catalog-items/ref/catalog:new-employee" \n  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \n  -d '{"name":"New employee","visible_to_group_ids":["<management group id>","<administration group id>"]}'
 ```
 
 Deleting an item keeps the requests made from it with their answers.

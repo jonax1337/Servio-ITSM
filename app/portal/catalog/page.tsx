@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { ShoppingBag } from "lucide-react";
 import { db } from "@/lib/db";
-import { PORTAL_CATALOG_ITEM_WHERE } from "@/lib/categories";
+import { portalCatalogItemWhere } from "@/lib/catalog-visibility";
+import { requireUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { CatalogBrowser, type CatalogCard } from "@/components/catalog/catalog-browser";
 import { EmptyCatalogArt } from "@/components/portal/illustrations";
@@ -14,8 +15,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export const dynamic = "force-dynamic";
 
 export default async function PortalCatalog() {
+  const me = await requireUser();
   const items = await db.catalogItem.findMany({
-    where: PORTAL_CATALOG_ITEM_WHERE,
+    where: portalCatalogItemWhere(me.id),
     orderBy: [{ order: "asc" }, { name: "asc" }],
     include: { category: true },
   });

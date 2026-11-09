@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   ticket: { findFirst: vi.fn() },
   article: { findUnique: vi.fn() },
-  catalogItem: { findUnique: vi.fn() },
+  catalogItem: { findFirst: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({ db }));
 
+import { catalogVisibleToWhere } from "@/lib/catalog-visibility";
 import { isPortalArticle, portalArticleTitle, portalCatalogItemName, portalTicketTitle, portalTicketWhere } from "@/lib/portal-access";
 
 beforeEach(() => vi.resetAllMocks());
@@ -55,9 +56,24 @@ describe("portal articles and catalog items", () => {
   });
 
   it("does not leak the name of an unpublished catalog item", async () => {
-    db.catalogItem.findUnique.mockResolvedValue({ name: "Staff exit", isPublished: false });
-    expect(await portalCatalogItemName("c1")).toBeNull();
-    db.catalogItem.findUnique.mockResolvedValue({ name: "New laptop", isPublished: true });
-    expect(await portalCatalogItemName("c2")).toBe("New laptop");
+    db.catalogItem.findFirst.mockResolvedValue({ name: "Staff exit", isPublished: false });
+    expect(await portalCatalogItemName("c1", "u1")).toBeNull();
+    db.catalogItem.findFirst.mockResolvedValue({ name: "New laptop", isPublished: true });
+    expect(await portalCatalogItemName("c2", "u1")).toBe("New laptop");
+  });
+
+  it("does not leak the name of an item restricted to groups the viewer is not in", async () => {
+    // The lookup itself carries the visibility filter, so a restricted item simply is not found for them.
+    db.catalogItem.findFirst.mockResolvedValue(null);
+    expect(await portalCatalogItemName("c3", "u2")).toBeNull();
+    expect(db.catalogItem.findFirst).toHaveBeenCalledWith({
+      where: { id: "c3", isPublished: true, ...catalogVisibleToWhere("u2") },
+      select: { name: true, isPublished: true },
+    });
+  });
+
+  it("gives no name to a signed-out visitor, without querying", async () => {
+    expect(await portalCatalogItemName("c1", null)).toBeNull();
+    expect(db.catalogItem.findFirst).not.toHaveBeenCalled();
   });
 });

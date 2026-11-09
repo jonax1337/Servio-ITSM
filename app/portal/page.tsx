@@ -4,8 +4,8 @@ import {
 } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
-import { PORTAL_CATALOG_ITEM_WHERE } from "@/lib/categories";
-import { getSessionUser } from "@/lib/session";
+import { portalCatalogItemWhere } from "@/lib/catalog-visibility";
+import { requireUser } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { PortalHero } from "@/components/portal/portal-hero";
@@ -16,22 +16,22 @@ import { getFormatter, getT } from "@/lib/i18n/server";
 export const dynamic = "force-dynamic";
 
 export default async function PortalHome() {
-  const me = await getSessionUser();
+  const me = await requireUser();
   const [t, f] = await Promise.all([getT("portal"), getFormatter()]);
   const [myTickets, catalog, articles] = await Promise.all([
     db.ticket.findMany({
-      where: { requesterId: me?.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
+      where: { requesterId: me.id, status: { notIn: ["CLOSED", "CANCELLED"] } },
       orderBy: { updatedAt: "desc" },
       take: 4,
     }),
-    db.catalogItem.findMany({ where: PORTAL_CATALOG_ITEM_WHERE, orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
+    db.catalogItem.findMany({ where: portalCatalogItemWhere(me.id), orderBy: [{ order: "asc" }, { name: "asc" }], take: 6 }),
     // Only published, public-facing articles ever surface in the portal.
     db.article.findMany({ where: { status: "PUBLISHED", visibility: "PUBLIC" }, orderBy: { views: "desc" }, take: 5 }),
   ]);
 
   return (
     <div className="grid min-w-0 grid-cols-1 gap-10">
-      <PortalHero firstName={me?.name?.split(" ")[0] ?? t("there")} />
+      <PortalHero firstName={me.name?.split(" ")[0] ?? t("there")} />
 
       <div className="grid min-w-0 grid-cols-1 gap-10 lg:grid-cols-3">
         {/* My open requests */}

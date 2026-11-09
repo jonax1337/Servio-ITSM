@@ -54,7 +54,8 @@ Useful scripts from [`package.json`](package.json):
 | `pnpm docs:check` | `scripts/check-doc-drift.mjs --working` — flags code changes whose owning docs were not touched |
 | `pnpm brand:check` | Verify application logos, icons, metadata images and brand tokens |
 | `pnpm brand:sync` | Regenerate application copies after updating the canonical brand kit |
-| `pnpm db:migrate` | `prisma migrate dev` — create/apply a dev migration |
+| `pnpm db:migrate` | `prisma migrate dev` — apply pending migrations to the dev DB |
+| `pnpm db:migrate:new <name>` | create a migration whose folder name sorts after every existing one (do not use `migrate dev --name`, see [docs/development.md](docs/development.md#creating-a-migration)) |
 | `pnpm db:push` | Push schema without a migration (prototyping only) |
 | `pnpm setup` | `prisma migrate deploy && prisma db seed` |
 | `pnpm db:seed` | Seed via `prisma/seed.ts` + `prisma/seed-extras.ts` |
@@ -123,7 +124,8 @@ Add the model to [`prisma/schema.prisma`](prisma/schema.prisma), matching the na
 Then create the migration:
 
 ```bash
-pnpm db:migrate       # prisma migrate dev — name it, commit the generated files
+pnpm db:migrate:new add_widget   # create the migration (sorts after the existing ones), commit the generated files
+pnpm db:migrate                  # apply it to your dev DB
 ```
 
 Commit the SQL under `prisma/migrations/` together with the schema change.

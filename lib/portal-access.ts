@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { catalogVisibleToWhere } from "@/lib/catalog-visibility";
 
 /**
  * Who may see what in the self-service portal. The rules live here once, so a
@@ -39,8 +40,16 @@ export async function portalArticleTitle(slug: string): Promise<string | null> {
   return article && isPortalArticle(article) ? article.title : null;
 }
 
-/** Name of a requestable catalog item, or null when it is unpublished or missing. */
-export async function portalCatalogItemName(id: string): Promise<string | null> {
-  const item = await db.catalogItem.findUnique({ where: { id }, select: { name: true, isPublished: true } });
+/**
+ * Name of a requestable catalog item, or null when it is unpublished, missing or
+ * restricted to groups the viewer is not in - the same rule as the request page, so the
+ * tab title never reveals an item the page itself would answer with a 404.
+ */
+export async function portalCatalogItemName(id: string, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const item = await db.catalogItem.findFirst({
+    where: { id, isPublished: true, ...catalogVisibleToWhere(userId) },
+    select: { name: true, isPublished: true },
+  });
   return item && isPortalCatalogItem(item) ? item.name : null;
 }

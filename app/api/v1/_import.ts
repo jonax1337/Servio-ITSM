@@ -25,7 +25,7 @@ import {
   type ImportComment,
   type StoredComment,
 } from "@/lib/api-import-input";
-import { CHANGE_INCLUDE, PROBLEM_INCLUDE, serializeChange, serializeProblem, serializeTicket } from "./_serializers";
+import { CHANGE_INCLUDE, PROBLEM_INCLUDE, TICKET_INCLUDE, serializeChange, serializeProblem, serializeTicket } from "./_serializers";
 import { readBody } from "./_itsm";
 
 type Kind = "Ticket" | "Problem" | "Change";
@@ -83,7 +83,7 @@ async function existing(kind: Kind, importRef: string) {
     const p = await db.problem.findUnique({ where: { importRef }, include: PROBLEM_INCLUDE });
     return p && serializeProblem(p);
   }
-  const t = await db.ticket.findUnique({ where: { importRef }, include: { requester: true, assignee: true } });
+  const t = await db.ticket.findUnique({ where: { importRef }, include: TICKET_INCLUDE });
   return t && serializeTicket(t);
 }
 
@@ -104,7 +104,7 @@ async function create(kind: Kind, b: never, actorId: string) {
     const p = await db.problem.create({ data, include: PROBLEM_INCLUDE });
     return { id: p.id, data: serializeProblem(p) };
   }
-  const t = await db.ticket.create({ data, include: { requester: true, assignee: true } });
+  const t = await db.ticket.create({ data, include: TICKET_INCLUDE });
   return { id: t.id, data: serializeTicket(t) };
 }
 
@@ -121,7 +121,7 @@ async function update(kind: Kind, id: number, columns: Record<string, unknown>, 
   const data = { ...columns, ...(rows.length ? { comments: { create: rows } } : {}) } as never;
   if (kind === "Change") return serializeChange(await db.change.update({ where: { id }, data, include: CHANGE_INCLUDE }));
   if (kind === "Problem") return serializeProblem(await db.problem.update({ where: { id }, data, include: PROBLEM_INCLUDE }));
-  return serializeTicket(await db.ticket.update({ where: { id }, data, include: { requester: true, assignee: true } }));
+  return serializeTicket(await db.ticket.update({ where: { id }, data, include: TICKET_INCLUDE }));
 }
 
 async function auditCreate(kind: Kind, actorId: string, id: number, importRef: string) {

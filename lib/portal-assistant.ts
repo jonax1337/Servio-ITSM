@@ -1,7 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { PORTAL_CATALOG_ITEM_WHERE, PORTAL_CATEGORY_WHERE } from "@/lib/categories";
+import { PORTAL_CATEGORY_WHERE } from "@/lib/categories";
+import { catalogVisibleToWhere, portalCatalogItemWhere } from "@/lib/catalog-visibility";
 import { webSearchTool, fetchUrlTool } from "@/lib/ai-tools";
 import { parseFormSchema, visibleFields } from "@/lib/service-forms";
 import { TICKET_TYPES, PRIORITIES, IMPACT_URGENCY, ticketRef, AI_ASSISTANT_NAME } from "@/lib/constants";
@@ -38,38 +39,41 @@ const portalKnowledgeTool = tool({
   },
 });
 
-const portalCatalogTool = tool({
-  description:
-    "Search the service catalog (published, requestable services: hardware, access, software, onboarding, etc.). Use when the user wants to REQUEST or GET something. Returns each service's id, a link, whether it needs approval, and whether it has a request form.",
-  inputSchema: z.object({ query: z.string().describe("keywords to search the catalog for") }),
-  execute: async ({ query }) => {
-    const rows = await db.catalogItem.findMany({
-      where: {
-        ...PORTAL_CATALOG_ITEM_WHERE,
-        OR: [{ name: { contains: query } }, { shortDescription: { contains: query } }, { description: { contains: query } }],
-      },
-      take: 5,
-      orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: {
-        id: true, name: true, shortDescription: true, description: true, requiresApproval: true, formSchema: true,
-        group: { select: { name: true } },
-        service: { select: { group: { select: { name: true } } } },
-        category: { select: { group: { select: { name: true } } } },
-      },
-    });
-    return rows.length
-      ? rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          url: `/portal/request/${r.id}`,
-          description: r.shortDescription ?? r.description ?? "",
-          requiresApproval: r.requiresApproval,
-          hasForm: parseFormSchema(r.formSchema).length > 0,
-          handledBy: r.group?.name ?? r.service?.group?.name ?? r.category?.group?.name ?? null,
-        }))
-      : [{ id: "", name: "No matching services", url: "", description: "", requiresApproval: false, hasForm: false, handledBy: null }];
-  },
-});
+/** Only the services the signed-in user may see: a group-restricted item is never described to anyone outside its groups. */
+function portalCatalogToolFor(userId: string) {
+  return tool({
+    description:
+      "Search the service catalog (published, requestable services: hardware, access, software, onboarding, etc.). Use when the user wants to REQUEST or GET something. Returns each service's id, a link, whether it needs approval, and whether it has a request form.",
+    inputSchema: z.object({ query: z.string().describe("keywords to search the catalog for") }),
+    execute: async ({ query }) => {
+      const rows = await db.catalogItem.findMany({
+        where: {
+          ...portalCatalogItemWhere(userId),
+          OR: [{ name: { contains: query } }, { shortDescription: { contains: query } }, { description: { contains: query } }],
+        },
+        take: 5,
+        orderBy: [{ order: "asc" }, { name: "asc" }],
+        select: {
+          id: true, name: true, shortDescription: true, description: true, requiresApproval: true, formSchema: true,
+          group: { select: { name: true } },
+          service: { select: { group: { select: { name: true } } } },
+          category: { select: { group: { select: { name: true } } } },
+        },
+      });
+      return rows.length
+        ? rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            url: `/portal/request/${r.id}`,
+            description: r.shortDescription ?? r.description ?? "",
+            requiresApproval: r.requiresApproval,
+            hasForm: parseFormSchema(r.formSchema).length > 0,
+            handledBy: r.group?.name ?? r.service?.group?.name ?? r.category?.group?.name ?? null,
+          }))
+        : [{ id: "", name: "No matching services", url: "", description: "", requiresApproval: false, hasForm: false, handledBy: null }];
+    },
+  });
+}
 
 const listCategoriesTool = tool({
   description:
@@ -87,28 +91,34 @@ const listCategoriesTool = tool({
   },
 });
 
-const getServiceFormTool = tool({
-  description:
-    "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form. Answer formats by type: multiselect = options separated by commas; datetime = YYYY-MM-DDTHH:mm; urgency = LOW, MEDIUM or HIGH; asset = the asset tag or name of one of the user's own devices; people = colleagues' email addresses separated by commas. A field with a `showIf` is conditional: ask it ONLY when the answer to the field `showIf.field` is one of `showIf.anyOf` (a checkbox answers true or false); otherwise skip it — its answer would be ignored and it is not required.",
-  inputSchema: z.object({ itemId: z.string().describe("the catalog item id from search_catalog") }),
-  execute: async ({ itemId }) => {
-    const item = await db.catalogItem.findUnique({ where: { id: itemId }, select: { name: true, formSchema: true, isPublished: true } });
-    if (!item || !item.isPublished) return { ok: false, error: "That service isn't available." };
-    const fields = parseFormSchema(item.formSchema);
-    return {
-      ok: true,
-      service: item.name,
-      fields: fields.map((f) => ({
-        key: f.key,
-        label: f.label,
-        type: f.type,
-        required: !!f.required,
-        options: f.options ?? [],
-        ...(f.condition && { showIf: { field: f.condition.field, anyOf: f.condition.values } }),
-      })),
-    };
-  },
-});
+/** Describes only the forms the signed-in user may see (an item restricted to other groups reads as unavailable). */
+function getServiceFormToolFor(userId: string) {
+  return tool({
+    description:
+      "Get the request form fields for a catalog service (by its id from search_catalog). Returns each field's key, label, type, whether it's required, and any select options. Use this so you know exactly what to ask the user before filling the form. Answer formats by type: multiselect = options separated by commas; datetime = YYYY-MM-DDTHH:mm; urgency = LOW, MEDIUM or HIGH; asset = the asset tag or name of one of the user's own devices; people = colleagues' email addresses separated by commas. A field with a `showIf` is conditional: ask it ONLY when the answer to the field `showIf.field` is one of `showIf.anyOf` (a checkbox answers true or false); otherwise skip it — its answer would be ignored and it is not required.",
+    inputSchema: z.object({ itemId: z.string().describe("the catalog item id from search_catalog") }),
+    execute: async ({ itemId }) => {
+      const item = await db.catalogItem.findFirst({
+        where: { id: itemId, ...catalogVisibleToWhere(userId) },
+        select: { name: true, formSchema: true, isPublished: true },
+      });
+      if (!item || !item.isPublished) return { ok: false, error: "That service isn't available." };
+      const fields = parseFormSchema(item.formSchema);
+      return {
+        ok: true,
+        service: item.name,
+        fields: fields.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+          required: !!f.required,
+          options: f.options ?? [],
+          ...(f.condition && { showIf: { field: f.condition.field, anyOf: f.condition.values } }),
+        })),
+      };
+    },
+  });
+}
 
 /**
  * The current turn's attachments, slimmed for the wire. They ride along on the
@@ -169,7 +179,7 @@ function proposeReplyToolFor(userId: string, attachments: ProposalAttachment[]) 
   });
 }
 
-function proposeServiceRequestToolFor(attachments: ProposalAttachment[]) {
+function proposeServiceRequestToolFor(userId: string, attachments: ProposalAttachment[]) {
   return tool({
     description:
       "PROPOSE ordering a catalog service on the user's behalf, with its request form filled in. Use for catalog items that have a form (hasForm=true). Fill answers using the fields from get_service_form. This does NOT submit anything — it drafts the order for the user to confirm. Make sure every required field that applies has an answer (a conditional field whose showIf does not hold does not apply).",
@@ -186,7 +196,7 @@ function proposeServiceRequestToolFor(attachments: ProposalAttachment[]) {
         ),
     }),
     execute: async (input) => {
-      const proposal = await buildServiceProposal(input);
+      const proposal = await buildServiceProposal(userId, input);
       return proposal
         ? { ok: true, proposal, attachments: input.attachFiles === false ? [] : attachments }
         : { ok: false, error: "That service isn't available or is missing required answers." };
@@ -290,12 +300,10 @@ function statusIncidentsTool(userId: string) {
   });
 }
 
-/** Read tools that depend on neither the caller nor the turn's attachments. */
+/** Read tools that depend on neither the caller nor the turn's attachments (the catalog tools are per user: see buildPortalTools). */
 const SHARED_READ_TOOLS = {
   search_knowledge: portalKnowledgeTool,
-  search_catalog: portalCatalogTool,
   list_categories: listCategoriesTool,
-  get_service_form: getServiceFormTool,
   web_search: webSearchTool,
   fetch_url: fetchUrlTool,
 };
@@ -308,8 +316,10 @@ const SHARED_READ_TOOLS = {
 export function buildPortalTools(userId: string, attachments: ProposalAttachment[] = []) {
   return {
     ...SHARED_READ_TOOLS,
+    search_catalog: portalCatalogToolFor(userId),
+    get_service_form: getServiceFormToolFor(userId),
     propose_request: proposeRequestToolFor(attachments),
-    propose_service_request: proposeServiceRequestToolFor(attachments),
+    propose_service_request: proposeServiceRequestToolFor(userId, attachments),
     propose_reply: proposeReplyToolFor(userId, attachments),
     list_status_incidents: statusIncidentsTool(userId),
     list_my_tickets: myTicketsTool(userId),
@@ -410,13 +420,13 @@ async function buildTicketProposal(input: unknown): Promise<RequestProposal | nu
   return { kind: "ticket", categoryName, ...raw.data };
 }
 
-async function buildServiceProposal(input: unknown): Promise<RequestProposal | null> {
+async function buildServiceProposal(userId: string, input: unknown): Promise<RequestProposal | null> {
   const raw = z
     .object({ itemId: z.string().min(1), answers: z.array(z.object({ key: z.string(), value: z.string() })).default([]) })
     .safeParse(input);
   if (!raw.success) return null;
-  const item = await db.catalogItem.findUnique({
-    where: { id: raw.data.itemId },
+  const item = await db.catalogItem.findFirst({
+    where: { id: raw.data.itemId, ...catalogVisibleToWhere(userId) },
     select: { name: true, formSchema: true, isPublished: true, requiresApproval: true },
   });
   if (!item || !item.isPublished) return null;
