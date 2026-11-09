@@ -14,6 +14,7 @@ export const TICKET_INCLUDE = {
   requester: true,
   assignee: true,
   catalogItem: { select: { id: true, name: true, importRef: true } },
+  createdBy: { select: { id: true, name: true, email: true, isServiceAccount: true } },
 } as const;
 
 export function serializeTicket(t: {
@@ -31,6 +32,8 @@ export function serializeTicket(t: {
   assignee?: Userish;
   /** The catalog item the ticket was ordered from (TICKET_INCLUDE loads it); null = not from the catalog. */
   catalogItem: { id: string; name: string; importRef: string | null } | null;
+  /** The account that created the ticket (TICKET_INCLUDE loads it); null = unknown (deleted user, older data). */
+  createdBy?: { id: string; name: string | null; email: string; isServiceAccount: boolean } | null;
   categoryId: string | null;
   serviceId: string | null;
   groupId?: string | null;
@@ -61,6 +64,11 @@ export function serializeTicket(t: {
     source: t.source,
     requester: user(t.requester ?? null),
     assignee: user(t.assignee ?? null),
+    // Who created the ticket (read-only). Differs from `requester` when an agent filed it on someone's behalf;
+    // `source` says through which channel (PORTAL/SABLE = the signed-in user themselves).
+    created_by: t.createdBy
+      ? { id: t.createdBy.id, name: t.createdBy.name, email: t.createdBy.email, service_account: t.createdBy.isServiceAccount }
+      : null,
     category_id: t.categoryId,
     service_id: t.serviceId,
     group_id: t.groupId ?? null,

@@ -376,6 +376,7 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "service_id": null,
   "group_id": null,
   "catalog_item": null,
+  "created_by": { "id": "…", "name": "Integration", "email": "integration@servio.dev", "service_account": true },
   "problem_id": null,
   "change_id": null,
   "import_ref": null,
@@ -395,6 +396,14 @@ assistant) it is `{ "id": "…", "name": "New laptop", "import_ref": "catalog:ne
 (`import_ref` is `null` for an item without an origin key), for every other ticket `null`.
 Use it instead of parsing the first description line, and `GET /tickets?catalog_item_ref=catalog:new-laptop`
 to list the requests of one item.
+
+`created_by` is read-only and set by the server: the account that created the ticket — the signed-in user for
+`PORTAL`/`SABLE` tickets, the token owner for `API` tickets, the importing account for imports, the matched sender
+for `EMAIL` tickets (an e-mail sender is not authenticated) and the schedule's actor for `RECURRING` ones.
+It differs from `requester` when an agent filed the ticket on someone's behalf, so integrations can tell a request
+a person made themselves (`source` PORTAL/SABLE and `created_by.id == requester.id`) from one filed for them.
+`service_account` is `true` for non-human accounts. `null` means unknown: the creator was deleted, or the ticket
+predates the field and has no creation record in the audit log.
 
 **`POST /tickets` body** (validated by Zod; see enums in
 [`lib/constants.ts`](../lib/constants.ts)):

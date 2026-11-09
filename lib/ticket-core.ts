@@ -124,7 +124,7 @@ export async function createTicketCore(
     // `prefix` is fixed here from the initial type and never changes afterwards,
     // so switching the type later leaves the ticket's ref number untouched.
     data: {
-      ...core, requestedByUserId, prefix: prefixForType(data.type), ...sla, status: "NEW",
+      ...core, requestedByUserId, createdById: actorId, prefix: prefixForType(data.type), ...sla, status: "NEW",
       ...(customFields ? { customFields: JSON.stringify(customFields) } : {}),
     },
     include: { requester: true, assignee: true },

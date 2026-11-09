@@ -247,6 +247,13 @@ const spec = {
             description: "The service catalog item the ticket was ordered from (portal form or assistant), null for every other ticket. Read-only. `import_ref` is the item's origin key (see /catalog-items/ref/{ref}), null when it has none. Filter the list with `catalog_item_ref`.",
             properties: { id: { type: "string" }, name: { type: "string" }, import_ref: { type: ["string", "null"] } },
           },
+          created_by: {
+            type: ["object", "null"],
+            description: "The account that created the ticket. Read-only, set by the server. Differs from `requester` when an agent filed the ticket on someone's behalf; for PORTAL/SABLE tickets it is the signed-in user. `service_account` marks non-human accounts. null when unknown (creator deleted, or no creation record for tickets older than this field).",
+            properties: {
+              id: { type: "string" }, name: { type: ["string", "null"] }, email: { type: "string" }, service_account: { type: "boolean" },
+            },
+          },
           due_at: { type: ["string", "null"], format: "date-time", description: "Due date: the manual one when an agent set it (`due_at_source` MANUAL), else the SLA resolution deadline (SLA). Settable with `due_at` on POST and PATCH /tickets; it never moves the SLA clock." },
           due_at_source: { type: ["string", "null"], enum: ["MANUAL", "SLA", null], description: "Where `due_at` comes from" },
           sla_due_at: { type: ["string", "null"], format: "date-time", description: "The SLA resolution deadline, whatever `due_at` shows" },
