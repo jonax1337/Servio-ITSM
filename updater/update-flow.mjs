@@ -2,7 +2,7 @@
 // so the whole flow (including rollback and crash recovery) runs against an
 // in-memory fake in tests.
 //
-//   validate -> space check -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED -> image cleanup
+//   validate -> space check -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED -> image cleanup (a note)
 //                                                          \--> rollback -> ROLLED_BACK (or FAILED if the rollback breaks)
 //
 // Before the old container is stopped, a journal is written to the updater-only
@@ -65,9 +65,10 @@ const PRE_SWITCH_STEPS = new Set(["STOPPING", "BACKED_UP"]);
  * @typedef {"STOPPING" | "BACKED_UP" | "SWITCHING" | "STARTED" | "SWITCHED" | "RESTORED"} JournalStep
  * @typedef {{
  *   requestId: string, targetVersion: string, fromVersion: string | null, name: string, preName: string,
- *   oldId: string, newId: string | null, newImageId: string, restartPolicy: RestartPolicy | null,
+ *   oldId: string, newId: string | null, newImageId: string, oldImageId?: string, restartPolicy: RestartPolicy | null,
  *   backup: import("./backup.mjs").Backup | null, step: JournalStep, served?: ServingInstance,
  * }} JournalData
+ *   `oldImageId`: the image the old container ran, kept as rollback target by the cleanup (absent in journals of older updaters)
  * @typedef {{ data: JournalData, save: (changes: Partial<JournalData>) => Promise<void> }} Journal
  */
 
@@ -182,6 +183,8 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   /** @param {any} request */
   async function runUpdate(request) {
     active = { id: request.id, state: "PENDING" };
+    // A status of an earlier request that never landed must not overwrite this one's.
+    unwrittenStatus = null;
     const run = {
       reporter: createReporter(newStatus(request.id, String(request.targetVersion).slice(0, MAX_VERSION_LENGTH), null)),
       /** @type {Journal | null} set once the journal exists, i.e. once the app may be taken down */
@@ -207,13 +210,17 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       return;
     }
     if (outcome.manual) message += await setJournalAsideNote();
-    if (outcome.state === "SUCCEEDED" && journal) message += await pruneImagesAfterSuccess(journal.data);
     message += await pruneOldBackups(journal?.data.backup?.path ?? null);
     await reporter.report(outcome.state, message);
     if (journal && outcome.state !== "SUCCEEDED") await startCooldown(journal.data.targetVersion);
     if (!outcome.manual) {
       await rm(journalFile, { force: true });
       await syncDirectory(config.backupDir);
+    }
+    // The update is done once it is reported; the cleanup only adds a note and can never undo the success.
+    if (outcome.state === "SUCCEEDED" && journal) {
+      const cleanup = await pruneImagesAfterSuccess(journal.data);
+      if (cleanup) await reporter.note(message + cleanup);
     }
   }
 
@@ -226,13 +233,13 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     } catch {
       return;
     }
-    if (unwrittenStatus === pending) unwrittenStatus = null;
+    unwrittenStatus = null;
     log(`[updater] status.json written after an earlier failure (${pending.state})`);
   }
 
   /**
    * After a successful update: removes superseded Servio and updater images,
-   * keeping the release that was just replaced (the rollback target) and the
+   * keeping the image the old container ran (the rollback target, by id) and the
    * newest others up to UPDATER_KEEP_IMAGES. Never fails the update.
    *
    * @param {JournalData} data
@@ -241,13 +248,13 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   async function pruneImagesAfterSuccess(data) {
     if (!config.pruneImages) return "";
     return pruneImages([
-      { repository: config.image, runningVersion: data.targetVersion, protectedIds: [data.newImageId], rollbackVersion: data.fromVersion },
-      { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackVersion: null },
+      { repository: config.image, runningVersion: data.targetVersion, protectedIds: [data.newImageId], rollbackImageId: data.oldImageId ?? null },
+      { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
     ]);
   }
 
   /**
-   * @param {Array<{ repository: string, runningVersion: string | null, protectedIds: string[], rollbackVersion: string | null }>} targets
+   * @param {Array<{ repository: string, runningVersion: string | null, protectedIds: string[], rollbackImageId: string | null }>} targets
    * @returns {Promise<string>} a note for the status ("" when nothing was removed or kept)
    */
   async function pruneImages(targets) {
@@ -276,13 +283,18 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   async function assertRoomForPull({ request, imageRef, current, currentImage, fromVersion, reporter }) {
     if (!config.pullSpaceCheck || (await imageIsPresent(imageRef))) return;
     const hint = downloadHint(request.downloadBytes);
-    const need = pullSpaceNeeded({ downloadBytes: hint, installedBytes: currentImage.Size, marginBytes: config.pullSpaceMarginBytes });
+    const need = pullSpaceNeeded({
+      downloadBytes: hint,
+      imageBytes: downloadHint(request.imageBytes),
+      installedBytes: currentImage.Size,
+      marginBytes: config.pullSpaceMarginBytes,
+    });
     let free = await freeBytes(config.pullSpaceProbeDir);
     if (free >= need.total) return;
     if (config.pruneImages) {
       const note = await pruneImages([
-        { repository: config.image, runningVersion: fromVersion, protectedIds: [current.Image], rollbackVersion: null },
-        { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackVersion: null },
+        { repository: config.image, runningVersion: fromVersion, protectedIds: [current.Image], rollbackImageId: null },
+        { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
       ]);
       if (note) await reporter.note(`Low on space before the pull.${note}`);
       free = await freeBytes(config.pullSpaceProbeDir);
@@ -405,7 +417,8 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
         // rollback. It is written again on every poll, so the app still learns the outcome once it can be.
         try {
           await writeState(paths.status, status);
-          if (unwrittenStatus === status) unwrittenStatus = null;
+          // Any status that lands is newer than one that did not, which must not overwrite it later.
+          unwrittenStatus = null;
         } catch (error) {
           unwrittenStatus = status;
           log(`[updater] could not write status.json (retried on every poll): ${messageOf(error)}`);
@@ -457,6 +470,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       oldId: current.Id,
       newId: null,
       newImageId: image.Id,
+      oldImageId: current.Image,
       restartPolicy: latest.HostConfig?.RestartPolicy ?? null,
       backup: null,
       step: "STOPPING",
@@ -1109,6 +1123,7 @@ function isJournal(value) {
     JOURNAL_STEPS.has(value.step) &&
     optionalString(value.newId) &&
     optionalString(value.fromVersion) &&
+    (value.oldImageId === undefined || typeof value.oldImageId === "string") &&
     (value.restartPolicy === null || typeof value.restartPolicy?.Name === "string") &&
     (value.served === undefined || (typeof value.served?.startedAt === "string" && Number.isInteger(value.served.restartCount))) &&
     (backup === null || (typeof backup?.path === "string" && Array.isArray(backup.sidecars) && backup.sidecars.every((/** @type {unknown} */ s) => typeof s === "string")))

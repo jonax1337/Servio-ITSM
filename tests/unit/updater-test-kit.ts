@@ -146,7 +146,7 @@ export class FakeDocker {
   missingImages = new Set<string>();
   /** What `listImages` answers (`docker images`), per repository. */
   imageList: Array<{ Id: string; RepoTags?: string[]; RepoDigests?: string[]; Labels?: Record<string, string> }> = [];
-  /** References `removeImage` answers 409 for, as Docker does for an image a container uses. */
+  /** Ids of images a container uses. */
   imagesInUse = new Set<string>();
 
   async listImages(repository: string) {
@@ -158,14 +158,23 @@ export class FakeDocker {
     );
   }
 
+  /**
+   * Docker's rules for removing a reference without force: only the last tag (or, untagged, a
+   * digest) is checked against containers (409); any other reference is just untagged. Removing
+   * the last tag also drops the digests, and the image is gone once nothing references it.
+   */
   async removeImage(ref: string) {
     this.record("removeImage", ref);
-    if (this.imagesInUse.has(ref)) throw new DockerApiError(`conflict: unable to remove repository reference "${ref}"`, 409);
     const image = this.imageList.find((entry) => entry.RepoTags?.includes(ref) || entry.RepoDigests?.includes(ref));
     if (!image) throw new DockerApiError(`No such image: ${ref}`, 404);
-    image.RepoTags = (image.RepoTags ?? []).filter((tag) => tag !== ref);
-    image.RepoDigests = (image.RepoDigests ?? []).filter((digest) => digest !== ref);
-    if (image.RepoTags.length === 0) this.imageList = this.imageList.filter((entry) => entry !== image);
+    const tags = image.RepoTags ?? [];
+    const lastReference = tags.length === 0 || (tags.length === 1 && tags[0] === ref);
+    if (lastReference && this.imagesInUse.has(image.Id)) {
+      throw new DockerApiError(`conflict: unable to remove repository reference "${ref}"`, 409);
+    }
+    image.RepoTags = tags.filter((tag) => tag !== ref);
+    image.RepoDigests = image.RepoTags.length === 0 && tags.includes(ref) ? [] : (image.RepoDigests ?? []).filter((digest) => digest !== ref);
+    if (image.RepoTags.length === 0 && image.RepoDigests.length === 0) this.imageList = this.imageList.filter((entry) => entry !== image);
   }
 
   async listContainers(label: string) {

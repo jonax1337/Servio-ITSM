@@ -12,6 +12,7 @@ import { writeAudit } from "@/lib/audit";
 import { oidcRoleConfig, resolveOidcRole, shouldSyncRole, type OidcRoleConfig } from "@/lib/oidc-roles";
 import {
   decideOidcLink,
+  externalIdCandidates,
   externalIdFromProfile,
   isEmailVerified,
   oidcLinkConfig,
@@ -184,7 +185,11 @@ async function findLinkCandidate(config: OidcLinkConfig, profile: Record<string,
     const externalId = externalIdFromProfile(profile, config.externalIdClaim);
     if (externalId) {
       // externalId is unique per sync source only; two sources claiming it is ambiguous.
-      const users = await db.user.findMany({ where: { externalId }, select: linkCandidateSelect, take: 2 });
+      const users = await db.user.findMany({
+        where: { externalId: { in: externalIdCandidates(externalId) } },
+        select: linkCandidateSelect,
+        take: 2,
+      });
       if (users.length === 1) return { user: users[0], match: "externalId" as LinkMatch };
       if (users.length > 1) console.warn(`[auth] OIDC external id "${externalId}" matches several accounts; not linking`);
     }

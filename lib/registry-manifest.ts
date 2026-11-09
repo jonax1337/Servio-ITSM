@@ -2,10 +2,12 @@ import { safeFetch, type SafeFetchOptions, type SafeFetchResponse } from "@/lib/
 
 /**
  * How many bytes pulling a release will download: the compressed layers plus the
- * image config, read from the registry manifest (OCI distribution API). The app
- * hands this to the updater sidecar with the update request, so the updater can
- * refuse a pull that would not fit on Docker's data root before it starts
- * (docs/updates.md). The updater has no network, so the app asks the registry.
+ * image config, read from the registry manifest (OCI distribution API). Layers
+ * the running release shares with the target (same digest in its manifest) are
+ * already on the host and not counted. The app hands the result to the updater
+ * sidecar with the update request, so the updater can refuse a pull that would
+ * not fit on Docker's data root before it starts (docs/updates.md). The updater
+ * has no network, so the app asks the registry.
  *
  * Best effort: anonymous (or bearer-token) pulls of public images only. Any
  * failure returns null and the updater falls back to its own estimate. Requests
@@ -67,16 +69,26 @@ export function platformManifestDigest(index: unknown, architecture: string): st
   return typeof match?.digest === "string" && DIGEST.test(match.digest) ? match.digest : null;
 }
 
-/** Compressed bytes of one platform's image: its layers plus its config; null when the manifest is not an image manifest. */
-export function manifestDownloadBytes(manifest: unknown): number | null {
+type Layer = { digest: string; size: number };
+/** One platform's image as its manifest lists it: the config blob's size and the compressed layers. */
+type PlatformImage = { configBytes: number; layers: Layer[] };
+
+/** The config size and layers of an image manifest; null when it is not an image manifest. */
+export function platformImage(manifest: unknown): PlatformImage | null {
   if (!isRecord(manifest) || !Array.isArray(manifest.layers) || manifest.layers.length === 0) return null;
-  let total = sizeOf(manifest.config) ?? 0;
+  const layers: Layer[] = [];
   for (const layer of manifest.layers) {
     const size = sizeOf(layer);
-    if (size === null) return null;
-    total += size;
+    if (size === null || !isRecord(layer) || typeof layer.digest !== "string" || !DIGEST.test(layer.digest)) return null;
+    layers.push({ digest: layer.digest, size });
   }
-  return total;
+  return { configBytes: sizeOf(manifest.config) ?? 0, layers };
+}
+
+/** Compressed bytes of one platform's image: its layers plus its config; null when the manifest is not an image manifest. */
+export function manifestDownloadBytes(manifest: unknown): number | null {
+  const image = platformImage(manifest);
+  return image && image.configBytes + image.layers.reduce((sum, layer) => sum + layer.size, 0);
 }
 
 /** The OCI architecture name of this host (the app and the updater run on the same Docker host). */
@@ -89,14 +101,26 @@ export function hostArchitecture(arch: string = process.arch): string {
 type Fetcher = (url: string, options: SafeFetchOptions) => Promise<SafeFetchResponse>;
 
 /**
- * Compressed download size of `image:tag` for this host's platform, or null when
- * it cannot be determined (unknown image, private registry, offline, malformed).
+ * The sizes a pull needs: `downloadBytes`, the compressed bytes of the target
+ * that the installed release does not share; `imageBytes`, the whole target.
  */
-export async function fetchImageDownloadBytes(
+export type PullSizes = { downloadBytes: number; imageBytes: number };
+
+/**
+ * Pull sizes of `image:tag` for this host's platform, compared with
+ * `image:installedTag` (the running release); null when the target cannot be
+ * read (unknown image, private registry, offline, malformed). When the installed
+ * release cannot be read, every layer counts as a download.
+ */
+export async function fetchPullSizes(
   image: string,
   tag: string,
-  { fetcher = safeFetch, architecture = hostArchitecture() }: { fetcher?: Fetcher; architecture?: string } = {},
-): Promise<number | null> {
+  {
+    installedTag,
+    fetcher = safeFetch,
+    architecture = hostArchitecture(),
+  }: { installedTag?: string; fetcher?: Fetcher; architecture?: string } = {},
+): Promise<PullSizes | null> {
   const location = parseImageRepository(image);
   if (!location || !TAG.test(tag)) return null;
   const { registry, repository } = location;
@@ -120,15 +144,27 @@ export async function fetchImageDownloadBytes(
     return JSON.parse(response.text) as unknown;
   }
 
-  try {
-    const top = await getManifest(tag);
-    const direct = manifestDownloadBytes(top);
-    if (direct !== null) return direct;
-    const digest = platformManifestDigest(top, architecture);
-    return digest ? manifestDownloadBytes(await getManifest(digest)) : null;
-  } catch {
-    return null;
+  async function imageFor(reference: string): Promise<PlatformImage | null> {
+    try {
+      const top = await getManifest(reference);
+      const direct = platformImage(top);
+      if (direct) return direct;
+      const digest = platformManifestDigest(top, architecture);
+      return digest ? platformImage(await getManifest(digest)) : null;
+    } catch {
+      return null;
+    }
   }
+
+  const target = await imageFor(tag);
+  if (!target) return null;
+  const installed = installedTag && TAG.test(installedTag) ? await imageFor(installedTag) : null;
+  const present = new Set(installed?.layers.map((layer) => layer.digest));
+  const total = (layers: Layer[]) => layers.reduce((sum, layer) => sum + layer.size, target.configBytes);
+  return {
+    downloadBytes: total(target.layers.filter((layer) => !present.has(layer.digest))),
+    imageBytes: total(target.layers),
+  };
 }
 
 /** An anonymous pull token from the registry's token service. */

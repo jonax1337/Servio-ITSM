@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SERVIO_IMAGE,
-  fetchImageDownloadBytes,
+  fetchPullSizes,
   hostArchitecture,
   manifestDownloadBytes,
   parseBearerChallenge,
@@ -94,7 +94,8 @@ describe("manifests", () => {
   });
 });
 
-describe("fetchImageDownloadBytes", () => {
+describe("fetchPullSizes", () => {
+  const downloadBytesOf = async (...args: Parameters<typeof fetchPullSizes>) => (await fetchPullSizes(...args))?.downloadBytes ?? null;
   function registry(routes: Record<string, (options: SafeFetchOptions) => SafeFetchResponse>) {
     const calls: Array<{ url: string; options: SafeFetchOptions }> = [];
     const fetcher = async (url: string, options: SafeFetchOptions) => {
@@ -118,7 +119,7 @@ describe("fetchImageDownloadBytes", () => {
       [`${base}${ARM64}`]: (options) => (authorized(options) ? respond(200, manifest([500, 700])) : respond(401, {})),
     });
 
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", { fetcher, architecture: "arm64" })).toBe(1300);
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", { fetcher, architecture: "arm64" })).toBe(1300);
     expect(calls.map((call) => call.url)).toEqual([
       `${base}1.2.3`,
       "https://ghcr.io/token?service=ghcr.io&scope=repository%3Aowner%2Fservio%3Apull",
@@ -130,28 +131,48 @@ describe("fetchImageDownloadBytes", () => {
 
   it("reads a single-platform manifest directly", async () => {
     const { fetcher } = registry({ [`${base}1.2.3`]: () => respond(200, manifest([42])) });
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", { fetcher })).toBe(142);
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", { fetcher })).toBe(142);
+  });
+
+  it("counts only the layers the installed release does not share", async () => {
+    const installed = { ...manifest([42]), layers: [...manifest([42]).layers, { digest: `sha256:${"e".repeat(64)}`, size: 9 }] };
+    const { fetcher } = registry({
+      [`${base}1.2.3`]: () => respond(200, manifest([42, 300, 500])),
+      [`${base}1.2.2`]: () => respond(200, installed),
+    });
+    expect(await fetchPullSizes("ghcr.io/owner/servio", "1.2.3", { fetcher, installedTag: "1.2.2" })).toEqual({
+      downloadBytes: 900,
+      imageBytes: 942,
+    });
+  });
+
+  it("counts every layer when the installed release cannot be read", async () => {
+    const { fetcher } = registry({ [`${base}1.2.3`]: () => respond(200, manifest([42, 300])) });
+    expect(await fetchPullSizes("ghcr.io/owner/servio", "1.2.3", { fetcher, installedTag: "0.0.0-dev" })).toEqual({
+      downloadBytes: 442,
+      imageBytes: 442,
+    });
   });
 
   it("returns null when the registry cannot tell: unknown tag, refused token, missing platform, network error, bad input", async () => {
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "9.9.9", registry({}))).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "9.9.9", registry({}))).toBeNull();
     const refused = registry({
       [`${base}1.2.3`]: () => respond(401, {}, { "www-authenticate": 'Bearer realm="https://ghcr.io/token"' }),
       "https://ghcr.io/token?scope=repository%3Aowner%2Fservio%3Apull": () => respond(403, {}),
     });
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", refused)).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", refused)).toBeNull();
     const plainHttpRealm = registry({
       [`${base}1.2.3`]: () => respond(401, {}, { "www-authenticate": 'Bearer realm="http://ghcr.io/token"' }),
     });
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", plainHttpRealm)).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", plainHttpRealm)).toBeNull();
     const noPlatform = registry({ [`${base}1.2.3`]: () => respond(200, index) });
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", { ...noPlatform, architecture: "s390x" })).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", { ...noPlatform, architecture: "s390x" })).toBeNull();
     const offline = async () => {
       throw new Error("getaddrinfo ENOTFOUND");
     };
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "1.2.3", { fetcher: offline })).toBeNull();
-    expect(await fetchImageDownloadBytes("not a repo", "1.2.3", registry({}))).toBeNull();
-    expect(await fetchImageDownloadBytes("ghcr.io/owner/servio", "../x", registry({}))).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "1.2.3", { fetcher: offline })).toBeNull();
+    expect(await downloadBytesOf("not a repo", "1.2.3", registry({}))).toBeNull();
+    expect(await downloadBytesOf("ghcr.io/owner/servio", "../x", registry({}))).toBeNull();
   });
 });
 

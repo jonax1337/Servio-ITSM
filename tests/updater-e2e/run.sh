@@ -11,8 +11,10 @@
 #   3. 1.1.0 -> 1.3.0 (broken, slow to fail) with the updater killed during
 #      HEALTH_CHECK must end ROLLED_BACK through start-up recovery.
 #   4. 1.1.0 -> 1.4.0 must end SUCCEEDED with the new container referencing
-#      the image by tag, the replaced 1.1.0 image kept as rollback target and
-#      the superseded 1.0.0, 1.2.0 and 1.3.0 images removed.
+#      the image by tag, report SUCCEEDED before the image cleanup and add the
+#      cleanup as a note, keep the replaced 1.1.0 image (rollback target), keep
+#      1.2.0 (a container uses it) and 1.3.0 (two tags, one of them used by a
+#      container: neither tag may be removed), and remove the superseded 1.0.0.
 # The proxy must refuse calls outside its allowlist and host bind mounts.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -203,16 +205,28 @@ in_data test -f /data/ran-1.3.0 || fail "1.3.0 never ran, so the recovery proved
 ! in_data test -e /data/servio.db-journal || fail "the hot journal 1.3.0 left was not removed"
 
 echo "== update 1.1.0 -> 1.4.0: tag reference and cleanup of superseded images"
+# Containers of other images keep them in use; removing a tag of an image with several tags would untag it.
+docker create --name e2e-holder-1.2.0 "$REPO:1.2.0" >/dev/null
+docker tag "$REPO:1.3.0" "$REPO:e2e-extra"
+docker create --name e2e-holder-1.3.0 "$REPO:1.3.0" >/dev/null
 request_update e2e-4 1.4.0
 expect_status e2e-4 SUCCEEDED
+status_mentions() { in_data cat /data/state/updater/status.json | jq -e --arg text "$1" '.message | contains($text)'; }
+wait_for 60 "the image cleanup note" status_mentions "Removed superseded images"
+in_data cat /data/state/updater/status.json |
+  jq -e '[.log[] | select(.state == "SUCCEEDED")] | length >= 2 and (.[0].message | contains("superseded") | not)' >/dev/null ||
+  fail "SUCCEEDED was not reported before the image cleanup note"
 [[ $(inspect_web '{{.Config.Image}}') == "$REPO:1.4.0" ]] || fail "the new container does not reference its image by tag: $(inspect_web '{{.Config.Image}}')"
 [[ $(inspect_web '{{.Image}}') == $(docker image inspect --format '{{.Id}}' "$REPO:1.4.0") ]] || fail "the new container does not run the pulled 1.4.0 image"
 docker image inspect "$REPO:1.1.0" >/dev/null 2>&1 || fail "the replaced 1.1.0 image (rollback target) was removed"
-for gone in 1.0.0 1.2.0 1.3.0; do
-  ! docker image inspect "$REPO:$gone" >/dev/null 2>&1 || fail "the superseded $gone image was not removed"
+! docker image inspect "$REPO:1.0.0" >/dev/null 2>&1 || fail "the superseded 1.0.0 image was not removed"
+docker image inspect "$REPO:1.2.0" >/dev/null 2>&1 || fail "the 1.2.0 image a container uses lost its tag"
+status_mentions "Kept superseded images a container still uses: $REPO:1.2.0" >/dev/null ||
+  fail "the status does not report the image kept for its container"
+for tag in 1.3.0 e2e-extra; do
+  docker image inspect "$REPO:$tag" >/dev/null 2>&1 || fail "the image with two tags lost $REPO:$tag"
 done
-in_data cat /data/state/updater/status.json | jq -e '.message | contains("Removed superseded images")' >/dev/null ||
-  fail "the status does not report the image cleanup"
+docker rm e2e-holder-1.2.0 e2e-holder-1.3.0 >/dev/null
 heartbeat_idle() { in_data cat /data/state/updater/heartbeat.json | jq -e '.activeRequestId == null'; }
 wait_for 45 "the heartbeat to report no active request" heartbeat_idle
 

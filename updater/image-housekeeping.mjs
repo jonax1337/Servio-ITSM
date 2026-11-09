@@ -23,17 +23,22 @@ const UNTAGGED_DIGEST = "<none>@<none>";
 
 /**
  * The space a pull needs on Docker's data root: the compressed download, the
- * unpacked layers and a margin. The unpacked size of the target is not known
- * before the pull, so the installed image's size stands in for it (a new
- * release is about as large as the one it replaces); without a download size
- * from the registry manifest the installed size stands in for that too.
+ * unpacked layers and a margin. The app reads the download from the registry
+ * manifest: only the layers the installed release does not share
+ * (`downloadBytes`), out of the whole image (`imageBytes`). The unpacked size of
+ * those layers is not known before the pull, so it is scaled from the installed
+ * image (a new release is about as large as the one it replaces): the installed
+ * size times the share of the image that is new. Without the image size the
+ * whole installed size stands in; without any registry size, the installed size
+ * stands in for the download too.
  *
- * @param {{ downloadBytes: number | null, installedBytes: number | null | undefined, marginBytes: number }} input
+ * @param {{ downloadBytes: number | null, imageBytes?: number | null, installedBytes: number | null | undefined, marginBytes: number }} input
  */
-export function pullSpaceNeeded({ downloadBytes, installedBytes, marginBytes }) {
+export function pullSpaceNeeded({ downloadBytes, imageBytes = null, installedBytes, marginBytes }) {
   const installed = Number.isFinite(installedBytes) && /** @type {number} */ (installedBytes) > 0 ? /** @type {number} */ (installedBytes) : 0;
   const download = downloadBytes ?? installed;
-  const unpacked = Math.max(installed, download);
+  const newShare = downloadBytes !== null && imageBytes !== null && imageBytes >= downloadBytes ? downloadBytes / imageBytes : 1;
+  const unpacked = Math.max(Math.round(installed * newShare), download);
   return { download, unpacked, margin: marginBytes, total: download + unpacked + marginBytes };
 }
 
@@ -70,8 +75,14 @@ function isDigestIn(repository, ref) {
 }
 
 /**
- * The image's references when every one of them belongs to `repository`; null
- * when it is shared with another repository (it is not ours to remove) or has none.
+ * The image's references when every one of them belongs to `repository` and it
+ * carries at most one tag; null when it is shared with another repository (it is
+ * not ours to remove), has no reference, or has several tags. Docker checks
+ * whether a container uses an image only when the reference removed is its last
+ * tag (digests of the same repository do not count): removing one of several
+ * tags just untags it, even under a running container. So only single-tag
+ * images are removed, tag first (Docker answers 409 when a container uses it
+ * and nothing is untagged); several tags only come from manual pulls and stay.
  *
  * @param {ImageSummary} image
  * @param {string} repository
@@ -80,9 +91,10 @@ function isDigestIn(repository, ref) {
 function ownReferences(image, repository) {
   const tags = (image.RepoTags ?? []).filter((ref) => ref !== UNTAGGED);
   const digests = (image.RepoDigests ?? []).filter((ref) => ref !== UNTAGGED_DIGEST);
+  if (tags.length > 1) return null;
   if (tags.some((ref) => tagIn(repository, ref) === null) || digests.some((ref) => !isDigestIn(repository, ref))) return null;
-  // Tags first: removing the last tag also drops the digests of the same repository;
-  // a digest that is left over (an untagged image) is removed by its own reference.
+  // Removing the last tag also drops the digests of the same repository; a digest that is
+  // left over (an untagged image) is removed by its own reference, the check applies there too.
   const refs = [...tags, ...digests];
   return refs.length > 0 ? { tags: tags.map((ref) => /** @type {string} */ (tagIn(repository, ref))), refs } : null;
 }
@@ -105,20 +117,22 @@ function versionOf(image, tags) {
  * images in `protectedIds`, every image that is not older than `runningVersion`
  * (the running release and anything pulled ahead of it), every image whose
  * version cannot be told, every image that also carries a reference of another
- * repository, and the `keep` newest superseded releases, the `rollbackVersion`
- * (the release an update just replaced) first among them.
+ * repository or several tags, and the `keep` newest superseded releases. The
+ * image an update just replaced (`rollbackImageId`, the rollback target) is
+ * always kept and counts as the first of them, whatever its version label says.
  *
  * @param {{ images: ImageSummary[], repository: string, runningVersion: string | null, protectedIds: string[],
- *   rollbackVersion: string | null, keep: number }} input
+ *   rollbackImageId: string | null, keep: number }} input
  * @returns {PrunableImage[]} images to remove, oldest release last
  */
-export function planImagePrune({ images, repository, runningVersion, protectedIds, rollbackVersion, keep }) {
+export function planImagePrune({ images, repository, runningVersion, protectedIds, rollbackImageId, keep }) {
   if (!runningVersion || compareVersions(runningVersion, runningVersion) === null) return [];
   const protectedSet = new Set(protectedIds);
+  const keepsRollback = rollbackImageId !== null && !protectedSet.has(rollbackImageId) && images.some((image) => image.Id === rollbackImageId);
   /** @type {PrunableImage[]} */
   const superseded = [];
   for (const image of images) {
-    if (protectedSet.has(image.Id)) continue;
+    if (protectedSet.has(image.Id) || image.Id === rollbackImageId) continue;
     const own = ownReferences(image, repository);
     if (!own) continue;
     const version = versionOf(image, own.tags);
@@ -126,20 +140,17 @@ export function planImagePrune({ images, repository, runningVersion, protectedId
     if (version === null || order === null || order >= 0) continue;
     superseded.push({ id: image.Id, version, refs: own.refs });
   }
-  const isRollback = (/** @type {PrunableImage} */ image) => rollbackVersion !== null && image.version === rollbackVersion;
-  superseded.sort(
-    (a, b) => Number(isRollback(b)) - Number(isRollback(a)) || /** @type {number} */ (compareVersions(b.version, a.version)),
-  );
-  return superseded.slice(keep);
+  superseded.sort((a, b) => /** @type {number} */ (compareVersions(b.version, a.version)));
+  return superseded.slice(Math.max(keep - Number(keepsRollback), 0));
 }
 
 /**
  * Removes what `planImagePrune` selects, reference by reference and never by
  * force. A 404 (already gone) counts as removed; a 409 means a container uses the
- * image, which then stays.
+ * image, which then stays with its references.
  *
  * @param {{ docker: import("./docker-client.mjs").DockerClient, repository: string, runningVersion: string | null,
- *   protectedIds: string[], rollbackVersion: string | null, keep: number }} options
+ *   protectedIds: string[], rollbackImageId: string | null, keep: number }} options
  * @returns {Promise<PruneResult>}
  */
 export async function pruneSupersededImages({ docker, repository, ...plan }) {
@@ -158,7 +169,7 @@ export async function pruneSupersededImages({ docker, repository, ...plan }) {
 
 /**
  * @param {import("./docker-client.mjs").DockerClient} docker
- * @param {string[]} refs
+ * @param {string[]} refs the single tag first (see `ownReferences`)
  * @returns {Promise<string>} "removed", "in-use" or the error message
  */
 async function removeReferences(docker, refs) {

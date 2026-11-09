@@ -28,8 +28,9 @@ name: servio
 #    updater makes: the managed container by name, images of the two managed
 #    repositories) and refuses host bind mounts in create requests. It does not
 #    inspect the rest of request bodies or query strings: a privileged
-#    container, an image import (`images/create?fromSrc=`) or a full image list
-#    would pass. That matters only if the updater process itself is compromised;
+#    container, an image import (`images/create?fromSrc=`), a pull of any
+#    repository (`images/create?fromImage=`), `?force=true` on an allowed call
+#    or a full image list would pass. That matters only if the updater process itself is compromised;
 #    whoever controls it controls the host. Use this stack only where that is
 #    acceptable.
 #  - `updater` runs unprivileged (uid 1000, like the app, plus the socket group),

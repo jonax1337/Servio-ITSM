@@ -14,12 +14,15 @@
  *                            but only when the IdP asserts `email_verified`.
  *   AUTH_OIDC_LINK_CLAIM     claim (dot path allowed) whose value must equal the
  *                            account's `externalId` from the directory sync, e.g.
- *                            the LDAP object GUID the IdP passes through.
+ *                            the LDAP object GUID the IdP passes through
+ *                            (any case, with or without braces, or as the hex
+ *                            that earlier releases of the directory sync stored).
  *
  * Whichever way the account was found, it is only linked when it has no password
  * and no SSO identity yet: a password account belongs to someone who can sign in
  * already, and an existing identity means the account is someone else's.
  */
+import { guidFromLegacyHex, isCanonicalGuid, legacyHexFromGuid } from "@/lib/connectors/ldap-identifiers";
 import { claimValues } from "@/lib/oidc-roles";
 
 export const OIDC_LINK_MODES = ["off", "email_verified"] as const;
@@ -53,6 +56,20 @@ export function isEmailVerified(profile: Record<string, unknown> | undefined): b
 export function externalIdFromProfile(profile: Record<string, unknown> | undefined, claim: string): string | null {
   const values = claimValues(profile, claim);
   return values?.length === 1 ? values[0] : null;
+}
+
+/**
+ * The `externalId` values the claim may match. IdPs pass a directory GUID in
+ * different spellings (upper case, `{…}`), while the directory sync stores the
+ * canonical lowercase form, and before that stored 32 hex digits of the raw
+ * bytes. Both forms are tried while databases still hold the old one. Any other
+ * value is matched as it is.
+ */
+export function externalIdCandidates(value: string): string[] {
+  const bare = value.trim().replace(/^\{(.*)\}$/, "$1").toLowerCase();
+  const canonical = isCanonicalGuid(bare) ? bare : guidFromLegacyHex(bare);
+  if (!canonical) return [value];
+  return [canonical, legacyHexFromGuid(canonical) as string];
 }
 
 export type LinkCandidate = {

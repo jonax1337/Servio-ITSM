@@ -12,6 +12,7 @@ import {
   guidFromLegacyHex,
   isBinaryAttr,
   isCanonicalGuid,
+  legacyHexFromGuid,
   sidFromBytes,
 } from "@/lib/connectors/ldap-identifiers";
 
@@ -76,6 +77,8 @@ describe("objectGUID", () => {
     expect(guidFromLegacyHex(LEGACY_HEX)).toBe(GUID);
     expect(guidFromLegacyHex(LEGACY_HEX.toUpperCase())).toBe(GUID);
     expect(guidFromLegacyHex("not-hex")).toBeNull();
+    expect(legacyHexFromGuid(GUID)).toBe(LEGACY_HEX);
+    expect(legacyHexFromGuid(LEGACY_HEX)).toBeNull();
     expect(guidFromLegacyHex(LEGACY_HEX.slice(2))).toBeNull();
   });
 

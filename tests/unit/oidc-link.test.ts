@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideOidcLink, externalIdFromProfile, isEmailVerified, oidcLinkConfig, type LinkCandidate } from "@/lib/oidc-link";
+import { decideOidcLink, externalIdCandidates, externalIdFromProfile, isEmailVerified, oidcLinkConfig, type LinkCandidate } from "@/lib/oidc-link";
 
 const precreated: LinkCandidate = {
   passwordHash: null,
@@ -46,6 +46,26 @@ describe("externalIdFromProfile", () => {
   it("returns null for a missing or multi-valued claim", () => {
     expect(externalIdFromProfile({}, "guid")).toBeNull();
     expect(externalIdFromProfile({ guid: ["a", "b"] }, "guid")).toBeNull();
+  });
+});
+
+describe("externalIdCandidates", () => {
+  // A known pair: an Active Directory objectGUID and the hex earlier directory syncs stored for it.
+  const GUID = "35918bc9-196d-40ea-9779-889d79b753f0";
+  const LEGACY_HEX = "c98b91356d19ea409779889d79b753f0";
+
+  it("matches a GUID claim in any spelling against the canonical and the earlier hex form", () => {
+    for (const claim of [GUID, GUID.toUpperCase(), `{${GUID.toUpperCase()}}`, ` ${GUID} `]) {
+      expect(externalIdCandidates(claim)).toEqual([GUID, LEGACY_HEX]);
+    }
+  });
+
+  it("reads a claim that carries the earlier hex form", () => {
+    expect(externalIdCandidates(LEGACY_HEX.toUpperCase())).toEqual([GUID, LEGACY_HEX]);
+  });
+
+  it("leaves any other value as it is", () => {
+    expect(externalIdCandidates("Emp-0042")).toEqual(["Emp-0042"]);
   });
 });
 

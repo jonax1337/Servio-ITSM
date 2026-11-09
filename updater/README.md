@@ -60,12 +60,17 @@ Residual risk. Docker access is still powerful. The proxy filters methods,
 paths and host bind mounts, but it does not inspect the rest of a request
 body or any query string, so these still pass: a create request for a
 privileged container (devices, host namespaces, capabilities), an image import
-through `images/create?fromSrc=…`, a container name chosen freely in the query of
-create or rename, the full image list of the host (`images/json` with any
-filter), and calls naming another container by its full 64-hex id (the updater
-has no way to learn one: the container list, short ids and foreign names are
-refused). Image removal is limited to references of the managed repositories and,
-since it is never forced, to images no container uses. Whoever gains code execution
+through `images/create?fromSrc=…`, a pull of **any** image through
+`images/create?fromImage=<any repository>` (the repository is a query parameter,
+so the managed-repository scoping of the image rules does not apply to pulls),
+a container name chosen freely in the query of create or rename, the full image
+list of the host (`images/json` with any filter), query flags such as
+`?force=true` on the allowed calls (the path rules cannot see them: a forced image
+removal of a managed reference, or a forced stop), and calls naming another
+container by its full 64-hex id (the updater has no way to learn one: the
+container list, short ids and foreign names are refused). Image removal is
+limited by path to references of the managed repositories; the updater itself
+never forces it, so Docker refuses to delete an image a container uses. Whoever gains code execution
 **in the updater process** (not just write access to `/data`) therefore controls the
 host. The updater only ever sends create bodies derived from the managed container's
 own inspected configuration, which the app cannot change, and pulls with `fromImage`
@@ -142,11 +147,11 @@ the migrated database; always drive the tag from `SERVIO_VERSION`.
 | `DOCKER_HOST` | – | `tcp://host:port` of a TCP proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. Not recommended (unauthenticated). |
 | `DOCKER_API_VERSION` | `v1.44` | Engine API prefix. `v1.44` is accepted by Engine 25+ (Engine 29.0–29.2 refuse older); use `v1.43` for Engine 24. |
 | `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image; its superseded versions are cleaned up too. The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
-| `UPDATER_KEEP_IMAGES` | `1` | Superseded releases kept per repository after a successful update (at least 1). The release the update replaced is always kept first, as the rollback target. |
+| `UPDATER_KEEP_IMAGES` | `1` | Superseded releases kept per repository after a successful update (at least 1). The image the replaced container ran (recorded by id in the journal) is always kept and counts as the first, as the rollback target. |
 | `PRUNE_IMAGES` | `true` | `false` turns the cleanup of superseded images off (after updates and before a pull that lacks space). |
 | `PULL_SPACE_CHECK` | `true` | `false` turns the free-space check before a pull off. |
 | `PULL_SPACE_MARGIN_MB` | `1024` | Head room required on Docker's data root on top of the image's download and unpacked size. |
-| `PULL_SPACE_PROBE_DIR` | `BACKUP_DIR` | A directory on the filesystem that holds Docker's data root, measured for the free-space check. The default `/backups` is a named volume, stored under the data root; mount another one if your volumes live elsewhere. |
+| `PULL_SPACE_PROBE_DIR` | `BACKUP_DIR` | A directory on the filesystem that holds the image store, measured for the free-space check. The default `/backups` is a named volume, stored under Docker's data root (`/var/lib/docker`); mount another one if your volumes live elsewhere. With the **containerd image store** (the default for new installations of Docker Engine 29, `docker info` shows `driver-type: io.containerd.snapshotter.v1`), image content and layers live under containerd's root (`/var/lib/containerd`), not under the data root: if that is a different filesystem, mount a directory of it into the updater and point `PULL_SPACE_PROBE_DIR` there, or set `PULL_SPACE_CHECK=false`. |
 
 ## State files (contract with the app)
 
@@ -155,7 +160,7 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
 
 | File | Writer | Shape |
 | --- | --- | --- |
-| `request.json` | app | `{ "id", "targetVersion", "requestedAt", "requestedBy", "downloadBytes"? }` (≤ 64 KB); `downloadBytes` is the compressed size of the target image from the registry manifest, only used for the free-space check (ignored unless a positive integer up to 256 GiB) |
+| `request.json` | app | `{ "id", "targetVersion", "requestedAt", "requestedBy", "downloadBytes"?, "imageBytes"? }` (≤ 64 KB); from the registry manifest, only used for the free-space check (each ignored unless a positive integer up to 256 GiB): `downloadBytes` is the compressed size of the target's layers the running release does not share, `imageBytes` that of the whole target. The app deletes the file when it fails a running window without the updater's result |
 | `status.json` | updater | `{ "id", "state", "fromVersion", "targetVersion", "message", "updatedAt", "log": [{ "at", "state", "message" }] }` |
 | `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image", "activeRequestId" }`; `activeRequestId` is the request being worked on (also a rollback waiting for Docker), `null` when idle |
 
@@ -170,9 +175,11 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
   `MANUAL ACTION REQUIRED — …` messages.
 - The app treats the updater as connected while `heartbeat.at` is younger than 60 s and `dockerOk` is `true`.
   The container HEALTHCHECK does not use `heartbeat.json` (the app can forge it) but `BACKUP_DIR/.liveness.json`.
-- A status write that fails (e.g. a full disk) is retried on every poll until it lands. The app fails a running
-  window once nothing moved for `UPDATER_STALE_MINUTES` (default 10) and either the heartbeat stopped too or
-  `activeRequestId` is no longer that window's id.
+- A status write that fails (e.g. a full disk) is retried on every poll until a later status lands or a new
+  request starts. The app fails a running window once nothing moved for `UPDATER_STALE_MINUTES` (default 10) and
+  either the heartbeat stopped too or `activeRequestId` is no longer that window's id; it then deletes
+  `request.json` (if it is that window's), so an updater that comes back late gives up before it stops the app
+  (step 3 below) instead of updating behind a window that reads `FAILED`.
 
 ## What an update does
 
@@ -181,8 +188,10 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    downgrade or an unknown installed version (unless `ALLOW_DOWNGRADE=true`), check that `DATABASE_URL`
    equals `file:<DB_FILE>` and that the database and its sidecars are regular files, and make sure no
    `<name>-pre-<version>` container is left over. Unless the target image is already on the host, check the
-   free space on Docker's data root (`PULL_SPACE_PROBE_DIR`): the download (`downloadBytes`, else the installed
-   image's size), the unpacked size (estimated as the installed image's size) and `PULL_SPACE_MARGIN_MB`. When
+   free space on Docker's data root (`PULL_SPACE_PROBE_DIR`): the download (`downloadBytes`, the layers the
+   running release lacks, else the installed image's size), the unpacked size (the installed image's size
+   scaled to the new share `downloadBytes / imageBytes`, else the installed image's size) and
+   `PULL_SPACE_MARGIN_MB`. When
    it is short, superseded images are removed first (keeping the installed release and the newest
    `UPDATER_KEEP_IMAGES` older ones); if it is still short → `FAILED` ("Not enough free space for the image
    pull"), nothing changed.
@@ -206,12 +215,16 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    (unchanged `StartedAt` and `RestartCount`). The new container inherits the restart policy, so a crash right
    after the first `healthy` shows up as a restart, not as a stopped container; either fails the check. So do an
    exit and `unhealthy`; a container without HEALTHCHECK counts as healthy after 15 s running.
-7. **SUCCEEDED**: remove the old container, then the superseded images of `SERVIO_IMAGE` and `UPDATER_IMAGE`:
-   every release older than the one now running except the newest `UPDATER_KEEP_IMAGES` (default 1), the
-   replaced release first among the kept ones (the rollback target). Images newer than the running release,
-   images without a readable version, images that also carry a tag of another repository and images a container
-   uses (Docker answers 409; removal is never forced) stay. The status message lists what was removed or kept; a
-   failed cleanup never fails the update. `PRUNE_IMAGES=false` skips it.
+7. **SUCCEEDED**: remove the old container and report `SUCCEEDED`. Then remove the superseded images of
+   `SERVIO_IMAGE` and `UPDATER_IMAGE`: every release older than the one now running except the newest
+   `UPDATER_KEEP_IMAGES` (default 1), the image the old container ran (by id, whatever its labels say) always
+   being the first kept one (the rollback target). Images newer than the running release, images without a
+   readable version, images that also carry a reference of another repository, images with several tags, and
+   images a container uses stay. Removal goes tag first and is never forced: Docker checks for containers only
+   when the last tag of an image is removed (it answers 409 and nothing is untagged), while removing one of
+   several tags would just untag the image under a running container, so such images are left alone (several
+   tags only come from manual pulls). The result is added to the status as a note after `SUCCEEDED`; a failed
+   cleanup never fails the update. `PRUNE_IMAGES=false` skips it.
 8. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
    that did not exist at backup time, e.g. the hot `-journal` of a migration that was killed), rename the old
    container back, restore its restart policy, start it and wait until healthy → `ROLLED_BACK`.

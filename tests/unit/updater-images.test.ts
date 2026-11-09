@@ -4,7 +4,7 @@
 // the recreated container, the active request in the heartbeat and the retried
 // status write.
 import { createHash } from "node:crypto";
-import { readFile, rename, rm, symlink } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../updater/config.mjs";
@@ -34,8 +34,9 @@ const GB = 1024 ** 3;
 const digest = (seed: string) => `sha256:${createHash("sha256").update(seed).digest("hex")}`;
 
 /** An entry of `GET /images/json` for a release of `repo`. */
+const idOf = (repo: string, version: string) => `sha256:id-of-${repo}:${version}`;
 const release = (repo: string, version: string, extra: Record<string, any> = {}) => ({
-  Id: `sha256:id-of-${repo}:${version}`,
+  Id: idOf(repo, version),
   RepoTags: [`${repo}:${version}`],
   RepoDigests: [`${repo}@${digest(`${repo}:${version}`)}`],
   Labels: { "org.opencontainers.image.version": version },
@@ -49,7 +50,7 @@ describe("planImagePrune", () => {
       repository: IMAGE_REPO,
       runningVersion: "0.5.0",
       protectedIds: [],
-      rollbackVersion: "0.4.0",
+      rollbackImageId: idOf(IMAGE_REPO, "0.4.0"),
       keep: 1,
       ...overrides,
     }).map((image) => image.version);
@@ -65,6 +66,18 @@ describe("planImagePrune", () => {
     expect(plan(images)).toEqual(["0.4.1"]);
   });
 
+  it("keeps the replaced image by its id, whatever its version label says", () => {
+    const relabelled = release(IMAGE_REPO, "0.4.0", { Labels: { "org.opencontainers.image.version": "0.1.0" } });
+    const images = [release(IMAGE_REPO, "0.2.0"), release(IMAGE_REPO, "0.3.0"), relabelled];
+    expect(plan(images)).toEqual(["0.3.0", "0.2.0"]);
+    expect(plan(images, { keep: 2 })).toEqual(["0.2.0"]);
+  });
+
+  it("keeps the newest superseded releases when the replaced image is unknown", () => {
+    const images = ["0.2.0", "0.3.0"].map((v) => release(IMAGE_REPO, v));
+    expect(plan(images, { rollbackImageId: null })).toEqual(["0.2.0"]);
+  });
+
   it("keeps more superseded releases when asked to", () => {
     const images = ["0.1.0", "0.2.0", "0.3.0", "0.4.0"].map((v) => release(IMAGE_REPO, v));
     expect(plan(images, { keep: 2 })).toEqual(["0.2.0", "0.1.0"]);
@@ -78,7 +91,7 @@ describe("planImagePrune", () => {
       { Id: "sha256:custom", RepoTags: [`${IMAGE_REPO}:custom-build`], RepoDigests: [], Labels: {} },
       release(IMAGE_REPO, "0.1.0"),
     ];
-    expect(plan(images, { protectedIds: ["sha256:protected"], rollbackVersion: null, keep: 1 })).toEqual([]);
+    expect(plan(images, { protectedIds: ["sha256:protected"], rollbackImageId: null, keep: 1 })).toEqual([]);
   });
 
   it("leaves images alone that also carry a reference of another repository", () => {
@@ -99,23 +112,35 @@ describe("planImagePrune", () => {
       repository: IMAGE_REPO,
       runningVersion: "0.5.0",
       protectedIds: [],
-      rollbackVersion: "0.4.0",
+      rollbackImageId: idOf(IMAGE_REPO, "0.4.0"),
       keep: 1,
     });
     expect(planned).toEqual([{ id: "sha256:dangling", version: "0.3.0", refs: [`${IMAGE_REPO}@${digest("dangling")}`] }]);
   });
 
-  it("removes every tag of an image, tags before digests", () => {
-    const twoTags = release(IMAGE_REPO, "0.3.0", { RepoTags: [`${IMAGE_REPO}:0.3.0`, `${IMAGE_REPO}:latest`] });
+  it("removes the tag before the digests", () => {
     const [planned] = planImagePrune({
+      images: [release(IMAGE_REPO, "0.4.0"), release(IMAGE_REPO, "0.3.0")],
+      repository: IMAGE_REPO,
+      runningVersion: "0.5.0",
+      protectedIds: [],
+      rollbackImageId: idOf(IMAGE_REPO, "0.4.0"),
+      keep: 1,
+    });
+    expect(planned.refs).toEqual([`${IMAGE_REPO}:0.3.0`, `${IMAGE_REPO}@${digest(`${IMAGE_REPO}:0.3.0`)}`]);
+  });
+
+  it("leaves an image with several tags alone: removing one would untag it even under a container", () => {
+    const twoTags = release(IMAGE_REPO, "0.3.0", { RepoTags: [`${IMAGE_REPO}:0.3.0`, `${IMAGE_REPO}:latest`] });
+    const planned = planImagePrune({
       images: [release(IMAGE_REPO, "0.4.0"), twoTags],
       repository: IMAGE_REPO,
       runningVersion: "0.5.0",
       protectedIds: [],
-      rollbackVersion: "0.4.0",
+      rollbackImageId: idOf(IMAGE_REPO, "0.4.0"),
       keep: 1,
     });
-    expect(planned.refs).toEqual([`${IMAGE_REPO}:0.3.0`, `${IMAGE_REPO}:latest`, twoTags.RepoDigests[0]]);
+    expect(planned).toEqual([]);
   });
 
   it("does nothing when the running version is unknown", () => {
@@ -138,6 +163,18 @@ describe("pullSpaceNeeded and downloadHint", () => {
       margin: GB,
       total: 5 * GB,
     });
+  });
+
+  it("scales the unpacked size to the share of the image the installed release does not have", () => {
+    // A quarter of the compressed image is new, so about a quarter of the installed size gets unpacked.
+    expect(pullSpaceNeeded({ downloadBytes: GB / 4, imageBytes: GB, installedBytes: 4 * GB, marginBytes: GB })).toEqual({
+      download: GB / 4,
+      unpacked: GB,
+      margin: GB,
+      total: 2.25 * GB,
+    });
+    // An implausible image size (smaller than the download) is ignored.
+    expect(pullSpaceNeeded({ downloadBytes: GB, imageBytes: GB / 2, installedBytes: 3 * GB, marginBytes: 0 }).unpacked).toBe(3 * GB);
   });
 
   it("falls back to the installed size when the registry size is unknown", () => {
@@ -191,7 +228,7 @@ describe("update flow: image cleanup after success", () => {
 
   it("keeps an image Docker refuses to delete because a container uses it", async () => {
     await update();
-    harness.docker.imagesInUse.add(`${IMAGE_REPO}:0.1.0`);
+    harness.docker.imagesInUse.add(idOf(IMAGE_REPO, "0.1.0"));
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
 
@@ -199,6 +236,51 @@ describe("update flow: image cleanup after success", () => {
     expect(status.state).toBe("SUCCEEDED");
     expect(status.message).toContain(`Kept superseded images a container still uses: ${IMAGE_REPO}:0.1.0.`);
     expect(harness.docker.imageList.some((image) => image.RepoTags?.includes(`${IMAGE_REPO}:0.1.0`))).toBe(true);
+  });
+
+  it("never untags an image with several tags that a container uses", async () => {
+    await update();
+    const twoTags = release(IMAGE_REPO, "0.1.5", { RepoTags: [`${IMAGE_REPO}:0.1.5`, `${IMAGE_REPO}:custom`] });
+    harness.docker.imageList.push(twoTags);
+    harness.docker.imagesInUse.add(twoTags.Id);
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect(harness.docker.callsTo("removeImage")).not.toContain(`removeImage ${IMAGE_REPO}:0.1.5`);
+    expect(harness.docker.imageList.find((image) => image.Id === twoTags.Id)?.RepoTags).toEqual(twoTags.RepoTags);
+  });
+
+  it("keeps the image the old container ran by its id, not by its version label", async () => {
+    await update();
+    // The old container's image carries an older label than the release that ran.
+    const old = harness.docker.imageList.find((image) => image.Id === "sha256:oldimage");
+    old!.Labels = { "org.opencontainers.image.version": "0.0.1" };
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect(harness.docker.imageList.some((image) => image.Id === "sha256:oldimage")).toBe(true);
+    expect(harness.docker.callsTo("removeImage")).toContain(`removeImage ${IMAGE_REPO}:0.1.0`);
+  });
+
+  it("reports SUCCEEDED before the cleanup and adds the cleanup as a note", async () => {
+    await update();
+    let stateDuringCleanup: string | undefined;
+    const listImages = harness.docker.listImages.bind(harness.docker);
+    harness.docker.listImages = async (repository: string) => {
+      stateDuringCleanup ??= (await harness.readStatus()).state;
+      return listImages(repository);
+    };
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect(stateDuringCleanup).toBe("SUCCEEDED");
+    const status = await harness.readStatus();
+    const [reported, note] = status.log.slice(-2);
+    expect(reported.state).toBe("SUCCEEDED");
+    expect(reported.message).not.toContain("Removed superseded images");
+    expect(note).toMatchObject({ state: "SUCCEEDED" });
+    expect(note.message.startsWith(`${reported.message} Removed superseded images`)).toBe(true);
+    expect(status.message).toBe(note.message);
   });
 
   it("still succeeds when the cleanup fails", async () => {
@@ -388,6 +470,41 @@ describe("update flow: progress the app can rely on", () => {
     const status = JSON.parse(await readFile(join(updaterDir, "status.json"), "utf8"));
     expect(status).toMatchObject({ id: "win-1", state: "SUCCEEDED" });
     expect(harness.logLines.some((line) => line.includes("status.json written after an earlier failure (SUCCEEDED)"))).toBe(true);
+  });
+
+  it("never lets an earlier unwritten status overwrite a later request's", async () => {
+    const statusFile = join(harness.stateDir, "updater", "status.json");
+    const docker = harness.docker;
+    let beforeNextDockerCall: (() => Promise<void>) | null = null;
+    const client = new Proxy(docker, {
+      get(target, property) {
+        const value = Reflect.get(target, property) as unknown;
+        if (typeof value !== "function") return value;
+        return async (...args: any[]) => {
+          const hook = beforeNextDockerCall;
+          beforeNextDockerCall = null;
+          if (hook) await hook();
+          return value.apply(target, args);
+        };
+      },
+    }) as unknown as DockerClient;
+    const flow = harness.newFlow(client);
+    // Request 1: status.json turns into a directory while the image pulls, so its outcome cannot be written.
+    docker.onPull = async () => {
+      docker.onPull = () => {};
+      await rm(statusFile, { force: true });
+      await mkdir(join(statusFile, "blocked"), { recursive: true });
+    };
+    await harness.writeRequest(REQUEST);
+    await flow.processPendingRequest();
+    // Request 2: the obstacle is gone once it is under way, so its outcome lands.
+    beforeNextDockerCall = () => rm(statusFile, { recursive: true, force: true });
+    await harness.writeRequest({ ...REQUEST, id: "win-2" });
+    await flow.processPendingRequest();
+    expect((await harness.readStatus()).id).toBe("win-2");
+
+    await flow.processPendingRequest();
+    expect((await harness.readStatus()).id).toBe("win-2");
   });
 
   it("puts the active request into the heartbeat", async () => {

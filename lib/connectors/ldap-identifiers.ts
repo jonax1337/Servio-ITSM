@@ -47,6 +47,14 @@ export function guidFromLegacyHex(value: string): string | null {
 
 export const isCanonicalGuid = (value: string): boolean => CANONICAL_GUID.test(value);
 
+/** A canonical GUID → the hex an earlier release stored for it (the inverse of `guidFromLegacyHex`); null otherwise. */
+export function legacyHexFromGuid(guid: string): string | null {
+  if (!isCanonicalGuid(guid)) return null;
+  const [a, b, c, d, e] = guid.split("-");
+  const reversed = (group: string) => group.match(/../g)!.reverse().join("");
+  return reversed(a) + reversed(b) + reversed(c) + d + e;
+}
+
 /** A binary SID → `S-<revision>-<authority>-<sub>-…`; null when the bytes are not a well-formed SID. */
 export function sidFromBytes(bytes: Uint8Array): string | null {
   if (bytes.length < 8) return null;
