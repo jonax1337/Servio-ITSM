@@ -328,6 +328,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `DELETE` | `/groups/{id}/members/{userId}` | Remove a user. Idempotent: 200 with `removed` false when they were not a member. MANAGER+ owner. | `directory:write` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
 | `GET` / `PATCH` | `/users/{id}` | Get one user / replace their secondary email addresses (edit: ADMIN owner). | `directory:read` / `directory:write` |
+| `GET` | `/system/backups/latest` | Status of the built-in backup for monitoring: newest run, newest verified one, ages in seconds (see [Built-in backup](#built-in-backup)). Agent tokens only. | `system:read` |
 | `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `import:write` + ADMIN owner |
@@ -1199,6 +1200,29 @@ The list replaces the current one (`[]` removes all; at most 10). A malformed
 address or the person's own primary address is a `422`; an address that already
 belongs to someone else, as primary or secondary address, is a `409` with the
 address in `details.email`. Changes are audited on the user.
+
+### Built-in backup
+
+`GET /system/backups/latest` reports the built-in backup ([backup.md](./backup.md)) so an
+external monitor can alert on its age or failure. Agent tokens (AGENT, MANAGER, ADMIN) with the
+`read` scope; a USER token gets 403. Nothing about the backup files themselves (paths,
+contents) is exposed, and there is no download.
+
+| Field | Meaning |
+| --- | --- |
+| `status` | Newest run: `RUNNING`, `SUCCESS` (created and verified), `FAILED`, or `NONE` before the first run. |
+| `trigger` | `SCHEDULE` or `MANUAL` (null without a run). |
+| `verified` | The newest run passed verification. |
+| `started_at`, `finished_at`, `age_seconds` | Timing of the newest run; `age_seconds` counts from `finished_at`. |
+| `size_bytes`, `database_bytes`, `uploads_bytes`, `uploads_files` | Sizes of the newest run (database copy plus uploads archive). |
+| `name`, `error` | Backup directory name; the failure reason of a failed run. |
+| `last_success_at`, `last_success_age_seconds`, `last_success_size_bytes` | The newest **verified** backup: alert on its age. |
+| `enabled`, `supported`, `schedule`, `timezone`, `next_run_at` | Configuration: scheduled backups on, database is SQLite, the schedule as entered (`HH:MM` or cron) and when it runs next. |
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" https://servio.example.com/api/v1/system/backups/latest
+# alert when .data.last_success_age_seconds > 93600 (daily backup + 2 h) or .data.status == "FAILED"
+```
 
 ### Managing categories
 

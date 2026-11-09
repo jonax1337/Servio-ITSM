@@ -44,6 +44,10 @@ services:
       GOTENBERG_URL: http://gotenberg:3000
       DATABASE_URL: file:/data/servio.db
       UPLOAD_DIR: /data/uploads
+      # Built-in scheduled backups (Settings > Backups; docs/backup.md). They land on
+      # the persistent /data volume by default; for protection against losing that
+      # volume, mount a separate disk here and copy the backups off the host.
+      BACKUP_DIR: /data/backups
       # Background cron ticks (SLA escalation, inbound-mail poll, scheduled
       # syncs) must run on EXACTLY ONE instance — set "false" on every extra
       # replica. See docs/deployment.md ("Run a single app instance").

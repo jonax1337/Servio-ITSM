@@ -97,6 +97,10 @@ Before stopping the app the updater writes a journal next to the backups. If the
 
 The app image itself refuses to start on a database that holds migrations it does not ship, so an older version never runs on a schema a newer one migrated (`ALLOW_UNKNOWN_MIGRATIONS=true` on `web` overrides this).
 
+Everyday backups of the database **and the attachments** are a separate, built-in feature that
+runs on a schedule inside the app (Settings › Backups, [backup.md](./backup.md)). The pre-update
+backup described here is unchanged by it.
+
 ## Postgres
 
 The automatic backup copies the SQLite file. For a PostgreSQL deployment the updater refuses to run unless `ALLOW_UPDATE_WITHOUT_BACKUP=true`, in which case **you** are responsible for a database backup and for restoring it after a rollback. Migrations run when the new container starts, and a rollback does not undo them.

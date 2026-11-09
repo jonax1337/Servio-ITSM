@@ -128,6 +128,14 @@ const DOC_MAP = [
     docs: ['docs/updates.md'],
   },
   {
+    label: 'Built-in backup & restore',
+    code: [
+      'lib/backup', 'lib/ticks/backup.ts', 'lib/actions/backup.ts', 'scripts/backup/', 'scripts/restore-backup.mjs',
+      'app/(console)/settings/backups', 'app/api/v1/system/', 'components/backups/',
+    ],
+    docs: ['docs/backup.md'],
+  },
+  {
     label: 'Deployment / runtime / containers',
     code: ['Dockerfile', 'docker-compose.yml', 'docker/', 'instrumentation.ts', 'next.config.ts'],
     docs: ['docs/deployment.md'],

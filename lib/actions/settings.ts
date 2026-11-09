@@ -27,6 +27,8 @@ import {
   processingInput,
 } from "@/lib/mail-inbound/disposition";
 import { ATTACHMENT_EXTRA_EXTENSIONS_SETTING, parseExtraExtensions } from "@/lib/files";
+import { BACKUP_SETTING, parseBackupSchedule, parseRetentionInput } from "@/lib/backup-rules";
+import { isValidTimeZone } from "@/lib/oncall-rules";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -391,4 +393,35 @@ export async function listAiModels(provider: AiProvider): Promise<AiModelList> {
   const me = await requireAdmin();
   if (!me) return { models: [], error: "Not authorised" };
   return listModels(provider);
+}
+
+export async function saveBackupSettings(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await requireAdmin();
+  if (!me) return { error: "Not authorised" };
+  const schedule = str(fd, BACKUP_SETTING.schedule);
+  const parsedSchedule = parseBackupSchedule(schedule);
+  if (!parsedSchedule.ok) return { error: parsedSchedule.error };
+  const timezone = str(fd, BACKUP_SETTING.timezone);
+  if (timezone && !isValidTimeZone(timezone)) return { error: "Unknown time zone: use an IANA name such as UTC or America/New_York." };
+  const retention = parseRetentionInput(str(fd, BACKUP_SETTING.keepCount), str(fd, BACKUP_SETTING.keepDays));
+  if (!retention.ok) return { error: retention.error };
+  const enabled = bool(fd, BACKUP_SETTING.enabled);
+  const includeUploads = bool(fd, BACKUP_SETTING.includeUploads);
+  // Switches and numbers are stored, not dropped: an empty row would let an environment value take over again.
+  return persist(
+    me.id,
+    [
+      { key: BACKUP_SETTING.enabled, value: enabled },
+      { key: BACKUP_SETTING.schedule, value: schedule },
+      { key: BACKUP_SETTING.timezone, value: timezone },
+      { key: BACKUP_SETTING.keepCount, value: String(retention.keepCount) },
+      { key: BACKUP_SETTING.keepDays, value: String(retention.keepDays) },
+      { key: BACKUP_SETTING.includeUploads, value: includeUploads },
+    ],
+    `Updated backup settings (${enabled === "true" ? "on" : "off"}, schedule ${schedule || "default"}${timezone ? ` ${timezone}` : ""}, keep ${retention.keepCount} / ${retention.keepDays} days, uploads ${includeUploads === "true" ? "included" : "excluded"})`,
+    "/settings/backups",
+  );
 }

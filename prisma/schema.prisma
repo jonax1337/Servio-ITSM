@@ -76,6 +76,7 @@ model User {
   aiProjects         AiProject[]             @relation("AiProjectOwner")
   savedViews         SavedView[]             @relation("SavedViewOwner")
   maintenanceWindows MaintenanceWindow[]
+  backupRuns         BackupRun[]
   dashboards         Dashboard[]             @relation("DashboardOwner")
   macros             Macro[]                 @relation("MacroOwner")
   articles           Article[]
@@ -1955,6 +1956,33 @@ model MaintenanceWindow {
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status, startsAt])
+}
+
+// One run of the built-in backup (lib/backup.ts): a VACUUM INTO copy of the
+// SQLite database plus an archive of the uploads, verified before it is kept.
+// The files live in BACKUP_DIR/<name>; `prunedAt` is set when retention removed them.
+model BackupRun {
+  id            String    @id @default(cuid())
+  status        String    @default("RUNNING") // RUNNING | SUCCESS | FAILED
+  trigger       String    @default("SCHEDULE") // SCHEDULE | MANUAL
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  heartbeatAt   DateTime  @default(now()) // refreshed while RUNNING; a stale one marks an interrupted run
+  name          String? // backup directory inside BACKUP_DIR
+  databaseBytes Float? // bytes; Float because Int caps at 2 GiB
+  uploadsBytes  Float? // size of the uploads archive
+  uploadsFiles  Int?
+  verified      Boolean   @default(false)
+  details       String    @default("{}") // JSON: verification checks, warnings, pruned backups
+  error         String?
+  prunedAt      DateTime?
+  triggeredById String?
+  createdAt     DateTime  @default(now())
+
+  triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  @@index([status, startedAt])
+  @@index([startedAt])
 }
 
 /// A ticket created on a schedule (GLPI "recurrent items"): a ticket template

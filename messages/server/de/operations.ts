@@ -1,7 +1,7 @@
 import type { ServerMessages } from "../../types";
 
 // English server message (exact text) → German. See docs/i18n.md#server-messages.
-// Knowledge, services, catalog, status page, on-call, maintenance, automations, insights,
+// Knowledge, services, catalog, status page, on-call, maintenance, backups, automations, insights,
 // recurring tickets.
 const messages: ServerMessages = {
   // Knowledge
@@ -87,6 +87,18 @@ const messages: ServerMessages = {
   "The updater is not connected, so an update cannot run. Start the updater service first (see the update guide).":
     "Der Updater ist nicht verbunden, daher kann kein Update laufen. Starten Sie zuerst den Updater-Dienst (siehe Update-Anleitung).",
   "Add at least one action.": "Fügen Sie mindestens eine Aktion hinzu.",
+  // Backups
+  "Only admins can start a backup.": "Nur Administratoren können eine Sicherung starten.",
+  "A backup is already running.": "Es läuft bereits eine Sicherung.",
+  "The built-in backup supports SQLite databases only.": "Die eingebaute Sicherung unterstützt nur SQLite-Datenbanken.",
+  "Use a time between 00:00 and 23:59.": "Bitte eine Uhrzeit zwischen 00:00 und 23:59 angeben.",
+  "Enter a daily time (HH:MM) or a cron expression with five fields.":
+    "Bitte eine tägliche Uhrzeit (HH:MM) oder einen Cron-Ausdruck mit fünf Feldern angeben.",
+  "Backups can run at most once an hour.": "Sicherungen können höchstens einmal pro Stunde laufen.",
+  "Keep between 1 and 1000 backups.": "Es müssen zwischen 1 und 1000 Sicherungen aufbewahrt werden.",
+  "Unknown time zone: use an IANA name such as UTC or America/New_York.":
+    "Unbekannte Zeitzone: bitte einen IANA-Namen wie UTC oder America/New_York angeben.",
+  "Keep backups for 0 to 3650 days.": "Sicherungen werden 0 bis 3650 Tage aufbewahrt.",
   // Automations
   "An action refers to an agent who is not active.": "Eine Aktion verweist auf einen Agent, der nicht aktiv ist.",
   "An action refers to a group that no longer exists.": "Eine Aktion verweist auf eine Gruppe, die nicht mehr existiert.",

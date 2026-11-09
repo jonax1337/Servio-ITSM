@@ -718,6 +718,56 @@ const spec = {
         },
       },
     },
+    "/system/backups/latest": {
+      get: {
+        summary: "Status of the built-in backup (for monitoring)",
+        description:
+          `${agentOnly} The newest backup run and the newest verified one. \`status\` is RUNNING, SUCCESS (verified), FAILED or NONE (no run yet); ` +
+          "ages are in seconds. Alert on `last_success_age_seconds` above your schedule plus a margin, or on `status` FAILED. " +
+          "`supported` is false when the database is not SQLite (back it up with its own tools).",
+        responses: {
+          "200": {
+            description: "OK",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        status: { type: "string", enum: ["RUNNING", "SUCCESS", "FAILED", "NONE"] },
+                        trigger: { type: ["string", "null"], enum: ["SCHEDULE", "MANUAL", null] },
+                        verified: { type: "boolean" },
+                        started_at: { type: ["string", "null"], format: "date-time" },
+                        finished_at: { type: ["string", "null"], format: "date-time" },
+                        age_seconds: { type: ["integer", "null"], description: "Seconds since the newest run finished" },
+                        size_bytes: { type: ["number", "null"], description: "Database copy plus uploads archive" },
+                        database_bytes: { type: ["number", "null"] },
+                        uploads_bytes: { type: ["number", "null"] },
+                        uploads_files: { type: ["integer", "null"] },
+                        name: { type: ["string", "null"], description: "Backup directory name" },
+                        error: { type: ["string", "null"] },
+                        last_success_at: { type: ["string", "null"], format: "date-time" },
+                        last_success_age_seconds: { type: ["integer", "null"] },
+                        last_success_size_bytes: { type: ["number", "null"] },
+                        enabled: { type: "boolean", description: "Scheduled backups switched on" },
+                        supported: { type: "boolean" },
+                        schedule: { type: "string", description: "HH:MM or a cron expression" },
+                        timezone: { type: "string" },
+                        next_run_at: { type: ["string", "null"], format: "date-time" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Missing or invalid token" },
+          "403": { description: "Not an agent token, or no read scope" },
+        },
+      },
+    },
   }),
 };
 

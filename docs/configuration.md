@@ -139,7 +139,7 @@ file. The sample file is a starting point, not the full list.
 | `LOGIN_BASE_BACKOFF_MS` | No | `2000` | Base backoff delay (ms) after the free attempts are used; grows per subsequent failure. |
 | `LOGIN_MAX_BACKOFF_MS` | No | `900000` | Cap (ms, 15 min) on the login backoff delay. |
 | `LOGIN_DECAY_MS` | No | `900000` | Idle window (ms, 15 min) after which a login's failure count decays/resets. |
-| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs, and the insights, SLA-nudge, contracts, maintenance, update-check, recurring-tickets and auto-close ticks), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Only a case-insensitive `false` disables it. Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
+| `SCHEDULER_ENABLED` | No | `true` | Master switch for the in-process background scheduler (SLA escalation sweep, inbound-mail poll, scheduled syncs, and the insights, SLA-nudge, contracts, maintenance, update-check, recurring-tickets, auto-close, backup and app-heartbeat ticks), read by [`../lib/scheduler.ts`](../lib/scheduler.ts) via [`../instrumentation.ts`](../instrumentation.ts). Only a case-insensitive `false` disables it. Set `"false"` on every replica except the designated scheduler instance — see the multi-instance notes in [deployment.md](deployment.md). |
 | `SYNC_TICK_SECONDS` _(not in `.env.example`)_ | No | `60` | How often the scheduler looks for due scheduled syncs (floor 30). |
 | `SLA_ESCALATION_TICK_SECONDS` _(not in `.env.example`)_ | No | `180` | Interval of the SLA escalation sweep (floor 60). |
 | `INSIGHTS_ENABLED` _(not in `.env.example`)_ | No | `true` | Master switch for Sable's insight detection tick ([`../lib/ticks/ai-insights.ts`](../lib/ticks/ai-insights.ts)). Similarity is local lexical TF-IDF and needs no AI provider. |
@@ -159,9 +159,18 @@ file. The sample file is a starting point, not the full list.
 | `TICKET_AUTO_CLOSE_DAYS` _(not in `.env.example`)_ | No | `0` (off) | Close a ticket automatically once it has been RESOLVED for this many whole days (0..3650; 0 = off). The auto-close tick ([`../lib/ticks/auto-close.ts`](../lib/ticks/auto-close.ts)) moves it to CLOSED with an internal note and an audit entry by the Automation account, and does nothing while the status workflow forbids RESOLVED → CLOSED. A requester reply before then reopens the ticket as usual. The "Ticket resolved" email offers `{{autoCloseDays}}` and `{{autoCloseNotice}}`. Edited at Settings › Tickets (`/settings/tickets`, ADMIN), which stores `0` explicitly so an environment value cannot switch it back on. |
 | `TICKET_CLOSED_EMAIL_ENABLED` _(not in `.env.example`)_ | No | `false` | Send the "Ticket closed" email template to the requester when an agent closes a ticket or the auto-close tick does ([`../lib/ticket-closed-mail.ts`](../lib/ticket-closed-mail.ts)). Settings › Tickets. |
 | `AUTO_CLOSE_TICK_SECONDS` _(not in `.env.example`)_ | No | `3600` | Interval of the auto-close tick (floor 300). |
+| `BACKUP_DIR` | No | `/data/backups` in the Docker image, `./.backups` otherwise | Where the built-in backup writes ([backup.md](./backup.md)). Env only. Must not lie inside `UPLOAD_DIR`; mount a separate disk here for protection against losing the data volume. (The updater sidecar has its own `BACKUP_DIR`, see below.) |
+| `BACKUP_ENABLED` _(not in `.env.example`)_ | No | `true` | Scheduled built-in backups of the SQLite database and the uploads ([`../lib/ticks/backup.ts`](../lib/ticks/backup.ts)). Settings › Backups (`/settings/backups`, ADMIN) overrides this and the following `BACKUP_*` settings. Ignored (nothing runs) when `DATABASE_URL` is not a SQLite `file:` URL. |
+| `BACKUP_SCHEDULE` _(not in `.env.example`)_ | No | `02:30` | A daily time `HH:MM` or a five-field cron expression; schedules more frequent than hourly are refused. |
+| `BACKUP_TIMEZONE` _(not in `.env.example`)_ | No | `UTC` | IANA time zone the schedule is read in. |
+| `BACKUP_RETENTION_COUNT` _(not in `.env.example`)_ | No | `7` | Always keep this many of the newest backups (1..1000). |
+| `BACKUP_RETENTION_DAYS` _(not in `.env.example`)_ | No | `14` | Also keep every backup younger than this many days (0..3650; 0 = by count only). Older backups beyond both limits are deleted after each successful backup. |
+| `BACKUP_INCLUDE_UPLOADS` _(not in `.env.example`)_ | No | `true` | Archive the upload directory with the database (only with `STORAGE_DRIVER=fs`). |
+| `BACKUP_TICK_SECONDS` _(not in `.env.example`)_ | No | `60` | How often the scheduler checks whether a backup is due (floor 30). |
+| `APP_HEARTBEAT_TICK_SECONDS` _(not in `.env.example`)_ | No | `60` | How often the scheduler refreshes `app-heartbeat.json` in `SERVIO_STATE_DIR`, which the restore script checks (floor 30; it counts as stale after 3 minutes). |
 | `CHANGE_CONFLICT_SAME_SERVICE` | No | `true` | Also flag changes whose windows overlap and that share a service (through their affected CIs), not only a CI. |
 | `CHANGE_SELF_APPROVAL` _(not in `.env.example`)_ | No | `OFF` | Whether the requester or owner of a change may approve it, for teams too small for a four-eyes review: `OFF`, `WHEN_NO_OTHER_APPROVER` (seated only when no one else is eligible) or `ALWAYS` (seated next to the board; their justified decision settles it). Any other value counts as `OFF`. Role/risk eligibility and a written justification apply in every mode. Edited at Settings › Change management (`/settings/changes`, ADMIN), which stores `OFF` explicitly so an environment value cannot switch it back on. Details: [modules.md](modules.md#approvals). |
-| `SERVIO_STATE_DIR` | No | `/data/state` in the Docker image, `./.servio-state` otherwise | Directory shared with the updater sidecar and read by `proxy.ts`: `maintenance.json` and `updater/*.json` ([`../lib/state-dir.ts`](../lib/state-dir.ts)). See [updates.md](./updates.md). |
+| `SERVIO_STATE_DIR` | No | `/data/state` in the Docker image, `./.servio-state` otherwise | Directory shared with the updater sidecar and read by `proxy.ts`: `maintenance.json`, `updater/*.json` and the app's `app-heartbeat.json` ([`../lib/state-dir.ts`](../lib/state-dir.ts)). See [updates.md](./updates.md). |
 | `UPDATE_CHECK_ENABLED` _(not in `.env.example`)_ | No | `true` | Check GitHub Releases for new versions and notify the admins ([`../lib/ticks/update-check.ts`](../lib/ticks/update-check.ts)). Also editable at Settings › Updates. |
 | `UPDATE_REPOSITORY` | No | `jonax1337/Servio-ITSM` | GitHub `owner/name` whose releases are offered. |
 | `UPDATE_INCLUDE_PRERELEASES` | No | `false` | Also offer pre-releases. |
@@ -546,6 +555,14 @@ that value minus ~1 MB for multipart overhead; above it, uploads fail.
 Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. `UPDATER_STALE_MINUTES` and `SERVIO_IMAGE` are environment-only as well. The updater's own variables (`UPDATER_KEEP_IMAGES`, `PRUNE_IMAGES`, `PULL_SPACE_*`, …) are set on the updater container: [`updater/README.md`](../updater/README.md#configuration-environment-of-the-updater-container). Operator guide: [updates.md](./updates.md).
 
 ---
+
+## Built-in backup
+
+Scheduled, verified backups of the SQLite database and the upload directory, on by default
+(daily 02:30 UTC, keeping the newest 7 and everything younger than 14 days). Configure them at
+Settings › Backups (`/settings/backups`, ADMIN) or with the `BACKUP_*` variables above; the
+backup directory is `BACKUP_DIR` (env only). Monitoring endpoint, verification and the restore
+procedure: [backup.md](./backup.md).
 
 ## Related docs
 

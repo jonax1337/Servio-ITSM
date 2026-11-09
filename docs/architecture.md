@@ -385,7 +385,7 @@ markers are in memory): set `SCHEDULER_ENABLED=false` on any replica that must s
 `IMAP_RETENTION_DAYS` is set), the cron `syncTick` that fires due sources (`SYNC_TICK_SECONDS`) and the SLA
 escalation sweep (`SLA_ESCALATION_TICK_SECONDS`) — plus the feature sweeps in `FEATURE_TICKS` in the
 same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick`,
-`runUpdateCheckTick`, `runRecurringTicketsTick` and `runAutoCloseTick` (`lib/ticks/*`). Each sweep has its own interval setting and floor, an overlap
+`runUpdateCheckTick`, `runRecurringTicketsTick`, `runAutoCloseTick`, `runBackupTick` and `runAppHeartbeatTick` (`lib/ticks/*`; the backup itself runs in a child process, `scripts/backup/run.mjs`, so it never blocks the server — see [backup.md](./backup.md)). Each sweep has its own interval setting and floor, an overlap
 guard, `unref()`ed timers, and errors logged but never thrown. Every tick is session-less, checks
 its own enable setting first and uses at-most-once markers in the database (see
 [configuration.md](./configuration.md) and [data-model.md](./data-model.md)). Server Actions in

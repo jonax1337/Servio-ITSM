@@ -84,6 +84,10 @@ an API token) show the version that runs ([updates.md](./updates.md#compose-and-
   uncomment its `db` service and repoint `DATABASE_URL`.
 - **Uploads.** Blob storage is redirected to `/data/uploads` (same volume) via
   `UPLOAD_DIR`, so DB + files persist together.
+- **Backups.** Built-in, scheduled and verified backups of the database and uploads go to
+  `/data/backups` (`BACKUP_DIR`, same volume) daily at 02:30 UTC, on by default. Copy them off
+  the host or mount a separate disk there; restoring uses `scripts/restore-backup.mjs`, which
+  ships in the image. See [backup.md](./backup.md).
 - **Boot.** [`docker/entrypoint.sh`](../docker/entrypoint.sh) runs `prisma migrate deploy`
   (the committed baseline migration is kept current), **refuses to start** when the
   database holds migrations the image does not ship (a newer version migrated it;
@@ -352,6 +356,8 @@ until an object-storage adapter is implemented.**
   proxied through an authorized route, and the storage keys are unguessable
   (`YYYY/MM/<uuid>-<safeName>`, see `buildStorageKey`).
 - `MAX_UPLOAD_MB` (default `15`) caps per-file size; `lib/files.ts` derives the byte limit.
+- The built-in backup archives `UPLOAD_DIR` together with the database ([backup.md](./backup.md));
+  keep `BACKUP_DIR` outside `UPLOAD_DIR` (the backup refuses otherwise).
 - `PROXY_MAX_BODY_MB` (build time, default `32`) is how much of a request body Next.js buffers for `proxy.ts`; keep the upload cap below it. The published image is built with 32 MB.
 
 > **Platform implication.** Because the only working driver is local-filesystem, Servio is
@@ -391,7 +397,8 @@ same scheduler runs the inbound-mail poll and a
 > **`SCHEDULER_ENABLED=true`** there and set **`SCHEDULER_ENABLED=false`** on every other replica
 > (or add external locking). See the single-instance warning under [Build & run](#️-build--run).
 
-There is no external cron dependency to provision.
+There is no external cron dependency to provision. This includes backups: the `backup` tick runs the
+built-in backup on its schedule ([backup.md](./backup.md)), so no host cron job is needed for it either.
 
 ---
 
@@ -402,7 +409,8 @@ There is no external cron dependency to provision.
 - [ ] `.env` next to `docker-compose.release.yml` with `AUTH_SECRET`, `SETTINGS_ENCRYPTION_KEY` and `DOCKER_GID`.
 - [ ] `APP_URL` and `AUTH_URL` set to the public HTTPS origin; TLS terminated by a reverse proxy.
 - [ ] Seeded demo passwords changed and the demo API token revoked after the first login.
-- [ ] The `servio-data` (database + uploads) and `servio-backups` volumes are part of your backups.
+- [ ] Built-in backups run (Settings › Backups shows a verified backup) and `BACKUP_DIR` is copied off the host or on a separate disk; monitoring watches `GET /api/v1/system/backups/latest` ([backup.md](./backup.md)).
+- [ ] Your `.env` (`SETTINGS_ENCRYPTION_KEY`, `AUTH_SECRET`) is stored safely outside the server; a database backup cannot decrypt its secrets without it.
 - [ ] Exactly one instance runs the scheduler (`SCHEDULER_ENABLED`).
 
 **From source**

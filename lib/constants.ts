@@ -608,6 +608,22 @@ export const UPDATER_STATE_META: Record<UpdaterState, Meta> = {
   ROLLED_BACK: { label: "Rolled back", tone: "warning" },
 };
 
+// ---- Built-in backup (lib/backup.ts) ----------------------------------------
+export const BACKUP_RUN_STATUSES = ["RUNNING", "SUCCESS", "FAILED"] as const;
+export type BackupRunStatus = (typeof BACKUP_RUN_STATUSES)[number];
+export const BACKUP_RUN_STATUS_META: Record<BackupRunStatus, Meta> = {
+  RUNNING: { label: "Running", tone: "info", icon: PlayCircle },
+  SUCCESS: { label: "Verified", tone: "success", icon: CheckCircle2 },
+  FAILED: { label: "Failed", tone: "danger", icon: XCircle },
+};
+
+export const BACKUP_TRIGGERS = ["SCHEDULE", "MANUAL"] as const;
+export type BackupTrigger = (typeof BACKUP_TRIGGERS)[number];
+export const BACKUP_TRIGGER_META: Record<BackupTrigger, Meta> = {
+  SCHEDULE: { label: "Scheduled", tone: "neutral", icon: CalendarClock },
+  MANUAL: { label: "Manual", tone: "indigo" },
+};
+
 // ---- Releases & change templates -------------------------------------------
 export const RELEASE_STATUSES = [
   "PLANNING",
