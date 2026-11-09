@@ -22,7 +22,7 @@ async function stageApproverId(s: ApprovalStage): Promise<string | null> {
   if (s.approverId) return (await isActiveAgent(s.approverId)) ? s.approverId : null;
   if (s.groupId) {
     const m = await db.groupMember.findFirst({
-      where: { groupId: s.groupId, user: { isActive: true, role: { in: AGENT_ROLES } } },
+      where: { groupId: s.groupId, user: { isActive: true, isServiceAccount: false, role: { in: AGENT_ROLES } } },
       select: { userId: true },
       orderBy: [{ role: "asc" }],
     });
@@ -52,7 +52,7 @@ export async function checkApprovalStages(
       const group = await db.group.findUnique({ where: { id: s.groupId }, select: { id: true } });
       if (!group) return { error: `Stage ${i + 1}: the selected group no longer exists.` };
       const memberCount = await db.groupMember.count({
-        where: { groupId: s.groupId, user: { isActive: true, role: { in: AGENT_ROLES } } },
+        where: { groupId: s.groupId, user: { isActive: true, isServiceAccount: false, role: { in: AGENT_ROLES } } },
       });
       if (memberCount === 0) return { error: `Stage ${i + 1}: the selected group has no active agents to approve.` };
       clean.push({ groupId: s.groupId });

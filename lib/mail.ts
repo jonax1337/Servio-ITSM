@@ -8,6 +8,7 @@ import {
 } from "@/lib/mail-template";
 import { renderTicketEmail } from "@/lib/email-templates";
 import { localeForUser } from "@/lib/i18n/instance";
+import { withoutBlockedRecipients } from "@/lib/service-accounts";
 
 /**
  * Pluggable mailer. If SMTP is configured it sends via nodemailer; otherwise it
@@ -54,8 +55,31 @@ type SendInput = {
   headers?: Record<string, string>;
 };
 
-export async function sendMail(input: SendInput): Promise<void> {
+/** Every address (primary and secondary) of a service account, lower-cased. */
+async function serviceAccountAddresses(): Promise<Set<string>> {
+  const accounts = await db.user.findMany({
+    where: { isServiceAccount: true },
+    select: { email: true, secondaryEmails: { select: { email: true } } },
+  });
+  return new Set(accounts.flatMap((a) => [a.email, ...a.secondaryEmails.map((e) => e.email)]).map((e) => e.trim().toLowerCase()));
+}
+
+/** Recorded as the status (and reason) of a message nobody was left to receive. */
+export const SUPPRESSED_STATUS = "SUPPRESSED";
+export const SUPPRESSED_REASON = "All recipients are service accounts, which never receive email.";
+
+/**
+ * The one place every email leaves through, so the rule that a service account never receives email
+ * (lib/service-accounts.ts) holds for requester notices, notifications, approvals, replies and automatic
+ * answers alike. Service accounts are dropped from to / cc / bcc; a message nobody is left to receive is
+ * recorded as SUPPRESSED and not sent.
+ */
+export async function sendMail(original: SendInput): Promise<void> {
   const domain = await mailDomain();
+  const kept = withoutBlockedRecipients(original, await serviceAccountAddresses());
+  const input: SendInput = !kept
+    ? original
+    : { ...original, to: kept.to, toName: kept.to === original.to ? original.toName : null, cc: kept.cc, bcc: kept.bcc };
   // Mint a Message-ID up front so it lands both in the DB row and the wire header.
   const msg = await db.emailMessage.create({
     data: {
@@ -78,6 +102,10 @@ export async function sendMail(input: SendInput): Promise<void> {
       status: "QUEUED",
     },
   });
+  if (!kept) {
+    await db.emailMessage.update({ where: { id: msg.id }, data: { status: SUPPRESSED_STATUS, error: SUPPRESSED_REASON } });
+    return;
+  }
   const messageId = `<${msg.id}@${domain}>`;
   await db.emailMessage.update({ where: { id: msg.id }, data: { messageId } });
 

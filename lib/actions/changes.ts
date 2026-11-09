@@ -11,6 +11,7 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
+import { approverAccountError, mayApproveChanges } from "@/lib/service-accounts";
 import {
   changeSelfApprovalError,
   isChangeSelfApproval,
@@ -454,6 +455,9 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
   if (!existing) return refuse("Approval request not found.");
   if (existing.status !== "PENDING") return refuse("This approval request has already been decided or withdrawn.");
   if (existing.approverId !== me.id && me.role !== "ADMIN") return refuse("Only the assigned approver can decide this request.");
+  // A service account, or an account switched off for change approvals, decides nothing - not even as an admin.
+  const notAnApprover = approverAccountError(me);
+  if (notAnApprover) return refuse(notAnApprover);
   // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN, unless an
   // admin allowed self-approval (and then only on your own seat, with a role the risk accepts).
   const { changeId } = existing;
@@ -533,9 +537,15 @@ type BoardChange = {
 async function planCabBoard(change: BoardChange, mode: ChangeSelfApprovalMode) {
   const seats = await db.changeApproval.findMany({
     where: { changeId: change.id },
-    select: { id: true, approverId: true, approver: { select: { role: true, isActive: true } } },
+    select: { id: true, approverId: true, approver: { select: { role: true, isActive: true, isServiceAccount: true, canApproveChanges: true } } },
   });
-  const seated = seats.map((s) => ({ approvalId: s.id, approverId: s.approverId, ...s.approver }));
+  const seated = seats.map((s) => ({
+    approvalId: s.id,
+    approverId: s.approverId,
+    role: s.approver.role,
+    isActive: s.approver.isActive,
+    mayApprove: mayApproveChanges(s.approver),
+  }));
   const eligibleRoles = approverRolesForRisk(change.risk);
   const dropped = invalidSeats(seated, change, eligibleRoles);
   const droppedIds = new Set(dropped.map((d) => d.approvalId));
@@ -554,8 +564,11 @@ async function planCabBoard(change: BoardChange, mode: ChangeSelfApprovalMode) {
 /** The change's owner and requester as seating candidates, owner first. */
 async function changeParties(change: BoardChange): Promise<SelfSeatCandidate[]> {
   const ids = [change.assigneeId, change.createdById].filter((v): v is string => !!v);
-  const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, role: true, isActive: true } });
-  return ids.flatMap((id) => users.filter((u) => u.id === id));
+  const users = await db.user.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, role: true, isActive: true, isServiceAccount: true, canApproveChanges: true },
+  });
+  return ids.flatMap((id) => users.filter((u) => u.id === id)).map((u) => ({ id: u.id, role: u.role, isActive: u.isActive, mayApprove: mayApproveChanges(u) }));
 }
 
 const NO_FREEZE_OVERRIDE: FreezeVerdict = { ok: true, overrideComment: null };

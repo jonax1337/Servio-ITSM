@@ -33,6 +33,8 @@ model User {
   signatureEnabled   Boolean   @default(false)
   emailNotifications String? // JSON: which notifications are also emailed (lib/notification-email-rules.ts); null = defaults
   isActive           Boolean   @default(true)
+  isServiceAccount   Boolean   @default(false) // a non-human account (integration, break-glass, automation): receives no email at all and never sits on an approval board (lib/service-accounts.ts)
+  canApproveChanges  Boolean   @default(true) // may sit on change approval boards and decide approvals; off for service accounts (set when one is marked)
   syncSourceId       String?
   externalId         String?
   lastLoginAt        DateTime?

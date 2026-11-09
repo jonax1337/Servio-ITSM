@@ -338,6 +338,7 @@ const settings = {
   "mail.status.SIMULATED": "Simulated",
   "mail.status.REJECTED": "Rejected",
   "mail.status.ARCHIVED": "Archived",
+  "mail.status.SUPPRESSED": "Not sent (service account)",
   "mail.reason.denied": "Sender is on the deny list",
   "mail.reason.sender_unknown": "Sender has no active account",
   "mail.reason.domain_not_allowed": "Sender's domain is not allowed",

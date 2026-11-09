@@ -15,7 +15,8 @@ export function OPTIONS() {
 /**
  * Users, minimal fields only (id, name, email, secondary_emails, role, active),
  * to resolve an `assignee_id` or `requesterId`. Filters: `q` (name, primary or
- * secondary email), `role`, `active` (default true; `all` for both).
+ * secondary email), `role`, `active` (default true; `all` for both),
+ * `service_account` (true | false).
  */
 export async function GET(req: Request) {
   const auth = await agentGuard(req, "directory:read");
@@ -27,6 +28,8 @@ export async function GET(req: Request) {
   const active = p.get("active") ?? "true";
   if (active !== "all") where.isActive = active !== "false";
   if (p.get("role")) where.role = p.get("role")!;
+  const serviceAccount = p.get("service_account");
+  if (serviceAccount === "true" || serviceAccount === "false") where.isServiceAccount = serviceAccount === "true";
   const q = p.get("q")?.trim();
   if (q) where.OR = [{ name: { contains: q } }, ...anyEmailContains(q)];
 

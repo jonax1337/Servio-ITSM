@@ -341,6 +341,7 @@ const settings: Translations<typeof en> = {
   "mail.status.SIMULATED": "Simuliert",
   "mail.status.REJECTED": "Abgewiesen",
   "mail.status.ARCHIVED": "Archiviert",
+  "mail.status.SUPPRESSED": "Nicht gesendet (Servicekonto)",
   "mail.reason.denied": "Absender steht auf der Sperrliste",
   "mail.reason.sender_unknown": "Absender hat kein aktives Konto",
   "mail.reason.domain_not_allowed": "Domain des Absenders ist nicht erlaubt",

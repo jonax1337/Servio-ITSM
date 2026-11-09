@@ -16,7 +16,7 @@ import {
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
-import { StatusBadge, VipBadge } from "@/components/status-badge";
+import { StatusBadge, ToneBadge, VipBadge } from "@/components/status-badge";
 import { UserProperties } from "@/components/people/user-properties";
 import { PersonDialog } from "@/components/people/person-dialog";
 import { UserAvatar } from "@/components/user-avatar";
@@ -102,6 +102,8 @@ export default async function PersonDetailPage({
                   id: user.id, name: user.name, email: user.email,
                   phone: user.phone, jobTitle: user.jobTitle, department: user.department,
                   secondaryEmails: secondaryEmails,
+                  isServiceAccount: user.isServiceAccount,
+                  canApproveChanges: user.canApproveChanges,
                 }}
                 syncSourceName={user.syncSource?.name ?? null}
               />
@@ -136,6 +138,7 @@ export default async function PersonDetailPage({
                   {displayName}
                 </h1>
                 {user.isVip ? <VipBadge /> : null}
+                {user.isServiceAccount ? <ToneBadge meta={{ label: t("serviceAccountBadge"), tone: "neutral" }} icon={false} /> : null}
               </div>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {user.jobTitle ?? "—"}
