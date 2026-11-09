@@ -428,7 +428,7 @@ Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, 
 | | |
 | --- | --- |
 | Routes | `app/(console)/syncs/` — `page.tsx`, `[id]/page.tsx`, `new/page.tsx`, `[id]/edit/page.tsx` |
-| Connectors | `lib/connectors/` — `types.ts`, `index.ts` (registry), `spec.ts` (form fields, pure), `import.ts` (shared upsert), `ldap.ts`, `azure.ts`, `csv.ts`, `rest.ts` |
+| Connectors | `lib/connectors/` — `types.ts`, `index.ts` (registry), `spec.ts` (form fields, pure), `import.ts` (shared upsert, also matches an ImportUser's `legacyExternalIds` and moves the user to the new id), `ldap.ts`, `ldap-identifiers.ts` (pure: binary `objectGUID` → canonical GUID text, `objectSid` → `S-1-5-…`, with the hex form earlier releases stored as legacy id), `azure.ts`, `csv.ts`, `rest.ts` |
 | Actions | `lib/actions/syncs.ts` — `runSync`, `create`/`update`/`delete` `SyncSource`, `testSyncConnection`, `toggleSyncActive` |
 | Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, started via `lib/instrumentation-node.ts` from `instrumentation.ts`) |
 | Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
@@ -466,11 +466,12 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 | --- | --- |
 | Routes | `app/(console)/settings/updates/page.tsx` (ADMIN; `/settings/updates` is also in `ROUTE_MIN_ROLE`), public `app/maintenance/page.tsx` (the maintenance page, outside the console and portal layouts) and `app/api/maintenance/route.ts` (`GET`, public: is maintenance mode on) |
 | Actions | `lib/actions/maintenance.ts` — `scheduleMaintenance`, `startMaintenanceNow`, `cancelMaintenance`, `endMaintenanceNow`, `checkForUpdatesNow`; `saveUpdateSettings` in `lib/actions/settings.ts` |
-| Rules / data | `lib/maintenance-rules.ts` (pure: `validateWindow`, `bannerFor`, `maintenanceGate`, `nextWindowStep`, updater file parsers, `outcomeNotice`), `lib/update-rules.ts` (pure: semver compare, `parseReleases`), `lib/maintenance.ts` (queries, `syncMaintenanceFlag`, `requestUpdate`, updater status/heartbeat reads), `lib/maintenance-flag.ts` (flag read, usable from `proxy.ts`), `lib/state-dir.ts` (`SERVIO_STATE_DIR`, atomic JSON files), `lib/updates.ts` (GitHub release check, `UPDATE_CACHE`) |
+| Rules / data | `lib/maintenance-rules.ts` (pure: `validateWindow`, `bannerFor`, `maintenanceGate`, `nextWindowStep` incl. the stalled-update detection, `updaterStaleMs`, updater file parsers, `outcomeNotice`), `lib/registry-manifest.ts` (download size of a release from the registry manifest, handed to the updater for its free-space check), `lib/update-rules.ts` (pure: semver compare, `parseReleases`), `lib/maintenance.ts` (queries, `syncMaintenanceFlag`, `requestUpdate`, updater status/heartbeat reads), `lib/maintenance-flag.ts` (flag read, usable from `proxy.ts`), `lib/state-dir.ts` (`SERVIO_STATE_DIR`, atomic JSON files), `lib/updates.ts` (GitHub release check, `UPDATE_CACHE`) |
 | Ticks | `lib/ticks/maintenance.ts` (every 15 s: start, hand over to the updater, copy progress, end, rewrite `maintenance.json`), `lib/ticks/update-check.ts` (every 6 h) |
 | Components | `components/maintenance/` — `maintenance-banner` (console and portal layouts), `scheduled-maintenance` (status pages), `maintenance-countdown` (maintenance page), `schedule-window-dialog`, `windows-table`, `window-actions`, `window-log-dialog`, `check-updates-button` |
 | Elsewhere | the change calendar draws maintenance windows as a third layer (`loadSchedule().maintenance`, `components/changes/calendar/change-calendar-grid.tsx`); `/status` and `/portal/status` list scheduled maintenance |
-| Updater | `updater/` (the sidecar, no npm dependencies), `docker-compose.release.yml` |
+| Updater | `updater/` (the sidecar, no npm dependencies; `image-housekeeping.mjs`: free-space estimate before a pull and cleanup of superseded images), `docker-compose.release.yml` |
+| Health | `app/api/v1/health/route.ts` + `lib/health-rules.ts` (public liveness, the running version for API tokens; reachable during maintenance) |
 
 Operator guide, file contract and security notes: [updates.md](./updates.md). Notifications use types `UPDATE_AVAILABLE` and `MAINTENANCE`.
 

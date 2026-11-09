@@ -136,11 +136,37 @@ export class FakeDocker {
 
   async inspectImage(ref: string) {
     this.record("inspectImage", ref);
+    if (this.missingImages.has(ref)) throw new DockerApiError(`No such image: ${ref}`, 404);
     return structuredClone(this.images[ref] ?? releaseImage(ref));
   }
 
   /** Images by reference; anything else is a published release whose version label matches its tag. */
   images: Record<string, any> = {};
+  /** `repo:tag` references that are not on the host until they are pulled. */
+  missingImages = new Set<string>();
+  /** What `listImages` answers (`docker images`), per repository. */
+  imageList: Array<{ Id: string; RepoTags?: string[]; RepoDigests?: string[]; Labels?: Record<string, string> }> = [];
+  /** References `removeImage` answers 409 for, as Docker does for an image a container uses. */
+  imagesInUse = new Set<string>();
+
+  async listImages(repository: string) {
+    this.record("listImages", repository);
+    return structuredClone(
+      this.imageList.filter((image) =>
+        [...(image.RepoTags ?? []), ...(image.RepoDigests ?? [])].some((ref) => ref.startsWith(`${repository}:`) || ref.startsWith(`${repository}@`)),
+      ),
+    );
+  }
+
+  async removeImage(ref: string) {
+    this.record("removeImage", ref);
+    if (this.imagesInUse.has(ref)) throw new DockerApiError(`conflict: unable to remove repository reference "${ref}"`, 409);
+    const image = this.imageList.find((entry) => entry.RepoTags?.includes(ref) || entry.RepoDigests?.includes(ref));
+    if (!image) throw new DockerApiError(`No such image: ${ref}`, 404);
+    image.RepoTags = (image.RepoTags ?? []).filter((tag) => tag !== ref);
+    image.RepoDigests = (image.RepoDigests ?? []).filter((digest) => digest !== ref);
+    if (image.RepoTags.length === 0) this.imageList = this.imageList.filter((entry) => entry !== image);
+  }
 
   async listContainers(label: string) {
     const [key, value] = label.split("=");
@@ -151,6 +177,7 @@ export class FakeDocker {
 
   async pullImage(repo: string, tag: string, options: { signal?: AbortSignal } = {}) {
     this.record("pull", `${repo}:${tag}`);
+    this.missingImages.delete(`${repo}:${tag}`);
     this.pullSignals.push(options.signal);
     await this.onPull();
     if (this.pullBehaviour === "hang") {
@@ -196,7 +223,8 @@ export class FakeDocker {
     const container = this.add({
       Id: `new-${this.created}`,
       Name: `/${name}`,
-      Image: Config.Image,
+      // Docker resolves the reference to the image id it points at.
+      Image: Config.Image.startsWith("sha256:") ? Config.Image : (this.images[Config.Image] ?? releaseImage(Config.Image)).Id,
       Config,
       HostConfig,
       NetworkSettings: { Networks: { ...(NetworkingConfig?.EndpointsConfig ?? {}) } },

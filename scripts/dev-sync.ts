@@ -86,8 +86,8 @@ function selftest(): void {
     }
   };
 
-  // LDAP: binary objectGUID (Buffer) → hex; array-valued mail → first.
-  const guid = Buffer.from([0x10, 0x20, 0x30, 0x40]);
+  // LDAP: binary objectGUID (Buffer) → canonical GUID text; array-valued mail → first.
+  const guid = Buffer.from("c98b91356d19ea409779889d79b753f0", "hex");
   const ad = mapEntry(
     {
       dn: "CN=Alice,DC=corp",
@@ -101,7 +101,8 @@ function selftest(): void {
   );
   check("AD entry maps", !("error" in ad));
   if (!("error" in ad)) {
-    check("objectGUID → hex", ad.externalId === guid.toString("hex"));
+    check("objectGUID → canonical GUID", ad.externalId === "35918bc9-196d-40ea-9779-889d79b753f0");
+    check("objectGUID keeps the legacy hex for matching", ad.legacyExternalIds?.[0] === guid.toString("hex"));
     check("array mail → first, lowercased", ad.email === "alice@corp.local");
     check("displayName → name", ad.name === "Alice Doe");
     check("title → jobTitle", ad.jobTitle === "Engineer");

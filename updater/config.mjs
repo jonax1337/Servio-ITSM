@@ -17,6 +17,8 @@ const IMAGE_REPOSITORY = /^[a-z0-9][a-z0-9._\-/:]*$/;
  */
 export function loadConfig(env = process.env) {
   const image = requireImageRepository(env.SERVIO_IMAGE);
+  const updaterImage = env.UPDATER_IMAGE?.trim() ? requireImageRepository(env.UPDATER_IMAGE, "UPDATER_IMAGE") : `${image}-updater`;
+  const backupDir = env.BACKUP_DIR || "/backups";
   const containerName = env.SERVIO_CONTAINER?.trim() || undefined;
   if (containerName && !CONTAINER_NAME.test(containerName)) {
     throw new Error(`SERVIO_CONTAINER is not a valid container name: ${containerName}`);
@@ -24,10 +26,21 @@ export function loadConfig(env = process.env) {
 
   return {
     image,
+    /** Repository of the updater's own image; its superseded versions are cleaned up too. */
+    updaterImage,
     containerName,
     stateDir: env.SERVIO_STATE_DIR || "/data/state",
     dbFile: env.DB_FILE || "/data/servio.db",
-    backupDir: env.BACKUP_DIR || "/backups",
+    backupDir,
+    /** Remove superseded images of both repositories after a successful update. */
+    pruneImages: booleanFlag(env.PRUNE_IMAGES, true, "PRUNE_IMAGES"),
+    /** Superseded versions kept per repository; the one an update just replaced (the rollback target) is always among them. */
+    keepImages: positiveInteger(env.UPDATER_KEEP_IMAGES, 1, "UPDATER_KEEP_IMAGES"),
+    /** Refuse a pull that would not fit on Docker's data root. */
+    pullSpaceCheck: booleanFlag(env.PULL_SPACE_CHECK, true, "PULL_SPACE_CHECK"),
+    pullSpaceMarginBytes: nonNegativeInteger(env.PULL_SPACE_MARGIN_MB, 1024, "PULL_SPACE_MARGIN_MB") * 1024 * 1024,
+    /** A directory on the filesystem that holds Docker's data root; the backups volume is a named volume there by default. */
+    pullSpaceProbeDir: env.PULL_SPACE_PROBE_DIR?.trim() || backupDir,
     backupKeep: positiveInteger(env.BACKUP_KEEP, 5, "BACKUP_KEEP"),
     allowUpdateWithoutBackup: env.ALLOW_UPDATE_WITHOUT_BACKUP === "true",
     allowDowngrade: env.ALLOW_DOWNGRADE === "true",
@@ -82,15 +95,42 @@ function bindSourcesFrom(value) {
   return dirs.map((dir) => dir.replace(/\/+$/, "") || "/");
 }
 
-/** @param {string | undefined} value */
-function requireImageRepository(value) {
+/**
+ * @param {string | undefined} value
+ * @param {string} [name]
+ */
+function requireImageRepository(value, name = "SERVIO_IMAGE") {
   const image = value?.trim();
-  if (!image) throw new Error("SERVIO_IMAGE is required, e.g. ghcr.io/jonax1337/servio");
+  if (!image) throw new Error(`${name} is required, e.g. ghcr.io/jonax1337/servio`);
   const lastSegment = image.slice(image.lastIndexOf("/") + 1);
   if (!IMAGE_REPOSITORY.test(image) || lastSegment.includes(":")) {
-    throw new Error(`SERVIO_IMAGE must be a repository without tag or digest, got: ${image}`);
+    throw new Error(`${name} must be a repository without tag or digest, got: ${image}`);
   }
   return image;
+}
+
+/**
+ * @param {string | undefined} value
+ * @param {boolean} fallback
+ * @param {string} name
+ */
+function booleanFlag(value, fallback, name) {
+  if (value === undefined || value === "") return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be true or false, got: ${value}`);
+}
+
+/**
+ * @param {string | undefined} value
+ * @param {number} fallback
+ * @param {string} name
+ */
+function nonNegativeInteger(value, fallback, name) {
+  if (value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${name} must be a whole number of 0 or more, got: ${value}`);
+  return parsed;
 }
 
 /**

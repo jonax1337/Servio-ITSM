@@ -131,7 +131,7 @@ export const RESOURCE_BY_SEGMENT: Record<string, ApiResource> = {
 };
 
 /** Paths that answer without a token. */
-export const PUBLIC_API_PATHS: readonly string[] = ["/", "/openapi"];
+export const PUBLIC_API_PATHS: readonly string[] = ["/", "/openapi", "/health"];
 
 const READ_METHODS = ["GET", "HEAD"];
 

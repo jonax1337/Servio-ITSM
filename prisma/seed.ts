@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedExtras } from "./seed-extras";
+import { mayWipeAndSeed } from "./seed-guard";
 
 const db = new PrismaClient();
 
@@ -21,6 +23,8 @@ const daysAgo = (d: number) => new Date(Date.now() - d * 86400000);
 const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600000);
 
 async function main() {
+  // Never on a database with data: the seed starts by deleting everything (see seed-guard.ts).
+  if (!(await mayWipeAndSeed(db))) return;
   console.log("🌱 Seeding Servio…");
 
   // ---- wipe (order matters) ----
@@ -578,6 +582,8 @@ async function main() {
 
   console.log(`✅ Seed complete: ${users.length} users, ${groups.length} groups, ${ticketCount} tickets, ${problems.length} problems, ${changes.length} changes, ${assets.length} assets, ${services.length} services.`);
   console.log("👤 Login: admin@servio.dev / servio123");
+
+  await seedExtras(db);
 }
 
 main()

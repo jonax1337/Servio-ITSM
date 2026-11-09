@@ -10,11 +10,17 @@
 #      restored byte for byte.
 #   3. 1.1.0 -> 1.3.0 (broken, slow to fail) with the updater killed during
 #      HEALTH_CHECK must end ROLLED_BACK through start-up recovery.
+#   4. 1.1.0 -> 1.4.0 must end SUCCEEDED with the new container referencing
+#      the image by tag, the replaced 1.1.0 image kept as rollback target and
+#      the superseded 1.0.0, 1.2.0 and 1.3.0 images removed.
 # The proxy must refuse calls outside its allowlist and host bind mounts.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 REPO=localhost:5000/servio-e2e
+# The proxy's image rules are built from this pattern (docker-compose.release.yml).
+SERVIO_IMAGE_PATTERN='localhost:5000/servio-e2e'
+export SERVIO_IMAGE_PATTERN
 BUSYBOX=busybox:1.37.0
 COMPOSE=(docker compose -f docker-compose.release.yml -f tests/updater-e2e/compose.override.yml)
 DOCKER_GID=$(stat -c %g /var/run/docker.sock)
@@ -100,8 +106,9 @@ build_release 1.0.0 true
 build_release 1.1.0 true
 build_release 1.2.0 false
 build_release 1.3.0 false slow-to-fail
+build_release 1.4.0 true
 # The updater must really pull the new releases.
-docker image rm "$REPO:1.1.0" "$REPO:1.2.0" "$REPO:1.3.0" >/dev/null
+docker image rm "$REPO:1.1.0" "$REPO:1.2.0" "$REPO:1.3.0" "$REPO:1.4.0" >/dev/null
 docker build --quiet --tag servio-updater:e2e updater
 
 echo "== stack"
@@ -114,10 +121,16 @@ echo "== socket proxy allowlist"
 [[ $(proxy_call GET /v1.44/containers/servio-web/json) == 200 ]] || fail "the proxy refused container inspect"
 web_id=$(inspect_web '{{.Id}}')
 [[ $(proxy_call GET "/v1.44/containers/$web_id/json") == 200 ]] || fail "the proxy refused container inspect by full id"
+[[ $(proxy_call GET "/v1.44/images/$REPO:1.0.0/json") == 200 ]] || fail "the proxy refused inspecting a managed image by tag"
+[[ $(proxy_call GET "/v1.44/images/$(inspect_web '{{.Image}}')/json") == 200 ]] || fail "the proxy refused inspecting an image by id"
+[[ $(proxy_call GET /v1.44/images/json) == 200 ]] || fail "the proxy refused listing images"
 # Unrelated containers stay out of reach: no list, no inspect/stop/rename/remove by name, no short-id
 # prefixes. A full id of a foreign container still passes the path filter; the updater just cannot learn one.
+# Images: only the managed repositories, removal only by reference (never by id).
+busybox_id=$(docker image inspect --format '{{.Id}}' "$BUSYBOX")
 for call in "GET /v1.44/info" "GET /v1.44/x/_ping" "GET /v1.44/containers/servio-web/logs" "POST /v1.44/containers/servio-web/exec" \
-  "POST /v1.44/volumes/create" "DELETE /v1.44/images/$REPO:1.0.0" \
+  "POST /v1.44/volumes/create" "DELETE /v1.44/images/$BUSYBOX" "DELETE /v1.44/images/$busybox_id" \
+  "GET /v1.44/images/$BUSYBOX/json" "DELETE /v1.44/images/$REPO-other:1.0.0" "POST /v1.44/images/$REPO:1.0.0/tag" \
   "GET /v1.44/containers/json" "GET /v1.44/containers/e2e-registry/json" "POST /v1.44/containers/e2e-registry/stop" \
   "POST /v1.44/containers/e2e-registry/rename" "DELETE /v1.44/containers/e2e-registry" \
   "GET /v1.44/containers/${web_id:0:12}/json"; do
@@ -188,6 +201,20 @@ in_data cat /data/state/updater/status.json | jq -e '.message | contains("Recove
 [[ -z $(docker ps -aq --filter label=org.opencontainers.image.version=1.3.0) ]] || fail "the 1.3.0 container was left behind"
 in_data test -f /data/ran-1.3.0 || fail "1.3.0 never ran, so the recovery proved nothing"
 ! in_data test -e /data/servio.db-journal || fail "the hot journal 1.3.0 left was not removed"
+
+echo "== update 1.1.0 -> 1.4.0: tag reference and cleanup of superseded images"
+request_update e2e-4 1.4.0
+expect_status e2e-4 SUCCEEDED
+[[ $(inspect_web '{{.Config.Image}}') == "$REPO:1.4.0" ]] || fail "the new container does not reference its image by tag: $(inspect_web '{{.Config.Image}}')"
+[[ $(inspect_web '{{.Image}}') == $(docker image inspect --format '{{.Id}}' "$REPO:1.4.0") ]] || fail "the new container does not run the pulled 1.4.0 image"
+docker image inspect "$REPO:1.1.0" >/dev/null 2>&1 || fail "the replaced 1.1.0 image (rollback target) was removed"
+for gone in 1.0.0 1.2.0 1.3.0; do
+  ! docker image inspect "$REPO:$gone" >/dev/null 2>&1 || fail "the superseded $gone image was not removed"
+done
+in_data cat /data/state/updater/status.json | jq -e '.message | contains("Removed superseded images")' >/dev/null ||
+  fail "the status does not report the image cleanup"
+heartbeat_idle() { in_data cat /data/state/updater/heartbeat.json | jq -e '.activeRequestId == null'; }
+wait_for 45 "the heartbeat to report no active request" heartbeat_idle
 
 echo "== updater container health (liveness stamp on /backups)"
 wait_for 90 "the updater to be healthy" updater_is_healthy

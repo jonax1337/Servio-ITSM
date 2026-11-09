@@ -361,7 +361,8 @@ The valid `type`, direction, scope, and run-status values are enumerated in
 `Connector` (`test()` + `run()`) and is resolved by `SyncSource.type` from the registry
 (`index.ts`). A pure, client-safe `spec.ts` declares each type's form fields per scope, so
 the config UI and the form↔config conversion are generic — adding a connector is ~one file.
-Implemented: **LDAP / Active Directory** (`ldapts`, paged, binary `objectGUID`→hex),
+Implemented: **LDAP / Active Directory** (`ldapts`, paged, binary `objectGUID` → canonical GUID text,
+`objectSid` → `S-1-5-…`, matching the hex form older releases stored during the transition — `ldap-identifiers.ts`),
 **Azure AD / Entra** (Graph client-credentials + paging), **CSV** (URL or inline, RFC 4180),
 and **REST** (generic JSON + dot-path mapping + `next` pagination — **NetBox** works this
 way: scope Assets, records path `results`, next path `next`). `INTUNE`/`SNOW`/`GLPI` are not

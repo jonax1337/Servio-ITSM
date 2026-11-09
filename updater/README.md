@@ -26,7 +26,7 @@ container the operator put in place. That is why:
 | Measure | Where |
 | --- | --- |
 | The updater runs as `node` (uid 1000), `read_only`, `cap_drop: ALL`, `no-new-privileges`, `network_mode: none`. It has no more file privileges on `/data` than the attacker; no chown, no root. | `updater/Dockerfile`, compose |
-| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file) and refuses host `Binds`/bind mounts in create requests. Container calls are scoped: by name only `servio-web` and `servio-web-pre-<version>`, otherwise a full 64-hex id; short-id prefixes and the container list are refused, so the updater cannot discover other containers on the host. This requires `SERVIO_CONTAINER` (the label-only lookup needs the list); renaming the `web` container means changing it and the proxy rules together. Request bodies and query strings are not inspected otherwise. | compose |
+| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file and the table below) and refuses host `Binds`/bind mounts in create requests. Container calls are scoped: by name only `servio-web` and `servio-web-pre-<version>`, otherwise a full 64-hex id; short-id prefixes and the container list are refused, so the updater cannot discover other containers on the host. This requires `SERVIO_CONTAINER` (the label-only lookup needs the list); renaming the `web` container means changing it and the proxy rules together. Image calls are scoped to the two managed repositories (`SERVIO_IMAGE_PATTERN`, the updater's own `-updater` repository): inspect by tag, digest or full image id, removal only by `repo:tag` / `repo@sha256:…`. Request bodies and query strings are not inspected otherwise. | compose |
 | Backups, the crash journal, the ledger of handled requests and the liveness stamp live on their own volume (`servio-backups` at `/backups`) that the app never mounts. | compose |
 | Every file under `/data` is `lstat`-checked, opened with `O_NOFOLLOW` and `O_NONBLOCK`, then `fstat`-checked: the database and its sidecars (`-wal`, `-shm`, `-journal`) and `request.json` must be regular files, the state directories real directories. A FIFO cannot block a read. | `safe-fs.mjs`, `backup.mjs` |
 | State files are written through a directory descriptor (Linux `/proc/self/fd`), so swapping `/data/state/updater` for a symlink mid-write cannot redirect the write. Temp files carry a random UUID, are created exclusively and fsynced, then renamed, and the directory is fsynced. | `safe-fs.mjs`, `state-files.mjs` |
@@ -37,17 +37,39 @@ container the operator put in place. That is why:
 | Handled request ids are recorded on `/backups` before an update starts, so a forged or lost `status.json` cannot make the updater run a request twice. After an update that took the app down and did not succeed, the same target is refused for `RETRY_COOLDOWN_SECONDS` (default 1 h). | `ledger.mjs` |
 | The updater only touches the one container labelled `servio.updater.managed=true`, its `-pre-<version>` twin and the replacement it created (labelled `servio.updater.request=<request id>`); it exposes no ports. | `managed-container.mjs`, `update-flow.mjs` |
 
+The proxy's allowlist is exactly what the updater calls (`$V` is the API version prefix, `<img>` the managed
+repositories `SERVIO_IMAGE_PATTERN(-updater)?`, `<ref>` a tag `:<tag>` or a digest `@sha256:<64 hex>`):
+
+| Method | Path | Used for |
+| --- | --- | --- |
+| `GET` | `/_ping` | liveness of Docker |
+| `GET` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}/json` | inspect the managed container, its twin, the replacement |
+| `POST` | `$V/containers/create` | create the replacement |
+| `POST` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}/{start,stop,rename,update}` | switch, rollback, restart policy |
+| `DELETE` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}` | remove the old container or a failed replacement |
+| `POST` | `$V/networks/<name>/connect` | re-attach additional networks |
+| `POST` | `$V/images/create` | pull |
+| `GET` | `$V/images/{<img><ref>, sha256:<64 hex>}/json` | inspect the target and the running image |
+| `GET` | `$V/images/json` | list images of a managed repository (cleanup) |
+| `DELETE` | `$V/images/<img><ref>` | remove a superseded image reference (cleanup; never forced, never by id) |
+
+Exec, attach, logs, archive, volumes, build, system/info, swarm, plugins, image tag/push/import by path and
+everything else is refused (403/405).
+
 Residual risk. Docker access is still powerful. The proxy filters methods,
 paths and host bind mounts, but it does not inspect the rest of a request
 body or any query string, so these still pass: a create request for a
 privileged container (devices, host namespaces, capabilities), an image import
-through `images/create?fromSrc=…`, and calls naming another container by its
-full 64-hex id (the updater has no way to learn one: listing, short ids and
-foreign names are refused). Whoever gains code execution **in the updater process** (not
-just write access to `/data`) therefore controls the host. The updater only
-ever sends create bodies derived from the managed container's own inspected
-configuration, which the app cannot change, and pulls with `fromImage` only.
-Use the stack only on hosts where this is acceptable.
+through `images/create?fromSrc=…`, a container name chosen freely in the query of
+create or rename, the full image list of the host (`images/json` with any
+filter), and calls naming another container by its full 64-hex id (the updater
+has no way to learn one: the container list, short ids and foreign names are
+refused). Image removal is limited to references of the managed repositories and,
+since it is never forced, to images no container uses. Whoever gains code execution
+**in the updater process** (not just write access to `/data`) therefore controls the
+host. The updater only ever sends create bodies derived from the managed container's
+own inspected configuration, which the app cannot change, and pulls with `fromImage`
+only. Use the stack only on hosts where this is acceptable.
 
 Two weaker spots remain on the attacker-writable volume, by design of the
 contract: `status.json` and `heartbeat.json` are output the app trusts, so an
@@ -88,10 +110,14 @@ Requirements for the managed container:
   so the updater refuses a container with host bind mounts before it changes anything. To allow some,
   list the host directories both in the proxy's `-allowbindmountfrom` and in the updater's `ALLOW_BIND_MOUNTS_FROM`.
 
-Compose caveat: the updater replaces `web` outside compose's knowledge. A later
-manual `docker compose up` recreates `web` from `SERVIO_VERSION`, so keep it in
-`.env` in sync with what the UI installed, or use `latest` (which follows only
-stable releases; prerelease tags never move `latest`).
+Compose caveat: the updater replaces `web` outside compose's knowledge. The new
+container references its image by tag (`SERVIO_IMAGE:<version>`), so `docker ps`
+shows the release that runs. A later manual `docker compose up` recreates `web`
+from `SERVIO_VERSION`, so keep it in `.env` in sync with what the UI installed, or
+use `latest` (which follows only stable releases; prerelease tags never move
+`latest`). A compose file that hard-codes an older tag in `image:` downgrades the
+app on the next `docker compose up`, and the older image then refuses to start on
+the migrated database; always drive the tag from `SERVIO_VERSION`.
 
 ## Configuration (environment of the updater container)
 
@@ -115,6 +141,12 @@ stable releases; prerelease tags never move `latest`).
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Unix socket (or Windows named pipe) to reach Docker; the compose file sets the proxy's `/run/docker-api/docker.sock`. |
 | `DOCKER_HOST` | – | `tcp://host:port` of a TCP proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. Not recommended (unauthenticated). |
 | `DOCKER_API_VERSION` | `v1.44` | Engine API prefix. `v1.44` is accepted by Engine 25+ (Engine 29.0–29.2 refuse older); use `v1.43` for Engine 24. |
+| `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image; its superseded versions are cleaned up too. The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
+| `UPDATER_KEEP_IMAGES` | `1` | Superseded releases kept per repository after a successful update (at least 1). The release the update replaced is always kept first, as the rollback target. |
+| `PRUNE_IMAGES` | `true` | `false` turns the cleanup of superseded images off (after updates and before a pull that lacks space). |
+| `PULL_SPACE_CHECK` | `true` | `false` turns the free-space check before a pull off. |
+| `PULL_SPACE_MARGIN_MB` | `1024` | Head room required on Docker's data root on top of the image's download and unpacked size. |
+| `PULL_SPACE_PROBE_DIR` | `BACKUP_DIR` | A directory on the filesystem that holds Docker's data root, measured for the free-space check. The default `/backups` is a named volume, stored under the data root; mount another one if your volumes live elsewhere. |
 
 ## State files (contract with the app)
 
@@ -123,9 +155,9 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
 
 | File | Writer | Shape |
 | --- | --- | --- |
-| `request.json` | app | `{ "id", "targetVersion", "requestedAt", "requestedBy" }` (≤ 64 KB) |
+| `request.json` | app | `{ "id", "targetVersion", "requestedAt", "requestedBy", "downloadBytes"? }` (≤ 64 KB); `downloadBytes` is the compressed size of the target image from the registry manifest, only used for the free-space check (ignored unless a positive integer up to 256 GiB) |
 | `status.json` | updater | `{ "id", "state", "fromVersion", "targetVersion", "message", "updatedAt", "log": [{ "at", "state", "message" }] }` |
-| `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image" }` |
+| `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image", "activeRequestId" }`; `activeRequestId` is the request being worked on (also a rollback waiting for Docker), `null` when idle |
 
 `state` is one of `PENDING | PULLING | BACKING_UP | SWITCHING | HEALTH_CHECK | SUCCEEDED | FAILED | ROLLED_BACK`
 (`PENDING` is part of the contract but not currently written).
@@ -138,6 +170,9 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
   `MANUAL ACTION REQUIRED — …` messages.
 - The app treats the updater as connected while `heartbeat.at` is younger than 60 s and `dockerOk` is `true`.
   The container HEALTHCHECK does not use `heartbeat.json` (the app can forge it) but `BACKUP_DIR/.liveness.json`.
+- A status write that fails (e.g. a full disk) is retried on every poll until it lands. The app fails a running
+  window once nothing moved for `UPDATER_STALE_MINUTES` (default 10) and either the heartbeat stopped too or
+  `activeRequestId` is no longer that window's id.
 
 ## What an update does
 
@@ -145,10 +180,16 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    update's journal is set aside or the target is cooling down, locate the managed container, refuse a
    downgrade or an unknown installed version (unless `ALLOW_DOWNGRADE=true`), check that `DATABASE_URL`
    equals `file:<DB_FILE>` and that the database and its sidecars are regular files, and make sure no
-   `<name>-pre-<version>` container is left over.
+   `<name>-pre-<version>` container is left over. Unless the target image is already on the host, check the
+   free space on Docker's data root (`PULL_SPACE_PROBE_DIR`): the download (`downloadBytes`, else the installed
+   image's size), the unpacked size (estimated as the installed image's size) and `PULL_SPACE_MARGIN_MB`. When
+   it is short, superseded images are removed first (keeping the installed release and the newest
+   `UPDATER_KEEP_IMAGES` older ones); if it is still short → `FAILED` ("Not enough free space for the image
+   pull"), nothing changed.
 2. **PULLING** `SERVIO_IMAGE:targetVersion` under `PULL_TIMEOUT_SECONDS`. The pulled image must be labelled
-   with the requested version; its id and digest are logged and the new container is created **from the image
-   id**, so a tag that moves later cannot change what runs.
+   with the requested version; its id and digest are logged. The new container is created **by tag**
+   (`SERVIO_IMAGE:targetVersion`, so operators and tooling see the release) and must resolve to the pulled
+   image's id; a tag that moved in between fails the switch and rolls it back.
 3. Re-read `request.json` (abort if it was removed or replaced during the pull), check that `/backups` and
    the database directory have room for a backup and a restore (database size plus 10 %, at least 64 MB), and
    inspect the container again: if it was recreated or removed during the pull, abort, nothing changed. Host
@@ -165,7 +206,12 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    (unchanged `StartedAt` and `RestartCount`). The new container inherits the restart policy, so a crash right
    after the first `healthy` shows up as a restart, not as a stopped container; either fails the check. So do an
    exit and `unhealthy`; a container without HEALTHCHECK counts as healthy after 15 s running.
-7. **SUCCEEDED**: remove the old container.
+7. **SUCCEEDED**: remove the old container, then the superseded images of `SERVIO_IMAGE` and `UPDATER_IMAGE`:
+   every release older than the one now running except the newest `UPDATER_KEEP_IMAGES` (default 1), the
+   replaced release first among the kept ones (the rollback target). Images newer than the running release,
+   images without a readable version, images that also carry a tag of another repository and images a container
+   uses (Docker answers 409; removal is never forced) stay. The status message lists what was removed or kept; a
+   failed cleanup never fails the update. `PRUNE_IMAGES=false` skips it.
 8. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
    that did not exist at backup time, e.g. the hot `-journal` of a migration that was killed), rename the old
    container back, restore its restart policy, start it and wait until healthy → `ROLLED_BACK`.

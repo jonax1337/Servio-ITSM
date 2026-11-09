@@ -18,10 +18,12 @@ export const livenessFile = (backupDir) => join(backupDir, ".liveness.json");
  *   paths: ReturnType<typeof import("./state-files.mjs").statePaths>,
  *   now?: () => number,
  *   log?: (line: string) => void,
- * }} deps
+ *   activeRequest?: () => import("./update-flow.mjs").ActiveRequest | null,
+ * }} deps `activeRequest` tells the app which update is in progress, so it can tell a
+ *   working updater from one that lost track of an update (e.g. could not write status.json)
  * @returns {() => Promise<void>} writes one heartbeat
  */
-export function createHeartbeat({ docker, config, paths, now = Date.now, log = console.log }) {
+export function createHeartbeat({ docker, config, paths, now = Date.now, log = console.log, activeRequest = () => null }) {
   let wasDockerOk = true;
 
   /**
@@ -57,7 +59,13 @@ export function createHeartbeat({ docker, config, paths, now = Date.now, log = c
 
     await writeJsonAtomic(
       paths.heartbeat,
-      { updaterVersion: config.updaterVersion, at, dockerOk, ...(await describeManagedContainer(dockerOk)) },
+      {
+        updaterVersion: config.updaterVersion,
+        at,
+        dockerOk,
+        ...(await describeManagedContainer(dockerOk)),
+        activeRequestId: activeRequest()?.id ?? null,
+      },
       [paths.stateDir, paths.updaterDir],
     );
   };

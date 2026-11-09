@@ -28,9 +28,18 @@ export const readUpdaterStatus = (): UpdaterStatus | null => parseUpdaterStatus(
 export const readUpdaterHeartbeat = (): UpdaterHeartbeat | null =>
   parseUpdaterHeartbeat(readJsonFile(statePath(...HEARTBEAT_FILE)));
 
-/** Hand an update to the updater: it processes a request whose id differs from its last finished one. */
-export function requestUpdate(request: { id: string; targetVersion: string; requestedBy: string }): void {
-  writeJsonAtomic(statePath(...REQUEST_FILE), { ...request, requestedAt: new Date().toISOString() });
+/**
+ * Hand an update to the updater: it processes a request whose id differs from its last finished one.
+ * `downloadBytes` (the compressed image size from the registry manifest) lets it check the free space
+ * on Docker's data root before it pulls; without it the updater estimates.
+ */
+export function requestUpdate(request: { id: string; targetVersion: string; requestedBy: string; downloadBytes?: number | null }): void {
+  const { downloadBytes, ...rest } = request;
+  writeJsonAtomic(statePath(...REQUEST_FILE), {
+    ...rest,
+    requestedAt: new Date().toISOString(),
+    ...(typeof downloadBytes === "number" ? { downloadBytes } : {}),
+  });
 }
 
 /** Make maintenance.json match the database: active while a blocking window is IN_PROGRESS. Rewrites only on change. */

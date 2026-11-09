@@ -16,9 +16,11 @@ import {
   heartbeatFresh,
   nextWindowStep,
   outcomeNotice,
+  updaterStaleMs,
   type WindowStep,
 } from "@/lib/maintenance-rules";
 import { readUpdaterHeartbeat, readUpdaterStatus, requestUpdate, syncMaintenanceFlag } from "@/lib/maintenance";
+import { fetchImageDownloadBytes, servioImage } from "@/lib/registry-manifest";
 
 type TickRow = Awaited<ReturnType<typeof loadOpenWindows>>[number];
 
@@ -67,8 +69,15 @@ async function startUpdate(row: TickRow) {
   });
   // nextWindowStep only requests an update that has a valid target version.
   if (!claimed || !row.targetVersion) return;
+  // Best effort (null on any failure): lets the updater check the free space before it pulls.
+  const downloadBytes = await fetchImageDownloadBytes(servioImage(), row.targetVersion);
   try {
-    requestUpdate({ id: row.id, targetVersion: row.targetVersion, requestedBy: row.createdBy?.email ?? "scheduler" });
+    requestUpdate({
+      id: row.id,
+      targetVersion: row.targetVersion,
+      requestedBy: row.createdBy?.email ?? "scheduler",
+      downloadBytes,
+    });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     await finish({ ...row, status: "IN_PROGRESS" }, "FAILED", `Could not write the update request: ${reason}`);
@@ -93,11 +102,14 @@ async function applyStep(row: TickRow, step: WindowStep) {
 
 export async function runMaintenanceTick(): Promise<void> {
   const now = new Date();
+  const heartbeat = readUpdaterHeartbeat();
   const context = {
     now,
-    heartbeatFresh: heartbeatFresh(readUpdaterHeartbeat(), now),
+    heartbeatFresh: heartbeatFresh(heartbeat, now),
     updaterStatus: readUpdaterStatus(),
     currentVersion: APP_VERSION,
+    updaterHeartbeat: heartbeat,
+    staleAfterMs: updaterStaleMs(process.env.UPDATER_STALE_MINUTES),
   };
   try {
     for (const row of await loadOpenWindows()) {

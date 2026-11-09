@@ -331,7 +331,7 @@ describe("unwritable status file", () => {
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
 
-    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toMatch(/^sha256:/);
+    expect(harness.docker.byName(CONTAINER_NAME)?.Config.Image).toBe(`${IMAGE_REPO}:${NEW_VERSION}`);
     expect(harness.logLines.some((line) => line.includes("could not write status.json"))).toBe(true);
     const calls = harness.docker.calls.length;
     expect(await harness.flow.processPendingRequest()).toBe("idle");

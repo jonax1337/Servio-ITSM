@@ -48,6 +48,11 @@ export type UpdaterHeartbeat = {
   dockerOk: boolean;
   container: string | null;
   image: string | null;
+  /**
+   * The update request the updater is working on (null: idle). `undefined` when the
+   * updater is too old to report it; the app then cannot tell idle from busy.
+   */
+  activeRequestId?: string | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
@@ -97,11 +102,23 @@ export function parseUpdaterHeartbeat(raw: unknown): UpdaterHeartbeat | null {
     dockerOk: raw.dockerOk === true,
     container: asString(raw.container),
     image: asString(raw.image),
+    ...("activeRequestId" in raw ? { activeRequestId: asString(raw.activeRequestId) } : {}),
   };
 }
 
 /** The updater counts as connected while its heartbeat is younger than this. */
 export const HEARTBEAT_MAX_AGE_MS = 60_000;
+
+/** Default for UPDATER_STALE_MINUTES: how long a running update may go without any sign of progress. */
+export const DEFAULT_UPDATER_STALE_MINUTES = 10;
+const MAX_UPDATER_STALE_MINUTES = 24 * 60;
+
+/** UPDATER_STALE_MINUTES as milliseconds; the default for anything that is not a whole number of minutes from 1 to 1440. */
+export function updaterStaleMs(raw: string | undefined): number {
+  const minutes = Number(raw);
+  const valid = raw !== undefined && raw.trim() !== "" && Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_UPDATER_STALE_MINUTES;
+  return (valid ? minutes : DEFAULT_UPDATER_STALE_MINUTES) * 60_000;
+}
 
 /** Connected = a heartbeat younger than a minute that reports a working Docker connection. */
 export function heartbeatFresh(heartbeat: UpdaterHeartbeat | null, now: Date): boolean {
@@ -305,8 +322,8 @@ export function toPublicMaintenance(flag: MaintenanceFlag | null): PublicMainten
 
 export type GateDecision = "allow" | "maintenance-page" | "maintenance-api";
 
-/** Reachable during maintenance by everyone: sign-in (and the Docker health probe on /login), the maintenance page and its status API, assets. */
-const ALWAYS_ALLOWED_PREFIXES = ["/login", "/api/auth", "/maintenance", "/api/maintenance", "/_next", "/brand"];
+/** Reachable during maintenance by everyone: sign-in (and the Docker health probe on /login), the maintenance page and its status API, the health endpoint, assets. */
+const ALWAYS_ALLOWED_PREFIXES = ["/login", "/api/auth", "/maintenance", "/api/maintenance", "/api/v1/health", "/_next", "/brand"];
 /** Mirrors the proxy matcher: shallow image files (favicon, /img/logo.svg) never carry data. */
 const SHALLOW_ASSET = /^\/(?:[^/]+\/)?[^/]+\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/;
 
@@ -335,6 +352,8 @@ export type TickWindow = {
   targetVersion: string | null;
   /** The stored JSON log, compared against the updater's to detect progress. */
   log: string;
+  /** When the window moved to IN_PROGRESS (the update request was written then). */
+  startedAt?: Date | null;
 };
 
 export type WindowStep =
@@ -356,7 +375,16 @@ export const STEP_RESULTS = {
   missed: "Servio was not running when this window was due, so it never started",
   noTarget: "No target version",
   alreadyRunning: (version: string) => `Already running ${version}`,
+  updaterSilent: (minutes: number, state: string) =>
+    `The updater stopped reporting: no heartbeat for more than ${minutes} minutes while the update was ${state}. ` +
+    "Its outcome is unknown: check the updater's log and `docker ps -a`, and restore the previous container if the application is down.",
+  updaterLostTrack: (minutes: number, state: string) =>
+    `The updater is running but no longer working on this update, and reported no result for more than ${minutes} minutes ` +
+    `(last state: ${state}); it most likely could not write its status file, for example on a full disk. ` +
+    "Check the updater's log and `docker ps -a`.",
 };
+
+const describeState = (status: UpdaterStatus | null): string => (status ? status.state : "not yet started");
 
 function scheduledStep(window: TickWindow, input: StepInput): WindowStep {
   if (window.startsAt.getTime() > input.now.getTime()) return { kind: "none" };
@@ -379,8 +407,35 @@ function runningUpdateStep(window: TickWindow, input: StepInput): WindowStep {
   const timedOut = input.now.getTime() > window.endsAt.getTime() + UPDATER_RESULT_GRACE_MS;
   if (status && isTerminalUpdaterState(status.state)) return syncStep(status);
   if (timedOut) return { kind: "fail", result: STEP_RESULTS.noUpdaterResult };
+  const stalled = stalledUpdate(window, status, input);
+  if (stalled) return { kind: "fail", result: stalled };
   if (status && hasProgressed(window, status)) return syncStep(status);
   return { kind: "none" };
+}
+
+/**
+ * Why a running update will never report its result, or null while it may. Only
+ * once nothing moved for `staleAfterMs` (no status change since the request was
+ * handed over or last reported): then the heartbeat has stopped too (the updater
+ * is down, or cannot write to the shared volume, e.g. a full disk), or the
+ * updater is alive but works on nothing for this window (its final status.json
+ * write failed). A busy updater (a long pull, a health check) is left alone.
+ */
+function stalledUpdate(window: TickWindow, status: UpdaterStatus | null, input: StepInput): string | null {
+  if (input.updaterHeartbeat === undefined) return null;
+  const staleAfterMs = input.staleAfterMs ?? DEFAULT_UPDATER_STALE_MINUTES * 60_000;
+  const now = input.now.getTime();
+  const lastProgress = Math.max((window.startedAt ?? window.startsAt).getTime(), Date.parse(status?.updatedAt ?? "") || 0);
+  if (now - lastProgress <= staleAfterMs) return null;
+
+  const minutes = Math.round(staleAfterMs / 60_000);
+  const heartbeat = input.updaterHeartbeat;
+  const beatAge = heartbeat ? now - Date.parse(heartbeat.at) : Number.POSITIVE_INFINITY;
+  if (!(beatAge <= staleAfterMs)) return STEP_RESULTS.updaterSilent(minutes, describeState(status));
+  if (heartbeat && heartbeat.activeRequestId !== undefined && heartbeat.activeRequestId !== window.id) {
+    return STEP_RESULTS.updaterLostTrack(minutes, describeState(status));
+  }
+  return null;
 }
 
 const syncStep = (status: UpdaterStatus): WindowStep => ({
@@ -404,6 +459,10 @@ type StepInput = {
   updaterStatus: UpdaterStatus | null;
   /** The version running now (APP_VERSION). */
   currentVersion: string;
+  /** heartbeat.json (null: absent). Leaving it out skips the stall detection. */
+  updaterHeartbeat?: UpdaterHeartbeat | null;
+  /** UPDATER_STALE_MINUTES in milliseconds. */
+  staleAfterMs?: number;
 };
 
 /** The one transition the maintenance tick performs for `window` right now. */

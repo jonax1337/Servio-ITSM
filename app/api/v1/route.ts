@@ -19,6 +19,7 @@ export function GET() {
       note: "Each operation needs one resource scope (see x-required-scope in the OpenAPI spec). A resource write includes its read; 'read' grants every read, 'write' every write except import:write and kb:publish, 'admin' everything.",
     },
     resources: {
+      health: "/api/v1/health",
       tickets: "/api/v1/tickets",
       ticket: "/api/v1/tickets/{id}",
       ticket_by_ref: "/api/v1/tickets/ref/{ref}",

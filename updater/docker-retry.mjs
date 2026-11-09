@@ -4,7 +4,7 @@
 import { DockerApiError, DockerUnreachableError } from "./docker-client.mjs";
 
 /** Calls that are safe to repeat: repeating one that already took effect changes nothing. */
-const REPEATABLE_METHODS = new Set(["ping", "inspectContainer", "inspectImage", "stopContainer", "startContainer", "updateContainer", "removeContainer"]);
+const REPEATABLE_METHODS = new Set(["ping", "inspectContainer", "inspectImage", "listImages", "stopContainer", "startContainer", "updateContainer", "removeContainer"]);
 
 /**
  * @typedef {{ clock: { now: () => number, sleep: (ms: number) => Promise<void> }, windowMs: number, intervalMs: number,
