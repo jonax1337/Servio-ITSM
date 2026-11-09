@@ -17,7 +17,7 @@ export function OPTIONS() {
 
 /** The change template with this origin reference (e.g. `runbook:patch-linux`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   const template = ref ? await db.changeTemplate.findUnique({ where: { importRef: ref } }) : null;
@@ -32,7 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * fields sent (200). Unchanged fields write nothing and no audit row.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, TEMPLATE_WHAT);
   if (refused) return refused;

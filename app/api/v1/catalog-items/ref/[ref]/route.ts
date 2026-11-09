@@ -17,7 +17,7 @@ export function OPTIONS() {
 
 /** The catalog item with this origin reference (e.g. `catalog:new-laptop`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   const item = ref ? await db.catalogItem.findUnique({ where: { importRef: ref } }) : null;
@@ -32,7 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * nothing and no audit row; `meta.changed` lists what changed.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CATALOG_WHAT);
   if (refused) return refused;

@@ -15,7 +15,7 @@ export function OPTIONS() {
 
 /** Change templates (standard change models). Filters: `q` (name), `type`, `service_id`, `active` (true | false, default both). */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
  * `import_ref` already in use is a 409 with the existing `id`.
  */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, TEMPLATE_WHAT);
   if (refused) return refused;

@@ -18,7 +18,7 @@ export function OPTIONS() {
 
 /** The contract with this origin reference (e.g. `erp:contract:4711`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   const contract = ref ? await db.contract.findUnique({ where: { importRef: ref }, include: CONTRACT_INCLUDE }) : null;
@@ -34,7 +34,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * what changed.
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CONTRACT_WHAT);
   if (refused) return refused;

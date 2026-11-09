@@ -16,7 +16,7 @@ export function OPTIONS() {
 
 /** The vendor with this origin reference (e.g. `erp:supplier:118`), or 404. */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const ref = await refOf(ctx);
   const vendor = ref ? await db.vendor.findUnique({ where: { importRef: ref } }) : null;
@@ -32,7 +32,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * setting its `import_ref` with PATCH).
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, VENDOR_WHAT);
   if (refused) return refused;

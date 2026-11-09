@@ -21,7 +21,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * `ends_before` (YYYY-MM-DD: an end date before that day). Ordered by end date.
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);
@@ -50,7 +50,7 @@ export async function GET(req: Request) {
 
 /** Create a contract (MANAGER+). Vendor, owner and assets must exist; an `import_ref` in use is a 409 with the existing `id`. */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CONTRACT_WHAT);
   if (refused) return refused;

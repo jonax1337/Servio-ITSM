@@ -17,7 +17,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "catalog:read");
   if ("response" in auth) return auth.response;
   const template = await db.changeTemplate.findUnique({ where: { id: (await ctx.params).id } });
   if (!template) return templateNotFound();
@@ -26,7 +26,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
 /** Edit a change template (MANAGER+). Fields left out keep their value; `null` clears a nullable one; `meta.changed` lists what changed. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, TEMPLATE_WHAT);
   if (refused) return refused;
@@ -47,7 +47,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** Delete a change template (MANAGER+). Changes created from it stay and lose the link. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "catalog:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, TEMPLATE_WHAT);
   if (refused) return refused;

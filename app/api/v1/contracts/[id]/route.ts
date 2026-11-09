@@ -17,7 +17,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const contract = await db.contract.findUnique({ where: { id: (await ctx.params).id }, include: CONTRACT_INCLUDE });
   if (!contract) return contractNotFound();
@@ -29,7 +29,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
  * nullable one, `asset_ids` replaces the covered assets. `meta.changed` lists what changed.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CONTRACT_WHAT);
   if (refused) return refused;
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** Delete a contract (MANAGER+). Licenses under it stay, without a contract; covered assets lose the link. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, CONTRACT_WHAT);
   if (refused) return refused;

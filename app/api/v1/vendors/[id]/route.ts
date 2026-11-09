@@ -44,7 +44,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** Delete a vendor (MANAGER or above). Its contracts and licenses stay, without a vendor. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const refused = managerOnly(auth.principal, VENDOR_WHAT);
   if (refused) return refused;

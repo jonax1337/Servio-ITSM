@@ -86,10 +86,10 @@ scope of every operation.
 | `recurring:read` / `recurring:write` | `/recurring-tickets/**` |
 | `problems:read` / `problems:write` | `/problems/**`: problems, transitions, comments, attachments |
 | `changes:read` / `changes:write` | `/changes/**`: changes, transitions, approvals, comments, attachments |
-| `cmdb:read` / `cmdb:write` | `/assets/**` (incl. relations, attachments), `/services`, `/licenses/**` (incl. seats, attachments), `/vendors/**` |
+| `cmdb:read` / `cmdb:write` | `/assets/**` (incl. relations, attachments), `/services`, `/licenses/**` (incl. seats, attachments), `/vendors/**`, `/contracts/**` |
 | `kb:read` / `kb:write` | `/articles/**` |
 | `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
-| `catalog:read` / `catalog:write` | `/categories/**` |
+| `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
 | `directory:read` | `/groups`, `/users` (lookups, read only) |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
