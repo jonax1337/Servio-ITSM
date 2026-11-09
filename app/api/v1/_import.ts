@@ -104,7 +104,9 @@ async function create(kind: Kind, b: never, actorId: string) {
     const p = await db.problem.create({ data, include: PROBLEM_INCLUDE });
     return { id: p.id, data: serializeProblem(p) };
   }
-  const t = await db.ticket.create({ data, include: TICKET_INCLUDE });
+  // The importing account is the ticket's creator here; the historical author is not taken from the body,
+  // so `created_by` always names an account that really created the row.
+  const t = await db.ticket.create({ data: { ...(data as object), createdById: actorId } as never, include: TICKET_INCLUDE });
   return { id: t.id, data: serializeTicket(t) };
 }
 

@@ -48,6 +48,7 @@ model User {
   memberships        GroupMember[]
   requestedTickets   Ticket[]                @relation("TicketRequester")
   requestedOnBehalf  Ticket[]                @relation("TicketRequestedBy")
+  createdTickets     Ticket[]                @relation("TicketCreatedBy")
   assignedTickets    Ticket[]                @relation("TicketAssignee")
   comments           TicketComment[]
   changeComments     ChangeComment[]
@@ -675,6 +676,8 @@ model Ticket {
 
   requesterId       String
   requestedByUserId String?
+  // The account that created the ticket (the actor of its CREATE audit entry); null when unknown (e.g. deleted user)
+  createdById       String?
   assigneeId        String?
   groupId           String?
   categoryId        String?
@@ -717,6 +720,7 @@ model Ticket {
 
   requester   User         @relation("TicketRequester", fields: [requesterId], references: [id])
   requestedBy User?        @relation("TicketRequestedBy", fields: [requestedByUserId], references: [id])
+  createdBy   User?        @relation("TicketCreatedBy", fields: [createdById], references: [id])
   assignee    User?        @relation("TicketAssignee", fields: [assigneeId], references: [id])
   group       Group?       @relation(fields: [groupId], references: [id])
   category    Category?    @relation(fields: [categoryId], references: [id])
@@ -754,6 +758,7 @@ model Ticket {
   @@index([assigneeId])
   @@index([requesterId])
   @@index([requestedByUserId])
+  @@index([createdById])
   @@index([groupId])
   @@index([parentId])
   @@index([createdAt])

@@ -161,6 +161,7 @@ async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAge
         prefix: prefixForType(fields.type),
         ...sla,
         requesterId,
+        createdById: principal.userId,
         source: "API" as const,
         ...(externalRef && { externalRef, openExternalRef: externalRef }),
       }
@@ -174,6 +175,7 @@ async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAge
         urgency: fields.urgency,
         ...sla,
         requesterId,
+        createdById: principal.userId,
         source: "API" as const,
       };
   let ticket = await db.ticket.create({
