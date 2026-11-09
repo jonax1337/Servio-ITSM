@@ -92,6 +92,7 @@ scope of every operation.
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
 | `directory:read` | `/groups`, `/groups/{id}`, `/users` and `/users/{id}` (lookups) |
 | `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`; the owner must be a MANAGER or ADMIN). Not privileged: the legacy `write` covers it |
+| `system:read` | `/system/**`: operational status for monitoring (the built-in backup), read only |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
 **Legacy scopes** keep exactly the rights they always had, so existing tokens work
@@ -1205,7 +1206,7 @@ address in `details.email`. Changes are audited on the user.
 
 `GET /system/backups/latest` reports the built-in backup ([backup.md](./backup.md)) so an
 external monitor can alert on its age or failure. Agent tokens (AGENT, MANAGER, ADMIN) with the
-`read` scope; a USER token gets 403. Nothing about the backup files themselves (paths,
+`system:read` scope (or the legacy `read`); a USER token gets 403. Nothing about the backup files themselves (paths,
 contents, error messages) is exposed, and there is no download. Starting a backup is not part of
 the API (Settings › Backups or the command line).
 

@@ -14,10 +14,10 @@ export function OPTIONS() {
  * Status of the built-in backup for external monitoring: the newest run and the
  * newest verified one, with ages in seconds. Alert when `last_success_age_seconds`
  * exceeds your schedule plus a margin, or when `status` is FAILED.
- * Read scope, agent tokens only (AGENT, MANAGER, ADMIN).
+ * Scope `system:read` (or the legacy `read`), agent tokens only (AGENT, MANAGER, ADMIN).
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "system:read");
   if ("response" in auth) return auth.response;
   const now = new Date();
   const { config, latest, lastSuccess, nextRunAt } = await backupOverview(now);

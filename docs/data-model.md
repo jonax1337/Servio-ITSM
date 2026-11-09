@@ -454,7 +454,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261117000000_service_cmdb` | `Service.code` and `Service.importRef` (both unique, nullable; existing rows stay `NULL`), `ServiceDependency` |
 | `20261121000000_catalog_contract_import_refs` | `importRef` (unique, nullable) on `CatalogItem`, `ChangeTemplate`, `Contract` and `Vendor`; `CatalogItem.groupId` (table rebuilt for the foreign key) |
 | `20261122000000_user_secondary_emails` | `UserEmail` (secondary addresses of a person) |
-| `20261119000000_backup_runs` | `BackupRun` (new table; nothing to backfill) |
+| `20261122100000_backup_runs` | `BackupRun` (new table; nothing to backfill) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

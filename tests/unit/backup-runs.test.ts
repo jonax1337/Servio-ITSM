@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BACKUP_RUN_STALE_MS } from "@/scripts/backup/layout.mjs";
 import { BackupLockedError, claimRun, finishRun, settleRestoredRuns, touchRun } from "@/scripts/backup/runs.mjs";
 
-const MIGRATION = readFileSync(path.resolve("prisma/migrations/20261119000000_backup_runs/migration.sql"), "utf8");
+const MIGRATION = readFileSync(path.resolve("prisma/migrations/20261122100000_backup_runs/migration.sql"), "utf8");
 
 describe("BackupRun rows written outside the app", () => {
   let dir: string;

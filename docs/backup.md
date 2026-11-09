@@ -18,7 +18,7 @@ See also: [deployment.md](./deployment.md) · [configuration.md](./configuration
 | Where | `BACKUP_DIR`: `/data/backups` in the Docker image (on the persistent `servio-data` volume), `./.backups` otherwise. |
 | When | Scheduled backups are **on by default** (daily 02:30 UTC). Settings › Backups changes the schedule, time zone, retention and whether attachments are included, and has **Back up now**. |
 | Retention | The newest 7 scheduled backups and every scheduled backup younger than 14 days are kept; of the backups started by hand, the newest 3. Older ones are deleted after each successful backup. |
-| Monitoring | `GET /api/v1/system/backups/latest` (agent token, `read` scope; status, age and an error class, no paths or messages) and an admin notification when a scheduled backup fails. |
+| Monitoring | `GET /api/v1/system/backups/latest` (agent token, `system:read` scope; status, age and an error class, no paths or messages) and an admin notification when a scheduled backup fails. |
 | Restore | `node scripts/restore-backup.mjs` with the app stopped; `--dry-run` verifies first. |
 | Not covered | PostgreSQL deployments (use `pg_dump`), non-filesystem storage drivers, and anything outside the database and uploads (the `.env`, compose files, `SERVIO_STATE_DIR`). |
 
@@ -131,7 +131,7 @@ Alert when `last_success_age_seconds` exceeds the schedule plus a margin (for a 
 for example 26 hours = 93600 s), or when `status` is `FAILED`. `status` is `NONE` before the first
 run. A failed run carries an `error_code` (for example `insufficient_space` or
 `verification_failed`); the full message, which names paths on the server, is only shown in
-Settings › Backups. Use a token of an agent account with the `read` scope (Settings › API Tokens). Field reference:
+Settings › Backups. Use a token of an agent account with the `system:read` scope (Settings › API Tokens). Field reference:
 [rest-api.md](./rest-api.md#built-in-backup). Admins also get an in-app notification
 (`BACKUP_FAILED`) whenever a scheduled backup fails.
 
