@@ -15,7 +15,7 @@ export const getFormOptions = cache(async () => {
       select: { id: true, name: true, parentId: true },
       orderBy: { name: "asc" },
     }),
-    db.service.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.service.findMany({ select: { id: true, name: true, code: true }, orderBy: { name: "asc" } }),
     db.sLA.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.groupMember.findMany({ select: { groupId: true, userId: true } }),
   ]);

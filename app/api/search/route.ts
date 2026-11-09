@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { serviceLabel } from "@/lib/service-label";
 import { db } from "@/lib/db";
 import { getCurrentUser, isAgent, type Role } from "@/lib/session";
 import { ticketRef, problemRef, changeRef } from "@/lib/constants";
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
     db.change.findMany({ where: { OR: [{ title: { contains: q } }, ...byId] }, take: 4, select: { id: true, title: true } }),
     db.asset.findMany({ where: { OR: [{ name: { contains: q } }, { assetTag: { contains: q } }, { serial: { contains: q } }] }, take: 5, select: { id: true, name: true, assetTag: true } }),
     db.user.findMany({ where: { OR: [{ name: { contains: q } }, { email: { contains: q } }] }, take: 5, select: { id: true, name: true, email: true } }),
-    db.service.findMany({ where: { name: { contains: q } }, take: 4, select: { id: true, name: true } }),
+    db.service.findMany({ where: { OR: [{ name: { contains: q } }, { code: { contains: q } }] }, take: 4, select: { id: true, name: true, code: true } }),
   ]);
 
   const results = [
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
     ...changes.map((c) => ({ group: "Changes", kind: "change" as const, id: c.id, href: `/changes/${c.id}`, title: c.title, sub: changeRef(c.id) })),
     ...assets.map((a) => ({ group: "Assets", kind: "asset" as const, id: a.id, href: `/assets/${a.id}`, title: a.name, sub: a.assetTag ?? "Asset" })),
     ...people.map((u) => ({ group: "People", kind: "user" as const, id: u.id, href: `/people/${u.id}`, title: u.name ?? u.email, sub: u.email })),
-    ...services.map((s) => ({ group: "Services", kind: "service" as const, id: s.id, href: `/services/${s.id}`, title: s.name, sub: "Service" })),
+    ...services.map((s) => ({ group: "Services", kind: "service" as const, id: s.id, href: `/services/${s.id}`, title: serviceLabel(s), sub: "Service" })),
   ];
 
   return NextResponse.json({ results });

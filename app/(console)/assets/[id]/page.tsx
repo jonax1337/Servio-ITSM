@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Radar } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
@@ -19,6 +19,8 @@ import { AssetOverviewTab } from "@/components/assets/tabs/asset-overview-tab";
 import { AssetRelationshipsTab } from "@/components/assets/tabs/asset-relationships-tab";
 import { AssetWorkTab } from "@/components/assets/tabs/asset-work-tab";
 import type { SearchParams } from "@/lib/query";
+import { servicesAffectedByAssets } from "@/lib/service-graph";
+import { serviceLabel } from "@/lib/service-label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ASSET_TYPE_META,
@@ -54,7 +56,7 @@ export default async function AssetDetailPage({
   const sp = await searchParams;
 
   const me = await requireUser();
-  const [t, tc, te, f] = await Promise.all([getT("assets"), getT("common"), getEnumT(), getFormatter()]);
+  const [t, tc, te, f, ts] = await Promise.all([getT("assets"), getT("common"), getEnumT(), getFormatter(), getT("services")]);
   const [asset, options, locations] = await Promise.all([
     db.asset.findUnique({
       where: { id },
@@ -63,7 +65,7 @@ export default async function AssetDetailPage({
         group: true,
         locationRef: true,
         syncSource: true,
-        services: { select: { service: { select: { id: true, name: true, status: true } } } },
+        services: { select: { service: { select: { id: true, name: true, code: true, status: true } } } },
         _count: { select: { relationsFrom: true, relationsTo: true, tickets: true, changes: true } },
       },
     }),
@@ -71,6 +73,8 @@ export default async function AssetDetailPage({
     db.location.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!asset) notFound();
+  // Services hit indirectly when this CI fails: through CIs it takes down or service dependencies.
+  const indirectServices = (await servicesAffectedByAssets([asset.id])).filter((s) => !s.direct);
 
   const isAgentUser = !!me && isAgent(me.role as Role);
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
@@ -198,12 +202,44 @@ export default async function AssetDetailPage({
               asset.services.map(({ service }) => (
                 <div key={service.id} className="flex items-center gap-2">
                   <Link href={`/services/${service.id}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-primary">
-                    {service.name}
+                    {serviceLabel(service)}
                   </Link>
                   <StatusBadge map={SERVICE_STATUS_META} value={service.status} />
                 </div>
               ))
             )}
+            <div className="mt-2 border-t pt-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                {t("affectedServices", { count: indirectServices.length })}
+              </p>
+              {indirectServices.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t("noAffectedServices")}</p>
+              ) : (
+                <div className="grid gap-2">
+                  {indirectServices.map((s) => (
+                    <div key={s.id} className="grid gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/services/${s.id}`} className="min-w-0 flex-1 truncate text-sm font-medium hover:text-primary">
+                          {serviceLabel(s)}
+                        </Link>
+                        <StatusBadge map={SERVICE_STATUS_META} value={s.status} />
+                      </div>
+                      {s.via ? (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {s.via.kind === "asset" ? ts("impact.viaAsset", { name: s.via.name }) : ts("impact.viaService", { name: s.via.name })}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Link
+                href={`/services/impact?asset=${asset.id}`}
+                className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary"
+              >
+                <Radar className="size-3.5" /> {ts("impact.open")}
+              </Link>
+            </div>
           </CardContent>
         </Card>
 

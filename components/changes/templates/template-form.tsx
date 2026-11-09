@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { serviceLabel } from "@/lib/service-label";
 import { Loader2, Plus, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useFormSubmit } from "@/hooks/use-form-submit";
@@ -88,7 +89,7 @@ export function TemplateForm({ options, template }: { options: FormOptions; temp
   const impactOpts = IMPACT_URGENCY.map((l) => option(l, LEVEL_META[l], te(LEVEL_META[l])));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
-  const serviceOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
+  const serviceOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: serviceLabel(s) }));
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">

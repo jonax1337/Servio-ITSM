@@ -23,10 +23,19 @@ const messages: ServerMessages = {
   "Name must be at least 2 characters": "Der Name muss mindestens 2 Zeichen lang sein",
   "A service with that name already exists.": "Ein Service mit diesem Namen existiert bereits.",
   "You are not signed in as an agent.": "Sie sind nicht als Agent angemeldet.",
+  "Managing services needs a manager or admin.": "Services zu verwalten setzt die Rolle Manager oder Admin voraus.",
+  "The service is still referenced. Set its status to RETIRED instead of deleting it.":
+    "Der Service wird noch referenziert. Setzen Sie den Status auf RETIRED, statt ihn zu löschen.",
   "Choose an asset.": "Bitte ein Asset auswählen.",
   "Service not found.": "Service nicht gefunden.",
   "Asset not found.": "Asset nicht gefunden.",
   "Missing link.": "Verknüpfung fehlt.",
+  "A service with that code already exists.": "Ein Service mit dieser Servicenummer existiert bereits.",
+  "Code must be unique": "Die Servicenummer muss eindeutig sein",
+  "1-32 characters: letters, digits and . _ / -, starting with a letter or digit":
+    "1–32 Zeichen: Buchstaben, Ziffern und . _ / -, beginnend mit einem Buchstaben oder einer Ziffer",
+  "Choose a service.": "Bitte einen Service auswählen.",
+  "A service cannot depend on itself.": "Ein Service kann nicht von sich selbst abhängen.",
   // Catalog
   "Approval is required for this item, but no approver or approval stage was configured.":
     "Für diesen Eintrag ist eine Genehmigung erforderlich, aber es wurde keine genehmigende Person und keine Genehmigungsstufe festgelegt.",

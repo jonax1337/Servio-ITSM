@@ -553,6 +553,8 @@ model EscalationStep {
 model Service {
   id          String   @id @default(cuid())
   name        String   @unique
+  code        String?  @unique // short service number shown next to the name (e.g. "S-01")
+  importRef   String?  @unique // origin key of a service maintained through the API (e.g. "catalog:mail"); PUT /api/v1/services/ref/{ref} upserts by it
   description String?
   status      String   @default("OPERATIONAL") // OPERATIONAL | DEGRADED | OUTAGE | MAINTENANCE | RETIRED
   criticality String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
@@ -575,6 +577,25 @@ model Service {
   statusIncidents  StatusIncidentService[]
   changeTemplates  ChangeTemplate[]
   recurringTickets RecurringTicket[]
+  dependsOn        ServiceDependency[]     @relation("ServiceDependsOn")
+  usedBy           ServiceDependency[]     @relation("ServiceUsedBy")
+}
+
+/// Service-to-service dependency: `fromService` DEPENDS_ON `toService`, so an outage of
+/// `toService` affects `fromService`. Self-dependencies and cycles are refused by the writers
+/// (lib/service-graph-rules.ts).
+model ServiceDependency {
+  id            String   @id @default(cuid())
+  fromServiceId String
+  toServiceId   String
+  note          String?
+  createdAt     DateTime @default(now())
+
+  fromService Service @relation("ServiceDependsOn", fields: [fromServiceId], references: [id], onDelete: Cascade)
+  toService   Service @relation("ServiceUsedBy", fields: [toServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([fromServiceId, toServiceId])
+  @@index([toServiceId])
 }
 
 model CatalogItem {

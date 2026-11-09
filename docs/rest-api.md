@@ -231,7 +231,7 @@ lockout + backoff. Token creation/revocation is **ADMIN-only**.
 
 ## Pagination, filtering & sorting
 
-Pagination applies to every list endpoint except `GET /services`, `/categories`, `/groups` and `/assets/{id}/relations` (those return everything) via
+Pagination applies to every list endpoint except `GET /services`, `/services/{id}/impact`, `/assets/{id}/services`, `/categories`, `/groups` and `/assets/{id}/relations` (those return everything) via
 [`paginate`](../lib/api.ts):
 
 | Param | Default | Bounds |
@@ -245,6 +245,7 @@ Pagination applies to every list endpoint except `GET /services`, `/categories`,
 | --- | --- |
 | `GET /tickets` | `status` (exact, or the special value `open` → any open status), `priority`, `type`, `q` (substring match on `title`); exact: `import_ref`, `external_ref` (every ticket that carried the key, open or resolved) |
 | `GET /assets` | `type`, `status`, `q` (substring match across `name`, `assetTag`, `serial`); exact: `serial`, `asset_tag`, `ip_address`, `mac_address`, `import_ref`, `owner_id`, `group_id`, `updated_since` |
+| `GET /services` | `q` (substring match on `name` or `code`); exact: `status`, `criticality`, `code`, `import_ref` |
 
 **Sorting is fixed** (not client-configurable): tickets by `updatedAt` descending,
 assets by `name` ascending, services by `name` ascending.
@@ -272,6 +273,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `cmdb:read` |
 | `PATCH` | `/assets/{id}` | Update any asset field. Agent tokens only. | `cmdb:write` |
 | `GET` / `PUT` | `/assets/ref/{ref}` | Read / upsert an asset by its origin reference (for syncs). | `cmdb:read` / `cmdb:write` |
+| `GET` | `/assets/{id}/services` | The services an outage of the asset hits (direct and transitive). | `cmdb:read` |
 | `GET` / `POST` | `/assets/{id}/relations` | List / add dependency edges. | `cmdb:read` / `cmdb:write` |
 | `DELETE` | `/assets/{id}/relations/{relation_id}` | Remove an edge. | `cmdb:write` |
 | `GET` / `POST` | `/vendors` | List / create vendors (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
@@ -282,7 +284,10 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `cmdb:write` |
 | `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `recurring:read` / `recurring:write` |
 | `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `recurring:read` / `recurring:write` |
-| `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `cmdb:read` |
+| `GET` / `POST` | `/services` | List services (not paginated) / create one with its CIs and dependencies (MANAGER+). Agent tokens only. | `cmdb:read` / `cmdb:write` |
+| `GET` / `PATCH` / `DELETE` | `/services/{id}` | Get (with `assets`, `depends_on`, `used_by`) / edit / delete a service (writes: MANAGER+; delete refused while referenced). | `cmdb:read` / `cmdb:write` |
+| `GET` | `/services/{id}/impact` | The services that go down with this one. | `cmdb:read` |
+| `GET` / `PUT` | `/services/ref/{ref}` | Get / upsert the service with this origin reference (MANAGER+, idempotent). | `cmdb:read` / `cmdb:write` |
 | `GET` / `POST` | `/articles` | List (paginated, no bodies) / create knowledge articles. Agent tokens only. | `kb:read` / `kb:write` |
 | `GET` / `PATCH` / `DELETE` | `/articles/{id}` | Get / edit / delete an article. | `kb:read` / `kb:write` |
 | `POST` | `/articles/{id}/transitions` | Move an article along its lifecycle (publishing: MANAGER+, not the author). | `kb:write` |
@@ -314,9 +319,9 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `POST` | `/import/changes` | Import a historical change with its thread. | `import:write` + ADMIN owner |
 | `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `import:write` + ADMIN owner |
 
-There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
-records except recurring ticket schedules (only for relations, license seats and
-attachments otherwise).
+There are no endpoints for releases yet, and no `DELETE` for whole records except
+recurring ticket schedules, articles and unreferenced services (only for relations,
+license seats and attachments otherwise).
 
 ### Tickets
 
@@ -395,10 +400,12 @@ group's auto-assign strategy picks one, as for a ticket routed in the console.
 
 **`PATCH /tickets/{id}` body** (agents only): `title` (min 3), `description`, `status`,
 `priority`, `assigneeId` (nullable), `groupId` (nullable; unknown ids `422`),
+`serviceId` (nullable; unknown ids `422`; on an open ticket a new service re-prices
+the SLA deadlines like the console, see [SLA re-pricing](./modules.md)),
 `problemId` / `changeId` (integer, `null`
 unlinks; applied through the console's `setTicketProblem` / `setTicketChange`, so
 only someone who may act on the ticket can link it, else `403`). The serialized
-ticket carries `group_id`, `problem_id` and `change_id`. Changing `groupId` works as
+ticket carries `group_id`, `service_id`, `problem_id` and `change_id`. Changing `groupId` works as
 re-routing in the console: an assignee who is not a member of the new group is
 cleared (unless the same request sets `assigneeId`, which must then be a member),
 and the group's auto-assign strategy picks a new one. Changing `status`:
@@ -636,25 +643,97 @@ except that a `PUBLISHED` one changed by a token below MANAGER goes back to
 
 ### Services
 
-`GET /services` returns all services (no pagination), each with its SLA and category:
+Services are writable CMDB objects with a service number, supporting CIs and
+service-to-service dependencies; the model and the impact rules are described in
+[services.md](./services.md). Every endpoint needs an agent token; writes need a
+token owned by a **MANAGER or ADMIN** (else `403`), like categories. Bodies are
+snake_case and strict (an unknown field is a `422`), from
+[`lib/api-service-input.ts`](../lib/api-service-input.ts). Every write is audited.
+
+`GET /services` returns all services (no pagination), each with its ids, its
+category name and its SLA targets:
 
 ```json
 {
   "data": [
     {
       "id": "svc_…",
+      "code": "S-01",
       "name": "Email",
       "description": "…",
       "status": "OPERATIONAL",
       "criticality": "HIGH",
+      "icon": "Mail",
       "category": "Communications",
-      "sla": { "name": "Gold", "response_mins": 30, "resolve_mins": 240 }
+      "category_id": "cat_…",
+      "owner_id": "usr_…",
+      "sla_id": "sla_…",
+      "group_id": "grp_…",
+      "sla": { "name": "Gold", "response_mins": 30, "resolve_mins": 240 },
+      "import_ref": "catalog:mail",
+      "created_at": "2026-11-01T08:00:00.000Z",
+      "updated_at": "2026-11-09T10:00:00.000Z"
     }
   ]
 }
 ```
 
-`category` is the category name (or `null`); `sla` is `null` when no SLA is attached.
+`category` is the category name (or `null`); `sla` is `null` when no SLA is
+attached. Filters: `status`, `criticality`, `code`, `import_ref` (exact) and `q`
+(name or code).
+
+`GET /services/{id}` (and `GET /services/ref/{ref}`) adds the links:
+
+```json
+{
+  "data": {
+    "id": "svc_…", "code": "S-01", "name": "Email", "…": "…",
+    "assets": [{ "id": "ast_…", "name": "mail-01", "type": "SERVER", "status": "IN_USE", "import_ref": null }],
+    "depends_on": [{ "service_id": "svc_dir", "code": "S-02", "name": "Directory", "status": "OPERATIONAL", "criticality": "CRITICAL", "note": "sign-in" }],
+    "used_by": []
+  }
+}
+```
+
+**Writable fields** (`POST /services`, `PATCH /services/{id}`, `PUT /services/ref/{ref}`):
+`name` (2-120, unique), `code` (1-32 of letters, digits and `. _ / -`, unique;
+`null` clears), `description`, `status` (`SERVICE_STATUSES`), `criticality`
+(`CRITICALITIES`), `icon`, `category_id`, `owner_id`, `sla_id`, `group_id` (all
+nullable), `asset_ids` (the supporting CIs; **replaces the set**, `[]` unlinks all)
+and `depends_on` (the services it needs; **replaces the set**). A `depends_on` entry
+is `{ "service_id": "…" }` or `{ "service_ref": "<import_ref>" }` (exactly one), with
+an optional `note`. `POST` also takes `import_ref`. `PATCH` changes only the fields
+sent. Responses carry the detail view plus `meta.created` and `meta.changed` (the
+fields that actually changed; an unchanged body writes nothing and no audit row).
+
+**`PUT /services/ref/{ref}`** upserts by origin reference: it creates the service
+(`201`, `name` required) when the ref is new and otherwise writes only the fields
+sent (`200`). Re-sending the same facts is a no-op, so a sync can push its whole
+service map on every run; because `depends_on` can name services by `service_ref`,
+the map can be pushed in dependency order without knowing ids. Two runs creating
+the same ref at once end as one create and one update.
+
+**Refusals** carry `details.code`:
+
+| Status | `details.code` | When |
+| --- | --- | --- |
+| `422` | `self_dependency` | `depends_on` names the service itself |
+| `422` | `dependency_cycle` | the set would close a cycle; `details.cycle` is the path as `{ id, name }` |
+| `422` | `unknown_reference` | an unknown category / owner / SLA / group / asset / `service_id` / `service_ref` |
+| `422` | `duplicate_entry` | the same asset or service listed twice |
+| `409` | `name_taken`, `code_taken`, `import_ref_taken` | the value is used by another service (`details.id`) |
+| `409` | `service_in_use` | `DELETE` while tickets, catalog items, dependent services, status incidents, change templates, recurring tickets or freeze windows reference it; `details.references` counts them and `details.suggestion` is `{ "status": "RETIRED" }` |
+
+`DELETE /services/{id}` removes an unreferenced service with its own CI links and
+dependencies. Retire a referenced one instead (`PATCH` with `"status": "RETIRED"`).
+
+**Impact.** `GET /services/{id}/impact` lists the services that go down with the
+service; `GET /assets/{id}/services` the services an outage of the asset hits. Each
+entry is `{ service_id, code, name, status, criticality, depth, direct, via }`,
+nearest first: `depth` 0 runs on a failed CI (`direct` when it is the asked asset
+itself), higher depths are dependency hops, and `via` (`{ kind: "asset" | "service",
+id, name }`) is what it was reached through. The rules are in
+[services.md](./services.md#impact).
 
 ### How the ITSM endpoints enforce the console's rules
 
@@ -979,10 +1058,9 @@ only the fields sent. Both write an audit row.
 ## OpenAPI spec
 
 `GET /api/v1/openapi` serves an OpenAPI 3.1 document
-([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)). For the ticket,
-asset and service paths it is hand-written: minimal `Ticket` and `Asset` schemas
-and no write-body detail. The attachment paths describe their `multipart/form-data`
-body and the `Attachment` shape by hand. For the ITSM paths (changes, problems, comments,
+([`app/api/v1/openapi/route.ts`](../app/api/v1/openapi/route.ts)). For the ticket
+and asset read paths it is hand-written: minimal `Ticket` and `Asset` schemas. The attachment paths describe their `multipart/form-data`
+body and the `Attachment` shape by hand. For the ITSM paths (changes, problems, comments, services,
 lookups) the request bodies are generated from the same Zod schemas the handlers
 validate with (`z.toJSONSchema`), so they cannot drift; responses are described in
 prose. Every operation carries its resource scope in `x-required-scope` and the

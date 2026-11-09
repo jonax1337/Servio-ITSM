@@ -19,7 +19,7 @@ function initials(s: string) {
 }
 
 function Prop({
-  label, serviceId, field, value, options, searchable, placeholder,
+  label, serviceId, field, value, options, searchable, placeholder, disabled,
 }: {
   label: string;
   serviceId: string;
@@ -28,6 +28,7 @@ function Prop({
   options: ComboOption[];
   searchable?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [pending, start] = useTransition();
   const t = useT("services");
@@ -39,6 +40,7 @@ function Prop({
         options={options}
         value={value ?? "none"}
         pending={pending}
+        disabled={disabled}
         placeholder={placeholder}
         searchPlaceholder={searchable ? t("searchField", { field: fieldName }) : t("filterPlaceholder")}
         onChange={(v) => {
@@ -56,6 +58,8 @@ function Prop({
 export function ServiceProperties({
   service,
   options,
+  canManage,
+  canSetStatus = true,
 }: {
   service: {
     id: string;
@@ -67,6 +71,9 @@ export function ServiceProperties({
     groupId: string | null;
   };
   options: FormOptions;
+  /** Managers edit every property; agents only the status (incident handling). */
+  canManage: boolean;
+  canSetStatus?: boolean;
 }) {
   const t = useT("services");
   const tc = useT("common");
@@ -88,12 +95,12 @@ export function ServiceProperties({
 
   return (
     <div className="grid gap-3">
-      <Prop label={tc("status")} serviceId={service.id} field="status" value={service.status} options={statusOpts} />
-      <Prop label={t("criticality")} serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} />
-      <Prop label={tc("owner")} serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder={t("noOwner")} />
-      <Prop label={tc("category")} serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder={t("noCategory")} />
-      <Prop label={tc("group")} serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder={t("noGroup")} />
-      <Prop label={t("sla")} serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder={t("noSlaOption")} />
+      <Prop label={tc("status")} serviceId={service.id} field="status" value={service.status} options={statusOpts} disabled={!canSetStatus} />
+      <Prop label={t("criticality")} serviceId={service.id} field="criticality" value={service.criticality} options={critOpts} disabled={!canManage} />
+      <Prop label={tc("owner")} serviceId={service.id} field="ownerId" value={service.ownerId} options={ownerOpts} searchable placeholder={t("noOwner")} disabled={!canManage} />
+      <Prop label={tc("category")} serviceId={service.id} field="categoryId" value={service.categoryId} options={catOpts} searchable placeholder={t("noCategory")} disabled={!canManage} />
+      <Prop label={tc("group")} serviceId={service.id} field="groupId" value={service.groupId} options={teamOpts} searchable placeholder={t("noGroup")} disabled={!canManage} />
+      <Prop label={t("sla")} serviceId={service.id} field="slaId" value={service.slaId} options={slaOpts} searchable placeholder={t("noSlaOption")} disabled={!canManage} />
     </div>
   );
 }

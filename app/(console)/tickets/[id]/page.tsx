@@ -13,6 +13,7 @@ import type { SearchParams } from "@/lib/query";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge, VipBadge, ToneBadge } from "@/components/status-badge";
 import { TicketProperties } from "@/components/tickets/ticket-properties";
+import { RecordAffectedServices } from "@/components/services/affected-services";
 import { FormAnswers } from "@/components/tickets/form-answers";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { ConversationTab } from "@/components/tickets/tabs/conversation-tab";
@@ -380,6 +381,9 @@ export default async function TicketDetailPage({
             <TicketProperties ticket={ticket} options={options} openChildCount={openChildren(ticket.children).length} aiEnabled={aiVisible} aiTeaser={aiTeaser} triageEnabled={triageEnabled} allowedStatuses={allowedStatuses} />
           </CardContent>
         </Card>
+
+        {/* Services hit through the CIs linked to the ticket (read-only) */}
+        {isAgentUser ? <RecordAffectedServices className="mt-4" record={{ kind: "ticket", id: ticket.id }} /> : null}
 
         {/* Requester — a clickable user card that opens their profile (their open
             tickets + assigned assets). Watchers are surfaced via the Watch button. */}

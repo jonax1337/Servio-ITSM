@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Timer, Ticket as TicketIcon, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Timer, Ticket as TicketIcon, ShoppingBag, Radar } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -13,6 +13,10 @@ import { ServiceProperties } from "@/components/services/service-properties";
 import { ServiceEditDialog } from "@/components/services/service-edit-dialog";
 import { DeleteServiceButton } from "@/components/services/delete-service-button";
 import { ServiceAssets } from "@/components/services/service-assets";
+import { ServiceDependencies } from "@/components/services/service-dependencies";
+import { ServiceImpactList } from "@/components/services/service-impact-list";
+import { serviceImpact } from "@/lib/service-graph";
+import { serviceLabel } from "@/lib/service-label";
 import { EntityApprovals } from "@/components/approvals/entity-approvals";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -60,6 +64,14 @@ export default async function ServiceDetailPage({
           select: { asset: { select: { id: true, name: true, status: true } } },
         },
         catalogItems: { orderBy: { name: "asc" }, select: { id: true, name: true, isPublished: true } },
+        dependsOn: {
+          orderBy: { createdAt: "asc" },
+          select: { note: true, toService: { select: { id: true, name: true, code: true, status: true } } },
+        },
+        usedBy: {
+          orderBy: { createdAt: "asc" },
+          select: { note: true, fromService: { select: { id: true, name: true, code: true, status: true } } },
+        },
         tickets: {
           where: { status: { in: [...OPEN_TICKET_STATUSES] } },
           include: { assignee: true },
@@ -77,13 +89,25 @@ export default async function ServiceDetailPage({
   const canManage = !!me && hasRole(me.role as Role, "MANAGER");
   const approvals = await getEntityApprovals("SERVICE", service.id);
   const supportingCis = service.assets.map((row) => row.asset);
-  const availableAssets = isAgentUser
-    ? await db.asset.findMany({
-        where: { id: { notIn: supportingCis.map((a) => a.id) } },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      })
-    : [];
+  const dependsOn = service.dependsOn.map((d) => ({ ...d.toService, note: d.note }));
+  const usedBy = service.usedBy.map((d) => ({ ...d.fromService, note: d.note }));
+  const [availableAssets, availableServices, impact] = await Promise.all([
+    canManage
+      ? db.asset.findMany({
+          where: { id: { notIn: supportingCis.map((a) => a.id) } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : [],
+    canManage
+      ? db.service.findMany({
+          where: { id: { notIn: [service.id, ...dependsOn.map((d) => d.id)] } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, code: true },
+        })
+      : [],
+    serviceImpact(service.id),
+  ]);
 
   return (
     <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
@@ -99,7 +123,7 @@ export default async function ServiceDetailPage({
           <div className="ml-auto flex items-center gap-2">
             <StatusBadge map={CRITICALITY_META} value={service.criticality} dot />
             <StatusBadge map={SERVICE_STATUS_META} value={service.status} />
-            {isAgentUser ? (
+            {canManage ? (
               <>
                 <ServiceEditDialog service={service} />
                 <DeleteServiceButton serviceId={service.id} serviceName={service.name} />
@@ -115,6 +139,9 @@ export default async function ServiceDetailPage({
             </div>
             <div className="min-w-0">
               <h1 className="font-display text-2xl font-semibold tracking-tight">
+                {service.code ? (
+                  <span className="mr-2 font-mono text-lg font-medium text-muted-foreground">{service.code}</span>
+                ) : null}
                 {service.name}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -173,8 +200,35 @@ export default async function ServiceDetailPage({
             serviceId={service.id}
             assets={supportingCis}
             options={availableAssets.map((a) => ({ value: a.id, label: a.name }))}
-            canEdit={isAgentUser}
+            canEdit={canManage}
           />
+
+          <ServiceDependencies
+            serviceId={service.id}
+            dependsOn={dependsOn}
+            usedBy={usedBy}
+            options={availableServices.map((s) => ({ value: s.id, label: serviceLabel(s) }))}
+            canEdit={canManage}
+          />
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Radar className="size-4 text-muted-foreground" />
+                {t("impact.heading", { count: impact.length })}
+                <Link
+                  href={`/services/impact?service=${service.id}`}
+                  className="ml-auto text-xs font-normal text-muted-foreground hover:text-primary"
+                >
+                  {t("impact.open")}
+                </Link>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <p className="text-sm text-muted-foreground">{t("impact.serviceDescription")}</p>
+              <ServiceImpactList rows={impact} empty={t("impact.serviceEmpty")} />
+            </CardContent>
+          </Card>
 
           <Card className="mt-4">
             <CardHeader>
@@ -224,7 +278,7 @@ export default async function ServiceDetailPage({
             <CardTitle className="text-sm">{tc("properties")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ServiceProperties service={service} options={options} />
+            <ServiceProperties service={service} options={options} canManage={canManage} canSetStatus={isAgentUser} />
           </CardContent>
         </Card>
 
@@ -259,6 +313,7 @@ export default async function ServiceDetailPage({
             <CardTitle className="text-sm">{tc("details")}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2.5 text-sm">
+            <Meta label={t("code")} value={service.code ?? "—"} />
             <Meta
               label={tc("owner")}
               value={
@@ -271,6 +326,7 @@ export default async function ServiceDetailPage({
               label={tc("category")}
               value={service.category ? service.category.name : "—"}
             />
+            {service.importRef ? <Meta label={t("importRef")} value={service.importRef} /> : null}
             <Meta label={tc("created")} value={f.date(service.createdAt)} />
             <Meta label={tc("updated")} value={f.date(service.updatedAt)} />
           </CardContent>

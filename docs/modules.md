@@ -295,13 +295,14 @@ Two insight kinds (`AI_INSIGHT_KINDS`): `CLUSTER` (a burst of similar tickets in
 ## Catalog & CMDB
 
 ### Services
-The service portfolio (business/technical services tickets are filed against).
+The service portfolio (business/technical services tickets are filed against), as CMDB objects with a service number, supporting CIs and service-to-service dependencies. Model, impact rules and API: [services.md](services.md).
 
 | | |
 | --- | --- |
-| Routes | `app/(console)/services/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
-| Actions | `lib/actions/services.ts` — `createService`, `updateServiceField`, `updateService`, `linkServiceAsset`/`unlinkServiceAsset` (supporting CIs, `ServiceAsset`; audited on both the service and the asset), `deleteService` |
-| Components | `components/services/` — `service-form`, `service-properties`, `service-assets`, `create-service-dialog` |
+| Routes | `app/(console)/services/page.tsx` (list; search by name or service number), `[id]/page.tsx` (detail: CIs, *Depends on* / *Used by*, *If this service fails*), `impact/page.tsx` (impact analysis for a chosen service or CI) |
+| Actions | `lib/actions/services.ts` — `createService`, `updateServiceField`, `updateService` (name, `code`, icon, description), `linkServiceAsset`/`unlinkServiceAsset` (supporting CIs, `ServiceAsset`; audited on both the service and the asset), `addServiceDependency`/`removeServiceDependency` (`ServiceDependency`; cycle-checked, audited on both services), `deleteService` |
+| Graph | `lib/service-graph-rules.ts` (pure: cycle check, closures, asset failure propagation, set planning), `lib/service-graph.ts` (impact queries; affected services of tickets, changes, problems), `failureClosure` in `lib/cmdb-graph.ts`, `lib/service-records.ts` (validated write path shared by the API and the upsert), `lib/service-label.ts` (`S-01 · Name`) |
+| Components | `components/services/` — `service-form`, `service-properties`, `service-assets`, `service-dependencies`, `service-impact-list`, `impact-target-picker`, `affected-services` (read-only card on ticket/problem/change pages), `create-service-dialog` |
 
 ### Service Catalog (admin)
 The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-style admin page — no `[id]`/`new` routes; items are edited inline.
@@ -334,7 +335,7 @@ Conditional questions (show a question only for certain answers) are not support
 | Actions | `lib/actions/assets.ts` — `createAsset`, `updateAssetField`, `updateAsset`, `deleteAsset`, `addAssetRelation`/`deleteAssetRelation`, `linkTicketToAsset`/`unlinkTicketFromAsset`, `addAssetToChange`/`removeAssetFromChange` |
 | Components | `components/assets/` — `asset-form`, `asset-properties`, `asset-edit-dialog`, `impact-graph` (blast-radius panel) |
 
-**Linking from the asset page:** the detail page links tickets (`TicketAsset`, subject to the ticket's group membership check) and changes (`ChangeAsset`) and lists the services the CI supports (managed on the service page). Retired/disposed assets cannot be added to a change (`lib/asset-link-rules.ts`); already-made or already-removed links are benign no-ops. The actions return `{ ok, error }` (`lib/action-result.ts`) so refusals reach the UI and Sable.
+**Linking from the asset page:** the detail page links tickets (`TicketAsset`, subject to the ticket's group membership check) and changes (`ChangeAsset`) and lists the services the CI supports (managed on the service page) plus the services also affected when it fails (see [services.md](services.md#impact)). Retired/disposed assets cannot be added to a change (`lib/asset-link-rules.ts`); already-made or already-removed links are benign no-ops. The actions return `{ ok, error }` (`lib/action-result.ts`) so refusals reach the UI and Sable.
 
 **Impact analysis:** `lib/cmdb-graph.ts` (`computeImpact`) walks `AssetRelation` edges from a root CI (up/downstream, depth-bounded) to compute a blast radius; the asset detail page renders it via `impact-graph`, and Changes reuse it for affected-CI impact/risk.
 

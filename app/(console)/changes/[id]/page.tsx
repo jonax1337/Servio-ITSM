@@ -9,6 +9,7 @@ import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
+import { RecordAffectedServices } from "@/components/services/affected-services";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
@@ -195,6 +196,9 @@ export default async function ChangeDetailPage({
         />
 
         <WindowSummary className="mt-4" change={change} />
+
+        {/* Services hit through the change's affected CIs (read-only) */}
+        {isAgentUser ? <RecordAffectedServices className="mt-4" record={{ kind: "change", id: change.id }} /> : null}
 
         <RecordAttachments className="mt-4" target={{ changeId: change.id }} role={me?.role ?? "USER"} />
       </aside>

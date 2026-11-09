@@ -1,4 +1,5 @@
 import { Ticket as TicketIcon, Plus, Download } from "lucide-react";
+import { serviceLabel } from "@/lib/service-label";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
@@ -110,7 +111,7 @@ export default async function TicketsPage({
     },
     { key: "sla", label: "SLA", options: SLA_VIEWS.map((v) => ({ value: v, label: t.dyn(`slaView.${v}`, undefined, SLA_VIEW_META[v].label) })) },
     { key: "category", label: tc("category"), options: opts.categories.map((c) => ({ value: c.id, label: c.name })) },
-    { key: "service", label: tc("service"), options: opts.services.map((s) => ({ value: s.id, label: s.name })) },
+    { key: "service", label: tc("service"), options: opts.services.map((s) => ({ value: s.id, label: serviceLabel(s) })) },
   ];
 
   return (

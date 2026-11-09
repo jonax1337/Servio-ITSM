@@ -13,12 +13,13 @@ import {
 } from "@/components/ui/dialog";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
-/** Edit a service's name + description. The other properties (status, owner,
- *  team, …) are edited inline via ServiceProperties. Server-side is agent-gated. */
+/** Edit a service's name, service number, icon and description. The other
+ *  properties (status, owner, team, …) are edited inline via ServiceProperties.
+ *  Server-side is agent-gated. */
 export function ServiceEditDialog({
   service,
 }: {
-  service: { id: string; name: string; description: string | null; icon: string | null };
+  service: { id: string; name: string; code: string | null; description: string | null; icon: string | null };
 }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<ActionState>(undefined);
@@ -57,6 +58,12 @@ export function ServiceEditDialog({
             <Label htmlFor="svc-name">{tc("name")}</Label>
             <Input id="svc-name" name="name" defaultValue={service.name} required />
             {fe.name ? <p className="text-xs text-destructive">{tm(fe.name[0])}</p> : null}
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="svc-code">{t("code")}</Label>
+            <Input id="svc-code" name="code" defaultValue={service.code ?? ""} placeholder={t("codePlaceholder")} maxLength={32} />
+            <p className="text-xs text-muted-foreground">{t("codeHint")}</p>
+            {fe.code ? <p className="text-xs text-destructive">{tm(fe.code[0])}</p> : null}
           </div>
           <div className="grid gap-1.5">
             <Label>{t("icon")}</Label>

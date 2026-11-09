@@ -7,6 +7,7 @@ import type { ServerMessagePattern } from "../../types";
  */
 export const patterns: ServerMessagePattern[] = [
   // Module messages with numbers or names in them
+  [/^This would close a dependency cycle: (.+)$/, "Das würde einen Abhängigkeitszyklus schließen: $1"],
   [/^Ticket hierarchies can be at most (\d+) levels deep\.$/, "Ticket-Hierarchien dürfen höchstens $1 Ebenen tief sein."],
   [/^Ticket (\d+) does not exist\.$/, "Ticket $1 existiert nicht."],
   [/^Ticket (\d+) is not a major incident\.$/, "Ticket $1 ist kein Major Incident."],

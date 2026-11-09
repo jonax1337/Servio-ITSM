@@ -168,7 +168,7 @@ async function main() {
     ].map(([name, icon, status, crit, categoryId, slaId], i) =>
       db.service.create({
         data: {
-          name: name as string, icon: icon as string, status: status as string,
+          name: name as string, code: `S-${String(i + 1).padStart(2, "0")}`, icon: icon as string, status: status as string,
           criticality: crit as string, categoryId: categoryId as string, slaId: slaId as string,
           ownerId: agents[i % agents.length].id,
           description: `${name} — provided by IT.`,
@@ -227,6 +227,28 @@ async function main() {
       { sourceId: aByTag("SRV-DC01").id, targetId: aByTag("SW-CORE01").id, type: "CONNECTS_TO" },
       { sourceId: aByTag("SW-CORE01").id, targetId: aByTag("FW-EDGE01").id, type: "CONNECTS_TO" },
       { sourceId: aByTag("SRV-DB01").id, targetId: aByTag("NAS-STORE01").id, type: "BACKS_UP" },
+    ],
+  });
+
+  // Service map: the CIs each service runs on and the services it needs (lib/service-graph.ts).
+  const svcByName = (n: string) => services.find((s) => s.name === n)!;
+  await db.serviceAsset.createMany({
+    data: [
+      { serviceId: svcByName("ERP System").id, assetId: aByTag("SW-ERP").id },
+      { serviceId: svcByName("ERP System").id, assetId: aByTag("SRV-DB01").id },
+      { serviceId: svcByName("File Storage").id, assetId: aByTag("NAS-STORE01").id },
+      { serviceId: svcByName("Wi-Fi & Network").id, assetId: aByTag("SW-CORE01").id },
+      { serviceId: svcByName("VPN Access").id, assetId: aByTag("FW-EDGE01").id },
+      { serviceId: svcByName("Company Website").id, assetId: aByTag("CLOUD-K8S").id },
+    ],
+  });
+  await db.serviceDependency.createMany({
+    data: [
+      { fromServiceId: svcByName("Email & Calendar").id, toServiceId: svcByName("Wi-Fi & Network").id, note: "Clients reach the mail servers over the LAN" },
+      { fromServiceId: svcByName("VPN Access").id, toServiceId: svcByName("Wi-Fi & Network").id },
+      { fromServiceId: svcByName("ERP System").id, toServiceId: svcByName("File Storage").id, note: "Document archive" },
+      { fromServiceId: svcByName("New Employee Onboarding").id, toServiceId: svcByName("Email & Calendar").id },
+      { fromServiceId: svcByName("New Employee Onboarding").id, toServiceId: svcByName("Hardware Request").id },
     ],
   });
 
