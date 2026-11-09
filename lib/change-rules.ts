@@ -202,12 +202,20 @@ export function approversToSeat(selected: string[], alreadySeated: string[], lim
   return selected.filter((id) => !seated.has(id)).slice(0, room);
 }
 
-export type SeatedApprover = { approvalId: string; approverId: string; role: string; isActive: boolean };
+export type SeatedApprover = {
+  approvalId: string;
+  approverId: string;
+  role: string;
+  isActive: boolean;
+  /** False for a service account or an account whose "may approve changes" switch is off (lib/service-accounts.ts). */
+  mayApprove?: boolean;
+};
 
 /**
  * Seats added while drafting that can no longer sit on the board: the approver became the
- * change's owner or creator (separation of duties), was deactivated, or lost the role the
- * change's risk demands.
+ * change's owner or creator (separation of duties), was deactivated, lost the role the
+ * change's risk demands, or may no longer approve changes at all. Only a DRAFT board is curated
+ * this way (at submit); a board already in approval is never re-seated.
  */
 export function invalidSeats(
   seats: SeatedApprover[],
@@ -219,11 +227,12 @@ export function invalidSeats(
       seat.approverId === change.assigneeId ||
       seat.approverId === change.createdById ||
       !seat.isActive ||
+      seat.mayApprove === false ||
       !eligibleRoles.includes(seat.role),
   );
 }
 
-export type SelfSeatCandidate = { id: string; role: string; isActive: boolean };
+export type SelfSeatCandidate = { id: string; role: string; isActive: boolean; mayApprove?: boolean };
 
 export type BoardSeatingInput = {
   mode: ChangeSelfApprovalMode;
@@ -248,7 +257,7 @@ export function seatBoard({
   mode, selected, kept, parties, eligibleRoles, limit = Number.POSITIVE_INFINITY,
 }: BoardSeatingInput): { autoIds: string[]; selfIds: string[] } {
   const eligibleParties = [
-    ...new Set(parties.filter((p) => p.isActive && eligibleRoles.includes(p.role)).map((p) => p.id)),
+    ...new Set(parties.filter((p) => p.isActive && p.mayApprove !== false && eligibleRoles.includes(p.role)).map((p) => p.id)),
   ];
   if (mode === "ALWAYS") {
     const selfIds = approversToSeat(eligibleParties, kept, limit);

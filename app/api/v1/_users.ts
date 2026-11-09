@@ -7,6 +7,8 @@ export const USER_SELECT = {
   email: true,
   role: true,
   isActive: true,
+  isServiceAccount: true,
+  canApproveChanges: true,
   secondaryEmails: { select: { email: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.UserSelect;
 
@@ -20,5 +22,7 @@ export function serializeUser(u: UserRow) {
     secondary_emails: u.secondaryEmails.map((e) => e.email),
     role: u.role,
     active: u.isActive,
+    service_account: u.isServiceAccount,
+    can_approve_changes: u.canApproveChanges,
   };
 }

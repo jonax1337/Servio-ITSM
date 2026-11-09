@@ -27,7 +27,7 @@ export async function resolveStageApprover(stage: ApprovalStage): Promise<string
   }
   if (stage.groupId) {
     const members = await db.groupMember.findMany({
-      where: { groupId: stage.groupId, user: { isActive: true, role: { in: ["ADMIN", "MANAGER", "AGENT"] } } },
+      where: { groupId: stage.groupId, user: { isActive: true, isServiceAccount: false, role: { in: ["ADMIN", "MANAGER", "AGENT"] } } },
       include: { user: { select: { id: true } } },
       orderBy: [{ role: "asc" }], // LEAD sorts before MEMBER
     });

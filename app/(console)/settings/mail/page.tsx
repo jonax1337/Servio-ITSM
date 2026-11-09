@@ -27,6 +27,7 @@ const MAIL_STATUS_META = {
   SIMULATED: { label: "Simulated", tone: "neutral" as const },
   REJECTED: { label: "Rejected", tone: "warning" as const },
   ARCHIVED: { label: "Archived", tone: "neutral" as const },
+  SUPPRESSED: { label: "Not sent (service account)", tone: "neutral" as const },
 };
 
 /** cc is stored as a JSON array string; parse it defensively for display. */

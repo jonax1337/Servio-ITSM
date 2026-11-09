@@ -47,6 +47,8 @@ const messages: ServerMessages = {
   "Choose at least one group, or lift the restriction.": "Wählen Sie mindestens eine Gruppe oder entfernen Sie die Beschränkung.",
   "A selected group no longer exists.": "Eine ausgewählte Gruppe existiert nicht mehr.",
   "Group not found.": "Gruppe nicht gefunden.",
+  "This account may not approve changes.": "Dieses Konto darf Changes nicht genehmigen.",
+  "A service account cannot approve changes.": "Ein Servicekonto kann Changes nicht genehmigen.",
   // Status page
   "Status incident not found.": "Störungsmeldung nicht gefunden.",
   "You can't link a ticket you can't act on.": "Sie können kein Ticket verknüpfen, das Sie nicht bearbeiten dürfen.",

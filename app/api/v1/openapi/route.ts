@@ -714,18 +714,20 @@ const spec = {
     "/users": {
       get: {
         summary: "Look up users (minimal fields)",
-        description: `${agentOnly} Each user carries \`secondary_emails\`: extra addresses that inbound mail is matched on (notifications go to \`email\`).`,
-        parameters: [q("q", "Name, primary or secondary email"), q("role"), q("active", "true (default), false or all"), ...pageParams],
+        description: `${agentOnly} Each user carries \`secondary_emails\`: extra addresses that inbound mail is matched on (notifications go to \`email\`), \`service_account\` (a non-human account that never receives email) and \`can_approve_changes\` (may sit on change approval boards).`,
+        parameters: [q("q", "Name, primary or secondary email"), q("role"), q("active", "true (default), false or all"), q("service_account", "true or false (default both)"), ...pageParams],
         responses: { "200": { description: "OK" } },
       },
     },
     "/users/{id}": {
       get: { summary: "Get a user (minimal fields)", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: {
-        summary: "Replace a user's secondary email addresses (ADMIN)",
+        summary: "Edit a user: secondary email addresses and account type (ADMIN)",
         description:
           "Needs the `directory:write` scope (the legacy `write` works too) and a token owned by an ADMIN. `secondary_emails` replaces the whole list (`[]` removes all). " +
-          "An address must not be the user's own primary address and must not belong to anyone else, as primary or secondary address.",
+          "An address must not be the user's own primary address and must not belong to anyone else, as primary or secondary address. " +
+          "`service_account` marks a non-human account: it never receives email and never sits on an approval board, and marking it turns `can_approve_changes` off (unmarking turns it on). " +
+          "`can_approve_changes` is the per-account switch for change approval boards; a service account cannot be switched on (422). Approvals already in progress are not changed. Fields left out stay as they are.",
         parameters: [strId],
         requestBody: body(userPatchSchema),
         responses: {

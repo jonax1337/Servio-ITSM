@@ -1281,9 +1281,9 @@ shared tree for tickets, problems, changes, catalog items, change templates and
 articles — there are no separate change categories; a change takes one as
 `category_id` on `POST` / `PATCH /changes` and is filtered by it on `GET /changes`. `GET /groups` (`id`,
 `name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
-`GET /users` (`id`, `name`, `email`, `secondary_emails`, `role`, `active`; `q`
-matches name, primary or secondary email, `role`, `active=true|false|all`,
-paginated; `GET /users/{id}` returns one).
+`GET /users` (`id`, `name`, `email`, `secondary_emails`, `role`, `active`, `service_account`,
+`can_approve_changes`; `q` matches name, primary or secondary email, `role`,
+`active=true|false|all`, `service_account=true|false`, paginated; `GET /users/{id}` returns one).
 
 ### Secondary email addresses
 
@@ -1300,6 +1300,32 @@ The list replaces the current one (`[]` removes all; at most 10). A malformed
 address or the person's own primary address is a `422`; an address that already
 belongs to someone else, as primary or secondary address, is a `409` with the
 address in `details.email`. Changes are audited on the user.
+
+### Service accounts
+
+A **service account** is a non-human account: an integration that files tickets through the API, a
+break-glass admin, an automation admin. It is marked in the console (*People › Edit*) or with the same
+`PATCH /users/{id}` (`directory:write`, token owned by an ADMIN):
+
+```bash
+curl -X PATCH "$BASE/api/v1/users/$USER_ID" -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"service_account": true}'
+# -> { "data": { "service_account": true, "can_approve_changes": false, ... } }
+```
+
+- `service_account` (boolean): the account **never receives email** - requester notices (received,
+  resolved, closed), notifications, approval requests, replies and automatic answers. The one place mail
+  leaves through drops service accounts from every recipient list (to, cc, bcc; primary and secondary
+  addresses); a message nobody is left to receive is recorded as `SUPPRESSED` in Settings › Mail and not
+  sent. A ticket that an integration files and resolves under its own account therefore produces no mail.
+- `can_approve_changes` (boolean): the per-account switch for change approval boards. `true` for people,
+  `false` for service accounts. Marking an account as a service account turns it off, unmarking turns it
+  back on; send both in one request to set them explicitly. A service account cannot be switched on (`422`).
+- Fields left out stay as they are; unknown fields and an empty body are a `422`. Both fields are returned by
+  `GET /users`, which also filters by `service_account`.
+- Existing accounts are people (`service_account: false`, `can_approve_changes: true`): nothing changes until
+  an admin marks an account. Effect on boards: see *Service accounts and approval boards* in
+  [modules.md](./modules.md#changes).
 
 ### Built-in backup
 
