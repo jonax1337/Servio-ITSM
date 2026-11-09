@@ -18,7 +18,7 @@ export function OPTIONS() {
  * set them with PATCH first. 409 with the console's reason when refused.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "problems:write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const exists = id ? await db.problem.findUnique({ where: { id }, select: { id: true } }) : null;

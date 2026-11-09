@@ -202,7 +202,7 @@ Servio has **two distinct write surfaces**, and they don't overlap:
 |-|----------------|----------------|
 | Location | `lib/actions/*.ts` (`"use server"`) | `app/api/v1/**/route.ts` |
 | Consumers | The app's own UI (forms, buttons) | External clients (the public REST API) |
-| Auth | Session cookie via `getSessionUser()` / `requireAgent()` | Bearer token via `guard(req, "read"\|"write")` |
+| Auth | Session cookie via `getSessionUser()` / `requireAgent()` | Bearer token via `guard(req, "<resource>:read"\|"<resource>:write")` |
 | Input | `FormData` parsed with Zod | JSON / query params parsed with Zod |
 | Output | `ActionState` (`{ error?, fieldErrors? }`) + `revalidatePath()` | `ok()` / `apiError()` JSON responses |
 

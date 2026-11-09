@@ -16,7 +16,7 @@ export function OPTIONS() {
 
 /** Vendors (suppliers of contracts and licenses). Filters: `name` (exact), `q`, `active` (true | false | all, default all). */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   const p = new URL(req.url).searchParams;
   const { page, perPage, skip, take } = paginate(p);
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
 /** Create a vendor through the console's createVendor (MANAGER or above; names are unique, a duplicate is a 409). */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const body = await readBody(req, vendorCreateSchema);
   if ("response" in body) return body.response;

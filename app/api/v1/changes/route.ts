@@ -21,7 +21,7 @@ export function OPTIONS() {
  * title, description, reason, both plans, closure notes and comments.
  */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "changes:read");
   if ("response" in auth) return auth.response;
 
   const url = new URL(req.url);
@@ -75,7 +75,7 @@ export async function GET(req: Request) {
  * fields, affected CIs), audit row and assignee notification.
  */
 export async function POST(req: Request) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "changes:write");
   if ("response" in auth) return auth.response;
   const body = await readBody(req, changeCreateSchema);
   if ("response" in body) return body.response;

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { tokenExpired } from "@/lib/token-rules";
+import { ADMIN_ONLY_SCOPES, parseStoredScopes } from "@/lib/api-scopes";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { LinkButton } from "@/components/link-button";
@@ -109,10 +110,10 @@ export default async function ApiTokensPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {tok.scopes.split(",").map((s) => (
+                        {parseStoredScopes(tok.scopes).map((s) => (
                           <ToneBadge
                             key={s}
-                            meta={{ label: s, tone: "neutral" }}
+                            meta={{ label: s, tone: (ADMIN_ONLY_SCOPES as readonly string[]).includes(s) ? "warning" : "neutral" }}
                           />
                         ))}
                       </div>

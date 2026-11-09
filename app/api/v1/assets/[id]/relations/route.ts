@@ -26,7 +26,7 @@ async function relationsOf(assetId: string) {
 
 /** The asset's dependency edges in both directions (`direction`: outgoing = this asset is the source). */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id } = await ctx.params;
@@ -40,7 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
  * existing identical edge is kept (idempotent).
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
   const { id } = await ctx.params;

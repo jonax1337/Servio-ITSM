@@ -439,7 +439,7 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages â€
 
 | Sub-page | Route | Purpose | Actions / components |
 | --- | --- | --- | --- |
-| API tokens | `settings/api/page.tsx` | Create (for any active account, e.g. a service account, with optional expiry) and revoke API tokens | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`), rules in `lib/token-rules.ts`; `components/settings/token-manager` |
+| API tokens | `settings/api/page.tsx` | Create (for any active account, e.g. a service account, with optional expiry and a scope preset or per-resource scopes) and revoke API tokens; the list shows each token's scopes | `lib/actions/tokens.ts` (`createApiToken`, `revokeApiToken`), rules in `lib/token-rules.ts`, scope catalog in `lib/api-scopes.ts`; `components/settings/token-manager`, `components/settings/token-scope-picker` |
 | Mail log | `settings/mail/page.tsx` (MANAGER+) | SMTP status + mail log (`lib/mail.ts`, `smtpConfigured`) | Read-only view of the mail log |
 | SLA | `settings/sla/page.tsx` | Tabbed: **SLAs**, **Calendars** (business hours), **Escalation** (staged policies) | `lib/actions/sla-admin.ts` (SLA CRUD `createSla`/`updateSla`/`toggleSla`/`deleteSla`; calendar CRUD `createCalendar`/`updateCalendar`/`deleteCalendar`/`addHoliday`/`deleteHoliday`; policy CRUD `createPolicy`/`updatePolicy`/`deletePolicy`/`addStep`/`deleteStep`); `components/settings/sla-manager`, `calendar-manager`, `escalation-manager`; tabs in `settings/sla/tabs.tsx` |
 | General & branding | `settings/general/page.tsx` (ADMIN) | App name/branding, base settings and the instance **Default language** (`APP_LOCALE`) | `saveGeneralSettings` in `lib/actions/settings.ts`; `components/settings/settings-form` |

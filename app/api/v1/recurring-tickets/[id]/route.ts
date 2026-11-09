@@ -14,7 +14,7 @@ export function OPTIONS() {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "recurring:read");
   if ("response" in auth) return auth.response;
   const row = await db.recurringTicket.findUnique({ where: { id: (await ctx.params).id } });
   if (!row) return apiError(404, "Recurring ticket not found");
@@ -27,7 +27,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
  * `next_due_at` from the next occurrence that is not due yet.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "recurring:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   const current = await db.recurringTicket.findUnique({ where: { id } });
@@ -44,7 +44,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
 /** Delete a schedule (MANAGER or above). Tickets it already created stay. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "recurring:write");
   if ("response" in auth) return auth.response;
   const { id } = await ctx.params;
   if (!(await db.recurringTicket.findUnique({ where: { id }, select: { id: true } }))) return apiError(404, "Recurring ticket not found");

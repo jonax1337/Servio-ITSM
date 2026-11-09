@@ -14,7 +14,7 @@ export function OPTIONS() {
 
 /** Release one seat (MANAGER or above). The assignment must belong to this license, else 404. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; assignmentId: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   const { id, assignmentId } = await ctx.params;
   const row = await db.licenseAssignment.findUnique({ where: { id: assignmentId }, select: { licenseId: true } });

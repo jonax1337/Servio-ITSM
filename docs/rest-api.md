@@ -29,8 +29,10 @@ Tokens are **personal access tokens** (PATs) tied to a user. Create them in the 
 1. Sign in as an admin and open **Settings › API Tokens** (route
    `app/(console)/settings/api/page.tsx`,
    URL `/settings/api`). The page is gated by `requireRole("ADMIN")`.
-2. Enter a name, choose a scope set, the **owner** (default: you) and optionally
-   an **expiry date**, then click **Generate token**.
+2. Enter a name, the **owner** (default: you) and optionally an **expiry date**,
+   then choose the **scopes**: a preset (read only, full write, admin) or
+   **Custom** with an access level per resource (see [Scopes](#scopes)), and click
+   **Generate token**.
 3. **Copy the token immediately** — the full value is shown exactly once. Only a
    short prefix and a bcrypt hash are stored, so it cannot be recovered later.
 
@@ -42,7 +44,7 @@ Under the hood ([`createApiToken`](../lib/actions/tokens.ts)):
 | Stored `prefix` | first **18** chars of the raw token (`raw.slice(0, 18)`) |
 | Stored `tokenHash` | `bcrypt.hash(raw, 10)` — the raw token is never persisted |
 | Owner | the account picked as owner (`userId`), default the creating admin; must be active |
-| Scopes | one of the sets below, stored as a comma-separated string; `admin` only for an ADMIN owner |
+| Scopes | a preset or a custom selection (see [Scopes](#scopes)), normalised and stored as a comma-separated string; `admin`, `import:write` and `kb:publish` only for an ADMIN owner |
 | Expiry | optional date: valid through the end of that day (UTC), at most 3650 days ahead; empty = never expires |
 
 **Tokens for service accounts.** A token acts as its owner, with the owner's
@@ -50,8 +52,9 @@ role, so an integration should get its own account (e.g. an AGENT user for a
 monitoring integration) and a token issued to it by an admin, instead of a token
 of a person. The table lists every token with its owner and expiry; an expired
 token is marked and refused like a revoked one. Creating a token for someone
-else is audited with the owner and the expiry (`ApiToken`, "Created API token …
-for …"). The rules are in [`lib/token-rules.ts`](../lib/token-rules.ts).
+else is audited with the owner, the scopes and the expiry (`ApiToken`, "Created API
+token … for … with scopes …"; `meta.scopes` lists them). The rules are in
+[`lib/token-rules.ts`](../lib/token-rules.ts).
 
 ### How verification works
 
@@ -69,20 +72,59 @@ for …"). The rules are in [`lib/token-rules.ts`](../lib/token-rules.ts).
 
 ### Scopes
 
-Scopes are stored as a comma-separated string and checked with
-[`requireScope`](../lib/api.ts). A token holding `admin` implicitly satisfies every
-scope check. The three scope sets offered in the UI (`SCOPE_OPTIONS` in
-[`token-manager.tsx`](../components/settings/token-manager.tsx)) are:
+A token carries **resource scopes**, **legacy scopes**, or both. The catalog and
+every rule below live in [`lib/api-scopes.ts`](../lib/api-scopes.ts); the API index
+(`GET /api/v1`) lists the scopes and the [OpenAPI spec](#openapi-spec) names the
+scope of every operation.
 
-| Scope set | Grants |
+**Resource scopes** grant one resource, derived from the route groups. A resource
+`write` also grants that resource's `read`.
+
+| Scope | Endpoints |
 | --- | --- |
-| `read` | Read-only (`GET`) |
-| `read,write` | Read + create/update (`GET`, `POST`, `PATCH`) |
-| `read,write,admin` | Read + write, and satisfies any future `admin`-gated checks |
+| `tickets:read` / `tickets:write` | `/tickets/**`: tickets, comments, attachments, lookup and resolve by external reference |
+| `recurring:read` / `recurring:write` | `/recurring-tickets/**` |
+| `problems:read` / `problems:write` | `/problems/**`: problems, transitions, comments, attachments |
+| `changes:read` / `changes:write` | `/changes/**`: changes, transitions, approvals, comments, attachments |
+| `cmdb:read` / `cmdb:write` | `/assets/**` (incl. relations, attachments), `/services`, `/licenses/**` (incl. seats, attachments), `/vendors/**` |
+| `kb:read` / `kb:write` | `/articles/**` |
+| `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
+| `catalog:read` / `catalog:write` | `/categories/**` |
+| `directory:read` | `/groups`, `/users` (lookups, read only) |
+| `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
-Each protected handler calls `guard(req, "read" | "write")`, which first applies the
-rate limit (`429`), then returns `401` if the token is invalid and `403` if it lacks
-the required scope. No handler checks `admin` on its own; it only widens `read`/`write`.
+**Legacy scopes** keep exactly the rights they always had, so existing tokens work
+unchanged:
+
+| Scope | Grants |
+| --- | --- |
+| `read` | every `*:read` |
+| `write` | every `*:write` except the privileged `import:write` and `kb:publish` |
+| `admin` | everything, incl. `import:write` and `kb:publish` |
+
+The UI ([`token-scope-picker.tsx`](../components/settings/token-scope-picker.tsx))
+offers the presets **Read only** (`read`), **Full write** (`read,write`) and
+**Admin** (`read,write,admin`), or **Custom**: per resource *no access*, *read* or
+*read & write*; the knowledge base adds *read, write & publish*. [`tokenScopes`](../lib/token-rules.ts) normalises a custom selection
+(known scopes only, catalog order, no scope another one already grants, at least
+one). A token owner that is not an ADMIN cannot hold `admin`, `import:write` or `kb:publish`.
+
+The link between a ticket and a problem or assets lives on the ticket, so a `tickets:write`
+token can set `problem_id` and `asset_ids` on tickets without any `problems:*` or `cmdb:*` scope.
+
+Example: a monitoring integration that opens and resolves tickets needs only
+`tickets:write`. It cannot create changes, edit the CMDB or the knowledge base.
+
+**Enforcement.** Every handler declares the resource scope it needs:
+`guard(req, "tickets:write")` (or `agentGuard`, which also requires an agent
+owner). The guard applies the rate limit (`429`), returns `401` for an invalid
+token and `403` when the token lacks the scope; the error carries
+`details.required_scope`. [`tests/unit/api-route-scopes.test.ts`](../tests/unit/api-route-scopes.test.ts)
+enumerates every `/api/v1` route handler and asserts it is refused without scopes
+with exactly the scope [`requiredScope`](../lib/api-scopes.ts) names for its path
+and method (the route group's resource; `read` for `GET`, `write` otherwise), that
+it passes with only that scope, and that the OpenAPI spec documents it. A new route
+group fails the test until it is added to `RESOURCE_BY_SEGMENT`.
 
 ### Actor scoping (agent vs. user)
 
@@ -165,7 +207,7 @@ only for validation failures:
 | `204` | `OPTIONS` preflight |
 | `400` | Malformed JSON body (`POST` / `PATCH`) |
 | `401` | Missing or invalid token |
-| `403` | Token lacks the required scope, or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
+| `403` | Token lacks the required scope (`details.required_scope` names it), or is a non-agent hitting an agent-only resource (`/assets`, `/services`) |
 | `404` | Resource not found (or hidden from a non-agent); a non-numeric ticket id is also `404` |
 | `409` | A closed or cancelled ticket refusing a new file; illegal ticket status transition, a merged ticket (only `CANCELLED` is allowed), or a request awaiting approval (only cancelling is allowed) |
 | `413` | Upload larger than `MAX_UPLOAD_MB` (or cut short by the server's request body limit, see [Attachments](#attachments)) |
@@ -211,65 +253,66 @@ assets by `name` ascending, services by `name` ascending.
 
 ## Endpoint reference
 
-Paths are relative to `/api/v1`. "Scope" is the scope required by the handler; the
-`admin` scope satisfies all of them.
+Paths are relative to `/api/v1`. "Scope" is the resource scope required by the
+handler (`read` / `write` of the resource named in the row, see [Scopes](#scopes));
+the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 
 | Method | Path | Description | Scope |
 | --- | --- | --- | --- |
 | `GET` | `/` | API index: name, version, and resource links. **No auth.** | — |
 | `GET` | `/openapi` | OpenAPI 3.1 spec (JSON) — see [OpenAPI spec](#openapi-spec). **No auth.** | — |
-| `GET` | `/tickets` | List tickets (paginated, filterable). Non-agents see only their own. | `read` |
-| `POST` | `/tickets` | Create a ticket (`source = API`). | `write` |
-| `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `read` |
-| `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `write` |
-| `GET` | `/tickets/ref/{ref}` | The ticket carrying an external reference: the open one, else the most recent (see [Monitoring dedup](#monitoring-dedup-external-reference)). | `read` |
-| `POST` | `/tickets/ref/{ref}/resolve` | Resolve the open ticket carrying an external reference (monitoring recovery). Agent tokens only. | `write` |
-| `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `read` |
-| `POST` | `/assets` | Create an asset. Agent tokens only. | `write` |
-| `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `read` |
-| `PATCH` | `/assets/{id}` | Update any asset field. Agent tokens only. | `write` |
-| `GET` / `PUT` | `/assets/ref/{ref}` | Read / upsert an asset by its origin reference (for syncs). | `read` / `write` |
-| `GET` / `POST` | `/assets/{id}/relations` | List / add dependency edges. | `read` / `write` |
-| `DELETE` | `/assets/{id}/relations/{relation_id}` | Remove an edge. | `write` |
-| `GET` / `POST` | `/vendors` | List / create vendors (writes: MANAGER+). | `read` / `write` |
-| `GET` / `PATCH` | `/vendors/{id}` | Get / edit a vendor. | `read` / `write` |
-| `GET` / `POST` | `/licenses` | List / create software licenses (writes: MANAGER+). | `read` / `write` |
-| `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `read` / `write` |
-| `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `write` |
-| `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `write` |
-| `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `read` / `write` |
-| `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `read` / `write` |
-| `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `read` |
-| `GET` / `POST` | `/articles` | List (paginated, no bodies) / create knowledge articles. Agent tokens only. | `read` / `write` |
-| `GET` / `PATCH` / `DELETE` | `/articles/{id}` | Get / edit / delete an article. | `read` / `write` |
-| `POST` | `/articles/{id}/transitions` | Move an article along its lifecycle (publishing: MANAGER+, not the author). | `write` |
-| `GET` / `PUT` | `/articles/ref/{ref}` | Get / upsert the article with this origin reference (setting `status`: `admin` scope + ADMIN). | `read` / `write` |
-| `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `read` |
-| `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `write` |
-| `GET` | `/changes` | List changes (paginated, filterable, full-text `q`). Agent tokens only. | `read` |
-| `POST` | `/changes` | Create a change (always `DRAFT`). Agent tokens only. | `write` |
-| `GET` | `/changes/{id}` | Get one change with approvals and affected CIs. | `read` |
-| `PATCH` | `/changes/{id}` | Edit fields, plans, window, problem link (not the status). | `write` |
-| `POST` | `/changes/{id}/transitions` | Move along the lifecycle, incl. submit for approval. | `write` |
-| `POST` | `/changes/{id}/approvals/{approval_id}` | Record a CAB decision. | `write` |
-| `GET`/`POST` | `/changes/{id}/comments` | List / add comments. | `read` / `write` |
-| `GET` | `/problems` | List problems (paginated, filterable, full-text `q`). Agent tokens only. | `read` |
-| `POST` | `/problems` | Create a problem. Agent tokens only. | `write` |
-| `GET` | `/problems/{id}` | Get one problem with linked tickets and changes. | `read` |
-| `PATCH` | `/problems/{id}` | Edit fields, root cause, workaround (not the status). | `write` |
-| `POST` | `/problems/{id}/transitions` | Move along the lifecycle. | `write` |
-| `GET`/`POST` | `/problems/{id}/comments` | List / add comments. | `read` / `write` |
-| `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `read` |
-| `POST` | `/categories` | Create a category (MANAGER+). | `write` |
-| `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `read` / `write` |
-| `GET` | `/groups` | Groups with member ids. Agent tokens only. | `read` |
-| `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `read` |
-| `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `read` / `write` |
-| `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `read` / `write` |
-| `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `admin` + ADMIN owner |
-| `POST` | `/import/problems` | Import a historical problem with its thread. | `admin` + ADMIN owner |
-| `POST` | `/import/changes` | Import a historical change with its thread. | `admin` + ADMIN owner |
-| `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `admin` + ADMIN owner |
+| `GET` | `/tickets` | List tickets (paginated, filterable). Non-agents see only their own. | `tickets:read` |
+| `POST` | `/tickets` | Create a ticket (`source = API`). | `tickets:write` |
+| `GET` | `/tickets/{id}` | Get one ticket by numeric id. | `tickets:read` |
+| `PATCH` | `/tickets/{id}` | Update a ticket (agents only). Enforces status-transition rules + SLA clock. | `tickets:write` |
+| `GET` | `/tickets/ref/{ref}` | The ticket carrying an external reference: the open one, else the most recent (see [Monitoring dedup](#monitoring-dedup-external-reference)). | `tickets:read` |
+| `POST` | `/tickets/ref/{ref}/resolve` | Resolve the open ticket carrying an external reference (monitoring recovery). Agent tokens only. | `tickets:write` |
+| `GET` | `/assets` | List assets (paginated, filterable). Agent tokens only. | `cmdb:read` |
+| `POST` | `/assets` | Create an asset. Agent tokens only. | `cmdb:write` |
+| `GET` | `/assets/{id}` | Get one asset by id (cuid string). Agent tokens only. | `cmdb:read` |
+| `PATCH` | `/assets/{id}` | Update any asset field. Agent tokens only. | `cmdb:write` |
+| `GET` / `PUT` | `/assets/ref/{ref}` | Read / upsert an asset by its origin reference (for syncs). | `cmdb:read` / `cmdb:write` |
+| `GET` / `POST` | `/assets/{id}/relations` | List / add dependency edges. | `cmdb:read` / `cmdb:write` |
+| `DELETE` | `/assets/{id}/relations/{relation_id}` | Remove an edge. | `cmdb:write` |
+| `GET` / `POST` | `/vendors` | List / create vendors (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
+| `GET` / `PATCH` | `/vendors/{id}` | Get / edit a vendor. | `cmdb:read` / `cmdb:write` |
+| `GET` / `POST` | `/licenses` | List / create software licenses (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
+| `GET` / `PATCH` | `/licenses/{id}` | Get / edit a license. | `cmdb:read` / `cmdb:write` |
+| `POST` | `/licenses/{id}/assignments` | Assign a seat to an asset and/or user. | `cmdb:write` |
+| `DELETE` | `/licenses/{id}/assignments/{assignment_id}` | Release a seat. | `cmdb:write` |
+| `GET` / `POST` | `/recurring-tickets` | List / create recurring ticket schedules (writes: MANAGER+). | `recurring:read` / `recurring:write` |
+| `GET` / `PATCH` / `DELETE` | `/recurring-tickets/{id}` | Get / edit, pause or resume / delete a schedule. | `recurring:read` / `recurring:write` |
+| `GET` | `/services` | List services with status, criticality, category, and SLA (not paginated). Agent tokens only. | `cmdb:read` |
+| `GET` / `POST` | `/articles` | List (paginated, no bodies) / create knowledge articles. Agent tokens only. | `kb:read` / `kb:write` |
+| `GET` / `PATCH` / `DELETE` | `/articles/{id}` | Get / edit / delete an article. | `kb:read` / `kb:write` |
+| `POST` | `/articles/{id}/transitions` | Move an article along its lifecycle (publishing: MANAGER+, not the author). | `kb:write` |
+| `GET` / `PUT` | `/articles/ref/{ref}` | Get / upsert the article with this origin reference (setting `status`: `kb:publish` scope + ADMIN). | `kb:read` / `kb:write` |
+| `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `tickets:read` |
+| `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `tickets:write` |
+| `GET` | `/changes` | List changes (paginated, filterable, full-text `q`). Agent tokens only. | `changes:read` |
+| `POST` | `/changes` | Create a change (always `DRAFT`). Agent tokens only. | `changes:write` |
+| `GET` | `/changes/{id}` | Get one change with approvals and affected CIs. | `changes:read` |
+| `PATCH` | `/changes/{id}` | Edit fields, plans, window, problem link (not the status). | `changes:write` |
+| `POST` | `/changes/{id}/transitions` | Move along the lifecycle, incl. submit for approval. | `changes:write` |
+| `POST` | `/changes/{id}/approvals/{approval_id}` | Record a CAB decision. | `changes:write` |
+| `GET`/`POST` | `/changes/{id}/comments` | List / add comments. | `changes:read` / `changes:write` |
+| `GET` | `/problems` | List problems (paginated, filterable, full-text `q`). Agent tokens only. | `problems:read` |
+| `POST` | `/problems` | Create a problem. Agent tokens only. | `problems:write` |
+| `GET` | `/problems/{id}` | Get one problem with linked tickets and changes. | `problems:read` |
+| `PATCH` | `/problems/{id}` | Edit fields, root cause, workaround (not the status). | `problems:write` |
+| `POST` | `/problems/{id}/transitions` | Move along the lifecycle. | `problems:write` |
+| `GET`/`POST` | `/problems/{id}/comments` | List / add comments. | `problems:read` / `problems:write` |
+| `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `catalog:read` |
+| `POST` | `/categories` | Create a category (MANAGER+). | `catalog:write` |
+| `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
+| `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
+| `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
+| `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
+| `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
+| `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `import:write` + ADMIN owner |
+| `POST` | `/import/problems` | Import a historical problem with its thread. | `import:write` + ADMIN owner |
+| `POST` | `/import/changes` | Import a historical change with its thread. | `import:write` + ADMIN owner |
+| `PUT` | `/import/{tickets\|problems\|changes}/{import_ref}` | Create or bring an imported record up to date (update mode for re-runs, see [History import](#update-mode-for-re-runs)). | `import:write` + ADMIN owner |
 
 There are no endpoints for knowledge or releases yet, and no `DELETE` for whole
 records except recurring ticket schedules (only for relations, license seats and
@@ -586,7 +629,7 @@ nothing did), `meta.created` says whether it was new. Fields left out keep their
 value.
 
 Setting `status` publishes (or retires) without the review, so it needs the
-`admin` scope and a token owned by an ADMIN (else `403`); a publish stamps the
+`kb:publish` scope (or `admin`) and a token owned by an ADMIN (else `403`); a publish stamps the
 token's owner as approver. Without `status`, an existing article keeps its status,
 except that a `PUBLISHED` one changed by a token below MANAGER goes back to
 `REVIEW`.
@@ -794,7 +837,7 @@ cannot see, is a `404`.
   being buffered. Next.js passes request bodies through `proxy.ts` only up to
   `PROXY_MAX_BODY_MB` (build time, 32 MB in the published image); a body cut short
   there is reported as `413` when the client declared its `Content-Length`.
-- **History import:** a token with the **`admin` scope owned by an `ADMIN`** (the
+- **History import:** a token with the **`import:write` scope (or `admin`) owned by an `ADMIN`** (the
   rule of [History import](#history-import), else `403`) may also send
   `created_at` (ISO with offset, not in the future) and `uploaded_by_id` (an
   existing user, else `422`), and may add files to a closed ticket, e.g. the
@@ -818,7 +861,7 @@ API" or "Imported …"), each removal one (`DELETE`), as the token owner.
 it was in the source system** (e.g. when migrating from GLPI): its final status,
 original timestamps, closure details and comment thread. This deliberately
 bypasses the lifecycle (no transition map, CAB, SLA clock, mail or automations),
-so it needs a token with the **`admin` scope whose owner is an `ADMIN`** (else
+so it needs a token with the **`import:write` scope (or `admin`) whose owner is an `ADMIN`** (else
 `403`). The bodies are defined in
 [`lib/api-import-input.ts`](../lib/api-import-input.ts) and validated strictly.
 
@@ -861,7 +904,7 @@ for the console and the regular API. Only the update mode below rewrites it.
 `PUT /import/{tickets|problems|changes}/{import_ref}` brings an imported record
 up to the source system's current state, e.g. at cut-over, when a change that
 was `DRAFT` at the first import has been closed since and got another comment.
-Same token rules (`admin` scope + `ADMIN` owner) and the same strict body as
+Same token rules (`import:write` scope + `ADMIN` owner) and the same strict body as
 the `POST` import; `import_ref` comes from the path (URL-encoded, e.g.
 `glpi%3Achange%3A129`) and may be repeated in the body only with the same
 value (else `422`). The same checks apply (timeline, unknown ids → `422`).
@@ -942,7 +985,11 @@ and no write-body detail. The attachment paths describe their `multipart/form-da
 body and the `Attachment` shape by hand. For the ITSM paths (changes, problems, comments,
 lookups) the request bodies are generated from the same Zod schemas the handlers
 validate with (`z.toJSONSchema`), so they cannot drift; responses are described in
-prose. This page is the authoritative reference.
+prose. Every operation carries its resource scope in `x-required-scope` and the
+scopes that satisfy it as alternative `security` requirements (`bearerAuth:
+["tickets:write"]`, `["write"]`, `["admin"]`; OpenAPI 3.1 allows role names for a
+non-OAuth scheme). Both come from [`requiredScope`](../lib/api-scopes.ts), the rule
+the route test holds every handler to. This page is the authoritative reference.
 
 ---
 

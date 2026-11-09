@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ComboField } from "@/components/combo-field";
 import type { ComboOption } from "@/components/combobox";
+import { TokenScopePicker } from "@/components/settings/token-scope-picker";
 import { useServerMessage, useT } from "@/lib/i18n/client";
 
 /** `owners`: accounts a token can be issued to; the issuing admin (`currentUserId`) is the default. */
@@ -22,11 +23,6 @@ export function TokenManager({ owners, currentUserId }: { owners: ComboOption[];
   const submit = useFormSubmit(action);
   const t = useT("settings");
   const tm = useServerMessage();
-  const scopeOptions: ComboOption[] = [
-    { value: "read", label: t("token.scopeRead") },
-    { value: "read,write", label: t("token.scopeReadWrite") },
-    { value: "read,write,admin", label: t("token.scopeAdmin") },
-  ];
   const formRef = useRef<HTMLFormElement>(null);
   const wasPending = useRef(false);
 
@@ -70,10 +66,6 @@ export function TokenManager({ owners, currentUserId }: { owners: ComboOption[];
               required
             />
           </div>
-          <div className="grid min-w-48 gap-1.5">
-            <Label>{t("token.scopes")}</Label>
-            <ComboField name="scopes" options={scopeOptions} defaultValue="read" />
-          </div>
           <div className="grid min-w-56 gap-1.5">
             <Label>{t("token.owner")}</Label>
             <ComboField name="userId" options={owners} defaultValue={currentUserId} />
@@ -82,21 +74,21 @@ export function TokenManager({ owners, currentUserId }: { owners: ComboOption[];
             <Label htmlFor="token-expires">{t("token.expiresOn")}</Label>
             <Input id="token-expires" name="expiresOn" type="date" />
           </div>
-          <Button type="submit" disabled={pending}>
-            {pending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-            {t("token.generate")}
-          </Button>
         </div>
+        {/* A new token remounts the picker so its preset and custom picks start over. */}
+        <TokenScopePicker key={state?.token ?? "new"} error={fe.scope?.[0]} />
         {[fe.name, fe.userId, fe.expiresOn].map((errors, i) =>
           errors?.[0] ? (
             <p key={i} className="text-xs text-destructive">{errors[0]}</p>
           ) : null,
         )}
         <p className="text-xs text-muted-foreground">{t("token.ownerHint")}</p>
+        <div>
+          <Button type="submit" disabled={pending}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            {t("token.generate")}
+          </Button>
+        </div>
       </form>
     </div>
   );

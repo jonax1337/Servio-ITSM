@@ -11,7 +11,7 @@ export function OPTIONS() {
 
 /** Groups with their member ids, to resolve a `group_id` and pick an assignee who is a member. */
 export async function GET(req: Request) {
-  const auth = await agentGuard(req, "read");
+  const auth = await agentGuard(req, "directory:read");
   if ("response" in auth) return auth.response;
   const rows = await db.group.findMany({
     orderBy: { name: "asc" },

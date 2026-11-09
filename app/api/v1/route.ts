@@ -1,4 +1,5 @@
 import { ok, preflight } from "@/lib/api";
+import { LEGACY_SCOPES, RESOURCE_SCOPES } from "@/lib/api-scopes";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,11 @@ export function GET() {
     version: "1.0.0",
     documentation: "/api/v1/openapi",
     authentication: "Bearer token — send 'Authorization: Bearer <token>'. Manage tokens under Settings › API Tokens.",
+    scopes: {
+      resource: RESOURCE_SCOPES,
+      legacy: LEGACY_SCOPES,
+      note: "Each operation needs one resource scope (see x-required-scope in the OpenAPI spec). A resource write includes its read; 'read' grants every read, 'write' every write except import:write and kb:publish, 'admin' everything.",
+    },
     resources: {
       tickets: "/api/v1/tickets",
       ticket: "/api/v1/tickets/{id}",

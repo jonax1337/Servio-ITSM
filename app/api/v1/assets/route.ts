@@ -18,7 +18,7 @@ export function OPTIONS() {
  * `import_ref`, `owner_id`, `group_id`, `updated_since` (ISO time).
  */
 export async function GET(req: Request) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "cmdb:read");
   if ("response" in auth) return auth.response;
   // The CMDB is agent data. Non-agent tokens must not enumerate assets (BOLA).
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
@@ -56,7 +56,7 @@ export async function GET(req: Request) {
 
 /** Create an asset. Every field of the asset form is accepted; unknown owner/group/location ids are a 422, a taken asset tag or import ref a 409. */
 export async function POST(req: Request) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "cmdb:write");
   if ("response" in auth) return auth.response;
   if (!principalIsAgent(auth.principal)) return apiError(403, "Assets are restricted to agent tokens.");
 

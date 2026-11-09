@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 import { db } from "@/lib/db";
-import { guard, ok, apiError, requireScope } from "@/lib/api";
+import { guard, ok, apiError } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { prefixForType } from "@/lib/constants";
 import {
@@ -33,13 +33,14 @@ type Body = Record<string, unknown> & { import_ref: string; comments: ImportComm
 
 /**
  * History import is the one place the API writes past the lifecycle rules, so it
- * needs both the `admin` scope (not just `write`) and a token owned by an ADMIN.
+ * needs the privileged `import:write` scope (which `write` does not grant, `admin`
+ * does) and a token owned by an ADMIN.
  */
 async function importGuard(req: Request) {
-  const auth = await guard(req, "write");
+  const auth = await guard(req, "import:write");
   if ("response" in auth) return auth;
-  if (!requireScope(auth.principal, "admin") || auth.principal.role !== "ADMIN") {
-    return { response: apiError(403, "History import needs a token with the 'admin' scope, owned by an ADMIN.") };
+  if (auth.principal.role !== "ADMIN") {
+    return { response: apiError(403, "History import needs a token owned by an ADMIN.") };
   }
   return auth;
 }

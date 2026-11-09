@@ -16,6 +16,7 @@ type Ctx = { params: Promise<{ id: string }> };
  */
 export function recordCommentHandlers(kind: "Change" | "Problem") {
   const path = kind === "Change" ? "changes" : "problems";
+  const scope = { read: `${path}:read`, write: `${path}:write` } as const;
   const notFound = () => apiError(404, `${kind} not found`);
   const exists = (id: number) =>
     kind === "Change"
@@ -23,7 +24,7 @@ export function recordCommentHandlers(kind: "Change" | "Problem") {
       : db.problem.findUnique({ where: { id }, select: { id: true } });
 
   async function GET(req: Request, ctx: Ctx) {
-    const auth = await agentGuard(req, "read");
+    const auth = await agentGuard(req, scope.read);
     if ("response" in auth) return auth.response;
     const id = recordId((await ctx.params).id);
     if (!id || !(await exists(id))) return notFound();
@@ -37,7 +38,7 @@ export function recordCommentHandlers(kind: "Change" | "Problem") {
   }
 
   async function POST(req: Request, ctx: Ctx) {
-    const auth = await agentGuard(req, "write");
+    const auth = await agentGuard(req, scope.write);
     if ("response" in auth) return auth.response;
     const id = recordId((await ctx.params).id);
     if (!id || !(await exists(id))) return notFound();

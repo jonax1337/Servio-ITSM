@@ -4,6 +4,7 @@ import type { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { guard, ok, apiError, paginate, pageMeta, principalIsAgent, type ApiPrincipal } from "@/lib/api";
+import type { ApiResource, ResourceScope, ScopeAccess } from "@/lib/api-scopes";
 import { writeAudit } from "@/lib/audit";
 import { canActOnTicket } from "@/lib/authz";
 import { contentDisposition } from "@/lib/files";
@@ -73,8 +74,18 @@ const SELECT = {
   uploadedBy: { select: { id: true, name: true, email: true } },
 } as const;
 
+/** Files belong to their parent's resource: a token that may write a change may attach to it. */
+const RESOURCE: Record<AttachmentEntity, ApiResource> = {
+  tickets: "tickets",
+  changes: "changes",
+  problems: "problems",
+  assets: "cmdb",
+  licenses: "cmdb",
+};
+
 /** Tickets are open to USER tokens (their own); every other parent is agent-only, like its record endpoints. */
-function authGuard(entity: AttachmentEntity, req: Request, scope: "read" | "write") {
+function authGuard(entity: AttachmentEntity, req: Request, access: ScopeAccess) {
+  const scope = `${RESOURCE[entity]}:${access}` as ResourceScope;
   return entity === "tickets" ? guard(req, scope) : agentGuard(req, scope);
 }
 
@@ -197,9 +208,9 @@ export function attachmentCollectionHandlers(entity: AttachmentEntity) {
     if ("errors" in fields) return apiError(422, "Validation failed", fields.errors);
     const { commentId, createdAt, uploadedById, importRef, isImport } = fields.data;
 
-    // History fields follow the /import/* rule: admin scope AND an ADMIN owner.
+    // History fields follow the /import/* rule: import:write scope AND an ADMIN owner.
     if (isImport && !mayImportHistory(principal)) {
-      return apiError(403, "created_at, uploaded_by_id and import_ref need a token with the 'admin' scope, owned by an ADMIN.");
+      return apiError(403, "created_at, uploaded_by_id and import_ref need a token with the 'import:write' scope, owned by an ADMIN.");
     }
     // Re-import: a file already stored under this ref comes back as is (no second copy, no audit row).
     if (importRef) {

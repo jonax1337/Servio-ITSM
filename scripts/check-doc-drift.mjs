@@ -58,7 +58,7 @@ const DOC_MAP = [
   },
   {
     label: 'Public REST API (v1)',
-    code: ['app/api/v1/', 'lib/api.ts'],
+    code: ['app/api/v1/', 'lib/api.ts', 'lib/api-scopes.ts', 'lib/token-rules.ts'],
     docs: ['docs/rest-api.md'],
   },
   {

@@ -26,7 +26,7 @@ export function OPTIONS() {
  * The body is optional.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "tickets:write");
   if ("response" in auth) return auth.response;
   const ref = parseExternalRef((await ctx.params).ref);
   const open = ref ? await openTicketByRef(ref) : null;

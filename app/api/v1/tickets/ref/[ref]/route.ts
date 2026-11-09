@@ -16,7 +16,7 @@ export function OPTIONS() {
  * Non-agent tokens only find their own tickets, like GET /tickets/{id}.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> }) {
-  const auth = await guard(req, "read");
+  const auth = await guard(req, "tickets:read");
   if ("response" in auth) return auth.response;
   const ref = parseExternalRef((await ctx.params).ref);
   const ticket = ref ? await ticketByRef(ref, principalIsAgent(auth.principal) ? null : auth.principal.userId) : null;

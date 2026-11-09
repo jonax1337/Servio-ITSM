@@ -28,7 +28,7 @@ export function OPTIONS() {
  * 409 when the move is not allowed, with the console's reason as the message.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await agentGuard(req, "write");
+  const auth = await agentGuard(req, "changes:write");
   if ("response" in auth) return auth.response;
   const id = recordId((await ctx.params).id);
   const exists = id ? await db.change.findUnique({ where: { id }, select: { id: true } }) : null;
