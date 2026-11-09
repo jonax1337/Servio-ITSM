@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, FileStack, GitPullRequestArrow, Trash2 } from "lucide-react";
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 type Params = Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle("MANAGER"))) return {};
   const { id } = await params;
   const template = await db.changeTemplate.findUnique({ where: { id }, select: { name: true } });
   if (template) return { title: template.name };

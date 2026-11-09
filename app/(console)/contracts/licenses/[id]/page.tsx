@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -25,6 +26,7 @@ export const dynamic = "force-dynamic";
 type LicenseTab = "overview" | "seats";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const license = await db.softwareLicense.findUnique({ where: { id }, select: { name: true } });
   return { title: license?.name ?? (await getT("contracts"))("entity.license") };

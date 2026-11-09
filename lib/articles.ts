@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { notify } from "@/lib/audit";
+import { slugify } from "@/lib/slug";
 
 /**
  * Article writes shared by the console actions (lib/actions/knowledge.ts) and
@@ -11,16 +12,7 @@ import { notify } from "@/lib/audit";
 /** Concurrent writers that keep colliding on the slug or the revision number are given up on after this many tries. */
 const WRITE_ATTEMPTS = 5;
 
-export function slugify(s: string) {
-  return (
-    s
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80) || "article"
-  );
-}
+export { slugify };
 
 async function uniqueSlug(base: string) {
   let slug = base;

@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -23,6 +24,7 @@ export const dynamic = "force-dynamic";
 type ContractTab = "overview" | "assets" | "licenses";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const contract = await db.contract.findUnique({ where: { id }, select: { name: true } });
   return { title: contract?.name ?? (await getT("contracts"))("entity.contract") };

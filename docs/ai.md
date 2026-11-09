@@ -582,6 +582,7 @@ All keys are read through `lib/settings` (DB overrides `.env`); secrets are encr
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `AI_ENABLED` | `true` | Master switch; `false` hides every AI surface regardless of the provider |
 | `AI_PROVIDER` | `anthropic` | `anthropic` \| `openai` \| `ollama` \| `claude-code` |
 | `AI_ALLOW_EXTERNAL` | `false` | Privacy gate — must be `true` to use anthropic/openai |
 | `AI_MODEL` | provider default | Explicit model id (blank = provider default); the settings page offers a live dropdown |

@@ -71,7 +71,10 @@ ENV NODE_ENV=production \
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /opt/boot-tools /opt/boot-tools
-COPY --from=builder /app/.next ./.next
+# Next writes its runtime caches (.next/cache/fetch-cache, image cache) under .next as
+# the unprivileged `node` user, so the build output must belong to it — otherwise every
+# request logs "Failed to update prerender cache ... EACCES".
+COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY package.json pnpm-lock.yaml ./

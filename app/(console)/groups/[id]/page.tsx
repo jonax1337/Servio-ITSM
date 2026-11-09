@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, Users, Mail, Ticket as TicketIcon, Trash2 } from "lucide-react";
@@ -24,6 +25,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const g = await db.group.findUnique({ where: { id }, select: { name: true } });
   return { title: g ? g.name : (await getT("groups"))("group") };

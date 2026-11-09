@@ -615,6 +615,8 @@ const settings = {
   "aiForm.allowExternalHint": "Required for the Anthropic API and OpenAI-compatible clouds. Ollama stays on-box; the Claude subscription is consent on its own.",
   "aiForm.triage": "In-ticket triage suggestions",
   "aiForm.triageHint": "{name} suggests priority, type, team and category when a ticket is opened.",
+  "aiForm.enabled": "Enable {name}",
+  "aiForm.enabledHint": "Master switch. Off hides the assistant and every AI action for everyone, whatever provider is configured.",
   "aiForm.teaser": "Teaser mode",
   "aiForm.teaserHint": "Show AI buttons as a preview while AI is not configured.",
   "aiForm.webSearch": "Web search",

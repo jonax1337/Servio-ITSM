@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { resolveCategoryId } from "@/lib/ai-tools";
 import { renderMarkdown } from "@/lib/markdown";
+import { slugify } from "@/lib/slug";
 import { changeArticleStatus } from "@/lib/actions/knowledge";
 import { linkArticle, unlinkArticle } from "@/lib/actions/article-links";
 import { ARTICLE_STATUSES, ARTICLE_VISIBILITIES } from "@/lib/constants";
@@ -17,14 +18,6 @@ import { ok, err, str, toFormData, coerceEnum, fromActionResult, parseArticleLin
  * so we always run `renderMarkdown` on the incoming body before persisting.
  */
 
-/** URL slug from a title: lowercase, non-alphanumerics → "-", collapse, trim. */
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 /** Ensure a unique slug by appending "-2", "-3", … (up to 5 tries). */
 async function uniqueSlug(base: string): Promise<string> {

@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
@@ -34,6 +35,7 @@ export const dynamic = "force-dynamic";
 type Params = Promise<{ id: string }>;
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const releaseId = Number((await params).id);
   const release = Number.isFinite(releaseId)
     ? await db.release.findUnique({ where: { id: releaseId }, select: { name: true } })

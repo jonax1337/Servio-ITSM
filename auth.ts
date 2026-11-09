@@ -10,6 +10,7 @@ import { authConfig } from "@/auth.config";
 import { loginRetryAfter, recordLoginFailure, recordLoginSuccess } from "@/lib/rate-limit";
 import { writeAudit } from "@/lib/audit";
 import { guardAdapter } from "@/lib/auth-adapter-guard";
+import { recordSignIn } from "@/lib/sign-in-record";
 import { oidcRoleConfig, resolveOidcRole, shouldSyncRole, type OidcRoleConfig } from "@/lib/oidc-roles";
 import {
   decideOidcLink,
@@ -83,18 +84,7 @@ const providers: Provider[] = [
       recordLoginSuccess(ipKey);
       recordLoginSuccess(accountKey);
 
-      await db.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      });
-      await writeAudit({
-        userId: user.id,
-        action: "LOGIN",
-        entity: "User",
-        entityId: user.id,
-        summary: `Signed in (${user.email})`,
-        ip,
-      });
+      await recordSignIn(user, { method: "password", ip });
 
       return {
         id: user.id,
@@ -267,6 +257,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: guardAdapter(PrismaAdapter(db)),
   providers,
+  events: {
+    // SSO sign-ins: the same last-login stamp and LOGIN audit entry as a password
+    // sign-in. (Credentials sign-ins record theirs in authorize, with the throttled IP.)
+    async signIn({ user, account }) {
+      if (account?.provider !== "oidc" || !user?.id) return;
+      try {
+        await recordSignIn({ id: user.id, email: user.email }, { method: "sso" });
+      } catch (err) {
+        console.error(`[auth] could not record SSO sign-in: ${(err as Error).message}`);
+      }
+    },
+  },
   callbacks: {
     ...authConfig.callbacks,
     async signIn({ account, profile }) {

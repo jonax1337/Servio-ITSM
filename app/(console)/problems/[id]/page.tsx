@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
@@ -36,6 +37,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const p = await db.problem.findUnique({ where: { id: Number(id) }, select: { title: true } });
   return { title: p ? p.title : (await getT("problems"))("entity") };

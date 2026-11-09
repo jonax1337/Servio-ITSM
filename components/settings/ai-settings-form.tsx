@@ -58,6 +58,7 @@ const providerText = (t: Tr, p: Provider, field: "title" | "description" | "tag"
 type Provider = "claude-code" | "anthropic" | "openai" | "ollama";
 
 export type AiSettingsValues = {
+  enabled: boolean;
   provider: Provider;
   model: string;
   maxTokens: string;
@@ -546,6 +547,12 @@ export function AiSettingsForm({
 
         <Section icon={ShieldCheck} title={t("aiForm.privacy")}>
           <div className="grid gap-2">
+            <SwitchRow
+              name="AI_ENABLED"
+              label={t("aiForm.enabled", { name: AI_ASSISTANT_NAME })}
+              description={t("aiForm.enabledHint", { name: AI_ASSISTANT_NAME })}
+              defaultChecked={values.enabled}
+            />
             <SwitchRow
               name="AI_ALLOW_EXTERNAL"
               label={t("aiForm.allowExternal")}

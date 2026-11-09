@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -31,6 +32,7 @@ const OVERRIDE_HORIZON_DAYS = 365;
 const SHIFT_LOOKAHEAD_DAYS = 60;
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { id } = await params;
   const schedule = await db.onCallSchedule.findUnique({ where: { id }, select: { name: true } });
   const t = await getT("oncall");

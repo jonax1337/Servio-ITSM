@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/session";
 import { getSetting, getBoolSetting, settingIsSet } from "@/lib/settings";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { AiSettingsForm, type AiSettingsValues } from "@/components/settings/ai-settings-form";
-import { aiConfigured } from "@/lib/ai";
+import { aiConfigured, aiEnabled } from "@/lib/ai";
 import { listSableSkills } from "@/lib/sable-workspace";
 import { listMcpServers } from "@/lib/actions/sable-mcp";
 import { AI_ASSISTANT_NAME } from "@/lib/constants";
@@ -27,6 +27,7 @@ export default async function AiSettingsPage() {
   await requireRole("ADMIN");
   const t = await getT("settings");
   const [
+    enabled,
     provider,
     allowExternal,
     model,
@@ -45,6 +46,7 @@ export default async function AiSettingsPage() {
     skills,
     mcpServers,
   ] = await Promise.all([
+    aiEnabled(),
     getSetting("AI_PROVIDER", "anthropic"),
     getBoolSetting("AI_ALLOW_EXTERNAL"),
     getSetting("AI_MODEL", ""),
@@ -77,6 +79,7 @@ export default async function AiSettingsPage() {
           skills={skills}
           mcpServers={mcpServers}
           values={{
+            enabled,
             provider: asProvider(provider),
             model: model ?? "",
             maxTokens: maxTokens ?? "1024",

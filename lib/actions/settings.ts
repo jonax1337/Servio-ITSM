@@ -223,6 +223,7 @@ export async function saveAiSettings(
   return persist(
     me.id,
     [
+      { key: "AI_ENABLED", value: bool(fd, "AI_ENABLED") },
       { key: "AI_PROVIDER", value: str(fd, "AI_PROVIDER") },
       { key: "AI_ALLOW_EXTERNAL", value: bool(fd, "AI_ALLOW_EXTERNAL") },
       { key: "AI_MODEL", value: str(fd, "AI_MODEL") },

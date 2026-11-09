@@ -1,3 +1,4 @@
+import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -22,6 +23,7 @@ export async function generateMetadata({
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
+  if (!(await canReadConsoleTitle())) return {};
   const { slug } = await params;
   const article = await db.article.findUnique({ where: { slug }, select: { title: true } });
   const t = await getT("knowledge");

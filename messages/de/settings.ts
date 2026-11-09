@@ -618,6 +618,8 @@ const settings: Translations<typeof en> = {
   "aiForm.allowExternalHint": "Erforderlich für die Anthropic-API und OpenAI-kompatible Clouds. Ollama bleibt lokal; das Claude-Abonnement gilt bereits als Zustimmung.",
   "aiForm.triage": "Triage-Vorschläge im Ticket",
   "aiForm.triageHint": "{name} schlägt beim Öffnen eines Tickets Priorität, Typ, Team und Kategorie vor.",
+  "aiForm.enabled": "{name} aktivieren",
+  "aiForm.enabledHint": "Hauptschalter. Aus blendet den Assistenten und alle KI-Aktionen für alle aus, unabhängig vom konfigurierten Anbieter.",
   "aiForm.teaser": "Vorschaumodus",
   "aiForm.teaserHint": "KI-Schaltflächen als Vorschau anzeigen, solange KI nicht konfiguriert ist.",
   "aiForm.webSearch": "Websuche",

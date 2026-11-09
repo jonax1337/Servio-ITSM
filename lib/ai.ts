@@ -67,12 +67,22 @@ async function modelId(p: AiProvider): Promise<string> {
 }
 
 /**
+ * Master switch (Settings › AI assistant, env `AI_ENABLED`, default on). Off hides every AI
+ * surface (assistant button, ticket AI actions, teaser previews) and makes aiConfigured()
+ * false, whatever provider is selected: a deployment without an assistant looks like one.
+ */
+export async function aiEnabled(): Promise<boolean> {
+  return getBoolSetting("AI_ENABLED", true);
+}
+
+/**
  * The gate (mirrors smtpConfigured() in lib/mail.ts). True only when the
  * configured provider can actually run:
  *  - local (ollama): always OK (no key needed)
  *  - external (anthropic/openai): requires AI_ALLOW_EXTERNAL="true" AND its key
  */
 export async function aiConfigured(): Promise<boolean> {
+  if (!(await aiEnabled())) return false;
   const p = await provider();
   // Sable's isolated Claude Code instance can't use the operator's interactive
   // login, so the subscription needs a long-lived token (`claude setup-token`).
@@ -91,6 +101,7 @@ export async function aiConfigured(): Promise<boolean> {
  * hint instead of running anything. Independent of aiConfigured().
  */
 export async function aiTeaserEnabled(): Promise<boolean> {
+  if (!(await aiEnabled())) return false;
   return getBoolSetting("AI_TEASER");
 }
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ArrowLeft, Eye, LifeBuoy } from "lucide-react";
 import { db } from "@/lib/db";
+import { isPortalArticle, portalArticleTitle } from "@/lib/portal-access";
 import { LinkButton } from "@/components/link-button";
 import { renderMarkdown, sanitizeCommentHtml } from "@/lib/markdown";
 import { getFormatter, getT } from "@/lib/i18n/server";
@@ -15,8 +16,9 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const a = await db.article.findUnique({ where: { slug }, select: { title: true } });
-  return { title: a?.title ?? (await getT("portal"))("article") };
+  // Same visibility rule as the page: a draft or internal article's title must not leak.
+  const title = await portalArticleTitle(slug);
+  return { title: title ?? (await getT("portal"))("article") };
 }
 
 export default async function PortalArticle({
@@ -30,7 +32,7 @@ export default async function PortalArticle({
     include: { author: true, category: true },
   });
   // Portal readers only get published, public articles — internal ones 404.
-  if (!article || article.status !== "PUBLISHED" || article.visibility !== "PUBLIC") notFound();
+  if (!article || !isPortalArticle(article)) notFound();
 
   await db.article.update({ where: { id: article.id }, data: { views: { increment: 1 } } });
   const [t, f] = await Promise.all([getT("portal"), getFormatter()]);

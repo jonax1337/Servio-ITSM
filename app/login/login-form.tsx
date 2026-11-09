@@ -21,9 +21,12 @@ const SHOW_DEMO_CREDENTIALS =
 export function LoginForm({
   ssoEnabled,
   ssoName,
+  passwordForm,
 }: {
   ssoEnabled: boolean;
   ssoName: string;
+  /** Show the email/password form (see lib/login-methods.ts). */
+  passwordForm: boolean;
 }) {
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") ?? "/";
@@ -45,59 +48,63 @@ export function LoginForm({
               {t("continueWith", { provider: ssoName })}
             </Button>
           </form>
-          <div className="relative">
-            <Separator />
-            <span className="absolute inset-0 -top-2.5 mx-auto w-fit bg-card px-2 text-xs text-muted-foreground">
-              {t("orEmail")}
-            </span>
-          </div>
+          {passwordForm ? (
+            <div className="relative">
+              <Separator />
+              <span className="absolute inset-0 -top-2.5 mx-auto w-fit bg-card px-2 text-xs text-muted-foreground">
+                {t("orEmail")}
+              </span>
+            </div>
+          ) : null}
         </>
       ) : null}
 
-      <form method="post" onSubmit={submit} className="grid gap-4">
-        <input type="hidden" name="callbackUrl" value={callbackUrl} />
-        <div className="grid gap-2">
-          <Label htmlFor="email">{t("email")}</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            placeholder={t("emailPlaceholder")}
-            autoComplete="email"
-            defaultValue={SHOW_DEMO_CREDENTIALS ? "admin@servio.dev" : undefined}
-            required
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="password">{t("password")}</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            placeholder="••••••••"
-            autoComplete="current-password"
-            defaultValue={SHOW_DEMO_CREDENTIALS ? "servio123" : undefined}
-            required
-          />
-        </div>
+      {passwordForm ? (
+        <form method="post" onSubmit={submit} className="grid gap-4">
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
+          <div className="grid gap-2">
+            <Label htmlFor="email">{t("email")}</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              placeholder={t("emailPlaceholder")}
+              autoComplete="email"
+              defaultValue={SHOW_DEMO_CREDENTIALS ? "admin@servio.dev" : undefined}
+              required
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="password">{t("password")}</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              defaultValue={SHOW_DEMO_CREDENTIALS ? "servio123" : undefined}
+              required
+            />
+          </div>
 
-        {state?.error ? (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {tm(state.error)}
-          </p>
-        ) : null}
+          {state?.error ? (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {tm(state.error)}
+            </p>
+          ) : null}
 
-        <Button type="submit" size="lg" className="w-full" disabled={pending}>
-          {pending ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <LogIn className="size-4" />
-          )}
-          {t("signIn")}
-        </Button>
-      </form>
+          <Button type="submit" size="lg" className="w-full" disabled={pending}>
+            {pending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogIn className="size-4" />
+            )}
+            {t("signIn")}
+          </Button>
+        </form>
+      ) : null}
 
-      {SHOW_DEMO_CREDENTIALS ? (
+      {passwordForm && SHOW_DEMO_CREDENTIALS ? (
         <p className="text-center text-xs text-muted-foreground">
           {t("demoPrefilled")}{" "}
           <span className="font-mono">admin@servio.dev</span> /{" "}
