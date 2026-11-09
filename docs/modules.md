@@ -241,7 +241,7 @@ Incidents are drafts (`isPublic = false`) until a manager publishes them. Declar
 | Actions | `lib/actions/contracts.ts` — vendors (`createVendor`, `updateVendor`, `deleteVendor`), contracts (`createContract`, `updateContract`, `deleteContract`, `linkContractAsset`, `unlinkContractAsset`), licenses (`createLicense`, `updateLicense`, `deleteLicense`, `assignLicense`, `unassignLicense`) |
 | Rules / data | `lib/contract-rules.ts` (renewal reminder window, license compliance), `lib/contract-schemas.ts` (Zod) |
 | Components | `components/contracts/`, and `components/assets/asset-contracts.tsx` (the asset page's "Contracts & licenses" tab; MANAGER+ can edit) |
-| Tick | `lib/ticks/contracts.ts` — `runContractsTick` sends a renewal reminder to the contract owner once per `endDate` (`renewalNotifiedFor`) and an over-allocation alert once per episode (`overAllocatedNotifiedAt`, cleared when compliant again); gated by `CONTRACT_REMINDERS_ENABLED` |
+| Tick | `lib/ticks/contracts.ts` — `runContractsTick` sends a renewal reminder to the contract owner once per `endDate` (`renewalNotifiedFor`; the start date, which may be unknown, plays no part) and an over-allocation alert once per episode (`overAllocatedNotifiedAt`, cleared when compliant again); gated by `CONTRACT_REMINDERS_ENABLED` |
 | Sable | ops `contract.expiring`, `license.compliance` (read, AGENT), `contract.create` (write, MANAGER) in `lib/ai-operations/modules/contracts.ts` |
 
 Used license seats are the number of `LicenseAssignment` rows; duplicates are rejected in the action. Notifications use the entities `Contract` and `SoftwareLicense`.

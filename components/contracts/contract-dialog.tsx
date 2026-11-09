@@ -23,7 +23,7 @@ export type ContractValues = {
   status: string;
   vendorId: string | null;
   ownerId: string | null;
-  startDate: Date;
+  startDate: Date | null;
   endDate: Date | null;
   cost: number | null;
   renewalNoticeDays: number;
@@ -93,8 +93,8 @@ export function ContractDialog({
             noneLabel={t("noOwner")}
           />
         </Field>
-        <Field label={t("field.startDate")} htmlFor="contract-start" required>
-          <Input id="contract-start" name="startDate" type="date" defaultValue={contract ? isoDay(contract.startDate) : ""} required />
+        <Field label={t("field.startDate")} htmlFor="contract-start" hint={t("dialog.startDateHint")}>
+          <Input id="contract-start" name="startDate" type="date" defaultValue={contract?.startDate ? isoDay(contract.startDate) : ""} />
         </Field>
         <Field label={t("field.endDate")} htmlFor="contract-end" hint={t("dialog.endDateHint")}>
           <Input id="contract-end" name="endDate" type="date" defaultValue={contract?.endDate ? isoDay(contract.endDate) : ""} />

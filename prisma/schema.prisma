@@ -1804,7 +1804,7 @@ model Contract {
   status             String    @default("ACTIVE") // DRAFT | ACTIVE | EXPIRED | TERMINATED
   vendorId           String?
   ownerId            String?
-  startDate          DateTime
+  startDate          DateTime? // optional: a contract recorded after the fact often has no known start; only endDate drives renewals
   endDate            DateTime?
   cost               Float?
   renewalNoticeDays  Int       @default(30)

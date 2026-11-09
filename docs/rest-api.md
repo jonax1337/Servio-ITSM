@@ -288,7 +288,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` / `POST` | `/catalog-items` | List / create service catalog items with their request forms (writes: MANAGER+). | `catalog:read` / `catalog:write` |
 | `GET` / `PATCH` / `DELETE` | `/catalog-items/{id}` | Get / edit / delete a catalog item. | `catalog:read` / `catalog:write` |
 | `GET` / `PUT` | `/catalog-items/ref/{ref}` | Get / upsert a catalog item by its origin reference. | `catalog:read` / `catalog:write` |
-| `GET` / `POST` | `/change-templates` | List / create change templates (standard changes; writes: MANAGER+, HIGH-risk standard templates: ADMIN). | `catalog:read` / `catalog:write` |
+| `GET` / `POST` | `/change-templates` | List / create change templates (standard changes; writes: MANAGER+, HIGH-risk standard templates: ADMIN). A change is made from one with `template_id` / `template_ref` on `POST /changes`. | `catalog:read` / `catalog:write` |
 | `GET` / `PATCH` / `DELETE` | `/change-templates/{id}` | Get / edit / delete a change template. | `catalog:read` / `catalog:write` |
 | `GET` / `PUT` | `/change-templates/ref/{ref}` | Get / upsert a change template by its origin reference. | `catalog:read` / `catalog:write` |
 | `GET` / `POST` | `/licenses` | List / create software licenses (writes: MANAGER+). | `cmdb:read` / `cmdb:write` |
@@ -381,6 +381,8 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
   "external_ref": null,
   "external_ref_open": false,
   "due_at": null,
+  "due_at_source": null,
+  "sla_due_at": null,
   "resolved_at": null,
   "created_at": "2026-08-09T10:00:00.000Z",
   "updated_at": "2026-08-09T10:00:00.000Z"
@@ -402,6 +404,7 @@ the JSON payload are `snake_case` even though the DB columns are `camelCase` (se
 | `requesterId` | string | caller | **agents only**; non-agents always file as themselves |
 | `assigneeId`, `categoryId`, `serviceId` | string | — | **agents only**; unknown `categoryId`/`serviceId`/`requesterId` ids return `422` |
 | `groupId` | string | the category's team | **agents only**; unknown ids return `422`. Without it, a category with a team (`group_id`) routes the ticket there |
+| `dueAt` | ISO 8601 timestamp with offset | — | **agents only** (a non-agent token gets `403`); the manual due date, see [Due date](#due-date) |
 | `externalRef` | string, 1–200 of `A-Z a-z 0-9 . _ : @ -`, starting with a letter or digit | — | **agents only** (a non-agent token gets `403`); monitoring dedup key, see below |
 | `onDuplicate` | `return` \| `comment` | `return` | what a repeat with an open `externalRef` does |
 
@@ -422,6 +425,7 @@ group's auto-assign strategy picks one, as for a ticket routed in the console.
 `priority`, `assigneeId` (nullable), `groupId` (nullable; unknown ids `422`),
 `serviceId` (nullable; unknown ids `422`; on an open ticket a new service re-prices
 the SLA deadlines like the console, see [SLA re-pricing](./modules.md)),
+`dueAt` (ISO 8601 with offset, `null` clears; see [Due date](#due-date)),
 `problemId` / `changeId` (integer, `null`
 unlinks; applied through the console's `setTicketProblem` / `setTicketChange`, so
 only someone who may act on the ticket can link it, else `403`). The serialized
@@ -445,6 +449,36 @@ and the group's auto-assign strategy picks a new one. Changing `status`:
 - `RESOLVED` sets `resolvedAt` and computes `resolveBreached`; `CLOSED` sets `closedAt`.
 - `RESOLVED`, `CLOSED` and `CANCELLED` release the ticket's external reference
   (see below), so the next alert with that key opens a new ticket.
+
+#### Due date
+
+Besides the SLA deadlines, a ticket carries a **manual due date**: the target an agent
+sets in the console's due-date picker (`Ticket.dueDate`) and now also over the API as
+`due_at`. Both fields are independent, and the precedence is fixed:
+
+- `due_at` on `POST /tickets` and `PATCH /tickets/{id}` is a full ISO 8601 timestamp
+  with an offset (`2026-12-01T10:00:00Z`, `2026-12-01T11:00:00+01:00`); a date alone,
+  a timestamp without offset or free text is a `422`. On `PATCH`, `null` clears it.
+  Only agent tokens may send it (a USER token gets `403` rather than a silently dropped
+  field), and on `PATCH` the token's owner needs the console's right to act on the
+  ticket (assignee, member of its team, or manager and above), else `403`. A past
+  date is accepted, as in the console. Every change is audited ("Set due date to …").
+- The manual date **never changes the SLA clock**: response and resolution deadlines,
+  breach flags, pausing and escalations are computed from the SLA only, and setting
+  or clearing `due_at` does not touch them. Re-pricing (new `priority` or `service_id`)
+  moves the SLA deadlines, not the manual date.
+- In responses `due_at` is the ticket's **effective** due date: the manual date when
+  one is set, otherwise the SLA resolution deadline. `due_at_source` says which
+  (`MANUAL`, `SLA`, or `null` when there is none), and `sla_due_at` always carries the
+  SLA resolution deadline, so a client can compare the two.
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"title":"Renew the TLS certificate","due_at":"2026-12-01T10:00:00Z"}' \
+  "$BASE/tickets"
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"due_at":null}' "$BASE/tickets/42"
+```
 
 #### Monitoring dedup (external reference)
 
@@ -841,13 +875,50 @@ Change `id` is numeric; `ref` is `CHG-0001`. Serialized shape
 reason, both plans, closure notes and comment bodies), `page`, `per_page`. Sorted
 by `updated_at` descending.
 
-**`POST /changes` body:** `title` (min 3, required), `description`, `type`
+**`POST /changes` body:** `title` (min 3; required unless a template is given), `description`, `type`
 (`STANDARD`/`NORMAL`/`EMERGENCY`, default `NORMAL`), `risk`, `priority`, `impact`
 (default `MEDIUM`), `reason`, `implementation_plan`, `rollback_plan`,
 `assignee_id`, `group_id`, `category_id`, `planned_start`/`planned_end` (ISO with
-offset), `asset_ids` (affected CIs), `custom_fields` (`{ key: value }`). Always
+offset), `asset_ids` (affected CIs), `custom_fields` (`{ key: value }`),
+`template_id` / `template_ref` (see below). Without a template always
 created in `DRAFT`, through `createChange` (standard-type rule, window check,
 required custom fields, unknown CI → `422`).
+
+**Creating from a change template.** Add `template_id` (see `GET /change-templates`) or
+`template_ref` (the template's `import_ref`; exactly one of them) and the change starts
+from the template, as "New change from template" does in the console. `title` becomes
+optional (the template's title is used) and every other field is an override: an absent
+key keeps the template's value. Sending `null` for `group_id` or `category_id` clears the
+template's team or category; `assignee_id`, `planned_start`/`planned_end`, `asset_ids`
+and `custom_fields` are the requester's own, as in the console.
+
+- **A STANDARD template** fixes `type`, `risk`, `impact`, `implementation_plan` and
+  `rollback_plan`, because its pre-approval is earned by exactly that procedure. Sending
+  a different value is a `422` naming the field (it is not dropped silently); sending the
+  template's own value is accepted. `type` must always equal the template's.
+  A **NORMAL** template fixes only `type`; risk, impact and plans may be overridden.
+- **Pre-approval is the console's, not a new path.** The change is created as a draft with
+  `template_id` recorded (`template_id` in the response), then submitted through the same
+  STANDARD path as the "Submit" action: an active STANDARD template yields a `STANDARD`
+  change in `APPROVED` without a CAB, after the same freeze-window check. If that is
+  refused, the change stays a `DRAFT` and the response carries `meta.approval_error`.
+  `meta.pre_approved` tells whether it was approved. Without a template, `type: "STANDARD"`
+  is still refused. A NORMAL template's change stays a draft for the CAB.
+- An **inactive** template is a `409`; an unknown `template_id`/`template_ref`, or an
+  unknown `assignee_id`, `group_id`, `category_id` or `asset_ids`, a `422`.
+- **Who may:** the same as `POST /changes` (scope `changes:write`, token owned by an agent).
+  The template is read by the server itself, so no catalog scope is needed to create from
+  it. To *find* templates a client lists them with `GET /change-templates`, which needs
+  `catalog:read` (agent tokens): `?active=true` for the usable ones, `?type=STANDARD`,
+  `?q=` for the name; each carries `id` and `import_ref`. A client that knows the
+  `import_ref` of its template can skip the lookup and send `template_ref`.
+
+```json
+{ "template_ref": "tpl:rotate-cert", "planned_start": "2026-12-01T10:00:00Z", "planned_end": "2026-12-01T11:00:00Z", "asset_ids": ["…"] }
+```
+
+answers `201` with the change (`"type": "STANDARD"`, `"status": "APPROVED"`) and
+`"meta": { "template_id": "…", "pre_approved": true }`.
 
 **`PATCH /changes/{id}` body:** any of `title`, `description`, `type`, `risk`,
 `priority`, `impact`, `assignee_id`, `group_id`, `category_id` (the three nullable),
@@ -1162,13 +1233,16 @@ template keeps the changes made from it.
 
 `GET /contracts` (`q` name or number, `vendor_id`, `owner_id`, `status`, `type`,
 `asset_id` = contracts covering it, `ends_before=YYYY-MM-DD`; ordered by end date).
-Fields: `name` (2–200) and `start_date` (YYYY-MM-DD; both required on create),
-`number`, `type` (`SUPPORT` default, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`,
+Fields: `name` (2–200; required on create), `start_date` (YYYY-MM-DD or `null`;
+optional: a contract recorded after the fact often has no known start, and it
+is returned as `null`), `number`, `type` (`SUPPORT` default, `MAINTENANCE`, `LEASE`, `SUBSCRIPTION`,
 `WARRANTY`, `SERVICE`, `OTHER`), `status` (`ACTIVE` default, `DRAFT`, `EXPIRED`,
 `TERMINATED`), `vendor_id`, `owner_id` (receives the renewal reminder), `end_date`,
 `cost`, `renewal_notice_days` (default 30), `auto_renew`, `notes`, and `asset_ids` —
 the covered assets, replaced as a whole (each link and unlink is audited on the
-contract and the asset). The end date may not be before the start date (`422`).
+contract and the asset). A known start date may not be after the end date (`422`;
+with an unknown start there is nothing to compare). Renewal reminders and `expiry`
+look at the end date only. Send `start_date: null` to clear a known start.
 Responses add `vendor`, `owner`, `assets` and `expiry` (`NONE`, `OK`, `EXPIRING`
 within the notice period, `EXPIRED`). Deleting a contract keeps its licenses,
 without a contract.

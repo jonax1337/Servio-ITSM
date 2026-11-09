@@ -5,7 +5,7 @@ import { camelizeBody } from "@/lib/api-case";
 import { writeAudit } from "@/lib/audit";
 import { slaCreateData } from "@/lib/sla";
 import { autoAssignTicket } from "@/lib/assignment";
-import { duplicateCommentText, ticketCreateSchema, type TicketCreate } from "@/lib/api-ticket-input";
+import { duplicateCommentText, dueDateAuditSummary, ticketCreateSchema, type TicketCreate } from "@/lib/api-ticket-input";
 import { isOpenExternalRefConflict } from "@/lib/ticket-external-ref";
 import { serializeComment, serializeTicket } from "../_serializers";
 import { authorizeTicketComment, writeTicketComment } from "../_ticket-comments";
@@ -62,6 +62,9 @@ export async function GET(req: Request) {
 /** Attempts at "create, or find the winner" before a racing writer is given up on (each one lost a race). */
 const DEDUP_ATTEMPTS = 3;
 
+/** The validated create fields minus the dedup controls; `dueAt` is already the manual `dueDate`. */
+type TicketFields = Omit<TicketCreate, "externalRef" | "onDuplicate" | "dueAt"> & { dueDate?: Date };
+
 export async function POST(req: Request) {
   const auth = await guard(req, "tickets:write");
   if ("response" in auth) return auth.response;
@@ -77,13 +80,19 @@ export async function POST(req: Request) {
   if ("conflict" in normalized) return apiError(422, "Validation failed", { _: normalized.conflict.map((c) => `Conflicting values for ${c}`) });
   const parsed = ticketCreateSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
-  const { externalRef, onDuplicate, ...fields } = parsed.data;
+  const { externalRef, onDuplicate, dueAt, ...rest } = parsed.data;
+  // The manual due date lives in `dueDate`; `dueAt` is the SLA mirror column and must never receive it.
+  const fields: TicketFields = { ...rest, ...(dueAt && { dueDate: new Date(dueAt) }) };
 
   const isAgentPrincipal = principalIsAgent(auth.principal);
   // The dedup key is for integrations (monitoring), which run on agent tokens; a
   // USER token must not be able to attach its tickets to — or probe — an alert.
   if (externalRef && !isAgentPrincipal) {
     return apiError(403, "external_ref needs a token owned by an agent (AGENT, MANAGER or ADMIN).");
+  }
+  // Like the console, only agents set a due date (a USER token's request must not be silently dropped).
+  if (dueAt && !isAgentPrincipal) {
+    return apiError(403, "due_at needs a token owned by an agent (AGENT, MANAGER or ADMIN).");
   }
   // FK existence up front — a bogus requester/category/service/group id is a 422,
   // not a 500 on the Prisma FK constraint (matches the assigneeId contract).
@@ -133,7 +142,7 @@ export async function POST(req: Request) {
 }
 
 /** Insert the ticket (201). With `externalRef`, it also claims the key while open. */
-async function createTicket(principal: ApiPrincipal, fields: Omit<TicketCreate, "externalRef" | "onDuplicate">, isAgentPrincipal: boolean, externalRef?: string) {
+async function createTicket(principal: ApiPrincipal, fields: TicketFields, isAgentPrincipal: boolean, externalRef?: string) {
   // Non-agents can only file tickets as themselves; agents may set requesterId.
   const requesterId = isAgentPrincipal ? fields.requesterId ?? principal.userId : principal.userId;
   // Resolve SLA + deadlines from the service/priority at creation time.
@@ -172,6 +181,9 @@ async function createTicket(principal: ApiPrincipal, fields: Omit<TicketCreate, 
     userId: principal.userId, action: "CREATE", entity: "Ticket", entityId: ticket.id,
     summary: externalRef ? `Created via API (${externalRef})` : "Created via API",
   });
+  if (fields.dueDate) {
+    await writeAudit({ userId: principal.userId, action: "UPDATE", entity: "Ticket", entityId: ticket.id, summary: dueDateAuditSummary(fields.dueDate) });
+  }
   // Like a console-routed ticket: the group's auto-assign strategy picks an agent.
   if (ticket.groupId && !ticket.assigneeId && (await autoAssignTicket(ticket.id))) {
     ticket = await db.ticket.findUniqueOrThrow({ where: { id: ticket.id }, include: { requester: true, assignee: true } });

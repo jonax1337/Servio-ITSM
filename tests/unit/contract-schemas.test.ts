@@ -30,6 +30,12 @@ describe("contractSchema", () => {
     expect(parsed.startDate).toEqual(new Date("2026-01-01T00:00:00.000Z"));
   });
 
+  it("takes a contract without a known start date", () => {
+    expect(contractSchema.parse({ ...contractForm, startDate: "" }).startDate).toBeNull();
+    const { startDate: _omitted, ...withoutStart } = contractForm;
+    expect(contractSchema.parse(withoutStart).startDate).toBeNull();
+  });
+
   it("treats blank form values as unset and 'none' as no relation", () => {
     const parsed = contractSchema.parse({ ...contractForm, endDate: "", cost: " ", vendorId: "none", ownerId: "", renewalNoticeDays: "" });
     expect(parsed).toMatchObject({ endDate: null, cost: null, vendorId: null, ownerId: null, renewalNoticeDays: 30 });
@@ -50,7 +56,7 @@ describe("contractSchema", () => {
 
   it("names the field in every rejection", () => {
     expect(issue(contractSchema.safeParse({ ...contractForm, name: "A" }))).toBe("Name must be at least 2 characters");
-    expect(issue(contractSchema.safeParse({ ...contractForm, startDate: "" }))).toBe("Start date is required");
+    expect(issue(contractSchema.safeParse({ ...contractForm, startDate: "someday" }))).toBe("Start date is not a valid date");
     expect(issue(contractSchema.safeParse({ ...contractForm, endDate: "soon" }))).toBe("End date is not a valid date");
     expect(issue(contractSchema.safeParse({ ...contractForm, cost: "abc" }))).toBe("Cost must be a number");
     expect(issue(contractSchema.safeParse({ ...contractForm, cost: "-1" }))).toBe("Cost can't be negative");

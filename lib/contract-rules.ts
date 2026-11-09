@@ -153,8 +153,9 @@ export const CONTRACT_END_BEFORE_START = "The end date can't be before the start
 export const ASSIGNMENT_NEEDS_TARGET = "Choose a user, an asset, or both.";
 export const ASSIGNMENT_DUPLICATE = "That seat is already assigned.";
 
-export function contractDateError(startDate: Date, endDate: Date | null): string | null {
-  return endDate && endDate.getTime() < startDate.getTime() ? CONTRACT_END_BEFORE_START : null;
+/** An unknown start date (null) cannot be contradicted, so only a known start is compared with the end. */
+export function contractDateError(startDate: Date | null, endDate: Date | null): string | null {
+  return startDate && endDate && endDate.getTime() < startDate.getTime() ? CONTRACT_END_BEFORE_START : null;
 }
 
 export type AssignmentTarget = { userId: string | null; assetId: string | null };

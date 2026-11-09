@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   try {
     const { data, assetIds } = prepared;
     const contract = await createContractRecord(
-      { ...data, name: body.data.name, startDate: data.startDate! },
+      { ...data, name: body.data.name },
       assetIds,
       auth.principal.userId,
       "API",

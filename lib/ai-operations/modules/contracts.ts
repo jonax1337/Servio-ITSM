@@ -129,7 +129,7 @@ export const OPERATIONS: AiOperation[] = [
       name: z.string().min(2).describe("contract name"),
       type: z.enum(CONTRACT_TYPES).optional().describe("contract type (default SUPPORT)"),
       vendor: z.string().optional().describe("name of an existing vendor"),
-      startDate: z.string().describe("start date, YYYY-MM-DD"),
+      startDate: z.string().optional().describe("start date, YYYY-MM-DD; omit when it is not known"),
       endDate: z.string().optional().describe("end date, YYYY-MM-DD"),
       cost: z.number().min(0).optional(),
       renewalNoticeDays: z.number().int().min(0).optional().describe("days before the end date to remind the owner (default 30)"),

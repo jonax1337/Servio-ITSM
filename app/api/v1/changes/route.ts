@@ -6,6 +6,7 @@ import { changeCreateForm, changeCreateSchema, snakeKeys } from "@/lib/api-itsm-
 import { SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
 import { CHANGE_INCLUDE, serializeChange } from "../_serializers";
 import { agentGuard, asActor, readBody, refusal } from "../_itsm";
+import { createChangeFromTemplateRequest } from "../_change-from-template";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,13 +73,17 @@ export async function GET(req: Request) {
 /**
  * Create a change (always in DRAFT), through the console's createChange action:
  * the same validation (standard-type rule, planned window, required custom
- * fields, affected CIs), audit row and assignee notification.
+ * fields, affected CIs), audit row and assignee notification. With
+ * `template_id` / `template_ref` it is the console's "new change from template"
+ * instead (see _change-from-template.ts): a STANDARD template's change is
+ * pre-approved by the same path as there.
  */
 export async function POST(req: Request) {
   const auth = await agentGuard(req, "changes:write");
   if ("response" in auth) return auth.response;
   const body = await readBody(req, changeCreateSchema);
   if ("response" in body) return body.response;
+  if (body.data.template_id || body.data.template_ref) return createChangeFromTemplateRequest(auth.principal, body.data);
 
   const result = await asActor(auth.principal, () => createChange(undefined, changeCreateForm(body.data)));
   if (!result?.createdId) {

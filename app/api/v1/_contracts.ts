@@ -77,7 +77,7 @@ async function auditCoverage(actorId: string, contract: { id: string; name: stri
 }
 
 export async function createContractRecord(
-  data: Data & { name: string; startDate: Date },
+  data: Data & { name: string },
   assetIds: string[] | undefined,
   actorId: string,
   via: string,

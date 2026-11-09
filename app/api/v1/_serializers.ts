@@ -1,4 +1,5 @@
 import { changeRef, problemRef, ticketRef } from "@/lib/constants";
+import { effectiveDue } from "@/lib/api-ticket-input";
 import { recurrenceOf } from "@/lib/recurring-ticket-input";
 import { creationTimeFor } from "@/lib/recurring-ticket-rules";
 
@@ -30,10 +31,14 @@ export function serializeTicket(t: {
   externalRef?: string | null;
   openExternalRef?: string | null;
   dueAt: Date | null;
+  /** Manual due date of an agent (independent of the SLA clock). */
+  dueDate?: Date | null;
+  resolveDueAt?: Date | null;
   resolvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
+  const due = effectiveDue(t);
   return {
     id: t.id,
     ref: ticketRef(t.id, t.prefix ?? t.type),
@@ -56,7 +61,10 @@ export function serializeTicket(t: {
     // Monitoring dedup key; `external_ref_open` = this is the open ticket that new alerts with the key land in.
     external_ref: t.externalRef ?? null,
     external_ref_open: !!t.openExternalRef,
-    due_at: t.dueAt?.toISOString() ?? null,
+    // The manual due date when an agent set one, else the SLA resolution deadline; `due_at_source` says which.
+    due_at: due.at?.toISOString() ?? null,
+    due_at_source: due.source,
+    sla_due_at: (t.resolveDueAt ?? t.dueAt)?.toISOString() ?? null,
     resolved_at: t.resolvedAt?.toISOString() ?? null,
     created_at: t.createdAt.toISOString(),
     updated_at: t.updatedAt.toISOString(),
