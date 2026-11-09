@@ -38,7 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ ref: string }> 
  * content writes nothing; `meta.changed` lists what changed.
  *
  * Setting `status` skips the review (it publishes directly), so it needs the
- * `import:write` scope and an ADMIN token owner, like the history import. Without
+ * privileged `kb:publish` scope (or `admin`) and an ADMIN token owner. Without
  * `status`, a new article is a DRAFT and an existing one keeps its status,
  * except that a published article changed by a token below MANAGER goes back
  * to review, as in the console.
@@ -51,8 +51,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ ref: string }> 
   const parsed = await readBody(req, articleUpsertSchema);
   if ("response" in parsed) return parsed.response;
   const b = parsed.data;
-  if (b.status && !(hasScope(auth.principal, "import:write") && auth.principal.role === "ADMIN")) {
-    return apiError(403, "Setting status skips the review; it needs the import:write scope and a token owned by an ADMIN.");
+  if (b.status && !(hasScope(auth.principal, "kb:publish") && auth.principal.role === "ADMIN")) {
+    return apiError(403, "Setting status skips the review; it needs the kb:publish scope and a token owned by an ADMIN.");
   }
   const invalidCategory = await categoryError(b.category_id);
   if (invalidCategory) return invalidCategory;

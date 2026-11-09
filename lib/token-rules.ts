@@ -54,7 +54,7 @@ export function tokenExpiry(date: string, now = new Date()): Date | null | { err
 /**
  * Why a token with these scopes may not be issued to this owner, or null. The
  * owner must be an active account, and only an ADMIN may hold `admin` or a
- * privileged scope (`import:write`): every endpoint behind them also requires
+ * privileged scope (`import:write`, `kb:publish`): every endpoint behind them also requires
  * an ADMIN owner, so they would be dead weight.
  */
 export function tokenOwnerRefusal(owner: { isActive: boolean; role: string } | null, scopes: readonly string[]): string | null {

@@ -40,6 +40,11 @@ describe("tokenOwnerRefusal", () => {
     expect(tokenOwnerRefusal({ isActive: true, role: "ADMIN" }, ["read", "write", "admin"])).toBeNull();
   });
 
+  it("keeps the privileged kb:publish scope to ADMIN owners", () => {
+    expect(tokenOwnerRefusal({ isActive: true, role: "MANAGER" }, ["kb:publish"])).toBe("Only an ADMIN account can hold the kb:publish scope.");
+    expect(tokenOwnerRefusal({ isActive: true, role: "ADMIN" }, ["kb:publish"])).toBeNull();
+  });
+
   it("keeps the privileged import:write scope to ADMIN owners", () => {
     expect(tokenOwnerRefusal({ isActive: true, role: "MANAGER" }, ["import:write"])).toBe("Only an ADMIN account can hold the import:write scope.");
     expect(tokenOwnerRefusal({ isActive: true, role: "ADMIN" }, ["import:write"])).toBeNull();

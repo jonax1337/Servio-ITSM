@@ -16,7 +16,7 @@ export function GET() {
     scopes: {
       resource: RESOURCE_SCOPES,
       legacy: LEGACY_SCOPES,
-      note: "Each operation needs one resource scope (see x-required-scope in the OpenAPI spec). A resource write includes its read; 'read' grants every read, 'write' every write except import:write, 'admin' everything.",
+      note: "Each operation needs one resource scope (see x-required-scope in the OpenAPI spec). A resource write includes its read; 'read' grants every read, 'write' every write except import:write and kb:publish, 'admin' everything.",
     },
     resources: {
       tickets: "/api/v1/tickets",

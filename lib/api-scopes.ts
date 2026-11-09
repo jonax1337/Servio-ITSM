@@ -7,7 +7,8 @@
  *   rights they always had: `read` grants every resource read, `write` every
  *   resource write except the privileged ones, `admin` everything.
  * - Resource scopes `<resource>:read` / `<resource>:write` for least-privilege
- *   integrations. A resource write also grants that resource's read.
+ *   integrations. A resource write also grants that resource's read. `kb:publish`
+ *   is the privileged top of the knowledge base: it includes `kb:write` and `kb:read`.
  *
  * Every /api/v1 handler declares the resource scope it needs (`guard(req, "tickets:write")`);
  * tests/unit/api-route-scopes.test.ts holds each handler to `requiredScope()` below.
@@ -30,6 +31,7 @@ export const RESOURCE_SCOPES = [
   "cmdb:write",
   "kb:read",
   "kb:write",
+  "kb:publish",
   "catalog:read",
   "catalog:write",
   "directory:read",
@@ -39,17 +41,18 @@ export type ResourceScope = (typeof RESOURCE_SCOPES)[number];
 export type ApiScope = LegacyScope | ResourceScope;
 
 export type ApiResource = ResourceScope extends `${infer R}:${string}` ? R : never;
-export type ScopeAccess = "read" | "write";
+export type ScopeAccess = "read" | "write" | "publish";
 
 /** Resources in display order (each once). */
 export const API_RESOURCES = [...new Set(RESOURCE_SCOPES.map((s) => s.split(":")[0]))] as ApiResource[];
 
 /**
  * Scopes the legacy `write` does not cover and only an ADMIN owner may hold:
- * writes that bypass the lifecycle (history import, publishing past the review).
+ * writes that bypass the lifecycle (history import `import:write`, publishing
+ * articles past the review `kb:publish`).
  * Before resource scopes they needed `admin`, which still grants them.
  */
-export const PRIVILEGED_SCOPES: readonly ResourceScope[] = ["import:write"];
+export const PRIVILEGED_SCOPES: readonly ResourceScope[] = ["import:write", "kb:publish"];
 
 /** Scopes a token may only carry when its owner is an ADMIN. */
 export const ADMIN_ONLY_SCOPES: readonly ApiScope[] = ["admin", ...PRIVILEGED_SCOPES];
@@ -69,14 +72,24 @@ export function resourceScopes(resource: ApiResource): ResourceScope[] {
 export function scopeGrants(held: readonly string[], required: ResourceScope): boolean {
   if (held.includes(required) || held.includes("admin")) return true;
   const [resource, access] = required.split(":") as [ApiResource, ScopeAccess];
+  if (access === "publish") return false;
+  if (held.includes(`${resource}:publish`)) return true;
   if (access === "read") return held.includes("read") || held.includes(`${resource}:write`);
   return held.includes("write") && !PRIVILEGED_SCOPES.includes(required);
 }
 
-/** Legacy scopes and resource scopes another held scope already grants carry no extra right. */
+/**
+ * Resource scopes another held scope already grants carry no extra right. A
+ * write is only redundant when the rest also grants that resource's read: the
+ * legacy `write` alone does not, so `["write", "tickets:write"]` must keep
+ * `tickets:write` (it is the only thing that reads tickets).
+ */
 function redundant(scope: ApiScope, held: readonly ApiScope[]): boolean {
   if (!(RESOURCE_SCOPES as readonly string[]).includes(scope)) return false;
-  return scopeGrants(held.filter((h) => h !== scope), scope as ResourceScope);
+  const rest = held.filter((h) => h !== scope);
+  if (!scopeGrants(rest, scope as ResourceScope)) return false;
+  const [resource, access] = scope.split(":");
+  return access === "read" || scopeGrants(rest, `${resource}:read` as ResourceScope);
 }
 
 /**

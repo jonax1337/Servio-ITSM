@@ -25,7 +25,7 @@ export function TokenScopePicker({ error }: { error?: string }) {
     { value: "custom", label: t("token.scopeCustom") },
   ];
   const accessLabel = (scope: ResourceScope) =>
-    scope.endsWith(":read") ? t("token.accessRead") : scope === "import:write" ? t("token.accessWrite") : t("token.accessReadWrite");
+    scope.endsWith(":read") ? t("token.accessRead") : scope === "import:write" ? t("token.accessWrite") : scope === "kb:publish" ? t("token.accessPublish") : t("token.accessReadWrite");
 
   return (
     <div className="grid gap-3">

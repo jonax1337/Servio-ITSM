@@ -44,7 +44,7 @@ Under the hood ([`createApiToken`](../lib/actions/tokens.ts)):
 | Stored `prefix` | first **18** chars of the raw token (`raw.slice(0, 18)`) |
 | Stored `tokenHash` | `bcrypt.hash(raw, 10)` — the raw token is never persisted |
 | Owner | the account picked as owner (`userId`), default the creating admin; must be active |
-| Scopes | a preset or a custom selection (see [Scopes](#scopes)), normalised and stored as a comma-separated string; `admin` and `import:write` only for an ADMIN owner |
+| Scopes | a preset or a custom selection (see [Scopes](#scopes)), normalised and stored as a comma-separated string; `admin`, `import:write` and `kb:publish` only for an ADMIN owner |
 | Expiry | optional date: valid through the end of that day (UTC), at most 3650 days ahead; empty = never expires |
 
 **Tokens for service accounts.** A token acts as its owner, with the owner's
@@ -88,9 +88,10 @@ scope of every operation.
 | `changes:read` / `changes:write` | `/changes/**`: changes, transitions, approvals, comments, attachments |
 | `cmdb:read` / `cmdb:write` | `/assets/**` (incl. relations, attachments), `/services`, `/licenses/**` (incl. seats, attachments), `/vendors/**` |
 | `kb:read` / `kb:write` | `/articles/**` |
+| `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
 | `catalog:read` / `catalog:write` | `/categories/**` |
 | `directory:read` | `/groups`, `/users` (lookups, read only) |
-| `import:write` | `/import/**` and the history fields of uploads; also setting `status` on `PUT /articles/ref/{ref}`. Privileged: ADMIN owners only |
+| `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
 **Legacy scopes** keep exactly the rights they always had, so existing tokens work
 unchanged:
@@ -98,15 +99,18 @@ unchanged:
 | Scope | Grants |
 | --- | --- |
 | `read` | every `*:read` |
-| `write` | every `*:write` except the privileged `import:write` |
-| `admin` | everything, incl. `import:write` |
+| `write` | every `*:write` except the privileged `import:write` and `kb:publish` |
+| `admin` | everything, incl. `import:write` and `kb:publish` |
 
 The UI ([`token-scope-picker.tsx`](../components/settings/token-scope-picker.tsx))
 offers the presets **Read only** (`read`), **Full write** (`read,write`) and
 **Admin** (`read,write,admin`), or **Custom**: per resource *no access*, *read* or
-*read & write*. [`tokenScopes`](../lib/token-rules.ts) normalises a custom selection
+*read & write*; the knowledge base adds *read, write & publish*. [`tokenScopes`](../lib/token-rules.ts) normalises a custom selection
 (known scopes only, catalog order, no scope another one already grants, at least
-one). A token owner that is not an ADMIN cannot hold `admin` or `import:write`.
+one). A token owner that is not an ADMIN cannot hold `admin`, `import:write` or `kb:publish`.
+
+The link between a ticket and a problem or assets lives on the ticket, so a `tickets:write`
+token can set `problem_id` and `asset_ids` on tickets without any `problems:*` or `cmdb:*` scope.
 
 Example: a monitoring integration that opens and resolves tickets needs only
 `tickets:write`. It cannot create changes, edit the CMDB or the knowledge base.
@@ -282,7 +286,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` / `POST` | `/articles` | List (paginated, no bodies) / create knowledge articles. Agent tokens only. | `kb:read` / `kb:write` |
 | `GET` / `PATCH` / `DELETE` | `/articles/{id}` | Get / edit / delete an article. | `kb:read` / `kb:write` |
 | `POST` | `/articles/{id}/transitions` | Move an article along its lifecycle (publishing: MANAGER+, not the author). | `kb:write` |
-| `GET` / `PUT` | `/articles/ref/{ref}` | Get / upsert the article with this origin reference (setting `status`: `import:write` scope + ADMIN). | `kb:read` / `kb:write` |
+| `GET` / `PUT` | `/articles/ref/{ref}` | Get / upsert the article with this origin reference (setting `status`: `kb:publish` scope + ADMIN). | `kb:read` / `kb:write` |
 | `GET` | `/tickets/{id}/comments` | A ticket's thread (oldest first, paginated). Users: public replies of their own tickets. | `tickets:read` |
 | `POST` | `/tickets/{id}/comments` | Add a reply or internal note (agents who may act on the ticket). | `tickets:write` |
 | `GET` | `/changes` | List changes (paginated, filterable, full-text `q`). Agent tokens only. | `changes:read` |
@@ -625,7 +629,7 @@ nothing did), `meta.created` says whether it was new. Fields left out keep their
 value.
 
 Setting `status` publishes (or retires) without the review, so it needs the
-`import:write` scope (or `admin`) and a token owned by an ADMIN (else `403`); a publish stamps the
+`kb:publish` scope (or `admin`) and a token owned by an ADMIN (else `403`); a publish stamps the
 token's owner as approver. Without `status`, an existing article keeps its status,
 except that a `PUBLISHED` one changed by a token below MANAGER goes back to
 `REVIEW`.

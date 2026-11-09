@@ -75,7 +75,8 @@ export function TokenManager({ owners, currentUserId }: { owners: ComboOption[];
             <Input id="token-expires" name="expiresOn" type="date" />
           </div>
         </div>
-        <TokenScopePicker error={fe.scope?.[0]} />
+        {/* A new token remounts the picker so its preset and custom picks start over. */}
+        <TokenScopePicker key={state?.token ?? "new"} error={fe.scope?.[0]} />
         {[fe.name, fe.userId, fe.expiresOn].map((errors, i) =>
           errors?.[0] ? (
             <p key={i} className="text-xs text-destructive">{errors[0]}</p>

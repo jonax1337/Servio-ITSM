@@ -10,6 +10,7 @@ const messages: ServerMessages = {
   "Pick an existing account as the token's owner.": "Wählen Sie ein vorhandenes Konto als Inhaber des Tokens.",
   "The token's owner is deactivated.": "Der Inhaber des Tokens ist deaktiviert.",
   "Only an ADMIN account can hold the admin scope.": "Nur ein ADMIN-Konto kann die Berechtigung „admin“ erhalten.",
+  "Only an ADMIN account can hold the kb:publish scope.": "Nur ein ADMIN-Konto kann die Berechtigung „kb:publish“ erhalten.",
   "Only an ADMIN account can hold the import:write scope.": "Nur ein ADMIN-Konto kann die Berechtigung „import:write“ erhalten.",
   "Pick at least one scope.": "Wählen Sie mindestens eine Berechtigung.",
   "Pick only scopes from the list.": "Wählen Sie nur Berechtigungen aus der Liste.",

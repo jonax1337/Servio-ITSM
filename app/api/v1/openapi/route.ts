@@ -159,7 +159,7 @@ const spec = {
       "Public REST API for Servio ITSM. Authenticate with a Bearer token (Settings › API Tokens).\n\n" +
       "Every operation lists the token scopes that satisfy it in `security` (any one is enough) and the resource scope it needs in `x-required-scope`. " +
       "Resource scopes (`tickets:write`, `cmdb:read`, …) grant one resource; a resource write includes its read. " +
-      "The legacy scopes keep their meaning: `read` grants every read, `write` every write except `import:write`, `admin` everything.",
+      "The legacy scopes keep their meaning: `read` grants every read, `write` every write except `import:write` and `kb:publish`, `admin` everything.",
   },
   servers: [{ url: "/api/v1" }],
   security: [{ bearerAuth: [] }],
@@ -347,10 +347,10 @@ const spec = {
       get: { summary: "Get the article with this origin reference", parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       put: {
         summary: "Upsert an article by origin reference (idempotent)",
-        description: "Creates the article (201) or writes the fields that differ as one revision (200); the same content again changes nothing (`meta.changed` empty). `status` skips the review and needs the import:write scope and an ADMIN owner.",
+        description: "Creates the article (201) or writes the fields that differ as one revision (200); the same content again changes nothing (`meta.changed` empty). `status` skips the review and needs the kb:publish scope and an ADMIN owner.",
         parameters: [refParam],
         requestBody: body(articleUpsertSchema),
-        responses: { "200": { description: "Updated or unchanged" }, "201": { description: "Created" }, "403": { description: "status without import:write scope/ADMIN owner" }, "422": { description: "Validation failed" } },
+        responses: { "200": { description: "Updated or unchanged" }, "201": { description: "Created" }, "403": { description: "status without kb:publish scope/ADMIN owner" }, "422": { description: "Validation failed" } },
       },
     },
     "/services": {

@@ -14,7 +14,7 @@ import {
 /** The check every handler made before resource scopes existed: read/write, `admin` for the history import. */
 function legacyGrants(held: string[], required: ResourceScope): boolean {
   if (held.includes("admin")) return true;
-  if (required === "import:write") return false;
+  if (required === "import:write" || required === "kb:publish") return false;
   return held.includes(required.endsWith(":read") ? "read" : "write");
 }
 
@@ -45,6 +45,17 @@ describe("scopeGrants", () => {
     expect(scopeGrants(["import:write"], "tickets:write")).toBe(false);
   });
 
+  it("keeps article publishing to kb:publish and admin, and lets it include kb write and read", () => {
+    expect(scopeGrants(["read", "write"], "kb:publish")).toBe(false);
+    expect(scopeGrants(["kb:write"], "kb:publish")).toBe(false);
+    expect(scopeGrants(["import:write"], "kb:publish")).toBe(false);
+    expect(scopeGrants(["admin"], "kb:publish")).toBe(true);
+    expect(scopeGrants(["kb:publish"], "kb:publish")).toBe(true);
+    expect(scopeGrants(["kb:publish"], "kb:write")).toBe(true);
+    expect(scopeGrants(["kb:publish"], "kb:read")).toBe(true);
+    expect(scopeGrants(["kb:publish"], "tickets:write")).toBe(false);
+  });
+
   it("grants nothing for no scopes or unknown ones", () => {
     expect(scopeGrants([], "tickets:read")).toBe(false);
     expect(scopeGrants(["tickets"], "tickets:read")).toBe(false);
@@ -59,8 +70,15 @@ describe("normalizeScopes", () => {
   it("drops resource scopes another held scope already grants", () => {
     expect(normalizeScopes(["tickets:read", "tickets:write"])).toEqual(["tickets:write"]);
     expect(normalizeScopes(["read", "cmdb:read", "tickets:write"])).toEqual(["read", "tickets:write"]);
-    expect(normalizeScopes(["write", "tickets:write", "import:write"])).toEqual(["write", "import:write"]);
+    expect(normalizeScopes(["write", "tickets:write", "import:write"])).toEqual(["write", "tickets:write", "import:write"]);
     expect(normalizeScopes(["admin", "import:write", "kb:write"])).toEqual(["admin"]);
+  });
+
+  it("keeps a resource write that is the only way to read once a legacy write is held", () => {
+    expect(normalizeScopes(["write", "tickets:write"])).toEqual(["write", "tickets:write"]);
+    expect(normalizeScopes(["read", "write", "tickets:write"])).toEqual(["read", "write"]);
+    expect(normalizeScopes(["write", "tickets:read"])).toEqual(["write", "tickets:read"]);
+    expect(normalizeScopes(["kb:write", "kb:publish"])).toEqual(["kb:publish"]);
   });
 
   it("keeps the legacy sets as they are", () => {
@@ -107,12 +125,14 @@ describe("scope catalog", () => {
     expect(API_RESOURCES).toEqual(["tickets", "recurring", "problems", "changes", "cmdb", "kb", "catalog", "directory", "import"]);
     expect(resourceScopes("directory")).toEqual(["directory:read"]);
     expect(resourceScopes("import")).toEqual(["import:write"]);
+    expect(resourceScopes("kb")).toEqual(["kb:read", "kb:write", "kb:publish"]);
     expect(resourceScopes("cmdb")).toEqual(["cmdb:read", "cmdb:write"]);
   });
 
   it("names every scope that satisfies a requirement", () => {
     expect(scopesGranting("tickets:read")).toEqual(["tickets:read", "tickets:write", "read", "admin"]);
     expect(scopesGranting("changes:write")).toEqual(["changes:write", "write", "admin"]);
+    expect(scopesGranting("kb:publish")).toEqual(["kb:publish", "admin"]);
     expect(scopesGranting("import:write")).toEqual(["import:write", "admin"]);
   });
 });
