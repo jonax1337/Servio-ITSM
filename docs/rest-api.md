@@ -92,6 +92,7 @@ scope of every operation.
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
 | `directory:read` | `/groups`, `/groups/{id}`, `/users` and `/users/{id}` (lookups) |
 | `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`; the owner must be a MANAGER or ADMIN). Not privileged: the legacy `write` covers it |
+| `system:read` | `/system/**`: operational status for monitoring (the built-in backup), read only |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
 **Legacy scopes** keep exactly the rights they always had, so existing tokens work
@@ -328,6 +329,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `DELETE` | `/groups/{id}/members/{userId}` | Remove a user. Idempotent: 200 with `removed` false when they were not a member. MANAGER+ owner. | `directory:write` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
 | `GET` / `PATCH` | `/users/{id}` | Get one user / replace their secondary email addresses (edit: ADMIN owner). | `directory:read` / `directory:write` |
+| `GET` | `/system/backups/latest` | Status of the built-in backup for monitoring: newest run, newest verified one, ages in seconds (see [Built-in backup](#built-in-backup)). Agent tokens only. | `system:read` |
 | `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `import:write` + ADMIN owner |
@@ -1199,6 +1201,31 @@ The list replaces the current one (`[]` removes all; at most 10). A malformed
 address or the person's own primary address is a `422`; an address that already
 belongs to someone else, as primary or secondary address, is a `409` with the
 address in `details.email`. Changes are audited on the user.
+
+### Built-in backup
+
+`GET /system/backups/latest` reports the built-in backup ([backup.md](./backup.md)) so an
+external monitor can alert on its age or failure. Agent tokens (AGENT, MANAGER, ADMIN) with the
+`system:read` scope (or the legacy `read`); a USER token gets 403. Nothing about the backup files themselves (paths,
+contents, error messages) is exposed, and there is no download. Starting a backup is not part of
+the API (Settings › Backups or the command line).
+
+| Field | Meaning |
+| --- | --- |
+| `status` | Newest run: `RUNNING`, `SUCCESS` (created and verified), `FAILED`, or `NONE` before the first run. |
+| `trigger` | `SCHEDULE`, `MANUAL` (Back up now) or `CLI` (`scripts/backup/run.mjs`); null without a run. |
+| `verified` | The newest run passed verification. |
+| `started_at`, `finished_at`, `age_seconds` | Timing of the newest run; `age_seconds` counts from `finished_at`. |
+| `size_bytes`, `database_bytes`, `uploads_bytes`, `uploads_files` | Sizes of the newest run (database copy plus uploads archive). |
+| `name` | Backup directory name of the newest run. |
+| `error_code` | Failure class of a failed run, else null: `database_missing`, `invalid_configuration`, `insufficient_space`, `verification_failed`, `timeout`, `process_failed`, `interrupted` or `backup_failed`. The full message (it names paths on the server) is shown only in Settings › Backups. |
+| `last_success_at`, `last_success_age_seconds`, `last_success_size_bytes` | The newest **verified** backup: alert on its age. |
+| `enabled`, `supported`, `schedule`, `timezone`, `next_run_at` | Configuration: scheduled backups on, database is SQLite, the schedule as entered (`HH:MM` or cron) and when it runs next. |
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" https://servio.example.com/api/v1/system/backups/latest
+# alert when .data.last_success_age_seconds > 93600 (daily backup + 2 h) or .data.status == "FAILED"
+```
 
 ### Managing categories
 

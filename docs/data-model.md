@@ -297,6 +297,7 @@ Added by migration `20261108000000_maintenance_windows`. Enum-like columns are `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
+| `BackupRun` | One run of the built-in backup ([backup.md](./backup.md)) | `status` (`BACKUP_RUN_STATUSES`: `RUNNING`, `SUCCESS` = created and verified, `FAILED`), `trigger` (`BACKUP_TRIGGERS`: `SCHEDULE`, `MANUAL`, `CLI`), `startedAt`/`finishedAt`, `heartbeatAt` (refreshed while running; a stale one marks an interrupted run), `name` (backup directory in `BACKUP_DIR`), `databaseBytes`/`uploadsBytes` (`Float`, bytes), `uploadsFiles`, `verified`, `details` (JSON: verification checks, warnings, pruned backups), `error` (full message, admin UI only), `errorCode` (coarse class the API reports), `prunedAt` (files removed by retention), `triggeredById` (`SetNull`). Indexed `(status, startedAt)` and `startedAt` |
 | `MaintenanceWindow` | A planned period for an update or general maintenance | `title`, `message` (shown to users), `kind` (`MAINTENANCE_KINDS`), `status` (`MAINTENANCE_STATUSES`), `startsAt`/`endsAt` (planned; a general window ends at `endsAt`), `announceHours` (banners from `startsAt − announceHours`, default 24), `blockAccess` (maintenance mode for non-admins while `IN_PROGRESS`, default `true`), `targetVersion`/`fromVersion` (update windows), `startedAt`/`finishedAt`, `result` (last updater message or failure reason), `log` (JSON array copied from the updater's `status.json`), `createdById` (`SetNull`). Indexed `(status, startsAt)` |
 
 Transitions are claimed with a conditional `updateMany` (`status` must still be the expected one), so overlapping ticks, or a tick in the old and the new container during an update, never both act. The update-check result lives in `AppSetting` rows `UPDATE_CACHE` and `UPDATE_NOTIFIED_VERSION` (at-most-once marker per announced version), not in a table of its own.
@@ -380,6 +381,8 @@ See [i18n.md](./i18n.md#enum-labels-_meta).
 | `AI_INSIGHT_KINDS` | `AiInsight.kind` | `CLUSTER`, `KB_GAP` |
 | `AI_INSIGHT_STATUSES` | `AiInsight.status` | `OPEN`, `ACTIONED`, `DISMISSED` |
 | `MAINTENANCE_KINDS` | `MaintenanceWindow.kind` | `GENERAL`, `UPDATE` |
+| `BACKUP_RUN_STATUSES` | `BackupRun.status` | `RUNNING`, `SUCCESS`, `FAILED` |
+| `BACKUP_TRIGGERS` | `BackupRun.trigger` | `SCHEDULE`, `MANUAL`, `CLI` |
 | `MAINTENANCE_STATUSES` | `MaintenanceWindow.status` | `SCHEDULED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `ROLLED_BACK`, `CANCELLED` |
 | `TICKET_LINK` types | `TicketLink.type` | `RELATED`, `DUPLICATE`, `BLOCKS`, `CAUSED_BY` *(defined inline on the schema, not exported as a constant)* |
 
@@ -451,6 +454,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261117000000_service_cmdb` | `Service.code` and `Service.importRef` (both unique, nullable; existing rows stay `NULL`), `ServiceDependency` |
 | `20261121000000_catalog_contract_import_refs` | `importRef` (unique, nullable) on `CatalogItem`, `ChangeTemplate`, `Contract` and `Vendor`; `CatalogItem.groupId` (table rebuilt for the foreign key) |
 | `20261122000000_user_secondary_emails` | `UserEmail` (secondary addresses of a person) |
+| `20261122100000_backup_runs` | `BackupRun` (new table; nothing to backfill) |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

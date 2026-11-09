@@ -19,7 +19,8 @@ name: servio
 #
 # SECURITY MODEL (details: updater/README.md)
 #  - The app (`web`) is internet-facing and can write everything on the shared
-#    `servio-data` volume. It never sees the Docker socket or the backups.
+#    `servio-data` volume, including its own built-in backups in /data/backups.
+#    It never sees the Docker socket or the updater's pre-update backups.
 #  - Only `docker-proxy` mounts the Docker socket. It serves a filtered copy as
 #    a unix socket on the `docker-api` volume, owned by a uid/gid (64999) that
 #    nothing else uses (socket 0660, directory 0750). Only the proxy and the
@@ -67,6 +68,10 @@ services:
       GOTENBERG_URL: http://gotenberg:3000
       DATABASE_URL: file:/data/servio.db
       UPLOAD_DIR: /data/uploads
+      # Built-in scheduled backups (Settings > Backups; docs/backup.md). They land on
+      # the persistent /data volume by default; for protection against losing that
+      # volume, mount a separate disk here and copy the backups off the host.
+      BACKUP_DIR: /data/backups
       # Shared with the updater (maintenance flag, update requests and status).
       SERVIO_STATE_DIR: /data/state
       # Background cron ticks must run on EXACTLY ONE instance.

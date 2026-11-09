@@ -67,6 +67,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     SERVIO_STATE_DIR=/data/state \
+    BACKUP_DIR=/data/backups \
     PATH="/opt/boot-tools/node_modules/.bin:${PATH}"
 
 COPY --from=prod-deps /app/node_modules ./node_modules
@@ -81,6 +82,9 @@ COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
 # Sable's agent charter + ITSM skills, synced into its isolated SABLE_HOME at runtime.
 COPY sable ./sable
+# Built-in backup (run by the app as a child process) and the restore script.
+COPY scripts/backup ./scripts/backup
+COPY scripts/restore-backup.mjs ./scripts/restore-backup.mjs
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 RUN chmod +x ./docker/entrypoint.sh \
  && mkdir -p /data \

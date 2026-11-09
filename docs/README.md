@@ -42,6 +42,7 @@ against the code and kept in sync with the repository.
 | Doc | What it covers |
 | --- | --- |
 | [deployment.md](./deployment.md) | Installing from the published Docker images, moving to PostgreSQL, production environment, build/run from source, persistent storage, and scheduled background work. |
+| [backup.md](./backup.md) | Backup & restore: the built-in scheduled, verified backups of the database and attachments, retention, the monitoring endpoint, and the restore script. |
 | [updates.md](./updates.md) | Self-update with maintenance windows: how releases are found and installed by the updater sidecar, the maintenance page, setup, security and rollback. |
 | [releasing.md](./releasing.md) | The CI checks on every PR, cutting a release with `pnpm release` and a version tag, the multi-arch GHCR images and the GitHub Release, and Dependabot. |
 

@@ -20,6 +20,9 @@ import { runMaintenanceTick } from "@/lib/ticks/maintenance";
 import { runUpdateCheckTick } from "@/lib/ticks/update-check";
 import { runRecurringTicketsTick } from "@/lib/ticks/recurring-tickets";
 import { runAutoCloseTick } from "@/lib/ticks/auto-close";
+import { runAppHeartbeatTick, runBackupTick } from "@/lib/ticks/backup";
+import { removeAppHeartbeat } from "@/lib/backup";
+import { APP_HEARTBEAT_MAX_INTERVAL_MS } from "@/scripts/backup/layout.mjs";
 import type { InboundConfig } from "@/lib/mail-inbound/types";
 
 /**
@@ -178,7 +181,8 @@ async function slaEscalationTick(): Promise<void> {
 
 /**
  * A periodic sweep from lib/ticks/*. Its interval is read from `settingKey`
- * (seconds, DB setting or env), floored at `minSeconds`. Each run is
+ * (seconds, DB setting or env), floored at `minSeconds` and capped at
+ * `maxSeconds` where a consumer relies on the cadence. Each run is
  * overlap-guarded and its errors are logged, never thrown, so one failing
  * sweep can't stop the others.
  */
@@ -187,6 +191,7 @@ type FeatureTick = {
   settingKey: string;
   defaultSeconds: number;
   minSeconds: number;
+  maxSeconds?: number;
   run: () => Promise<void>;
 };
 
@@ -205,6 +210,18 @@ const FEATURE_TICKS: FeatureTick[] = [
   { name: "recurring-tickets", settingKey: "RECURRING_TICKETS_TICK_SECONDS", defaultSeconds: 300, minSeconds: 60, run: runRecurringTicketsTick },
   // The auto-close delay is counted in days; a ticket closed within the hour is fine.
   { name: "auto-close", settingKey: "AUTO_CLOSE_TICK_SECONDS", defaultSeconds: 3600, minSeconds: 300, run: runAutoCloseTick },
+  // The backup schedule has minute granularity; the run itself happens in a child process.
+  { name: "backup", settingKey: "BACKUP_TICK_SECONDS", defaultSeconds: 60, minSeconds: 30, run: runBackupTick },
+  // Liveness file for the restore script (scripts/restore-backup.mjs), which refuses to run while it is fresh.
+  // Capped: the script treats a heartbeat older than APP_HEARTBEAT_STALE_MS as a stopped app.
+  {
+    name: "app-heartbeat",
+    settingKey: "APP_HEARTBEAT_TICK_SECONDS",
+    defaultSeconds: 60,
+    minSeconds: 30,
+    maxSeconds: APP_HEARTBEAT_MAX_INTERVAL_MS / 1000,
+    run: runAppHeartbeatTick,
+  },
 ];
 
 function guardedRunner(tick: FeatureTick): () => Promise<void> {
@@ -222,10 +239,13 @@ function guardedRunner(tick: FeatureTick): () => Promise<void> {
   };
 }
 
-/** Each feature sweep's interval in ms, in FEATURE_TICKS order (setting value floored at its minimum). */
+/** Each feature sweep's interval in ms, in FEATURE_TICKS order (setting value clamped to its bounds). */
 function readFeatureIntervalsMs(): Promise<number[]> {
   return Promise.all(
-    FEATURE_TICKS.map(async (tick) => Math.max(tick.minSeconds, await getNumberSetting(tick.settingKey, tick.defaultSeconds)) * 1000),
+    FEATURE_TICKS.map(async (tick) => {
+      const seconds = Math.max(tick.minSeconds, await getNumberSetting(tick.settingKey, tick.defaultSeconds));
+      return Math.min(tick.maxSeconds ?? Infinity, seconds) * 1000;
+    }),
   );
 }
 
@@ -291,5 +311,6 @@ export function stopScheduler(): void {
     if (t) clearInterval(t);
   }
   g.__servioScheduler = undefined;
+  removeAppHeartbeat(); // a clean shutdown: the restore script need not wait for the heartbeat to go stale
   console.log("[servio:scheduler] stopped (timers cleared)");
 }

@@ -36,6 +36,7 @@ export const RESOURCE_SCOPES = [
   "catalog:write",
   "directory:read",
   "directory:write",
+  "system:read",
   "import:write",
 ] as const;
 export type ResourceScope = (typeof RESOURCE_SCOPES)[number];
@@ -132,6 +133,7 @@ export const RESOURCE_BY_SEGMENT: Record<string, ApiResource> = {
   categories: "catalog",
   groups: "directory",
   users: "directory",
+  system: "system",
   import: "import",
 };
 

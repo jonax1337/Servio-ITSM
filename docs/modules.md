@@ -482,6 +482,19 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages �
 
 Operator guide, file contract and security notes: [updates.md](./updates.md). Notifications use types `UPDATE_AVAILABLE` and `MAINTENANCE`.
 
+### Backups
+
+Built-in scheduled backups of the SQLite database and the uploads, each verified before it is kept, with retention and a restore script. Operator guide: [backup.md](./backup.md).
+
+| | |
+| --- | --- |
+| Routes | `app/(console)/settings/backups/page.tsx` (ADMIN; `/settings/backups` is also in `ROUTE_MIN_ROLE`): status of the last backup, schedule, storage, recent runs, settings, **Back up now**. No download. `app/api/v1/system/backups/latest/route.ts` (REST, agent tokens, `read`): monitoring status |
+| Actions | `lib/actions/backup.ts` — `backupNow` (claims the run, continues in the background; refused for 15 minutes after a verified manual backup); `saveBackupSettings` in `lib/actions/settings.ts` |
+| Rules / data | `lib/backup-rules.ts` (pure: `parseBackupSchedule`, `isBackupDue`, `isBackupRunStale`, `manualBackupCooldownLeft`, `latestBackupPayload`, `parseRetentionInput`), `lib/backup.ts` (config, the `BackupRun` lock and records, child process, audit, `BACKUP_FAILED` notice, app heartbeat) |
+| Ticks | `lib/ticks/backup.ts` — `backup` (every 60 s: runs a due scheduled backup) and `app-heartbeat` (every 60 s, at most 90 s: `app-heartbeat.json` in `SERVIO_STATE_DIR` for the restore script) |
+| Scripts | `scripts/backup/` (plain Node, no dependencies, shipped in the image): `run.mjs` (CLI the app spawns), `create.mjs`, `verify.mjs`, `layout.mjs` (names, retention), `sqlite.mjs` (`node:sqlite`, the stepped snapshot), `runs.mjs` (`BackupRun` rows of command-line runs and of a restore), `tar.mjs`; `scripts/restore-backup.mjs` |
+| Components | `components/backups/` — `backup-now-button`, `backup-auto-refresh` (refreshes the page while a run is RUNNING), `backup-runs-table`, `local-date-time` |
+
 ### Audit Log
 Read-only viewer over the existing `AuditLog` model, ADMIN-only (also gated in `lib/route-guard.ts`).
 

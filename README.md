@@ -185,6 +185,9 @@ the comparison → [docs/benchmark.md](docs/benchmark.md)
 - **Self-update & maintenance windows** — admins schedule an update to a newer release from
   **Settings › Updates**; users get a banner and a maintenance page, the updater sidecar backs up
   the database and rolls back automatically if the new version is unhealthy.
+- **Built-in backups** — scheduled, verified backups of the database and attachments with
+  retention, **Back up now** in **Settings › Backups**, a monitoring endpoint and a restore
+  script in the image; no host cron needed ([docs/backup.md](docs/backup.md)).
 - **Public REST API** — versioned `/api/v1`, Bearer-token auth with scopes, pagination, filtering, and an OpenAPI 3.1 doc.
 - **Relay + Nova Flow branding** — Navy/Cobalt themes, local Manrope display type,
   Servio/Sable vector marks, icons and share previews from the [brand kit](branding/README.md).
@@ -312,6 +315,7 @@ Deep dive → [docs/architecture.md](docs/architecture.md)
 | [branding.md](docs/branding.md) | Brand kit, shared logos, fonts and generated application assets |
 | [modules.md](docs/modules.md) | Feature-to-file map |
 | [deployment.md](docs/deployment.md) | Docker, PostgreSQL, production, persistence |
+| [backup.md](docs/backup.md) | Built-in scheduled backups, verification, monitoring and restore |
 | [updates.md](docs/updates.md) | Self-update, maintenance windows, the updater sidecar |
 | [releasing.md](docs/releasing.md) | CI checks, cutting a release, published images |
 | [benchmark.md](docs/benchmark.md) | The usability benchmark against GLPI, iTop and Znuny |

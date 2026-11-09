@@ -54,6 +54,7 @@ dev.db-journal
 
 # uploaded attachment blobs (kept outside public/)
 .uploads/
+.backups/
 
 # playwright mcp
 .playwright-mcp/

@@ -21,6 +21,7 @@ import {
   Repeat,
   GitPullRequestArrow,
   Ticket,
+  DatabaseBackup,
 } from "lucide-react";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
@@ -108,6 +109,13 @@ const CARDS: SettingCard[] = [
     title: "Updates & Maintenance",
     description: "Update Servio from GitHub releases and plan maintenance windows with advance notice.",
     icon: ArrowUpCircle,
+    minRole: "ADMIN",
+  },
+  {
+    href: "/settings/backups",
+    title: "Backups",
+    description: "Scheduled, verified backups of the database and attachments, with retention.",
+    icon: DatabaseBackup,
     minRole: "ADMIN",
   },
   {

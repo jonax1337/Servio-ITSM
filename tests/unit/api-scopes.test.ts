@@ -129,8 +129,9 @@ describe("requiredScope", () => {
 
 describe("scope catalog", () => {
   it("lists every resource with the accesses it offers", () => {
-    expect(API_RESOURCES).toEqual(["tickets", "recurring", "problems", "changes", "cmdb", "kb", "catalog", "directory", "import"]);
+    expect(API_RESOURCES).toEqual(["tickets", "recurring", "problems", "changes", "cmdb", "kb", "catalog", "directory", "system", "import"]);
     expect(resourceScopes("directory")).toEqual(["directory:read", "directory:write"]);
+    expect(resourceScopes("system")).toEqual(["system:read"]);
     expect(resourceScopes("import")).toEqual(["import:write"]);
     expect(resourceScopes("kb")).toEqual(["kb:read", "kb:write", "kb:publish"]);
     expect(resourceScopes("cmdb")).toEqual(["cmdb:read", "cmdb:write"]);

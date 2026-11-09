@@ -68,6 +68,8 @@ export const ROUTE_MIN_ROLE: ReadonlyArray<{ prefix: string; minRole: ConsoleRol
   { prefix: "/settings/macros", minRole: "AGENT" },
   // Self-update and maintenance windows are admin-only.
   { prefix: "/settings/updates", minRole: "ADMIN" },
+  // Backups hold every record: admin-only, like updates.
+  { prefix: "/settings/backups", minRole: "ADMIN" },
   { prefix: "/settings", minRole: "MANAGER" },
   { prefix: "/sla", minRole: "MANAGER" },
   { prefix: "/audit", minRole: "ADMIN" },
