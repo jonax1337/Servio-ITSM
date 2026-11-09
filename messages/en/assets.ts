@@ -18,6 +18,8 @@ const assets = {
   lastSeen: "Last seen",
   servicesCount: "Services · {count}",
   noServices: "Not part of any service.",
+  affectedServices: "Also affected if this CI fails · {count}",
+  noAffectedServices: "No other service is affected.",
   noLocation: "No location",
   noOwner: "No owner",
   noGroup: "No group",

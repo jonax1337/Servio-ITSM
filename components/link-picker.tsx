@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { readActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -37,6 +38,8 @@ export function LinkPicker({
   typeName,
   typeOptions,
   typeDefault,
+  noteName,
+  notePlaceholder,
   successMessage,
 }: {
   action: (formData: FormData) => unknown | Promise<unknown>;
@@ -56,6 +59,9 @@ export function LinkPicker({
   typeName?: string;
   typeOptions?: ComboOption[];
   typeDefault?: string;
+  /** Optional free-text field posted with the link (e.g. the note on a service dependency). */
+  noteName?: string;
+  notePlaceholder?: string;
   successMessage?: string;
 }) {
   const t = useT("components");
@@ -116,6 +122,7 @@ export function LinkPicker({
                 placeholder={placeholder ?? t("link.choose")}
                 searchPlaceholder={searchPlaceholder ?? t("combo.search")}
               />
+              {noteName ? <Input name={noteName} placeholder={notePlaceholder} maxLength={500} /> : null}
               <DialogFooter>
                 <Button type="submit" disabled={!target}>{submitLabel ?? t("link.submit")}</Button>
               </DialogFooter>

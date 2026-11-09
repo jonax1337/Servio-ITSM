@@ -154,6 +154,7 @@ releases a claim held by a ticket that is no longer open the next time the key i
 | `AssetRelation` | Directed dependency edge between two assets | `(sourceId, targetId, type)` unique; `type` (`DEPENDS_ON`/`CONNECTS_TO`/`RUNS_ON`/`HOSTS`/`PART_OF`/`BACKS_UP`) |
 | `TicketAsset` | Ticket ↔ affected-asset join | composite PK `(ticketId, assetId)` |
 | `ServiceAsset` | Service ↔ supporting-CI join (CMDB service mapping) | composite PK `(serviceId, assetId)`, `createdAt` |
+| `ServiceDependency` | Service → service dependency: `fromService` depends on `toService` (an outage of `toService` affects `fromService`) | `(fromServiceId, toServiceId)` unique, `toServiceId` indexed, `note`, `createdAt`; both ends `Cascade`. Self-dependencies and cycles are refused by every writer (`lib/service-graph-rules.ts`), see [services.md](./services.md) |
 | `ChangeAsset` | Change ↔ affected-CI join (attach/detach via `lib/actions/change-assets.ts`; feeds automated impact/risk) | composite PK `(changeId, assetId)` |
 
 ### Locations
@@ -168,7 +169,7 @@ releases a claim held by a ticket that is no longer open the next time the key i
 | --- | --- | --- |
 | `Category` | Self-referencing taxonomy tree | `parentId` (self relation `CategoryTree`), `(name, parentId)` unique, `groupId` (handling team: default group of tickets created through the API, pre-routes catalog requests), `archived` (hidden from pickers/portal; existing tickets keep it), `portalHidden` (staff-only: not offered in the portal, its catalog items not listed there); shared by tickets, problems, changes, services, articles, catalog items, change templates |
 | `SLA` | Response/resolution targets | `name` (unique), `priority` (for auto-match), `responseMins`, `resolveMins`, `isActive`; optional `businessCalendarId` (working-hours clock; null = 24/7) and `escalationPolicyId` (tiered escalation) |
-| `Service` | Operational business service (service health) | `name` (unique), `status` (`OPERATIONAL`/`DEGRADED`/`OUTAGE`/`MAINTENANCE`/`RETIRED`), `criticality`, `categoryId`, `ownerId`, `slaId`, `groupId` (team that runs it, used to pre-route catalog requests); supporting CIs via `ServiceAsset` |
+| `Service` | Operational business service (service health), a CMDB object | `name` (unique), `code` (unique, nullable: short service number such as `S-01`), `importRef` (unique, nullable: origin key, `PUT /api/v1/services/ref/{ref}` upserts by it), `status` (`OPERATIONAL`/`DEGRADED`/`OUTAGE`/`MAINTENANCE`/`RETIRED`), `criticality`, `categoryId`, `ownerId`, `slaId`, `groupId` (team that runs it, used to pre-route catalog requests); supporting CIs via `ServiceAsset`, dependencies via `ServiceDependency` (`dependsOn` / `usedBy`) |
 | `CatalogItem` | Requestable self-service catalog entry (portal form) | `name`, `shortDescription`, `serviceId` (the service the request maps to; pre-routes the ticket), `formSchema` (JSON field defs as TEXT), `ticketType` (`REQUEST` default or `INCIDENT`), `titleTemplate` (ticket title with `{{item}}`, `{{requester}}`, `{{<question key>}}`; null = "`<Item> request`"), `requiresApproval` + `approverId`, `estimatedDays`, `isPublished`, `order`; spawns tickets |
 | `Article` | Knowledge-base article | `slug` (unique), `body` + `bodyFormat` (`markdown`/`plain`), `status` (`DRAFT`/`REVIEW`/`PUBLISHED`/`RETIRED`), `visibility` (`INTERNAL`/`PUBLIC`), `published` (denormalized mirror), `views`, `categoryId`, `authorId`, `importRef` (unique origin key; `PUT /api/v1/articles/ref/{ref}` upserts by it); has revisions & attachments |
 | `ArticleLink` | Polymorphic link from an article to a Ticket/Problem/Change (no FK on `entityId`, like `Approval`); cascades with the article | `(articleId, entityType, entityId)` unique; `createdById` (SetNull) |
@@ -444,6 +445,7 @@ and were collapsed. Regular incremental migrations follow it:
 | `20261112100000_attachment_targets` | `Attachment.changeId`/`problemId`/`assetId`/`licenseId` (table rebuilt: SQLite cannot add foreign keys in place) |
 | `20261112400000_attachment_import_ref` | `Attachment.importRef` (unique, nullable): source id of an imported file |
 | `20261112300000_ticket_external_ref` | `Ticket.externalRef` (indexed), `Ticket.openExternalRef` (unique) |
+| `20261117000000_service_cmdb` | `Service.code` and `Service.importRef` (both unique, nullable; existing rows stay `NULL`), `ServiceDependency` |
 
 At the time of writing, `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma`
 (with a shadow database) reports no difference, i.e. the migrations reproduce the current schema. Local

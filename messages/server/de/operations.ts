@@ -27,6 +27,12 @@ const messages: ServerMessages = {
   "Service not found.": "Service nicht gefunden.",
   "Asset not found.": "Asset nicht gefunden.",
   "Missing link.": "Verknüpfung fehlt.",
+  "A service with that code already exists.": "Ein Service mit dieser Servicenummer existiert bereits.",
+  "Code must be unique": "Die Servicenummer muss eindeutig sein",
+  "1-32 characters: letters, digits and . _ / -, starting with a letter or digit":
+    "1–32 Zeichen: Buchstaben, Ziffern und . _ / -, beginnend mit einem Buchstaben oder einer Ziffer",
+  "Choose a service.": "Bitte einen Service auswählen.",
+  "A service cannot depend on itself.": "Ein Service kann nicht von sich selbst abhängen.",
   // Catalog
   "Approval is required for this item, but no approver or approval stage was configured.":
     "Für diesen Eintrag ist eine Genehmigung erforderlich, aber es wurde keine genehmigende Person und keine Genehmigungsstufe festgelegt.",

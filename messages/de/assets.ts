@@ -20,6 +20,8 @@ const assets: Translations<typeof en> = {
   lastSeen: "Zuletzt gesehen",
   servicesCount: "Services · {count}",
   noServices: "Gehört zu keinem Service.",
+  affectedServices: "Ebenfalls betroffen, wenn dieses CI ausfällt · {count}",
+  noAffectedServices: "Kein weiterer Service ist betroffen.",
   noLocation: "Kein Standort",
   noOwner: "Keine verantwortliche Person",
   noGroup: "Keine Gruppe",

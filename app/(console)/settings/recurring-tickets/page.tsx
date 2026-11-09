@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { serviceLabel } from "@/lib/service-label";
 import { Repeat } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
@@ -97,7 +98,7 @@ export default async function RecurringTicketsSettingsPage() {
           agents={options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, hint: a.email }))}
           groups={options.groups.map((g) => ({ value: g.id, label: g.name }))}
           categories={options.categories.map((c) => ({ value: c.id, label: c.name }))}
-          services={options.services.map((s) => ({ value: s.id, label: s.name }))}
+          services={options.services.map((s) => ({ value: s.id, label: serviceLabel(s) }))}
         />
       </PageBody>
     </>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { serviceLabel } from "@/lib/service-label";
 import { Zap, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
@@ -39,7 +40,7 @@ export default async function AutomationsPage() {
     agents: opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
     groups: opts.groups.map((g) => ({ value: g.id, label: g.name })),
     categories: opts.categories.map((c) => ({ value: c.id, label: c.name })),
-    services: opts.services.map((s) => ({ value: s.id, label: s.name })),
+    services: opts.services.map((s) => ({ value: s.id, label: serviceLabel(s) })),
   };
 
   // value → label lookup for readable summaries

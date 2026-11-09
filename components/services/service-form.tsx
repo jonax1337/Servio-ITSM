@@ -96,9 +96,14 @@ export function ServiceForm({ options }: { options: FormOptions }) {
         </p>
       ) : null}
 
-      <Field label={tc("name")} error={fe.name}>
-        <Input name="name" placeholder={t("namePlaceholder")} required />
-      </Field>
+      <div className="grid gap-5 sm:grid-cols-[1fr_10rem]">
+        <Field label={tc("name")} error={fe.name}>
+          <Input name="name" placeholder={t("namePlaceholder")} required />
+        </Field>
+        <Field label={t("code")} error={fe.code}>
+          <Input name="code" placeholder={t("codePlaceholder")} maxLength={32} />
+        </Field>
+      </div>
 
       <Field label={t("icon")}>
         <IconPicker name="icon" defaultValue="LifeBuoy" />

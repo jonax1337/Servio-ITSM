@@ -1,4 +1,5 @@
 import { getSessionUser, hasRole, isAgent, type Role } from "@/lib/session";
+import { serviceLabel } from "@/lib/service-label";
 import { getFormOptions } from "@/lib/data/options";
 import { getVisibleDashboards, ensurePersonalDashboard } from "@/lib/board-service";
 import { computeWidget } from "@/lib/dashboard/compute";
@@ -72,7 +73,7 @@ export default async function DashboardPage({
       agents: opts.agents.map((a) => ({ value: a.id, label: a.name ?? a.email })),
       groups: opts.groups.map((g) => ({ value: g.id, label: g.name })),
       categories: opts.categories.map((c) => ({ value: c.id, label: c.name })),
-      services: opts.services.map((s) => ({ value: s.id, label: s.name })),
+      services: opts.services.map((s) => ({ value: s.id, label: serviceLabel(s) })),
     };
     return (
       <PageBody className="grid gap-4">

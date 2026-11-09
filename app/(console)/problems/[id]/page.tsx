@@ -10,6 +10,7 @@ import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
+import { RecordAffectedServices } from "@/components/services/affected-services";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { ProblemDetailsDialog } from "@/components/problems/problem-editors";
@@ -182,6 +183,9 @@ export default async function ProblemDetailPage({
           values={cfValues}
           editable={isAgentUser}
         />
+
+        {/* Services hit through the CIs of the linked incidents and changes (read-only) */}
+        {isAgentUser ? <RecordAffectedServices className="mt-4" record={{ kind: "problem", id: problem.id }} /> : null}
 
         <Card className="mt-4">
           <CardHeader><CardTitle className="text-sm">{t("assignment")}</CardTitle></CardHeader>

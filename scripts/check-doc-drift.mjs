@@ -57,6 +57,14 @@ const DOC_MAP = [
     docs: ['docs/ai.md'],
   },
   {
+    label: 'Services & service map (CMDB)',
+    code: [
+      'lib/service-graph', 'lib/service-records.ts', 'lib/service-label.ts', 'lib/api-service-input.ts',
+      'lib/actions/services.ts', 'components/services/', 'app/(console)/services/',
+    ],
+    docs: ['docs/services.md'],
+  },
+  {
     label: 'Public REST API (v1)',
     code: ['app/api/v1/', 'lib/api.ts', 'lib/api-scopes.ts', 'lib/token-rules.ts'],
     docs: ['docs/rest-api.md'],

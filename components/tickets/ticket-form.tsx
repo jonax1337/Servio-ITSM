@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { serviceLabel } from "@/lib/service-label";
 import { useFormSubmit } from "@/hooks/use-form-submit";
 import { Loader2, Plus } from "lucide-react";
 import { createTicket, type ActionState } from "@/lib/actions/tickets";
@@ -60,7 +61,7 @@ export function TicketForm({
   const agentOpts: ComboOption[] = options.agents.map((a) => ({ value: a.id, label: a.name ?? a.email, avatar: initials(a.name ?? a.email), hint: a.email }));
   const groupOpts: ComboOption[] = options.groups.map((g) => ({ value: g.id, label: g.name }));
   const catOpts: ComboOption[] = options.categories.map((c) => ({ value: c.id, label: c.name }));
-  const svcOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: s.name }));
+  const svcOpts: ComboOption[] = options.services.map((s) => ({ value: s.id, label: serviceLabel(s) }));
 
   return (
     <form method="post" onSubmit={submit} className="grid gap-5">

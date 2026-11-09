@@ -49,6 +49,8 @@ const patchSchema = z.object({
   assigneeId: z.string().nullable().optional(),
   // Re-routing to a group the current assignee is not in clears the assignee (as in the console).
   groupId: z.string().nullable().optional(),
+  // The affected service; a change re-prices the SLA deadlines like the console does (null clears it).
+  serviceId: z.string().min(1).nullable().optional(),
   // Links, applied through the console's setTicketProblem / setTicketChange (null unlinks).
   problemId: z.number().int().positive().nullable().optional(),
   changeId: z.number().int().positive().nullable().optional(),
@@ -81,9 +83,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const parsed = patchSchema.safeParse(normalized.body);
   if (!parsed.success) return apiError(422, "Validation failed", parsed.error.flatten().fieldErrors);
 
-  const { groupId } = parsed.data;
+  const { groupId, serviceId } = parsed.data;
   if (groupId && !(await db.group.findUnique({ where: { id: groupId }, select: { id: true } }))) {
     return apiError(422, "Validation failed", { groupId: [`Unknown group: ${groupId}`] });
+  }
+  if (serviceId && !(await db.service.findUnique({ where: { id: serviceId }, select: { id: true } }))) {
+    return apiError(422, "Validation failed", { serviceId: [`Unknown service: ${serviceId}`] });
   }
   // Validate a (re)assignment up front so a bad assigneeId is a 422, not a 500
   // on the FK, and so we never assign a non-agent or an out-of-group user.
@@ -99,11 +104,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     data.assigneeId = null;
   }
 
-  // SLA recompute: a priority change on an open ticket re-stamps the deadlines
-  // (same contract as the console's updateTicketField). Done BEFORE the status
-  // side effects so a pause resume shifts the new deadlines, not the old ones.
-  const reprice = parsed.data.priority && parsed.data.priority !== existing.priority
-    ? await slaRepricePatch(existing, { priority: parsed.data.priority, serviceId: existing.serviceId, slaId: existing.slaId })
+  // SLA recompute: a priority or service change on an open ticket re-stamps the
+  // deadlines (same contract as the console's updateTicketField). Done BEFORE the
+  // status side effects so a pause resume shifts the new deadlines, not the old ones.
+  const priorityChanged = !!parsed.data.priority && parsed.data.priority !== existing.priority;
+  const serviceChanged = serviceId !== undefined && serviceId !== existing.serviceId;
+  const reprice = priorityChanged || serviceChanged
+    ? await slaRepricePatch(existing, {
+        priority: parsed.data.priority ?? existing.priority,
+        serviceId: serviceChanged ? serviceId : existing.serviceId,
+        slaId: existing.slaId,
+      })
     : {};
   Object.assign(data, reprice);
 

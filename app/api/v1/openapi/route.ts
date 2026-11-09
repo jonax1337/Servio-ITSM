@@ -15,6 +15,7 @@ import {
 } from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-input";
+import { serviceCreateSchema, servicePatchSchema, serviceUpsertSchema } from "@/lib/api-service-input";
 import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, articleUpsertSchema } from "@/lib/api-article-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
 import {
@@ -242,7 +243,7 @@ const spec = {
       get: { summary: "Get a ticket", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
       patch: {
         summary: "Update a ticket",
-        description: "Agent tokens. Fields: `title`, `description`, `status`, `priority`, `assignee_id`, `group_id`, `problem_id`, `change_id` (null clears). A new `group_id` clears an assignee who is not a member and runs the group's auto-assign.",
+        description: "Agent tokens. Fields: `title`, `description`, `status`, `priority`, `assignee_id`, `group_id`, `service_id`, `problem_id`, `change_id` (null clears). A new `group_id` clears an assignee who is not a member and runs the group's auto-assign. A new `service_id` (or `priority`) re-prices the SLA deadlines of an open ticket; an unknown service is a 422.",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
         responses: { "200": { description: "Updated" }, ...refused },
       },
@@ -279,6 +280,14 @@ const spec = {
         parameters: [refParam],
         requestBody: body(assetUpsertSchema),
         responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "409": { description: "Unique value taken" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/assets/{id}/services": {
+      get: {
+        summary: "Services an outage of this asset hits (direct and transitive)",
+        description: `${agentOnly} \`direct\` = runs on the asset; the others run on assets it takes down or depend on an affected service. Links are managed through \`asset_ids\` of the service.`,
+        parameters: [strId],
+        responses: { "200": { description: "OK" }, "404": { description: "Not found" } },
       },
     },
     "/assets/{id}/relations": {
@@ -354,7 +363,61 @@ const spec = {
       },
     },
     "/services": {
-      get: { summary: "List services and their status", responses: { "200": { description: "OK" } } },
+      get: {
+        summary: "List services (not paginated)",
+        description: `${agentOnly} Each with \`code\`, \`import_ref\`, the ids of category, owner, SLA and group, plus the category name and SLA targets.`,
+        parameters: [q("status"), q("criticality"), q("code"), q("import_ref"), q("q", "Name or code")],
+        responses: { "200": { description: "OK" } },
+      },
+      post: {
+        summary: "Create a service (MANAGER+)",
+        description:
+          "`asset_ids` sets the supporting CIs; `depends_on` the services it needs, each by `service_id` or `service_ref` (an import_ref) with an optional `note`. " +
+          "A self-dependency or a cycle is a 422 with `details.code` `self_dependency` / `dependency_cycle` (and `details.cycle`). Strict body.",
+        requestBody: body(serviceCreateSchema),
+        responses: {
+          "201": { description: "Created (detail view, meta.changed)" },
+          "403": { description: "Not a manager" },
+          "409": { description: "Name, code or import_ref already used (`details.code` name_taken / code_taken / import_ref_taken, existing id in details)" },
+          "422": { description: "Validation failed, unknown ids/refs (`unknown_reference`), an entry listed twice (`duplicate_entry`)" },
+        },
+      },
+    },
+    "/services/{id}": {
+      get: { summary: "Get a service with `assets`, `depends_on` and `used_by`", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Update a service (MANAGER+)",
+        description: "Only the fields sent change; `asset_ids` and `depends_on` replace their whole set (`[]` clears). `meta.changed` lists what changed; an unchanged body writes nothing.",
+        parameters: [strId],
+        requestBody: body(servicePatchSchema),
+        responses: { "200": { description: "Updated or unchanged" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name or code already used" }, "422": { description: "Validation failed, unknown ids, self-dependency or cycle" } },
+      },
+      delete: {
+        summary: "Delete a service (MANAGER+)",
+        description: "Refused while anything references the service; set `status` to RETIRED instead. Its own CI links and dependencies are removed with it.",
+        parameters: [strId],
+        responses: { "200": { description: "Deleted" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Still referenced (`details.code` service_in_use, `details.references` counts, `details.suggestion`)" } },
+      },
+    },
+    "/services/{id}/impact": {
+      get: {
+        summary: "Services that go down with this one (transitive dependants, nearest first)",
+        description: `${agentOnly} Each entry: \`service_id\`, \`code\`, \`name\`, \`status\`, \`criticality\`, \`depth\` (1 = depends on it directly), \`via\`.`,
+        parameters: [strId],
+        responses: { "200": { description: "OK" }, "404": { description: "Not found" } },
+      },
+    },
+    "/services/ref/{ref}": {
+      get: { summary: "Get the service with this origin reference", description: agentOnly, parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Upsert a service by origin reference (MANAGER+, idempotent)",
+        description:
+          "Creates the service (201, `name` required) or writes only the fields sent (200). The same facts again write nothing and no audit row (`meta.changed` empty). " +
+          "`depends_on` may name other services by `service_ref`, so a whole service map can be pushed in dependency order.",
+        parameters: [refParam],
+        requestBody: body(serviceUpsertSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "409": { description: "Name or code already used" }, "422": { description: "Validation failed, unknown ids/refs, self-dependency or cycle" } },
+      },
     },
     "/tickets/{id}/comments": commentPaths("ticket"),
     "/recurring-tickets": {

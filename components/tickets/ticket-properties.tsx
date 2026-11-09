@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { serviceLabel } from "@/lib/service-label";
 import { useRouter } from "next/navigation";
 import { SableMark } from "@/components/sable-mark";
 import { toast } from "sonner";
@@ -169,10 +170,10 @@ export function TicketProperties({
   const none = (label: string): ComboOption => ({ value: "none", label });
   const groupOpts: ComboOption[] = [none(t("form.noGroup")), ...options.groups.map((g) => ({ value: g.id, label: g.name }))];
   const catOpts: ComboOption[] = [none(t("form.noCategory")), ...options.categories.map((c) => ({ value: c.id, label: c.name }))];
-  const svcOpts: ComboOption[] = [none(t("form.noService")), ...options.services.map((s) => ({ value: s.id, label: s.name }))];
+  const svcOpts: ComboOption[] = [none(t("form.noService")), ...options.services.map((s) => ({ value: s.id, label: serviceLabel(s) }))];
   const groupName = (id: string) => options.groups.find((g) => g.id === id)?.name ?? id;
   const catName = (id: string) => options.categories.find((c) => c.id === id)?.name ?? id;
-  const svcName = (id: string) => options.services.find((s) => s.id === id)?.name ?? id;
+  const svcName = (id: string) => { const s = options.services.find((o) => o.id === id); return s ? serviceLabel(s) : id; };
 
   // ── Values shown: the saved ticket, plus edits that are still being saved ──
   const saved = readValues(ticket);

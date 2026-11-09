@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Network, HardDrive, X } from "lucide-react";
+import { Network, HardDrive, LifeBuoy, X } from "lucide-react";
 import { db } from "@/lib/db";
 import { ToneBadge } from "@/components/status-badge";
 import { LinkPicker } from "@/components/link-picker";
@@ -7,6 +7,8 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { ImpactGraph } from "@/components/assets/impact-graph";
 import { addAssetRelation, deleteAssetRelation } from "@/lib/actions/assets";
 import { computeImpact } from "@/lib/cmdb-graph";
+import { servicesAffectedByAssets } from "@/lib/service-graph";
+import { ServiceImpactList } from "@/components/services/service-impact-list";
 import { ASSET_RELATION_META, ASSET_RELATION_TYPES, metaFor } from "@/lib/constants";
 import { getEnumT, getT } from "@/lib/i18n/server";
 import type { Translator } from "@/lib/i18n/translate";
@@ -18,7 +20,7 @@ export async function AssetRelationshipsTab({
   assetId: string;
   isAgentUser: boolean;
 }) {
-  const [links, otherAssets, impact] = await Promise.all([
+  const [links, otherAssets, impact, services] = await Promise.all([
     db.asset.findUnique({
       where: { id: assetId },
       select: {
@@ -35,8 +37,9 @@ export async function AssetRelationshipsTab({
         })
       : [],
     computeImpact(assetId, { direction: "both" }),
+    servicesAffectedByAssets([assetId]),
   ]);
-  const [t, te] = await Promise.all([getT("assets"), getEnumT()]);
+  const [t, te, ts] = await Promise.all([getT("assets"), getEnumT(), getT("services")]);
   const relationTypeOpts = ASSET_RELATION_TYPES.map((ty) => ({
     value: ty,
     label: te(ASSET_RELATION_META[ty]),
@@ -114,6 +117,16 @@ export async function AssetRelationshipsTab({
 
       {/* Impact / blast radius */}
       <ImpactGraph impact={impact} />
+
+      {/* Services that go down with this CI (failure propagation + service dependencies) */}
+      <div className="mt-8">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+          <LifeBuoy className="size-4 text-muted-foreground" />
+          {ts("impact.assetHeading", { count: services.length })}
+        </h2>
+        <p className="mb-4 text-sm text-muted-foreground">{ts("impact.assetDescription")}</p>
+        <ServiceImpactList rows={services} empty={ts("impact.assetEmpty")} />
+      </div>
     </>
   );
 }

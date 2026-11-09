@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { PROPAGATING_RELATION_TYPES, assetsHitBy } from "@/lib/service-graph-rules";
 
 /**
  * CMDB impact / blast-radius traversal over the CI (configuration item) graph.
@@ -148,4 +149,43 @@ export async function computeImpact(
   }
 
   return { root: { id: root.id, name: root.name }, impacted, edges };
+}
+
+/**
+ * The assets an outage of `rootAssetIds` takes down, following only the
+ * relation types along which a failure travels (`ASSET_FAILURE_PROPAGATION`
+ * in lib/service-graph-rules.ts: a failed target takes down what DEPENDS_ON or
+ * RUNS_ON it, a failed host takes down what it HOSTS, a failed part degrades
+ * what it is PART_OF). Unlike `computeImpact` this is directional by meaning,
+ * not by edge orientation. Returns every reached asset with its hop count from
+ * the nearest root (roots at depth 0) and the asset it was reached from; the
+ * services running on them are resolved in lib/service-graph.ts.
+ */
+export async function failureClosure(
+  rootAssetIds: readonly string[],
+  opts?: { maxDepth?: number },
+): Promise<Map<string, { depth: number; via: string | null }>> {
+  const maxDepth = opts?.maxDepth ?? 10;
+  const reached = new Map<string, { depth: number; via: string | null }>();
+  for (const id of rootAssetIds) reached.set(id, { depth: 0, via: null });
+  let frontier = [...reached.keys()];
+  let depth = 0;
+  while (frontier.length > 0 && depth < maxDepth) {
+    depth += 1;
+    const edges = await db.assetRelation.findMany({
+      where: {
+        type: { in: PROPAGATING_RELATION_TYPES },
+        OR: [{ sourceId: { in: frontier } }, { targetId: { in: frontier } }],
+      },
+      select: { sourceId: true, targetId: true, type: true },
+    });
+    const hit = assetsHitBy(edges, new Set(frontier));
+    frontier = [];
+    for (const [assetId, via] of hit) {
+      if (reached.has(assetId)) continue;
+      reached.set(assetId, { depth, via });
+      frontier.push(assetId);
+    }
+  }
+  return reached;
 }

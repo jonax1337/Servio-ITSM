@@ -33,6 +33,7 @@ against the code and kept in sync with the repository.
 | [i18n.md](./i18n.md) | Translations: how the UI language is chosen (user setting, instance default `APP_LOCALE`), the message catalogs, `getT`/`useT`, enum labels, dates, and how to add strings and locales. |
 | [branding.md](./branding.md) | Relay/Nova Flow, canonical assets, fonts, generated application files and sync commands. |
 | [modules.md](./modules.md) | The feature-to-file map for every console and portal module. |
+| [services.md](./services.md) | Services as CMDB objects: service numbers, supporting CIs, service dependencies, the impact rules, the console views and the services API. |
 | [audit.md](./audit.md) | The 2026-08-23 remediation audit (a dated snapshot, not kept in sync). |
 | [benchmark.md](./benchmark.md) | The ITSM usability benchmark against GLPI, iTop and Znuny: per-task clicks and fields, method, limits, and how to regenerate the README chart. |
 

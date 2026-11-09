@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LifeBuoy, User } from "lucide-react";
+import { LifeBuoy, Radar, User } from "lucide-react";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
@@ -8,6 +8,7 @@ import { getFormOptions } from "@/lib/data/options";
 import { getParam, type SearchParams } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { CreateServiceDialog } from "@/components/services/create-service-dialog";
+import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -39,7 +40,7 @@ export default async function ServicesPage({
   const criticality = getParam(sp, "criticality");
 
   const where: Prisma.ServiceWhereInput = {};
-  if (q) where.name = { contains: q };
+  if (q) where.OR = [{ name: { contains: q } }, { code: { contains: q } }];
   if (status && status !== "all") where.status = status;
   if (criticality && criticality !== "all") where.criticality = criticality;
 
@@ -74,6 +75,9 @@ export default async function ServicesPage({
         title={t("title")}
         description={t("description")}
       >
+        <LinkButton href="/services/impact" variant="outline" size="sm">
+          <Radar className="size-4" /> {t("impact.open")}
+        </LinkButton>
         <CreateServiceDialog options={options} />
       </PageHeader>
 
@@ -102,6 +106,9 @@ export default async function ServicesPage({
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="line-clamp-1 font-medium group-hover:text-primary">
+                      {s.code ? (
+                        <span className="mr-1.5 font-mono text-xs font-normal text-muted-foreground">{s.code}</span>
+                      ) : null}
                       {s.name}
                     </h3>
                     {s.description ? (
