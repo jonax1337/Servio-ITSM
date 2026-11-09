@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { findUserByAnyEmail } from "@/lib/user-emails";
 import { db } from "@/lib/db";
 import {
   updateTicketField,
@@ -123,7 +124,7 @@ export const OPERATIONS: AiOperation[] = [
       let requesterId = ctx.userId;
       const email = str(a.requesterEmail);
       if (email) {
-        const requester = await db.user.findUnique({ where: { email }, select: { id: true } });
+        const requester = await findUserByAnyEmail(email, { id: true });
         if (!requester) return err(`No user found with email: ${email}`);
         requesterId = requester.id;
       }

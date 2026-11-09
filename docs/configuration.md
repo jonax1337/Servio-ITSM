@@ -27,8 +27,8 @@ See also: [development.md](development.md) for the local dev loop, and
 > **Admin Settings override `.env`.** Most application-level config can be managed
 > from the UI under **Settings** (ADMIN only) and is stored in the `AppSetting`
 > table: **General** (`APP_NAME`, `APP_URL`, `APP_LOCALE`, `PORTAL_TRIAGE_GROUP_ID`), **Email** (`SMTP_*`), **Inbound**
-> (`IMAP_*`, `MAIL_PLUS_ADDRESSING`), **Sable (AI assistant)** (provider, model, keys,
-> web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`),
+> (`IMAP_*`, `MAIL_PLUS_ADDRESSING`, `INBOUND_*`), **Sable (AI assistant)** (provider, model, keys,
+> web search, teaser, triage), **Uploads** (`MAX_UPLOAD_MB`, `GOTENBERG_URL`, `ATTACHMENT_EXTRA_EXTENSIONS`),
 > **Tickets** (`TICKET_AUTO_CLOSE_DAYS`, `TICKET_CLOSED_EMAIL_ENABLED`), **Change management** (`CHANGE_SELF_APPROVAL`) and
 > **Updates** (`UPDATE_*`). Precedence for every key is **DB row (non-empty) →
 > `process.env` (non-empty) → built-in default**, so an empty table falls back to
@@ -94,8 +94,17 @@ file. The sample file is a starting point, not the full list.
 | `IMAP_POLL_SECONDS` _(not in `.env.example`)_ | No | `60` | Inbound poll interval (floor 15). |
 | `IMAP_TLS_REJECT_UNAUTHORIZED` _(not in `.env.example`)_ | No | `true` | Set `false` to accept a self-signed IMAP certificate. No Settings field. |
 | `MAIL_PLUS_ADDRESSING` _(not in `.env.example`)_ | No | `false` | The Settings › Inbound switch "Match on plus-addressing (support+INC-123@…)". |
+| `IMAP_PROCESSED_ACTION` _(not in `.env.example`)_ | No | `seen` | What happens on the server to a message once processed (ticket, comment, rejected or archived): `seen` (flag it read and leave it), `move` (to `IMAP_PROCESSED_FOLDER`) or `delete`. A failed move or delete falls back to `seen`; a message that fails to process stays unread and is retried. `move` uses the MOVE extension when the server has it and otherwise copies first and deletes the original only after the copy succeeded. Deleting needs UIDPLUS (RFC 4315): without it a plain `EXPUNGE` would also remove other people's `\Deleted` mail, so `delete` degrades to `seen` (one warning in the log). Rules: [`../lib/mail-inbound/disposition.ts`](../lib/mail-inbound/disposition.ts). |
+| `IMAP_PROCESSED_FOLDER` _(not in `.env.example`)_ | No | `Processed` | Target folder of `move`; created on the next poll when missing. Must differ from `IMAP_FOLDER` (moving into the polled folder is treated as `seen`). |
+| `IMAP_RETENTION_DAYS` _(not in `.env.example`)_ | No | `0` (off) | Delete processed messages older than this many days (0–3650, by the server's received date), checked hourly. `move`: everything older in `IMAP_PROCESSED_FOLDER`. `seen`: only messages carrying the `$ServioProcessed` keyword Servio sets on what it processed — mail a person read in the mailbox is never touched, and servers that cannot store custom keywords are skipped. `delete`: nothing to do. The sweep also needs UIDPLUS and is skipped (with a warning) without it. |
+| `INBOUND_SENDER_POLICY` _(not in `.env.example`)_ | No | `open` | Who may open a **new** ticket by email: `open` (anyone), `known` (people with an active account, matched by primary or secondary address) or `domains` (active accounts plus `INBOUND_ALLOWED_DOMAINS`). Replies to an existing ticket are always accepted. Rejected mail is kept in the mail log as `REJECTED` with the reason and creates no contact. **`known` and `domains` go by the `From` header, which nobody verifies at this layer**: anyone can claim to be a colleague or a listed domain, so the policy keeps the mailbox tidy but is not authentication. Let the mail server reject forged senders (SPF, DKIM, DMARC) where it matters. Domains are compared in punycode, so `münchen.example` and `xn--mnchen-3ya.example` are the same. Rules: [`../lib/mail-inbound/policy.ts`](../lib/mail-inbound/policy.ts). |
+| `INBOUND_ALLOWED_DOMAINS` _(not in `.env.example`)_ | No | — | Comma-separated domains for the `domains` policy; a domain also allows its subdomains. |
+| `INBOUND_DENY_LIST` _(not in `.env.example`)_ | No | — | Comma-separated addresses (`news@example.com`) or domains (`example.com`, `@example.com`, incl. subdomains) whose new messages are archived without a ticket (mail log status `ARCHIVED`), whatever the policy. Replies to an existing ticket still land. |
+| `INBOUND_REJECT_AUTOREPLY` _(not in `.env.example`)_ | No | `false` | Answer a policy rejection with the admin-editable "Email not accepted" template (`inbound_rejected`, link to the portal from `APP_URL`). Never for deny-listed mail, automatic or bulk mail (`Auto-Submitted`, `Precedence`, `List-*`, empty `Return-Path`, no-reply senders), at most once per address in 24 hours and 20 answers per hour in total; the answer carries `Auto-Submitted: auto-replied`. **Risk (backscatter):** the sender address of a turned-away email can be forged, so an answer may reach an innocent third party. The default template therefore repeats nothing the sender wrote (no subject, no display name) and `INBOUND_REJECT_REQUIRE_AUTH` restricts the answer to authenticated senders. Keep custom templates free of sender-written text. |
+| `INBOUND_REJECT_REQUIRE_AUTH` _(not in `.env.example`)_ | No | `true` | Answer a rejection only when the receiving mail server vouches for the sender's domain: its `Authentication-Results` header shows `dmarc=pass`, or `dkim=pass` / `spf=pass` for a domain aligned with `From`. The header is only as trustworthy as the MTA that writes it (it must strip a forged one); a server that adds none gets no answers while this is on. Rule: `isSenderAuthenticated` in [`../lib/mail-inbound/policy.ts`](../lib/mail-inbound/policy.ts). |
 | `STORAGE_DRIVER` | No | `fs` | Blob storage driver. Only `fs` is implemented; `s3` and `vercel-blob` are seams in [`../lib/storage.ts`](../lib/storage.ts). An unknown value throws at startup. |
 | `UPLOAD_DIR` | No | `./.uploads` | Filesystem root for the `fs` driver. **Must stay outside `./public`** — see [File storage](#file-storage--attachments). |
+| `ATTACHMENT_EXTRA_EXTENSIONS` _(not in `.env.example`)_ | No | — | Comma-separated file extensions accepted on top of the built-in allow-list (e.g. `dwg, step`), for uploads, assistant attachments and inbound mail attachments. Stored and served as `application/octet-stream` downloads (no content check is possible). A hard deny-list of executables, scripts, installers, shortcuts and disk images (`exe`, `bat`, `ps1`, `msi`, `jar`, `lnk`, `svg`, `iso`, `img`, `vhd`, `chm`, `cab`, `xll`, … — modelled on the types Outlook blocks) can never be added — Settings › Uploads refuses them and an env value that lists them is filtered. See [`../lib/files.ts`](../lib/files.ts). |
 | `MAX_UPLOAD_MB` | No | `15` | Per-file upload cap in MB. The upload route enforces the Settings › Uploads value (falling back to the env value); [`../lib/files.ts`](../lib/files.ts) derives the client-side mirror `MAX_UPLOAD_BYTES` from the env value only. |
 | `PROXY_MAX_BODY_MB` | No (**build time**) | `32` | How much of a request body Next.js buffers for `proxy.ts` (`experimental.proxyClientMaxBodySize` in [`../next.config.ts`](../next.config.ts)). Must exceed the upload cap plus multipart overhead, or larger uploads fail. Baked into the build: the published image uses 32 MB, so an upload cap above ~31 MB needs a source build with a higher value. |
 | `AI_PROVIDER` | No | `anthropic` | Sable's AI backend: `anthropic` \| `openai` \| `ollama` \| `claude-code`. See [AI service agent (Sable)](#ai-service-agent-sable). |
@@ -495,8 +504,12 @@ the server); [`../lib/files.ts`](../lib/files.ts) derives the client-side mirror
 `MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024` from the env value. The server is
 authoritative: uploads are validated against an allow-list of MIME types
 (images, PDF, Office `docx`/`xlsx`/`pptx`, `txt`/`log`/`csv`) **and** magic-byte
-signatures, and oversized/empty/mismatched files are rejected. See
-[rest-api.md](rest-api.md) for the upload endpoint and error codes.
+signatures, and oversized/empty/mismatched files are rejected. Admins can accept
+further extensions without a code change (`ATTACHMENT_EXTRA_EXTENSIONS`, Settings ›
+Uploads); those are stored as opaque downloads, and the hard deny-list of executable
+and script types (`HARD_DENIED_EXTENSIONS`) cannot be overridden. Inbound mail
+attachments go through the same check; the ones that fail are not stored and the mail
+log names them. See [rest-api.md](rest-api.md) for the upload endpoint and error codes.
 
 Uploads also pass through `proxy.ts`, for which Next.js buffers request bodies only
 up to `PROXY_MAX_BODY_MB` (build time, default 32 MB). Keep the upload cap below

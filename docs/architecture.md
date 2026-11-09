@@ -381,7 +381,8 @@ runtime only it loads `lib/instrumentation-node.ts`, which calls `startScheduler
 ([`lib/scheduler.ts`](../lib/scheduler.ts)) is single-instance by design (overlap guards and
 markers are in memory): set `SCHEDULER_ENABLED=false` on any replica that must stay passive (see
 [deployment.md](./deployment.md)). It runs three built-in loops — the inbound-mail IMAP poll
-(`IMAP_POLL_SECONDS`), the cron `syncTick` that fires due sources (`SYNC_TICK_SECONDS`) and the SLA
+(`IMAP_POLL_SECONDS`, followed at most hourly by the processed-mail retention sweep when
+`IMAP_RETENTION_DAYS` is set), the cron `syncTick` that fires due sources (`SYNC_TICK_SECONDS`) and the SLA
 escalation sweep (`SLA_ESCALATION_TICK_SECONDS`) — plus the feature sweeps in `FEATURE_TICKS` in the
 same file: `runInsightsTick`, `runSlaNudgeTick`, `runContractsTick`, `runMaintenanceTick`,
 `runUpdateCheckTick`, `runRecurringTicketsTick` and `runAutoCloseTick` (`lib/ticks/*`). Each sweep has its own interval setting and floor, an overlap

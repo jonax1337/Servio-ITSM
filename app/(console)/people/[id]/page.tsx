@@ -10,6 +10,7 @@ import {
   Users as UsersIcon,
   Ticket as TicketIcon,
   Server,
+  AtSign,
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
@@ -60,6 +61,7 @@ export default async function PersonDetailPage({
       include: {
         memberships: { include: { group: true } },
         syncSource: { select: { name: true } },
+        secondaryEmails: { select: { email: true }, orderBy: { createdAt: "asc" } },
       },
     }),
     // Tickets this person has open as the REQUESTER — "what they have open".
@@ -80,6 +82,7 @@ export default async function PersonDetailPage({
   if (!user) notFound();
 
   const displayName = user.name ?? user.email;
+  const secondaryEmails = user.secondaryEmails.map((e) => e.email);
 
   return (
     <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
@@ -96,6 +99,7 @@ export default async function PersonDetailPage({
                 person={{
                   id: user.id, name: user.name, email: user.email,
                   phone: user.phone, jobTitle: user.jobTitle, department: user.department,
+                  secondaryEmails: secondaryEmails,
                 }}
                 syncSourceName={user.syncSource?.name ?? null}
               />
@@ -141,6 +145,9 @@ export default async function PersonDetailPage({
           {/* Contact rows */}
           <div className="mt-6 grid gap-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2">
             <ContactRow icon={Mail} label={t("email")} value={user.email} />
+            {secondaryEmails.length > 0 ? (
+              <ContactRow icon={AtSign} label={t("secondaryEmails")} value={secondaryEmails.join(", ")} />
+            ) : null}
             <ContactRow icon={Phone} label={t("phone")} value={user.phone ?? "—"} />
             <ContactRow
               icon={Briefcase}

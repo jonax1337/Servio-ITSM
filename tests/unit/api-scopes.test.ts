@@ -38,6 +38,13 @@ describe("scopeGrants", () => {
     expect(scopeGrants(["kb:read"], "kb:write")).toBe(false);
   });
 
+  it("directory:write is not privileged: the legacy write keeps covering the people edit", () => {
+    expect(scopeGrants(["write"], "directory:write")).toBe(true);
+    expect(scopeGrants(["directory:write"], "directory:write")).toBe(true);
+    expect(scopeGrants(["directory:write"], "directory:read")).toBe(true);
+    expect(scopeGrants(["directory:read"], "directory:write")).toBe(false);
+  });
+
   it("keeps the history import out of the legacy write and in admin and import:write", () => {
     expect(scopeGrants(["read", "write"], "import:write")).toBe(false);
     expect(scopeGrants(["admin"], "import:write")).toBe(true);
@@ -89,7 +96,7 @@ describe("normalizeScopes", () => {
     expect(normalizeScopes([])).toBeNull();
     expect(normalizeScopes([" "])).toBeNull();
     expect(normalizeScopes(["tickets:delete"])).toBeNull();
-    expect(normalizeScopes(["directory:write"])).toBeNull();
+    expect(normalizeScopes(["directory:delete"])).toBeNull();
   });
 });
 
@@ -103,6 +110,7 @@ describe("requiredScope", () => {
     expect(requiredScope("/articles/ref/{ref}", "PUT")).toBe("kb:write");
     expect(requiredScope("/categories", "GET")).toBe("catalog:read");
     expect(requiredScope("/users", "GET")).toBe("directory:read");
+    expect(requiredScope("/users/{id}", "PATCH")).toBe("directory:write");
     expect(requiredScope("/import/changes/{import_ref}", "PUT")).toBe("import:write");
   });
 
@@ -115,7 +123,6 @@ describe("requiredScope", () => {
   it("has no answer for a route group or access nobody decided on", () => {
     expect(requiredScope("/widgets", "GET")).toBeUndefined();
     expect(requiredScope("/constructor", "GET")).toBeUndefined();
-    expect(requiredScope("/users", "POST")).toBeUndefined();
     expect(requiredScope("/import/tickets", "GET")).toBeUndefined();
   });
 });
@@ -123,7 +130,7 @@ describe("requiredScope", () => {
 describe("scope catalog", () => {
   it("lists every resource with the accesses it offers", () => {
     expect(API_RESOURCES).toEqual(["tickets", "recurring", "problems", "changes", "cmdb", "kb", "catalog", "directory", "import"]);
-    expect(resourceScopes("directory")).toEqual(["directory:read"]);
+    expect(resourceScopes("directory")).toEqual(["directory:read", "directory:write"]);
     expect(resourceScopes("import")).toEqual(["import:write"]);
     expect(resourceScopes("kb")).toEqual(["kb:read", "kb:write", "kb:publish"]);
     expect(resourceScopes("cmdb")).toEqual(["cmdb:read", "cmdb:write"]);

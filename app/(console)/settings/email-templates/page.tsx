@@ -6,7 +6,7 @@ import { getTicketAutoCloseDays } from "@/lib/settings";
 import { mailBrand } from "@/lib/mail";
 import { signatureHtml, textToHtmlParagraphs } from "@/lib/mail-template";
 import {
-  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, approvalStageText, autoCloseNoticeHtml, previewTemplate, quotedTextHtml,
+  TEMPLATE_KEYS, TEMPLATE_META, DEFAULT_TEMPLATES, approvalStageText, autoCloseNoticeHtml, portalLinkHtml, previewTemplate, quotedTextHtml,
   type TemplateKey,
 } from "@/lib/email-templates";
 import { PageHeader, PageBody } from "@/components/page-header";
@@ -59,8 +59,12 @@ export default async function EmailTemplatesPage() {
     comment: quotedTextHtml(t("emailTemplates.sampleComment")),
     recipientName: "Alex Admin",
     subject: `[INC-0042] ${t("emailTemplates.sampleTitle")}`,
+    senderName: "Max Sample",
   };
   const ctx = { brand, vars: sampleVars };
+  // {{link}} means a different link per template; only the portal answer gets a sample.
+  const portalLink = portalLinkHtml(`${brand.appUrl ?? "https://servio.example.com"}/portal`, brand.appName ?? "Servio", brand.locale);
+  const ctxFor = (key: TemplateKey) => (key === "inbound_rejected" ? { brand, vars: { ...sampleVars, link: portalLink } } : ctx);
 
   return (
     <>
@@ -74,7 +78,7 @@ export default async function EmailTemplatesPage() {
           const row = byKey.get(key);
           const subject = row?.subject ?? DEFAULT_TEMPLATES[key].subject;
           const bodyHtml = row?.bodyHtml ?? DEFAULT_TEMPLATES[key].bodyHtml;
-          const preview = previewTemplate({ subject, bodyHtml }, ctx);
+          const preview = previewTemplate({ subject, bodyHtml }, ctxFor(key));
           return (
             <EmailTemplateEditor
               key={key}

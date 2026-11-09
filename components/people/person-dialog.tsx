@@ -9,6 +9,7 @@ import { ROLES, ROLE_META } from "@/lib/constants";
 import { MIN_PASSWORD_LENGTH } from "@/lib/person-rules";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ComboField } from "@/components/combo-field";
 import { MultiCombobox } from "@/components/multi-combobox";
@@ -25,6 +26,7 @@ type Person = {
   phone: string | null;
   jobTitle: string | null;
   department: string | null;
+  secondaryEmails: string[];
 };
 
 function Field({
@@ -117,6 +119,19 @@ export function PersonDialog({
             </Field>
             <Field label={t("email")} errors={fe.email} className="sm:col-span-2">
               <Input name="email" type="email" defaultValue={person?.email} required />
+            </Field>
+            <Field
+              label={t("secondaryEmails")}
+              errors={fe.secondaryEmails}
+              hint={t("secondaryEmailsHint")}
+              className="sm:col-span-2"
+            >
+              <Textarea
+                name="secondaryEmails"
+                rows={2}
+                defaultValue={person?.secondaryEmails.join("\n") ?? ""}
+                placeholder="alias@example.com"
+              />
             </Field>
             {editing ? null : (
               <Field label={t("role")} errors={fe.role}>

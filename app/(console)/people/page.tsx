@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Users } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
+import { anyEmailContains } from "@/lib/user-emails";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
@@ -45,7 +46,7 @@ export default async function PeoplePage({
   const active = getParam(sp, "active");
 
   const where: Prisma.UserWhereInput = { email: { not: AUTOMATION_EMAIL } };
-  if (q) where.OR = [{ name: { contains: q } }, { email: { contains: q } }];
+  if (q) where.OR = [{ name: { contains: q } }, ...anyEmailContains(q)];
   if (role && role !== "all") where.role = role;
   if (active === "true") where.isActive = true;
   else if (active === "false") where.isActive = false;

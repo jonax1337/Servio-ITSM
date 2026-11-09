@@ -42,6 +42,11 @@ export const UPLOAD_ACCEPT = [
   ".mp3", ".wav", ".ogg", ".oga", ".m4a", ".mp4", ".m4v", ".webm", ".mov",
 ].join(",");
 
+/** The picker `accept` list including admin-added extensions (Settings › Uploads). */
+export function uploadAccept(extraExtensions: readonly string[]): string {
+  return extraExtensions.length ? `${UPLOAD_ACCEPT},${extraExtensions.map((e) => `.${e}`).join(",")}` : UPLOAD_ACCEPT;
+}
+
 export type AttachmentTarget =
   | { ticketId: number }
   | { commentId: string }

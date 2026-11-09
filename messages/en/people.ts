@@ -21,6 +21,8 @@ const people = {
   person: "Person",
   backToPeople: "Back to people",
   email: "Email",
+  secondaryEmails: "Secondary addresses",
+  secondaryEmailsHint: "One per line. Mail from these addresses is matched to this person; notifications still go to the primary address.",
   phone: "Phone",
   jobTitle: "Job title",
   department: "Department",

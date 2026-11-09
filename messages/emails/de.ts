@@ -78,10 +78,20 @@ export const emailTemplatesDe = {
       `{{comment}}` +
       `<p>Wenn Sie sie weiterhin benötigen, können Sie im Portal eine neue Anfrage stellen.</p>`,
   },
+  inbound_rejected: {
+    subject: "Ihre E-Mail konnte nicht angenommen werden",
+    bodyHtml:
+      `<p>Guten Tag,</p>` +
+      `<p>vielen Dank für Ihre Nachricht. Dieses Postfach nimmt neue Anfragen nur von registrierten Adressen an, daher wurde aus Ihrer E-Mail kein Ticket erstellt.</p>` +
+      `<p>Bitte stellen Sie Ihre Anfrage stattdessen über das Portal von {{appName}}.</p>` +
+      `{{link}}`,
+  },
 } as const;
 
 /** The link label of the notification email. */
 export const noticeLinkDe = (appName: string) => `In ${appName} öffnen`;
+
+export const portalLinkDe = (appName: string) => `Zum Portal von ${appName}`;
 
 /** German wording of the notification emails (English: lib/notification-email-rules.ts). */
 export const noticeTextDe: NoticeTextFn = (notice, { ref = "", title = "" }, formatDate) => {

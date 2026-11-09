@@ -1,5 +1,6 @@
 import type { SyncSource } from "@prisma/client";
 import { db } from "@/lib/db";
+import { releaseOwnSecondary } from "@/lib/user-emails";
 import { SyncLog } from "./types";
 
 /**
@@ -83,8 +84,18 @@ export async function importUsers(
             })
           : null;
       const owned = current ?? legacy;
+      // An address is unique across primary AND secondary addresses: one that is
+      // another person's secondary address is never taken over by the sync.
+      const secondaryOwner = await db.userEmail.findUnique({ where: { email: rec.email }, select: { userId: true } });
+      if (secondaryOwner && secondaryOwner.userId !== owned?.id) {
+        log.failed++;
+        log.line(`Skipped ${rec.email}: another person uses this address as a secondary address.`);
+        continue;
+      }
 
       if (owned) {
+        // The source made one of this person's secondary addresses the primary one.
+        if (secondaryOwner) await releaseOwnSecondary(owned.id, rec.email);
         await db.user.update({
           where: { id: owned.id },
           data: {

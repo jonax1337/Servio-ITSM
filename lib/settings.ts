@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { parseSelfApprovalMode, type ChangeSelfApprovalMode } from "@/lib/approval-rules";
 import { TICKET_AUTO_CLOSE_DAYS_SETTING, normalizeAutoCloseDays } from "@/lib/auto-close-rules";
+import { ATTACHMENT_EXTRA_EXTENSIONS_SETTING, parseExtraExtensions } from "@/lib/files";
 
 /**
  * Central runtime-config service. Precedence for every key:
@@ -71,6 +72,16 @@ export async function getNumberSetting(key: string, fallback: number): Promise<n
 /** Per-file upload cap in MB (Admin Settings › Uploads, env `MAX_UPLOAD_MB` fallback). */
 export async function getMaxUploadMb(): Promise<number> {
   return getNumberSetting("MAX_UPLOAD_MB", 15);
+}
+
+/**
+ * Extensions an admin allowed on top of the built-in list (Settings › Uploads, env
+ * `ATTACHMENT_EXTRA_EXTENSIONS` fallback). Hard-denied and malformed entries are
+ * dropped here too, so a value set directly in the environment cannot sneak in
+ * an executable type.
+ */
+export async function getExtraUploadExtensions(): Promise<string[]> {
+  return parseExtraExtensions(await getSetting(ATTACHMENT_EXTRA_EXTENSIONS_SETTING)).extensions;
 }
 
 export const CHANGE_SELF_APPROVAL_SETTING = "CHANGE_SELF_APPROVAL";

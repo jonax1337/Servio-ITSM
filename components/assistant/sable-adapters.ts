@@ -10,7 +10,7 @@ import {
   type CompleteAttachment,
   type PendingAttachment,
 } from "@assistant-ui/react";
-import { UPLOAD_ACCEPT } from "@/lib/attachments-ui";
+import { useUploadAccept } from "@/components/attachments/upload-accept";
 
 /** Read a File as a base64 data URL (works with or without FileReader). */
 async function fileToDataURL(file: File): Promise<string> {
@@ -42,7 +42,7 @@ async function fileToDataURL(file: File): Promise<string> {
 class SableDocumentAttachmentAdapter implements AttachmentAdapter {
   // Accept anything here; ordering in the composite means images + plain text
   // are handled by their dedicated adapters first, and this catches the rest.
-  accept = UPLOAD_ACCEPT;
+  constructor(readonly accept: string) {}
 
   async add({ file }: { file: File }): Promise<PendingAttachment> {
     return {
@@ -82,17 +82,18 @@ class SableDocumentAttachmentAdapter implements AttachmentAdapter {
  * both surfaces stay identical.
  */
 export function useSableChatAdapters() {
+  const accept = useUploadAccept();
   return useMemo(() => {
     const attachments = new CompositeAttachmentAdapter([
       new SimpleImageAttachmentAdapter(),
       new SimpleTextAttachmentAdapter(),
       // Catch-all last so images/plain text keep their dedicated handling.
-      new SableDocumentAttachmentAdapter(),
+      new SableDocumentAttachmentAdapter(accept),
     ]);
     const canDictate =
       typeof window !== "undefined" && WebSpeechDictationAdapter.isSupported();
     return canDictate
       ? { attachments, dictation: new WebSpeechDictationAdapter() }
       : { attachments };
-  }, []);
+  }, [accept]);
 }

@@ -90,7 +90,8 @@ scope of every operation.
 | `kb:read` / `kb:write` | `/articles/**` |
 | `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
-| `directory:read` | `/groups`, `/users` (lookups, read only) |
+| `directory:read` | `/groups`, `/users` and `/users/{id}` (lookups) |
+| `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN). Not privileged: the legacy `write` covers it |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
 **Legacy scopes** keep exactly the rights they always had, so existing tokens work
@@ -323,6 +324,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
+| `GET` / `PATCH` | `/users/{id}` | Get one user / replace their secondary email addresses (edit: ADMIN owner). | `directory:read` / `directory:write` |
 | `GET` / `POST` | `/{entity}/{id}/attachments` | `entity` = `tickets`, `changes`, `problems`, `assets` or `licenses`: list a record's files (paginated) / upload one (`multipart/form-data`). See [Attachments](#attachments). | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `GET` / `DELETE` | `/{entity}/{id}/attachments/{attachment_id}` | Download the file (the raw bytes) / remove it and its stored blob. | `<resource>:read` / `<resource>:write` of the parent (`assets`, `licenses`: `cmdb`) |
 | `POST` | `/import/tickets` | Import a historical ticket with its thread (see [History import](#history-import)). | `import:write` + ADMIN owner |
@@ -1170,8 +1172,25 @@ shared tree for tickets, problems, changes, catalog items, change templates and
 articles — there are no separate change categories; a change takes one as
 `category_id` on `POST` / `PATCH /changes` and is filtered by it on `GET /changes`. `GET /groups` (`id`,
 `name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
-`GET /users` (`id`, `name`, `email`, `role`, `active`; `q` matches name or email,
-`role`, `active=true|false|all`, paginated).
+`GET /users` (`id`, `name`, `email`, `secondary_emails`, `role`, `active`; `q`
+matches name, primary or secondary email, `role`, `active=true|false|all`,
+paginated; `GET /users/{id}` returns one).
+
+### Secondary email addresses
+
+`PATCH /users/{id}` replaces a person's secondary addresses — extra addresses inbound
+mail is matched on (notifications keep going to `email`). It needs the `directory:write` scope
+(the legacy `write` works too) and a token owned by an **ADMIN** (else `403`), like the console's people admin. The
+body is strict snake_case:
+
+```json
+{ "secondary_emails": ["jane.alias@example.com", "jane@home.example"] }
+```
+
+The list replaces the current one (`[]` removes all; at most 10). A malformed
+address or the person's own primary address is a `422`; an address that already
+belongs to someone else, as primary or secondary address, is a `409` with the
+address in `details.email`. Changes are audited on the user.
 
 ### Managing categories
 

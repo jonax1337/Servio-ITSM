@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { X, Loader2, UploadCloud } from "lucide-react";
 import { deleteAttachment } from "@/lib/actions/attachments";
-import { iconForMime, formatBytes, DEFAULT_MAX_UPLOAD_MB, maxUploadBytes, UPLOAD_ACCEPT } from "@/lib/attachments-ui";
+import { iconForMime, formatBytes, DEFAULT_MAX_UPLOAD_MB, maxUploadBytes } from "@/lib/attachments-ui";
+import { useUploadAccept } from "@/components/attachments/upload-accept";
 import { FilePreview, useFilePreview, canPreview, type PreviewFile } from "@/components/file-preview";
 import { cn } from "@/lib/utils";
 import { useServerMessage, useT } from "@/lib/i18n/client";
@@ -21,6 +22,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
   maxMb?: number;
 }) {
   const maxBytes = maxUploadBytes(maxMb);
+  const accept = useUploadAccept();
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<Staged[]>([]);
@@ -124,7 +126,7 @@ export function PortalAttachments({ maxMb = DEFAULT_MAX_UPLOAD_MB }: {
         </span>
       </button>
 
-      <input ref={inputRef} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden" onChange={(e) => onFiles(e.target.files)} />
+      <input ref={inputRef} type="file" multiple accept={accept} className="hidden" onChange={(e) => onFiles(e.target.files)} />
 
       {files.length > 0 ? (
         <div className="flex flex-wrap gap-2">

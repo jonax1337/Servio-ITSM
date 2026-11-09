@@ -1,7 +1,15 @@
 import { CronExpressionParser } from "cron-parser";
 import { db } from "@/lib/db";
 import { getSetting, getBoolSetting, getNumberSetting } from "@/lib/settings";
-import { pollImap } from "@/lib/mail-inbound/imap";
+import { pollImap, purgeImap } from "@/lib/mail-inbound/imap";
+import {
+  DEFAULT_PROCESSED_FOLDER,
+  IMAP_PROCESSED_ACTION_SETTING,
+  IMAP_PROCESSED_FOLDER_SETTING,
+  IMAP_RETENTION_DAYS_SETTING,
+  parseDisposition,
+  parseRetentionDays,
+} from "@/lib/mail-inbound/disposition";
 import { processInboundMail } from "@/lib/mail-inbound/process";
 import { executeSyncRun } from "@/lib/sync-runner";
 import { runSlaEscalation } from "@/lib/sla-escalation";
@@ -47,6 +55,9 @@ function schedulerEnabled(): boolean {
 }
 
 let polling = false;
+let lastPurgeAt = 0;
+/** The retention sweep runs at most this often; message ages are counted in days. */
+const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 let syncing = false;
 let escalating = false;
 
@@ -66,6 +77,9 @@ async function readInboundConfig(): Promise<InboundConfig | null> {
     pass,
     folder: (await getSetting("IMAP_FOLDER")) ?? "INBOX",
     tlsRejectUnauthorized: await getBoolSetting("IMAP_TLS_REJECT_UNAUTHORIZED", true),
+    disposition: parseDisposition(await getSetting(IMAP_PROCESSED_ACTION_SETTING)),
+    processedFolder: (await getSetting(IMAP_PROCESSED_FOLDER_SETTING)) ?? DEFAULT_PROCESSED_FOLDER,
+    retentionDays: parseRetentionDays(await getSetting(IMAP_RETENTION_DAYS_SETTING)) ?? 0,
   };
 }
 
@@ -83,6 +97,15 @@ async function inboundTick(): Promise<void> {
     }
   } catch (e) {
     console.error("[servio:inbound] poll error:", e instanceof Error ? e.message : e);
+  }
+  try {
+    if (config.retentionDays > 0 && Date.now() - lastPurgeAt >= PURGE_INTERVAL_MS) {
+      lastPurgeAt = Date.now();
+      const purged = await purgeImap(config);
+      if (purged) console.log(`[servio:inbound] retention deleted ${purged} processed message(s)`);
+    }
+  } catch (e) {
+    console.error("[servio:inbound] retention error:", e instanceof Error ? e.message : e);
   } finally {
     polling = false;
   }
