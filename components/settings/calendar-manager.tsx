@@ -13,6 +13,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { ComboField } from "@/components/combo-field";
+import { HOLIDAY_REGIONS } from "@/lib/public-holidays";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { WEEKDAY_KEYS, type WeekdayKey } from "@/lib/business-hours";
 import { useServerMessage, useT } from "@/lib/i18n/client";
@@ -23,7 +25,8 @@ export type CalendarRow = {
   name: string;
   timezone: string;
   weeklyHours: string; // JSON
-  holidays: { id: string; name: string; date: Date | string }[];
+  holidayRegion: string | null;
+  holidays: { id: string; name: string; date: Date | string; generated: boolean }[];
 };
 
 type DayState = { enabled: boolean; open: string; close: string };
@@ -115,6 +118,17 @@ function CalendarDialog({ calendar }: { calendar?: CalendarRow }) {
               <Input name="timezone" defaultValue={calendar?.timezone ?? "UTC"} placeholder={t("cal.timezonePlaceholder")} required />
             </Field>
           </div>
+
+          <Field label={t("cal.holidayRegion")}>
+            <ComboField
+              name="holidayRegion"
+              defaultValue={calendar?.holidayRegion ?? "none"}
+              includeNone
+              noneLabel={t("cal.regionNone")}
+              options={HOLIDAY_REGIONS.map((code) => ({ value: code, label: t(`cal.region.${code}`) }))}
+            />
+            <p className="text-xs text-muted-foreground">{t("cal.regionHint")}</p>
+          </Field>
 
           <div className="grid gap-1.5">
             <Label>{t("cal.weeklyHours")}</Label>
@@ -209,6 +223,7 @@ function summarizeWeek(json: string, t: Translator<"settings">): string {
 
 export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
   const t = useT("settings");
+  const dayOf = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
@@ -246,17 +261,17 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
 
               <div className="border-t px-4 py-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">{t("cal.holidays", { count: c.holidays.length })}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("cal.holidays", { count: c.holidays.filter((h) => !h.generated).length })}</span>
                   <HolidayDialog calendarId={c.id} />
                 </div>
-                {c.holidays.length === 0 ? (
+                {c.holidays.every((h) => h.generated) ? (
                   <p className="text-xs text-muted-foreground">{t("cal.noHolidays")}</p>
                 ) : (
                   <ul className="flex flex-wrap gap-2">
-                    {c.holidays.map((h) => (
+                    {c.holidays.filter((h) => !h.generated).map((h) => (
                       <li key={h.id} className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs">
                         <span className="font-medium">{h.name}</span>
-                        <span className="text-muted-foreground">{new Date(h.date).toISOString().slice(0, 10)}</span>
+                        <span className="text-muted-foreground">{dayOf(h.date)}</span>
                         <ConfirmButton
                           action={deleteHoliday}
                           fields={{ id: h.id }}
@@ -274,6 +289,24 @@ export function CalendarManager({ calendars }: { calendars: CalendarRow[] }) {
                     ))}
                   </ul>
                 )}
+                {c.holidayRegion && c.holidays.some((h) => h.generated) ? (
+                  <div className="mt-3 border-t pt-2">
+                    <span className="text-xs font-medium text-muted-foreground" title={t("cal.generatedHint")}>
+                      {t("cal.generatedHolidays", {
+                        region: t(`cal.region.${c.holidayRegion as (typeof HOLIDAY_REGIONS)[number]}`),
+                        count: c.holidays.filter((h) => h.generated).length,
+                      })}
+                    </span>
+                    <ul className="mt-1 flex flex-wrap gap-2">
+                      {c.holidays.filter((h) => h.generated).map((h) => (
+                        <li key={h.id} title={t("cal.generated")} className="flex items-center gap-1.5 rounded-full border border-dashed px-2 py-0.5 text-xs text-muted-foreground">
+                          <span className="font-medium">{h.name}</span>
+                          <span>{dayOf(h.date)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}

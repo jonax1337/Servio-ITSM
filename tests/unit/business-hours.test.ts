@@ -54,6 +54,18 @@ describe("elapsedBusinessMs", () => {
     expect(elapsedBusinessMs(mon(16), tue(18), cal)).toBe(3_600_000);
   });
 
+  it("reads a holiday as its own calendar day in a timezone west of UTC", () => {
+    // Stored as UTC midnight of Tuesday 2024-01-09; read in New York it must not slip to Monday.
+    const cal: BusinessCalendarLike = {
+      timezone: "America/New_York",
+      weeklyHours: JSON.stringify({ mon: nine17, tue: nine17 }),
+      holidays: [{ date: new Date(Date.UTC(2024, 0, 9)) }],
+    };
+    const at = (d: number, h: number) => new Date(Date.UTC(2024, 0, d, h)); // 09:00 New York = 14:00 UTC
+    expect(elapsedBusinessMs(at(8, 14), at(8, 22), cal)).toBe(8 * 3_600_000); // Monday stays open
+    expect(elapsedBusinessMs(at(9, 14), at(9, 22), cal)).toBe(0); // Tuesday is the holiday
+  });
+
   it("supports multiple windows per day without double-counting overlaps", () => {
     const cal: BusinessCalendarLike = {
       timezone: "UTC",

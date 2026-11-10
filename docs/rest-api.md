@@ -90,6 +90,7 @@ scope of every operation.
 | `kb:read` / `kb:write` | `/articles/**` |
 | `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
+| `sla:read` / `sla:write` | `/slas/**` and `/business-calendars/**` (SLA targets, working hours and holidays); writes need a MANAGER or ADMIN owner |
 | `directory:read` | `/groups`, `/groups/{id}`, `/users` and `/users/{id}` (lookups) |
 | `directory:write` | `PATCH /users/{id}` (secondary email addresses and account type; the owner must be an ADMIN), creating, editing and deleting groups (`POST /groups`, `PATCH` / `DELETE /groups/{id}`, `PUT /groups/ref/{ref}`) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`); group writes need a MANAGER or ADMIN owner. Not privileged: the legacy `write` covers it |
 | `system:read` | `/system/**`: operational status for monitoring (the built-in backup), read only |
@@ -324,6 +325,14 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `POST` | `/categories` | Create a category (MANAGER+). | `catalog:write` |
 | `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
 | `DELETE` | `/categories/{id}` | Delete a category (MANAGER+); `409` while it is still referenced, see below. | `catalog:write` |
+| `GET` / `POST` | `/slas` | List / create SLAs (writes: MANAGER+), see [SLAs and business calendars](#slas-and-business-calendars). | `sla:read` / `sla:write` |
+| `GET` / `PATCH` / `DELETE` | `/slas/{id}` | Get / edit / delete an SLA (delete is a `409` while tickets or services use it). | `sla:read` / `sla:write` |
+| `GET` / `PUT` | `/slas/ref/{ref}` | Get / create-or-update an SLA by origin reference (`import_ref`), MANAGER+. | `sla:read` / `sla:write` |
+| `GET` / `POST` | `/business-calendars` | List / create business calendars with working hours and holidays (writes: MANAGER+). | `sla:read` / `sla:write` |
+| `GET` / `PATCH` / `DELETE` | `/business-calendars/{id}` | Get / edit / delete a calendar (delete is a `409` while SLAs use it). | `sla:read` / `sla:write` |
+| `GET` / `PUT` | `/business-calendars/ref/{ref}` | Get / create-or-update a calendar by origin reference, MANAGER+. | `sla:read` / `sla:write` |
+| `POST` | `/business-calendars/{id}/holidays` | Add a manual holiday `{ "date": "YYYY-MM-DD", "name": "…" }` (idempotent per date), MANAGER+. | `sla:write` |
+| `DELETE` | `/business-calendars/{id}/holidays/{holidayId}` | Remove a manual holiday (generated ones: `409`), MANAGER+. | `sla:write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
 | `POST` | `/groups` | Create a group (MANAGER+), see [Groups](#groups). | `directory:write` |
 | `GET` / `PATCH` / `DELETE` | `/groups/{id}` | One group with its members (`user_id`, `name`, `email`, `active`, `role`) / edit / delete (edit and delete: MANAGER+; delete is a `409` while the group is referenced). | `directory:read` / `directory:write` |
@@ -1296,6 +1305,68 @@ articles — there are no separate change categories; a change takes one as
 `GET /users` (`id`, `name`, `email`, `secondary_emails`, `role`, `active`, `service_account`,
 `can_approve_changes`; `q` matches name, primary or secondary email, `role`,
 `active=true|false|all`, `service_account=true|false`, paginated; `GET /users/{id}` returns one).
+
+### SLAs and business calendars
+
+SLAs and the business calendars their clock honours can be kept in step with another system over the API.
+All writes need the `sla:write` scope and a token owned by a **MANAGER or ADMIN** (else `403`), like the
+console's SLA settings, and are audited. Keys are snake_case; unknown keys are a `422`. Both resources can be
+upserted idempotently by an origin reference with `PUT .../ref/{ref}` (`import_ref`): `201` when new, `200`
+afterwards, an unchanged body writes nothing and no audit row, `meta.changed` lists what changed.
+
+| SLA field | Type | Notes |
+| --- | --- | --- |
+| `name` | string, 2-80 | required on create; unique (a duplicate is a `409` with the existing `id`) |
+| `response_mins`, `resolve_mins` | integer, 1-1000000 | required on create |
+| `priority` | `LOW` \| `MEDIUM` \| `HIGH` \| `CRITICAL` \| null | the ticket priority this SLA is picked for |
+| `description` | string \| null | |
+| `business_calendar_id` / `business_calendar_ref` | string \| null | the calendar by id or by its `import_ref` (not both); null = the clock runs 24/7 |
+| `escalation_policy_id` | string \| null | |
+| `is_active` | boolean | `false` retires an SLA without deleting it |
+| `import_ref` | string \| null | origin key, unique |
+
+| Calendar field | Type | Notes |
+| --- | --- | --- |
+| `name` | string, 2-80 | required on create |
+| `weekly_hours` | object | required on create; open windows per weekday `sun`..`sat`, e.g. `{"mon": [["09:00", "17:00"]]}`; a day left out is closed |
+| `timezone` | IANA name | default `UTC`; an unknown name is a `422` |
+| `holiday_region` | `DE` \| `DE-BW` ... `DE-TH` \| null | switches on generated public holidays (below); null removes the generated ones |
+| `holidays` | array of `{ "date": "YYYY-MM-DD", "name": "…" }` | the **manual** holidays; sending it replaces the manual set, one entry per date |
+| `import_ref` | string \| null | origin key, unique |
+
+The response of a calendar lists its holidays sorted by date; each has `generated`, true for one computed from the region.
+
+**Generated public holidays.** With `holiday_region` set (`DE` for the nationwide holidays, `DE-BE`, `DE-BY`, ... for
+one federal state) the calendar holds the region's statutory holidays for the current and the following year,
+Easter-dependent days included (Good Friday, Easter Monday, Ascension, Whit Monday, Corpus Christi, ...), and the
+scheduler renews them every year. Names are the official German ones. Holidays that apply in only some
+municipalities are not included; add them as manual holidays. A manual holiday on the same date wins over a
+generated one; generated holidays cannot be removed one by one (`409`, `HOLIDAY_GENERATED`): clear the region or
+override the date. Changing the region replaces the old region's holidays.
+
+```bash
+# a working-hours calendar with the holidays of one state, plus a manual day, and one manual day, upserted by reference
+curl -X PUT "$BASE/api/v1/business-calendars/ref/hr:office" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Office hours", "timezone": "Europe/Berlin", "holiday_region": "DE-BE",
+       "weekly_hours": {"mon": [["09:00", "17:00"]], "tue": [["09:00", "17:00"]], "wed": [["09:00", "17:00"]], "thu": [["09:00", "17:00"]], "fri": [["09:00", "15:00"]]},
+       "holidays": [{"date": "2026-12-24", "name": "Heiligabend"}]}'
+# -> { "data": { "id": "...", "holiday_region": "DE-BE", "holidays": [ { "date": "2026-01-01", "name": "Neujahr", "generated": true }, ... ] },
+#      "meta": { "created": true, "changed": ["name", "timezone", "holiday_region", "weekly_hours", "holidays"] } }
+
+# an SLA that uses it, by the calendar's reference
+curl -X PUT "$BASE/api/v1/slas/ref/sla:gold" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Gold", "priority": "HIGH", "response_mins": 30, "resolve_mins": 240, "business_calendar_ref": "hr:office"}'
+```
+
+`DELETE /slas/{id}` is refused with `409` while tickets or services point at the SLA, and `DELETE /business-calendars/{id}`
+while SLAs use the calendar. The response counts them by kind and says what to do:
+
+```json
+{ "error": { "message": "The SLA is still referenced. Point those records at another SLA, then delete it.",
+  "details": { "code": "SLA_IN_USE", "references": { "tickets": 12, "services": 2 }, "hint": "Nothing is removed automatically. ..." } } }
+```
+
+A calendar's holidays go with it. The console's delete buttons are unchanged and detach the references first.
 
 ### Groups
 

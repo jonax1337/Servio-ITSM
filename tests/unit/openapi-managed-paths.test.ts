@@ -23,4 +23,19 @@ describe("OpenAPI spec", () => {
     const create = spec.paths["/groups"].post.requestBody!.content["application/json"].schema.properties!;
     expect(Object.keys(create)).toEqual(expect.arrayContaining(["name", "type", "email", "color", "manager_id", "auto_assign", "import_ref"]));
   });
+  it("documents SLAs and business calendars with holidays", async () => {
+    const spec = (await GET().json()) as { paths: Record<string, Record<string, { requestBody?: { content: Record<string, { schema: { properties?: Record<string, unknown> } }> } }>> };
+    expect(Object.keys(spec.paths["/slas"])).toEqual(["get", "post"]);
+    expect(Object.keys(spec.paths["/slas/{id}"])).toEqual(["get", "patch", "delete"]);
+    expect(Object.keys(spec.paths["/slas/ref/{ref}"])).toEqual(["get", "put"]);
+    expect(Object.keys(spec.paths["/business-calendars"])).toEqual(["get", "post"]);
+    expect(Object.keys(spec.paths["/business-calendars/{id}"])).toEqual(["get", "patch", "delete"]);
+    expect(Object.keys(spec.paths["/business-calendars/ref/{ref}"])).toEqual(["get", "put"]);
+    expect(Object.keys(spec.paths["/business-calendars/{id}/holidays"])).toEqual(["post"]);
+    expect(Object.keys(spec.paths["/business-calendars/{id}/holidays/{holidayId}"])).toEqual(["delete"]);
+    const sla = spec.paths["/slas"].post.requestBody!.content["application/json"].schema.properties!;
+    expect(Object.keys(sla)).toEqual(expect.arrayContaining(["name", "response_mins", "resolve_mins", "business_calendar_id", "business_calendar_ref", "import_ref"]));
+    const calendar = spec.paths["/business-calendars"].post.requestBody!.content["application/json"].schema.properties!;
+    expect(Object.keys(calendar)).toEqual(expect.arrayContaining(["name", "timezone", "weekly_hours", "holiday_region", "holidays", "import_ref"]));
+  });
 });
