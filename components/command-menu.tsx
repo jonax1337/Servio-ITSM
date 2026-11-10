@@ -108,22 +108,19 @@ export function CommandMenu({ role, sableEnabled = false }: { role: string; sabl
         type="button"
         aria-label={t("search")}
         onClick={() => setOpen(true)}
-        className="flex size-9 shrink-0 items-center justify-center gap-2 rounded-lg border bg-muted/40 text-sm text-muted-foreground transition-colors hover:bg-muted lg:w-64 lg:justify-start lg:px-3"
+        className="flex size-control shrink-0 items-center justify-center gap-2 rounded-lg border bg-muted/40 text-sm text-muted-foreground transition-colors hover:bg-muted lg:w-64 lg:justify-start lg:px-3"
       >
         <Search className="size-4" />
         <span className="hidden flex-1 text-left lg:block">{t("searchPlaceholder")}</span>
-        <kbd className="pointer-events-none hidden select-none items-center gap-0.5 rounded border bg-background px-1.5 font-mono text-[10px] font-medium lg:flex">
-          ⌘K
-        </kbd>
       </button>
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandDialog open={open} onOpenChange={setOpen} className="top-[12%] sm:max-w-2xl">
         <Command shouldFilter={false}>
           <CommandInput
             value={query}
             onValueChange={setQuery}
             placeholder={t("searchInputPlaceholder")}
           />
-          <CommandList>
+          <CommandList className="max-h-[min(60vh,32rem)]">
             {query.trim() ? (
               <>
                 {sableEnabled ? (

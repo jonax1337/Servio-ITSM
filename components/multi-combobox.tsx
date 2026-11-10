@@ -59,7 +59,7 @@ export function MultiCombobox({
               variant="outline"
               aria-expanded={open}
               onKeyDown={(e) => removeLastOnBackspace(e, true)}
-              className="h-8 w-full justify-between gap-2 rounded-md font-normal text-muted-foreground"
+              className="h-control w-full justify-between gap-2 rounded-md font-normal text-muted-foreground"
             />
           }
         >

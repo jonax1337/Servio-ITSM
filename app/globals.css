@@ -51,6 +51,11 @@
   --color-sable: var(--sable);
   --color-sable-foreground: var(--sable-foreground);
   --color-sable-muted: var(--sable-muted);
+  /* Control sizing (docs/design-system.md › Controls): every interactive control — buttons,
+     inputs, selects, comboboxes — shares one height so a row of mixed controls lines up.
+     `compact` is only for actions inside dense rows (table rows, chips, message headers). */
+  --spacing-control: 2rem;
+  --spacing-control-compact: 1.5rem;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

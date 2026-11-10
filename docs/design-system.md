@@ -97,6 +97,30 @@ A single `--radius: 0.7rem` drives a derived scale in `@theme inline`:
 | `rounded-2xl` | `--radius * 1.8` |
 | `rounded-3xl` / `4xl` | `* 2.2` / `* 2.6` |
 
+### Controls — one height for everything interactive
+
+Every interactive control shares **one height** so a row of mixed controls (a search field,
+a select, a filter combobox and a button) always lines up. The heights are spacing tokens in
+the `@theme` block of [`app/globals.css`](../app/globals.css), so Tailwind exposes them as
+`h-control`, `min-h-control`, `size-control`, …:
+
+| Token | Value | Used by |
+| --- | --- | --- |
+| `--spacing-control` | `2rem` (32 px) | `Button` sizes `default` / `sm` / `lg` and `icon` / `icon-sm` / `icon-lg`, `Input`, `InputGroup`, `Combobox`, `MultiCombobox`, the topbar search |
+| `--spacing-control-compact` | `1.5rem` (24 px) | `Button` sizes `xs` / `icon-xs` only |
+
+Rules:
+
+- **Default to the default size.** `sm` and `lg` keep the control height and only change the
+  padding; they exist so older call sites stay valid. Do not pass `h-*` overrides to buttons.
+- **`xs` / `icon-xs` are for actions inside dense content only**: a table row, a chip, a list
+  row's reorder arrows, a message header ("Reply", "Forward"), an inline suggestion. Never
+  put a compact control next to a full-height one.
+- **Variant expresses weight, not size:** `default` for the one primary action of a view,
+  `outline` for secondary actions, `ghost` for tertiary/toolbar actions (it must still be a
+  `Button`, never a hand-rolled `<button>` with its own padding), `destructive` for deletes.
+- New controls (a custom trigger, a pill toggle) use `h-control` too.
+
 ### Base layer & utilities
 
 The `@layer base` block applies sensible global defaults: every element gets

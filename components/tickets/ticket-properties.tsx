@@ -84,8 +84,8 @@ function EditProp({
         <div className="sable-accent-border flex items-center gap-1 rounded-md border bg-sable-muted/50 px-2 py-1">
           <SableMark className="size-3.5 shrink-0 text-sable" />
           <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{suggestion.label}</span>
-          <Button type="button" size="xs" className="h-5 shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>{t("props.apply")}</Button>
-          <Button type="button" size="xs" variant="ghost" className="h-5 shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
+          <Button type="button" size="xs" className="shrink-0 bg-sable px-1.5 text-sable-foreground hover:bg-sable/90" onClick={onApply}>{t("props.apply")}</Button>
+          <Button type="button" size="xs" variant="ghost" className="shrink-0 px-1.5 text-muted-foreground" onClick={onDismiss}>
             {t("props.dismiss")}
           </Button>
         </div>
