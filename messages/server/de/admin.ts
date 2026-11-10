@@ -53,6 +53,7 @@ const messages: ServerMessages = {
   "Skill not found.": "Skill nicht gefunden.",
   "Subject and body are required.": "Betreff und Inhalt sind erforderlich.",
   "Sync source not found.": "Synchronisierungsquelle nicht gefunden.",
+  "This source has no group mappings.": "Diese Quelle hat keine Gruppenzuordnungen.",
   "That doesn't look like a Claude token. It starts with sk-ant- and is printed by `claude setup-token`.": "Das sieht nicht nach einem Claude-Token aus. Es beginnt mit sk-ant- und wird von `claude setup-token` ausgegeben.",
   "That macro no longer exists.": "Dieses Makro existiert nicht mehr.",
   "The AI request failed.": "Die KI-Anfrage ist fehlgeschlagen.",

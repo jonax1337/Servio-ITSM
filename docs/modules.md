@@ -440,9 +440,37 @@ Pluggable connectors that import **users and assets** (LDAP/AD, Azure AD/Entra, 
 | --- | --- |
 | Routes | `app/(console)/syncs/` — `page.tsx`, `[id]/page.tsx`, `new/page.tsx`, `[id]/edit/page.tsx` |
 | Connectors | `lib/connectors/` — `types.ts`, `index.ts` (registry), `spec.ts` (form fields, pure), `import.ts` (shared upsert, also matches an ImportUser's `legacyExternalIds` and moves the user to the new id), `ldap.ts`, `ldap-identifiers.ts` (pure: binary `objectGUID` → canonical GUID text, `objectSid` → `S-1-5-…`, with the hex form earlier releases stored as legacy id), `azure.ts`, `csv.ts`, `rest.ts` |
-| Actions | `lib/actions/syncs.ts` — `runSync`, `create`/`update`/`delete` `SyncSource`, `testSyncConnection`, `toggleSyncActive` |
+| Group membership | `lib/connectors/group-mapping.ts` (pure: mapping lines, LDAP filters), `group-plan.ts` (pure reconcile planner), `ldap-groups.ts` (reads the mapped directory groups through a small `DirectoryClient`), `group-sync.ts` (resolves Servio groups, plans, applies, audits) — see [Directory group sync](#directory-group-sync) |
+| Actions | `lib/actions/syncs.ts` — `runSync`, `create`/`update`/`delete` `SyncSource`, `testSyncConnection`, `toggleSyncActive`, `previewGroupMembership` |
 | Runner / scheduler | `lib/sync-runner.ts` (`executeSyncRun`), `lib/scheduler.ts` (`syncTick`/`isSyncDue`, started via `lib/instrumentation-node.ts` from `instrumentation.ts`) |
-| Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active` |
+| Components | `components/syncs/` — `source-form`, `run-button`, `toggle-active`, `group-preview-button` |
+
+#### Directory group sync
+
+An LDAP / Active Directory source can also keep **Servio group membership** in step with directory groups, so a team layout does not have to be maintained twice. Configure it in the source form (ADMIN), section *Group membership*: one mapping per line, `<directory group DN or name> => <Servio group id or import ref>` (the import ref is the `import_ref` of [`PUT /groups/ref/{ref}`](rest-api.md#groups)). Stored in the source configuration as:
+
+```json
+{
+  "baseDN": "DC=corp,DC=local",
+  "userFilter": "(objectCategory=person)",
+  "externalId": "objectGUID",
+  "groupMappings": [
+    { "directoryGroup": "CN=IT-Support,OU=Groups,DC=corp,DC=local", "group": "service-desk" },
+    { "directoryGroup": "Network Team", "group": "ckx2n5d0e0000a1b2c3d4e5f6" }
+  ],
+  "groupBaseDN": "OU=Groups,DC=corp,DC=local",
+  "groupNested": true
+}
+```
+
+- **When:** after the users are imported, on every run (manual or scheduled). The mapped Servio group must exist when the source is saved (checked), and a mapping whose group was deleted later is skipped and logged.
+- **Directory group:** a DN (anything starting with `CN=`, `ou=` ...) is read directly; a plain name is looked up as `cn` or `sAMAccountName` under `groupBaseDN` (blank = the base DN) and must be unique. Several directory groups may map to one Servio group; the membership is their union.
+- **How members are found:** the users matching the source's user filter and `memberOf=<group DN>`, returned with the same external id the user import uses (so no huge `member` attribute is read). This needs a directory that maintains `memberOf` (Active Directory does; OpenLDAP needs the memberof overlay). A group that has members but yields no match is **not** treated as empty: the mapping is reported as a problem and the Servio group keeps its members.
+- **Nested groups** (`groupNested`): follows nested membership server side with Active Directory's in-chain matching rule (`1.2.840.113556.1.4.1941`). Active Directory only; another directory rejects the filter and the mapping is reported.
+- **Precedence:** the directory wins for the users this source imported. Such a user is a member of the mapped Servio group exactly when they are in the directory group, so a membership added by hand for an imported user is removed on the next run if the directory group does not have them. Members who were **not** imported by this source (local accounts, users of another source, service accounts, anyone added by hand) are never touched. The member role is never changed: new memberships are `MEMBER`, an existing `LEAD` stays.
+- **Safety:** removals for a Servio group are held back while any directory group mapped to it could not be read reliably; a run in which the directory returned no users at all skips the group step; a failure in the group step never undoes the user import (the run is `PARTIAL`).
+- **Audit and log:** each group that changed gets an audit entry ("Directory sync ... changed the members of ...") with the added and removed addresses; the run log lists the counts per group.
+- **Preview:** on the source page, *Preview groups* reads the directory and shows the planned adds and removes per Servio group (plus directory members that are not imported yet, and unusable mappings) without writing anything.
 
 The whole scheduler (`lib/scheduler.ts`: SLA escalation sweep, inbound-mail poll, scheduled syncs, feature ticks such as auto-close) can be disabled per process with the `SCHEDULER_ENABLED` env flag (default `true`) — see [configuration.md](./configuration.md).
 

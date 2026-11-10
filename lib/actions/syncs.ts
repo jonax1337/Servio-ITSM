@@ -10,6 +10,8 @@ import { getT } from "@/lib/i18n/server";
 import { getConnector, getConfigSchema } from "@/lib/connectors";
 import { executeSyncRun } from "@/lib/sync-runner";
 import { getSpec, fieldsFor, CONFIGURABLE_TYPES } from "@/lib/connectors/spec";
+import { parseMappingLines } from "@/lib/connectors/group-mapping";
+import { unknownServioGroups, type GroupSyncReport } from "@/lib/connectors/group-sync";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -125,6 +127,9 @@ function buildConfig(
     if (spec.secretFields.includes(f.name)) {
       const v = str(fd, f.name);
       out[f.name] = v ? encryptSecret(v) : typeof prev[f.name] === "string" ? prev[f.name] : "";
+    } else if (f.name === "groupMappings") {
+      // One mapping per line in the form, a list in the stored config (errors are reported by groupMappingsError).
+      out[f.name] = parseMappingLines(str(fd, f.name)).mappings;
     } else if (f.type === "switch") {
       out[f.name] = checked(fd, f.name);
     } else if (f.type === "number") {
@@ -140,6 +145,19 @@ function buildConfig(
 /** True when the form submitted a value for any of the type's secret fields. */
 function hasSecretInput(type: string, fd: FormData): boolean {
   return (getSpec(type)?.secretFields ?? []).some((k) => str(fd, k).length > 0);
+}
+
+/**
+ * The problem with the group mappings of a directory source, or null: a line that is not a mapping, or a
+ * Servio group (id or import ref) that does not exist. Checked when the source is saved so a typo shows up
+ * at once; a run still skips a mapping whose group was deleted since.
+ */
+async function groupMappingsError(type: string, fd: FormData): Promise<string | null> {
+  if (!getSpec(type)?.baseFields.some((f) => f.name === "groupMappings")) return null;
+  const { mappings, errors } = parseMappingLines(str(fd, "groupMappings"));
+  if (errors.length > 0) return errors[0];
+  const unknown = await unknownServioGroups(mappings);
+  return unknown.length > 0 ? `Unknown Servio group in the group mappings: ${unknown.join(", ")}. Use a group id or an import ref.` : null;
 }
 
 /** Ensure the required mapping fields for the scope are set (skips fixed-mapping types). */
@@ -190,7 +208,7 @@ export async function createSyncSource(
     };
 
   const config = buildConfig(type, scope, fd);
-  const invalid = validateConfig(type, config) ?? requiredMappingError(type, scope, config);
+  const invalid = validateConfig(type, config) ?? requiredMappingError(type, scope, config) ?? (await groupMappingsError(type, fd));
   if (invalid) return { error: invalid };
 
   const schedule = str(fd, "schedule") || null;
@@ -250,7 +268,8 @@ export async function updateSyncSource(
   const config = buildConfig(existing.type, existing.scope, fd, existing.config);
   const invalid =
     validateConfig(existing.type, config) ??
-    requiredMappingError(existing.type, existing.scope, config);
+    requiredMappingError(existing.type, existing.scope, config) ??
+    (await groupMappingsError(existing.type, fd));
   if (invalid) return { error: invalid };
 
   const schedule = str(fd, "schedule") || null;
@@ -325,4 +344,23 @@ export async function testSyncConnection(
 
   const res = await connector.test(source);
   return res.ok ? { ok: true, message: res.message } : { error: res.message };
+}
+
+/**
+ * Preview the group membership a directory sync would apply on its next run: which users it would add to and
+ * remove from which Servio groups. Reads the directory and the database, writes nothing. MANAGER+ like a run.
+ */
+export async function previewGroupMembership(
+  formData: FormData,
+): Promise<{ ok: true; report: GroupSyncReport } | { ok: false; message: string }> {
+  const me = await getCurrentUser();
+  if (!me || !me.isActive || !hasRole(me.role as Role, "MANAGER")) return { ok: false, message: "Not authorised." };
+
+  const sourceId = str(formData, "sourceId");
+  const source = sourceId ? await db.syncSource.findUnique({ where: { id: sourceId } }) : null;
+  if (!source) return { ok: false, message: "Sync source not found." };
+
+  const connector = getConnector(source.type);
+  if (!connector?.previewGroups) return { ok: false, message: "This source has no group mappings." };
+  return connector.previewGroups(source);
 }

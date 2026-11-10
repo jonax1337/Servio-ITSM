@@ -86,3 +86,16 @@ export function binaryExternalId(attribute: string, bytes: Uint8Array): BinaryEx
   if (!canonical) return { externalId: legacyHex, legacy: [] };
   return { externalId: canonical, legacy: [legacyHex] };
 }
+
+/**
+ * Every form the directory knows an entry by in `attribute`: the current external id first, then the forms
+ * earlier releases stored. Empty when the entry has no value. Pure; `entry` is an ldapts Entry.
+ */
+export function entryIdForms(entry: Record<string, unknown>, attribute: string): string[] {
+  const raw = entry[attribute];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value == null || value === "") return [];
+  if (!Buffer.isBuffer(value)) return [String(value)];
+  const { externalId, legacy } = binaryExternalId(attribute, value);
+  return [externalId, ...legacy];
+}

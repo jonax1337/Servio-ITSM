@@ -8,6 +8,8 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { RunButton } from "@/components/syncs/run-button";
+import { GroupPreviewButton } from "@/components/syncs/group-preview-button";
+import { getConnector } from "@/lib/connectors";
 import { ToggleActive } from "@/components/syncs/toggle-active";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -47,6 +49,11 @@ function parseConfig(raw: string): { entries: [string, string][]; error: boolean
         // Never render stored secrets.
         if (/password|secret|token/i.test(k)) {
           entries.push([k, v ? "••••••••" : "—"]);
+          continue;
+        }
+        // The group mappings are edited as lines; the card shows how many there are.
+        if (k === "groupMappings" && Array.isArray(v)) {
+          entries.push([k, String(v.length)]);
           continue;
         }
         // Flatten the attribute map into readable rows.
@@ -91,6 +98,7 @@ export default async function SyncDetailPage({
   if (!source) notFound();
 
   const config = parseConfig(source.config);
+  const hasGroupMappings = !!getConnector(source.type)?.previewGroups && config.entries.some(([k, n]) => k === "groupMappings" && Number(n) > 0);
 
   return (
     <>
@@ -122,6 +130,7 @@ export default async function SyncDetailPage({
               {t("edit")}
             </LinkButton>
           ) : null}
+          {hasGroupMappings ? <GroupPreviewButton sourceId={source.id} /> : null}
           <RunButton sourceId={source.id} />
         </div>
       </div>

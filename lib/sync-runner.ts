@@ -65,6 +65,7 @@ async function runOnce(
   try {
     result = await connector.run(source, {
       trigger: opts.trigger === "MANUAL" ? "MANUAL" : "SCHEDULED",
+      actorId: opts.actorId ?? null,
     });
   } catch (e) {
     result = {
