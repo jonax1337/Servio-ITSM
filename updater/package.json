@@ -1,6 +1,6 @@
 {
   "name": "servio-updater",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "description": "Servio updater sidecar: pulls a new Servio image and swaps the app container, with database backup and rollback.",
   "type": "module",
