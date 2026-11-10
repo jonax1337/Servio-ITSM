@@ -1,5 +1,3 @@
-Already up to date
-Done in 231ms using pnpm v11.0.8
 -- CreateTable
 CREATE TABLE "ProblemAsset" (
     "problemId" INTEGER NOT NULL,
