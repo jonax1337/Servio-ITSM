@@ -55,7 +55,7 @@ Useful scripts from [`package.json`](package.json):
 | `pnpm brand:check` | Verify application logos, icons, metadata images and brand tokens |
 | `pnpm brand:sync` | Regenerate application copies after updating the canonical brand kit |
 | `pnpm db:migrate` | `prisma migrate dev` — apply pending migrations to the dev DB |
-| `pnpm db:migrate:new <name>` | create a migration whose folder name sorts after every existing one (do not use `migrate dev --name`, see [docs/development.md](docs/development.md#creating-a-migration)) |
+| `pnpm db:migrate:new <name>` | create a migration (non-interactive; folder name sorts after every existing one; the SQL is validated before it is written) (do not use `migrate dev --name`, see [docs/development.md](docs/development.md#creating-a-migration)) |
 | `pnpm db:push` | Push schema without a migration (prototyping only) |
 | `pnpm setup` | `prisma migrate deploy && prisma db seed` |
 | `pnpm db:seed` | Seed via `prisma/seed.ts` + `prisma/seed-extras.ts` |
