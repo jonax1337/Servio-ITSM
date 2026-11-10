@@ -2,6 +2,7 @@ import { FileText, Flag } from "lucide-react";
 import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeTextCard } from "@/components/changes/change-editors";
+import { RecordAttachments } from "@/components/attachments/record-attachments";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { sanitizeCommentHtml } from "@/lib/markdown";
 import { isTemplatedStandard, submitBlockerDetails } from "@/lib/change-rules";
@@ -43,7 +44,7 @@ async function freezeNamesOf(change: ChangeTabContext["change"]): Promise<string
   return check?.freezeHits.map((freeze) => freeze.name) ?? [];
 }
 
-export async function OverviewTab({ change, approvals, isAgent, canEdit }: ChangeTabContext) {
+export async function OverviewTab({ change, approvals, isAgent, canEdit, role }: ChangeTabContext) {
   const t = await getT("changes");
   const hasClosureRecord = change.outcome || change.closureNotes || change.cancelReason;
   const preAuthorized = isTemplatedStandard(change);
@@ -101,6 +102,8 @@ export async function OverviewTab({ change, approvals, isAgent, canEdit }: Chang
           </CardContent>
         </Card>
       ) : null}
+
+      <RecordAttachments target={{ changeId: change.id }} role={role} />
     </div>
   );
 }

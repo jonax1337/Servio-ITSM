@@ -1,11 +1,11 @@
 import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Users, Mail, Ticket as TicketIcon, Trash2 } from "lucide-react";
+import { Users, Mail, Ticket as TicketIcon, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { getSessionUser, hasRole, type Role } from "@/lib/session";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
 import { StatusBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,22 +61,37 @@ export default async function GroupDetailPage({
   const memberIds = new Set(group.members.map((m) => m.userId));
   const candidates = options.agents.filter((a) => !memberIds.has(a.id));
 
-  return (
+  const rail = (
     <>
-      <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-        <LinkButton href="/groups" variant="ghost" size="icon-sm" aria-label={t("backToGroups")}>
-          <ArrowLeft className="size-4" />
-        </LinkButton>
-        <span
-          className="size-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: group.color }}
-        />
-        <h1 className="font-display text-lg font-semibold tracking-tight">
-          {group.name}
-        </h1>
-        <StatusBadge map={GROUP_TYPE_META} value={group.type} dot />
+      <RailCard title={t("details")}>
+        <MetaRow label={t("manager")}>{group.manager ? (group.manager.name ?? group.manager.email) : "—"}</MetaRow>
+        <MetaRow label={t("email")}>
+          {group.email ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="size-3.5" /> {group.email}
+            </span>
+          ) : (
+            "—"
+          )}
+        </MetaRow>
+      </RailCard>
+
+      <RailCard title={t("autoAssignment")}>
+        <AutoAssignControl groupId={group.id} value={group.autoAssign} />
+        <p className="text-xs text-muted-foreground">{t("autoAssignmentText")}</p>
+      </RailCard>
+    </>
+  );
+
+  return (
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/groups"
+        backLabel={t("backToGroups")}
+        lead={<span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />}
+      >
         {canManage ? (
-          <div className="ml-auto flex items-center gap-2">
+          <>
             <GroupEditDialog group={group} agents={options.agents} />
             <ConfirmButton
               action={deleteGroup}
@@ -91,18 +106,15 @@ export default async function GroupDetailPage({
             >
               <Trash2 className="size-4" />
             </ConfirmButton>
-          </div>
+          </>
         ) : null}
-      </div>
+        <StatusBadge map={GROUP_TYPE_META} value={group.type} dot />
+      </DetailTopBar>
 
       <div className="p-4 sm:p-6">
-        {group.description ? (
-          <p className="mb-6 max-w-2xl text-sm text-muted-foreground">
-            {group.description}
-          </p>
-        ) : null}
+        <DetailTitle title={group.name} subtitle={group.description} />
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <StatCard
             label={t("openTickets")}
             value={openTickets}
@@ -113,92 +125,51 @@ export default async function GroupDetailPage({
           <StatCard label={t("members")} value={group.members.length} icon={Users} tone="muted" />
         </div>
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">{t("membersCount", { count: group.members.length })}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {canManage ? (
-                <GroupMembers groupId={group.id} members={group.members} candidates={candidates} />
-              ) : group.members.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
-              ) : (
-                <div className="grid gap-1">
-                  {group.members.map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent/50"
-                    >
-                      <UserAvatar
-                        name={m.user.name}
-                        email={m.user.email}
-                        className="shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="line-clamp-1 text-sm font-medium">
-                          {m.user.name ?? m.user.email}
-                        </div>
-                        <div className="line-clamp-1 text-xs text-muted-foreground">
-                          {m.user.email}
-                        </div>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-sm">{t("membersCount", { count: group.members.length })}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {canManage ? (
+              <GroupMembers groupId={group.id} members={group.members} candidates={candidates} />
+            ) : group.members.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
+            ) : (
+              <div className="grid gap-1">
+                {group.members.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent/50"
+                  >
+                    <UserAvatar
+                      name={m.user.name}
+                      email={m.user.email}
+                      className="shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-1 text-sm font-medium">
+                        {m.user.name ?? m.user.email}
                       </div>
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-                          m.role === "LEAD"
-                            ? "border-primary/20 bg-primary/10 text-primary"
-                            : "border-border bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {m.role === "LEAD" ? t("lead") : t("member")}
-                      </span>
+                      <div className="line-clamp-1 text-xs text-muted-foreground">
+                        {m.user.email}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="grid content-start gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">{t("details")}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">{t("manager")}</span>
-                  <span className="text-right font-medium">
-                    {group.manager ? (group.manager.name ?? group.manager.email) : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">{t("email")}</span>
-                  {group.email ? (
-                    <span className="inline-flex items-center gap-1.5 text-right font-medium">
-                      <Mail className="size-3.5" /> {group.email}
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                        m.role === "LEAD"
+                          ? "border-primary/20 bg-primary/10 text-primary"
+                          : "border-border bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {m.role === "LEAD" ? t("lead") : t("member")}
                     </span>
-                  ) : (
-                    <span className="font-medium">—</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">{t("autoAssignment")}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2">
-                <AutoAssignControl groupId={group.id} value={group.autoAssign} />
-                <p className="text-xs text-muted-foreground">
-                  {t("autoAssignmentText")}
-                </p>
-              </CardContent>
-            </Card>
-
-          </div>
-        </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </>
+    </DetailShell>
   );
 }

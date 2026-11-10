@@ -38,10 +38,12 @@ Enums, status/priority metadata, and reference helpers (`ticketRef`, `problemRef
 | Group | Modules |
 | --- | --- |
 | Overview | Dashboard (`/`), Sable (`/assistant`), Insights (`/insights`) |
-| Service Desk | Tickets, Problems, Changes, Change Calendar, Releases, On-call, Status, Approvals, Knowledge Base |
-| Catalog | Services, Service Catalog (MANAGER+) |
-| CMDB | Assets, Contracts, Locations |
-| Organisation | Groups, People, Categories |
+| Service Desk | Tickets, Problems, Approvals, Knowledge Base |
+| Change & Release | Changes, Change Calendar, Releases |
+| Operations | Status, On-call |
+| Services | Services, Service Catalog (MANAGER+) |
+| CMDB | Assets, Locations, Contracts |
+| Organisation | People, Groups, Categories |
 | Administration | Automations (MANAGER+), Macros (AGENT+; sharing is MANAGER+), Syncs (MANAGER+), Audit Log (ADMIN), Settings (MANAGER+) |
 
 ---
@@ -166,15 +168,19 @@ In every mode the role still has to fit the risk (`approverRolesForRisk`: a high
 
 **Awaiting approval = cancel only:** while `approvalState` is `PENDING` (or already `CANCELLED`) the only allowed status change is `CANCELLED` (`approvalAllowsStatus` in `lib/transitions.ts`) — enforced in console actions, macros, automations, the REST API (`409`) and Sable. Cancelling sets `approvalState` to `CANCELLED` and withdraws the pending approvals (`withdrawPendingApprovals` in `lib/approval-seating.ts`).
 
-### Detail-page tabs
-Ticket, change, problem and asset detail pages are split into tabs driven by `?tab=` (pure rules in `lib/entity-tabs.ts` — `resolveTab`, `tabHref`; renderer `components/entity-tabs.tsx`, a server `<nav>` with `aria-current` links that keep the other search params). Only the active tab's data is loaded; counts come from `_count`. Agent-only tabs are `hidden`, which also makes them unreachable via `?tab=`. The sidebar highlights the longest matching nav href (`activeNavHref` in `lib/nav.ts`).
+### Detail-page layout and tabs
+Every record detail page (ticket, change, problem, asset, service, person, release, status incident, on-call schedule, group, location, contract, license, vendor) uses the shared frame in `components/detail-layout.tsx`: `DetailShell` (main column + properties rail, 360 px at `lg`, 400 px at `xl`, scrolling independently), `DetailTopBar` (back link and identifying chips on the left, actions then state badges on the right), `DetailTitle`, `RailCard` and `MetaRow`. The rail carries only status, editable properties, ownership and key dates; related records (CIs, affected services, linked tickets, attachments, KB articles) live in the main column's tabs.
+
+Ticket, change, problem, asset, service and person detail pages are split into tabs driven by `?tab=` (pure rules in `lib/entity-tabs.ts` — `resolveTab`, `tabHref`; renderer `components/entity-tabs.tsx`, a server `<nav>` with `aria-current` links that keep the other search params). Only the active tab's data is loaded; counts come from `_count`. Agent-only tabs are `hidden`, which also makes them unreachable via `?tab=`. The sidebar highlights the longest matching nav href (`activeNavHref` in `lib/nav.ts`).
 
 | Page | Tab builder | Tab components |
 | --- | --- | --- |
 | Ticket `/tickets/[id]` | `components/tickets/tabs/ticket-tabs.ts` | `conversation-tab` (Sable summary card + similar-tickets hint on top), `details-tab`, `work-tab`, `approvals-tab`, `links-tab` (full similar tickets), `history-tab`, `tab-skeleton` |
 | Change `/changes/[id]` | `components/changes/tabs/change-tabs.ts` | `overview-tab`, `planning-tab` (window editor, conflicts panel, plan copilot), `impact-tab`, `cab-tab` (approvals + CAB brief), `discussion-tab`, `links-tab`, `history-tab`, `change-tab-panel`, `tab-skeleton` |
-| Problem `/problems/[id]` | `components/problems/tabs/problem-tabs.ts` | `problem-overview-tab`, `problem-analysis-tab`, `problem-incidents-tab`, `problem-changes-tab`, `problem-discussion-tab` |
-| Asset `/assets/[id]` | `components/assets/tabs/asset-tabs.ts` | `asset-overview-tab`, `asset-relationships-tab`, `asset-work-tab`, plus the "Contracts & licenses" tab (`components/assets/asset-contracts.tsx`) |
+| Problem `/problems/[id]` | `components/problems/tabs/problem-tabs.ts` | `problem-overview-tab` (plus attachments and related articles), `problem-analysis-tab`, `problem-incidents-tab`, `problem-changes-tab`, the agent-only "Affected CIs" tab (`components/problems/problem-affected-cis.tsx` + the affected-services card), `problem-discussion-tab` |
+| Asset `/assets/[id]` | `components/assets/tabs/asset-tabs.ts` | `asset-overview-tab` (plus attachments), `asset-relationships-tab` (relations, impact graph, affected services), `asset-work-tab`, plus the "Contracts & licenses" tab (`components/assets/asset-contracts.tsx`) |
+| Service `/services/[id]` | `components/services/tabs/service-tabs.ts` | Rendered in the page: overview (description, open tickets), CIs & dependencies (`service-assets`, `service-dependencies`, downstream impact), catalog items, approvals (`components/approvals/entity-approvals.tsx`), history |
+| Person `/people/[id]` | `components/people/person-tabs.ts` | Rendered in the page: open tickets, assigned assets, group memberships |
 
 ### Change calendar & freeze windows
 
@@ -304,7 +310,7 @@ The service portfolio (business/technical services tickets are filed against), a
 | Routes | `app/(console)/services/page.tsx` (list; search by name or service number), `[id]/page.tsx` (detail: CIs, *Depends on* / *Used by*, *If this service fails*), `impact/page.tsx` (impact analysis for a chosen service or CI) |
 | Actions | `lib/actions/services.ts` — `createService`, `updateServiceField`, `updateService` (name, `code`, icon, description), `linkServiceAsset`/`unlinkServiceAsset` (supporting CIs, `ServiceAsset`; audited on both the service and the asset), `addServiceDependency`/`removeServiceDependency` (`ServiceDependency`; cycle-checked, audited on both services), `deleteService` |
 | Graph | `lib/service-graph-rules.ts` (pure: cycle check, closures, asset failure propagation, set planning), `lib/service-graph.ts` (impact queries; affected services of tickets, changes, problems), `failureClosure` in `lib/cmdb-graph.ts`, `lib/service-records.ts` (validated write path shared by the API and the upsert), `lib/service-label.ts` (`S-01 · Name`) |
-| Components | `components/services/` — `service-form`, `service-properties`, `service-assets`, `service-dependencies`, `service-impact-list`, `impact-target-picker`, `affected-services` (read-only card on ticket/problem/change pages), `create-service-dialog` |
+| Components | `components/services/` — `service-form`, `service-properties`, `service-assets`, `service-dependencies`, `service-impact-list`, `impact-target-picker`, `affected-services` (read-only card in the ticket Links tab, the problem Affected CIs tab and the change Impact tab), `create-service-dialog` |
 
 ### Service Catalog (admin)
 The requestable-item catalog editor (MANAGER+; `requireRole("MANAGER")`). List-style admin page — no `[id]`/`new` routes; items are edited inline.
@@ -401,7 +407,7 @@ People can have **secondary email addresses** (`UserEmail`, edited in the person
 | Actions | `lib/actions/people.ts` — `createPerson`, `updatePerson` (ADMIN, audited), `updateUserField` |
 | Rules | `lib/person-rules.ts` — pure email normalisation/shape, initial-password checks (min 12 chars, max 72 bytes) and `distinctIds` for the posted group ids; `lib/user-email-rules.ts` — secondary-address normalisation (shape, not the primary, at most 10) |
 | Data | `lib/user-emails.ts` — lookup by any address (`findUserByAnyEmail`), cross-table uniqueness (`emailTakenByOther`), `replaceSecondaryEmails` |
-| Components | `components/people/` — `person-dialog`, `user-properties` |
+| Components | `components/people/` — `person-dialog`, `user-properties`, `person-tabs` |
 
 ### Dashboards
 
@@ -607,7 +613,7 @@ Reused across every module, worth knowing before building UI:
 | `components/list-toolbar.tsx`, `pagination-bar.tsx` | List filtering + pagination |
 | `components/status-badge.tsx` | `StatusBadge` / `ToneBadge` (driven by `lib/constants.ts` metadata) |
 | `components/comments/` | `comment-thread`, `composer-attachments` (shared comment UI) |
-| `components/attachments/` | `attachment-list`, `attachments-card`, `file-upload` (paired with `lib/actions/attachments.ts` → `deleteAttachment`), `record-attachments` (the Attachments card in the rail of change, problem, asset and license detail pages: agents read, any agent uploads/removes, licenses MANAGER+; the same files the REST API serves under `/api/v1/{entity}/{id}/attachments`). The rules are `lib/attachments.ts` (DB checks) and `lib/attachment-rules.ts` (pure) |
+| `components/attachments/` | `attachment-list`, `attachments-card`, `file-upload` (paired with `lib/actions/attachments.ts` → `deleteAttachment`), `record-attachments` (the Attachments card in the overview tab of change, problem, asset and license detail pages: agents read, any agent uploads/removes, licenses MANAGER+; the same files the REST API serves under `/api/v1/{entity}/{id}/attachments`). The rules are `lib/attachments.ts` (DB checks) and `lib/attachment-rules.ts` (pure) |
 | `components/history/entity-history.tsx` | Audit/history timeline |
 | `components/edit-entity-dialog.tsx`, `confirm-dialog.tsx`, `empty-state.tsx`, `stat-card.tsx`, `combobox.tsx`, `combo-field.tsx` | Generic primitives |
 | `components/ui/` | shadcn/base-ui design-system primitives — see [design-system.md](./design-system.md) |

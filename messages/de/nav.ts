@@ -4,7 +4,9 @@ import type { Translations } from "../types";
 const nav: Translations<typeof en> = {
   "group.Overview": "Übersicht",
   "group.Service Desk": "Service Desk",
-  "group.Catalog": "Katalog",
+  "group.Change & Release": "Change & Release",
+  "group.Operations": "Betrieb",
+  "group.Services": "Services",
   "group.CMDB": "CMDB",
   "group.Organisation": "Organisation",
   "group.Administration": "Administration",

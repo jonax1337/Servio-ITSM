@@ -1038,7 +1038,7 @@ Files on tickets, changes, problems, assets and licenses live under
 `/{entity}/{id}/attachments` (`entity` = `tickets`, `changes`, `problems`, `assets`
 or `licenses`; `{id}` is numeric for the first three, a cuid for assets and
 licenses). They are the same files the console shows: the ticket's Details tab and
-comment thread, and the Attachments card in the rail of a change, problem, asset
+comment thread, and the Attachments card in the overview tab of a change, problem, asset
 or license. The handlers ([`app/api/v1/_attachments.ts`](../app/api/v1/_attachments.ts))
 use the console's intake ([`lib/attachment-upload.ts`](../lib/attachment-upload.ts)):
 the same storage driver, per-file cap, type allow-list and magic-byte check, and the

@@ -1,30 +1,19 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetaRow, RailCard } from "@/components/detail-layout";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
 import { getFormatter, getT } from "@/lib/i18n/server";
 
-/** Read-only schedule summary for the properties rail; the window is edited on the Planning tab. */
-export async function WindowSummary({ change, className }: { change: ChangeTabContext["change"]; className?: string }) {
+/** Read-only schedule summary for the detail page rail; the window is edited on the Planning tab. */
+export async function WindowSummary({ change }: { change: ChangeTabContext["change"] }) {
   const [t, f] = await Promise.all([getT("changes"), getFormatter()]);
   const fmt = (date: Date | null) => f.date(date, "dateTime");
   return (
-    <Card className={className}>
-      <CardHeader><CardTitle className="text-sm">{t("planning.plannedWindow")}</CardTitle></CardHeader>
-      <CardContent className="grid gap-2.5 text-sm">
-        <Meta label={t("window.plannedStart")} value={fmt(change.plannedStart)} />
-        <Meta label={t("window.plannedEnd")} value={fmt(change.plannedEnd)} />
-        {change.actualStart ? <Meta label={t("window.actualStart")} value={fmt(change.actualStart)} /> : null}
-        {change.actualEnd ? <Meta label={t("window.actualEnd")} value={fmt(change.actualEnd)} /> : null}
-        <Meta label={t("window.created")} value={fmt(change.createdAt)} />
-      </CardContent>
-    </Card>
+    <RailCard title={t("planning.plannedWindow")}>
+      <MetaRow label={t("window.plannedStart")}>{fmt(change.plannedStart)}</MetaRow>
+      <MetaRow label={t("window.plannedEnd")}>{fmt(change.plannedEnd)}</MetaRow>
+      {change.actualStart ? <MetaRow label={t("window.actualStart")}>{fmt(change.actualStart)}</MetaRow> : null}
+      {change.actualEnd ? <MetaRow label={t("window.actualEnd")}>{fmt(change.actualEnd)}</MetaRow> : null}
+      <MetaRow label={t("window.created")}>{fmt(change.createdAt)}</MetaRow>
+    </RailCard>
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
-  );
-}

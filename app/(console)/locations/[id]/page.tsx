@@ -2,14 +2,13 @@ import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, Server, ChevronRight } from "lucide-react";
+import { MapPin, Server } from "lucide-react";
 import { db } from "@/lib/db";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { LocationDialog } from "@/components/locations/location-dialog";
 import { DeleteLocationButton } from "@/components/locations/delete-location-button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -41,43 +40,58 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
   const allLocations = await db.location.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
   const parents = allLocations.map((l) => ({ value: l.id, label: l.name }));
 
-  return (
-    <div className="p-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <LinkButton href="/locations" variant="ghost" size="icon-sm" aria-label={t("backToList")}><ArrowLeft className="size-4" /></LinkButton>
-          <StatusBadge map={LOCATION_TYPE_META} value={location.type} />
+  const rail = (
+    <>
+      <RailCard title={tc("details")}>
+        <MetaRow label={t("dialog.inside")}>
           {location.parent ? (
-            <span className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Link href={`/locations/${location.parent.id}`} className="hover:text-foreground">{location.parent.name}</Link>
-              <ChevronRight className="size-3.5" />
-            </span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <LocationDialog
-            parents={parents}
-            location={{
-              id: location.id, name: location.name, type: location.type, parentId: location.parentId,
-              address: location.address, city: location.city, country: location.country, notes: location.notes,
-            }}
-          />
-          <DeleteLocationButton
-            id={location.id}
-            name={location.name}
-            assetCount={location.assets.length}
-            childCount={location.children.length}
-          />
-        </div>
-      </div>
+            <Link href={`/locations/${location.parent.id}`} className="hover:text-primary">{location.parent.name}</Link>
+          ) : (
+            "—"
+          )}
+        </MetaRow>
+        <MetaRow label={t("dialog.address")}>{location.address ?? "—"}</MetaRow>
+        <MetaRow label={t("dialog.city")}>{location.city ?? "—"}</MetaRow>
+        <MetaRow label={t("dialog.country")}>{location.country ?? "—"}</MetaRow>
+      </RailCard>
 
-      <h1 className="font-display text-2xl font-semibold tracking-tight">{location.name}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {[location.address, location.city, location.country].filter(Boolean).join(", ") || t("noAddress")}
-      </p>
+      {location.notes ? (
+        <RailCard title={tc("notes")}>
+          <p className="whitespace-pre-wrap text-muted-foreground">{location.notes}</p>
+        </RailCard>
+      ) : null}
+    </>
+  );
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+  return (
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/locations"
+        backLabel={t("backToList")}
+        lead={<StatusBadge map={LOCATION_TYPE_META} value={location.type} />}
+      >
+        <LocationDialog
+          parents={parents}
+          location={{
+            id: location.id, name: location.name, type: location.type, parentId: location.parentId,
+            address: location.address, city: location.city, country: location.country, notes: location.notes,
+          }}
+        />
+        <DeleteLocationButton
+          id={location.id}
+          name={location.name}
+          assetCount={location.assets.length}
+          childCount={location.children.length}
+        />
+      </DetailTopBar>
+
+      <div className="p-4 sm:p-6">
+        <DetailTitle
+          title={location.name}
+          subtitle={[location.address, location.city, location.country].filter(Boolean).join(", ") || t("noAddress")}
+        />
+
+        <section className="mt-6">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Server className="size-4 text-muted-foreground" /> {t("assetsHere", { count: location.assets.length })}
           </h2>
@@ -110,35 +124,31 @@ export default async function LocationDetailPage({ params }: { params: Promise<{
               </Table>
             </div>
           )}
-        </div>
+        </section>
 
-        <div>
-          <Card>
-            <CardHeader><CardTitle className="text-sm">{t("subLocations")}</CardTitle></CardHeader>
-            <CardContent className="grid gap-1">
-              {location.children.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t("noSubLocations")}</p>
-              ) : (
-                location.children.map((c) => (
-                  <Link key={c.id} href={`/locations/${c.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted">
-                    <span className="flex items-center gap-2">
-                      <StatusBadge map={LOCATION_TYPE_META} value={c.type} />
-                      {c.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{c._count.assets}</span>
-                  </Link>
-                ))
-              )}
-            </CardContent>
-          </Card>
-          {location.notes ? (
-            <Card className="mt-4">
-              <CardHeader><CardTitle className="text-sm">{tc("notes")}</CardTitle></CardHeader>
-              <CardContent className="whitespace-pre-wrap text-sm text-muted-foreground">{location.notes}</CardContent>
-            </Card>
-          ) : null}
-        </div>
+        <section className="mt-8">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <MapPin className="size-4 text-muted-foreground" /> {t("subLocations")}
+          </h2>
+          {location.children.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("noSubLocations")}</p>
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              {location.children.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/locations/${c.id}`}
+                  className="flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
+                >
+                  <StatusBadge map={LOCATION_TYPE_META} value={c.type} />
+                  <span className="line-clamp-1 flex-1 text-sm font-medium">{c.name}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{c._count.assets}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
-    </div>
+    </DetailShell>
   );
 }

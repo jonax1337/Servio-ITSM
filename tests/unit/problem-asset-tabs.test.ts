@@ -4,22 +4,28 @@ import { buildProblemTabs, DEFAULT_PROBLEM_TAB } from "@/components/problems/tab
 import { buildAssetTabs, DEFAULT_ASSET_TAB } from "@/components/assets/tabs/asset-tabs";
 
 describe("buildProblemTabs", () => {
-  const tabs = buildProblemTabs({ incidents: 3, changes: 1, comments: 0 });
+  const tabs = buildProblemTabs({ incidents: 3, changes: 1, affectedCis: 2, comments: 0 }, true);
 
   it("lists the sections in reading order", () => {
     expect(tabs.map((t) => t.key)).toEqual([
-      "overview", "incidents", "changes", "discussion", "history",
+      "overview", "incidents", "changes", "impact", "discussion", "history",
     ]);
   });
 
-  it("carries the linked-record and comment counts", () => {
+  it("carries the linked-record, affected-CI and comment counts", () => {
     const counts = Object.fromEntries(tabs.map((t) => [t.key, t.count]));
-    expect(counts).toMatchObject({ incidents: 3, changes: 1, discussion: 0 });
+    expect(counts).toMatchObject({ incidents: 3, changes: 1, impact: 2, discussion: 0 });
   });
 
   it("resolves ?tab= and falls back to the overview", () => {
     expect(resolveTab({ tab: "changes" }, tabs, DEFAULT_PROBLEM_TAB)).toBe("changes");
     expect(resolveTab({ tab: "bogus" }, tabs, DEFAULT_PROBLEM_TAB)).toBe("overview");
+  });
+
+  it("hides the affected-CI tab from non-agents", () => {
+    const userTabs = buildProblemTabs({ incidents: 0, changes: 0, affectedCis: 2, comments: 0 }, false);
+    expect(userTabs.find((t) => t.key === "impact")?.hidden).toBe(true);
+    expect(resolveTab({ tab: "impact" }, userTabs, DEFAULT_PROBLEM_TAB)).toBe("overview");
   });
 });
 

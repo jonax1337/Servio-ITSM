@@ -368,12 +368,20 @@ experience. It gates on `requireRole("AGENT")`, then renders a
 - **[`AppSidebar`](../components/app-sidebar.tsx)** — collapsible-to-icon
   (`collapsible="icon"`) rail with the `Logo`/wordmark header and role-filtered nav
   groups from [`lib/nav.ts`](../lib/nav.ts) (`consoleNav` + `filterNav`). Active
-  state is derived from `usePathname`.
+  state is derived from `usePathname`. Each group label folds its group away; the
+  folded set is remembered per browser (`localStorage` key
+  `servio:nav-collapsed-groups`), the group holding the current page always stays
+  open, and the icon-only rail shows every item.
 - **[`AppTopbar`](../components/app-topbar.tsx)** — sticky, blurred bar with a
   sidebar trigger, breadcrumb built from the path (numeric segments become
   `#123`, cuid-like ids collapse to "Details"), and the right cluster:
   `CommandMenu`, `CreateMenu`, a notifications bell with unread count, `ThemeToggle`,
   and `UserMenu`.
+- **Record detail pages** share [`components/detail-layout.tsx`](../components/detail-layout.tsx):
+  `DetailShell` (main column + a 360 px / `xl` 400 px properties rail), `DetailTopBar`
+  (back link and identifying chips left, actions then state badges right), `DetailTitle`,
+  `RailCard` and `MetaRow` (label left, value right). Keep the rail to status, editable
+  properties, ownership and key dates; related records go in the main column's tabs.
 - **Split-pane detail pages** (ticket, asset, change, … and `/assistant`) mark their
   root with `data-viewport-pane` and size it `lg:h-full`, with `lg:min-h-0
   lg:overflow-y-auto` on each pane. The layout then locks `SidebarInset` to the

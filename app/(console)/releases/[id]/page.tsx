@@ -1,11 +1,10 @@
 import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
 import { LinkPicker } from "@/components/link-picker";
 import { StatusBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
@@ -43,15 +42,6 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   if (release) return { title: release.name };
   const t = await getT("releases");
   return { title: t("detail.fallbackTitle") };
-}
-
-function Prop({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="text-sm">{children}</div>
-    </div>
-  );
 }
 
 export default async function ReleaseDetailPage({ params }: { params: Params }) {
@@ -103,109 +93,103 @@ export default async function ReleaseDetailPage({ params }: { params: Params }) 
     hint: te(CHANGE_STATUS_META, c.status),
   }));
 
+  const rail = (
+    <RailCard title={tc("details")}>
+      <MetaRow label={t("list.window")}>
+        {window.start || window.end ? formatWindow(window, f, tch) : <span className="font-normal text-muted-foreground">{t("detail.windowHint")}</span>}
+      </MetaRow>
+      <MetaRow label={tc("owner")}>
+        {release.owner ? (
+          <span className="inline-flex items-center gap-2">
+            <UserAvatar name={release.owner.name} email={release.owner.email} size="sm" />
+            {release.owner.name ?? release.owner.email}
+          </span>
+        ) : (
+          <span className="font-normal text-muted-foreground">{t("form.noOwner")}</span>
+        )}
+      </MetaRow>
+      <MetaRow label={tc("group")}>{release.group?.name ?? <span className="font-normal text-muted-foreground">{tch("props.noGroup")}</span>}</MetaRow>
+      {release.deployedAt ? <MetaRow label={t("detail.deployed")}>{f.date(release.deployedAt, "dateTime")}</MetaRow> : null}
+      <MetaRow label={t("detail.lastUpdated")}>{f.date(release.updatedAt, "dateTime")}</MetaRow>
+    </RailCard>
+  );
+
   return (
-    <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
-      {/* Main column — scrolls independently from the details rail, like a change */}
-      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/releases" variant="ghost" size="icon-sm" aria-label={t("detail.back")}>
-            <ArrowLeft className="size-4" />
-          </LinkButton>
-          <span className="font-mono text-sm text-muted-foreground">{releaseRef(release.id)}</span>
-          <StatusBadge map={RELEASE_STATUS_META} value={release.status} />
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <ReleaseStatusActions releaseId={release.id} moves={moves} />
-            {isReleaseFinished(release.status) ? null : (
-              <ReleaseEditDialog
-                release={{
-                  id: release.id,
-                  name: release.name,
-                  description: release.description,
-                  ownerId: release.ownerId,
-                  groupId: release.groupId,
-                }}
-                options={options}
-              />
-            )}
-          </div>
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/releases"
+        backLabel={t("detail.back")}
+        lead={<span className="font-mono text-sm text-muted-foreground">{releaseRef(release.id)}</span>}
+      >
+        <ReleaseStatusActions releaseId={release.id} moves={moves} />
+        {isReleaseFinished(release.status) ? null : (
+          <ReleaseEditDialog
+            release={{
+              id: release.id,
+              name: release.name,
+              description: release.description,
+              ownerId: release.ownerId,
+              groupId: release.groupId,
+            }}
+            options={options}
+          />
+        )}
+        <StatusBadge map={RELEASE_STATUS_META} value={release.status} />
+      </DetailTopBar>
+
+      <div className="grid content-start gap-4 p-4 sm:p-6">
+        <div>
+          <DetailTitle
+            title={release.name}
+            subtitle={
+              <>
+                {t("detail.created", { time: f.relative(release.createdAt) })}
+                {release.owner ? <> · {t("detail.ownedBy", { name: release.owner.name ?? release.owner.email })}</> : null}
+              </>
+            }
+          />
         </div>
 
-        <div className="grid content-start gap-4 p-4 sm:p-6">
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight">{release.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("detail.created", { time: f.relative(release.createdAt) })}
-              {release.owner ? <> · {t("detail.ownedBy", { name: release.owner.name ?? release.owner.email })}</> : null}
-            </p>
-          </div>
+        {release.description ? (
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{release.description}</p>
+        ) : null}
 
-          {release.description ? (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{release.description}</p>
-          ) : null}
+        <ReleaseReadinessCard readiness={readiness} />
 
-          <ReleaseReadinessCard readiness={readiness} />
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-sm">{t("detail.changes", { count: release.changes.length })}</CardTitle>
-              {bundleEditable ? (
-                <LinkPicker
-                  action={addChangeToReleaseAction}
-                  triggerLabel={t("detail.addChange")}
-                  title={t("detail.addChangeTitle")}
-                  description={t("detail.addChangeDescription")}
-                  hidden={{ releaseId: release.id }}
-                  valueName="changeId"
-                  options={candidateOptions}
-                  placeholder={t("detail.chooseChange")}
-                  searchPlaceholder={tch("list.searchPlaceholder")}
-                  emptyText={t("detail.noCandidates")}
-                  submitLabel={t("detail.addToRelease")}
-                  successMessage={t("detail.added")}
-                />
-              ) : null}
-            </CardHeader>
-            <CardContent className={release.changes.length > 0 ? "px-0" : undefined}>
-              {release.changes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {bundleEditable ? t("detail.emptyEditable") : t("detail.empty")}
-                </p>
-              ) : (
-                <ReleaseChangesTable releaseId={release.id} changes={release.changes} editable={bundleEditable} />
-              )}
-              {!bundleEditable && release.changes.length > 0 ? (
-                <p className="px-4 pt-3 text-xs text-muted-foreground">{bundleLockedText(release.status, t, te(RELEASE_STATUS_META, release.status))}</p>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <aside className="grid content-start gap-4 p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">{tc("details")}</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-sm">{t("detail.changes", { count: release.changes.length })}</CardTitle>
+            {bundleEditable ? (
+              <LinkPicker
+                action={addChangeToReleaseAction}
+                triggerLabel={t("detail.addChange")}
+                title={t("detail.addChangeTitle")}
+                description={t("detail.addChangeDescription")}
+                hidden={{ releaseId: release.id }}
+                valueName="changeId"
+                options={candidateOptions}
+                placeholder={t("detail.chooseChange")}
+                searchPlaceholder={tch("list.searchPlaceholder")}
+                emptyText={t("detail.noCandidates")}
+                submitLabel={t("detail.addToRelease")}
+                successMessage={t("detail.added")}
+              />
+            ) : null}
           </CardHeader>
-          <CardContent className="grid gap-4">
-            <Prop label={t("list.window")}>
-              {window.start || window.end ? formatWindow(window, f, tch) : t("detail.windowHint")}
-            </Prop>
-            <Prop label={tc("owner")}>
-              {release.owner ? (
-                <span className="flex items-center gap-2">
-                  <UserAvatar name={release.owner.name} email={release.owner.email} size="sm" />
-                  {release.owner.name ?? release.owner.email}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">{t("form.noOwner")}</span>
-              )}
-            </Prop>
-            <Prop label={tc("group")}>{release.group?.name ?? <span className="text-muted-foreground">{tch("props.noGroup")}</span>}</Prop>
-            {release.deployedAt ? <Prop label={t("detail.deployed")}>{f.date(release.deployedAt, "dateTime")}</Prop> : null}
-            <Prop label={t("detail.lastUpdated")}>{f.date(release.updatedAt, "dateTime")}</Prop>
+          <CardContent className={release.changes.length > 0 ? "px-0" : undefined}>
+            {release.changes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {bundleEditable ? t("detail.emptyEditable") : t("detail.empty")}
+              </p>
+            ) : (
+              <ReleaseChangesTable releaseId={release.id} changes={release.changes} editable={bundleEditable} />
+            )}
+            {!bundleEditable && release.changes.length > 0 ? (
+              <p className="px-4 pt-3 text-xs text-muted-foreground">{bundleLockedText(release.status, t, te(RELEASE_STATUS_META, release.status))}</p>
+            ) : null}
           </CardContent>
         </Card>
-      </aside>
-    </div>
+      </div>
+    </DetailShell>
   );
 }

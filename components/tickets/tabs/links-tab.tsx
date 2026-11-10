@@ -7,6 +7,7 @@ import { RaiseProblemButton } from "@/components/tickets/raise-problem-dialog";
 import { LinkedChip as Chip, UnlinkButton as UnlinkBtn } from "@/components/linked-records";
 import { TicketHierarchy } from "@/components/tickets/ticket-hierarchy";
 import { RelatedArticlesCard } from "@/components/related-articles-card";
+import { RecordAffectedServices } from "@/components/services/affected-services";
 import { SimilarTickets } from "@/components/ai/similar-tickets";
 import { unlinkTicket, unlinkAsset, unlinkRelation, setTicketProblem, setTicketChange, linkAsset } from "@/lib/actions/tickets";
 import { ticketLinkEntries } from "@/lib/ticket-link-labels";
@@ -66,7 +67,7 @@ async function loadPickerOptions(ticketId: number, linkedAssetIds: Set<string>) 
   };
 }
 
-/** Links tab: linked records with pickers, parent / child tickets, similar tickets and related KB articles. */
+/** Links tab: linked records with pickers, affected services, parent / child tickets, similar tickets and related KB articles. */
 export async function LinksTab({
   ticketId, parent, childTickets, viewer,
 }: {
@@ -173,6 +174,9 @@ export async function LinksTab({
           <p className="text-sm text-muted-foreground">{t("links.none")}</p>
         )}
       </section>
+
+      {/* Services hit through the linked CIs (read-only) */}
+      {viewer.isAgent ? <RecordAffectedServices record={{ kind: "ticket", id: ticketId }} /> : null}
 
       <TicketHierarchy
         ticketId={ticketId}

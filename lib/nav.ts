@@ -59,17 +59,27 @@ export const consoleNav: NavGroup[] = [
     items: [
       { title: "Tickets", href: "/tickets", icon: Ticket },
       { title: "Problems", href: "/problems", icon: AlertTriangle },
-      { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
-      { title: "Change Calendar", href: "/changes/calendar", icon: CalendarRange },
-      { title: "Releases", href: "/releases", icon: Rocket },
       { title: "Approvals", href: "/approvals", icon: CheckSquare },
-      { title: "On-call", href: "/oncall", icon: PhoneCall },
-      { title: "Status", href: "/status", icon: Activity },
       { title: "Knowledge Base", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
-    label: "Catalog",
+    label: "Change & Release",
+    items: [
+      { title: "Changes", href: "/changes", icon: GitPullRequestArrow },
+      { title: "Change Calendar", href: "/changes/calendar", icon: CalendarRange },
+      { title: "Releases", href: "/releases", icon: Rocket },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { title: "Status", href: "/status", icon: Activity },
+      { title: "On-call", href: "/oncall", icon: PhoneCall },
+    ],
+  },
+  {
+    label: "Services",
     items: [
       { title: "Services", href: "/services", icon: LifeBuoy },
       { title: "Service Catalog", href: "/catalog", icon: ShoppingBag, minRole: "MANAGER" },
@@ -86,8 +96,8 @@ export const consoleNav: NavGroup[] = [
   {
     label: "Organisation",
     items: [
-      { title: "Groups", href: "/groups", icon: Users },
       { title: "People", href: "/people", icon: Boxes },
+      { title: "Groups", href: "/groups", icon: Users },
       { title: "Categories", href: "/categories", icon: FolderTree },
     ],
   },
