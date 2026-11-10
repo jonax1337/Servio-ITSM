@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { CAB_APPROVAL_RULES } from "@/lib/constants";
-import { MAY_APPROVE_CHANGES_WHERE, mayApproveChanges } from "@/lib/service-accounts";
+import { MAY_JOIN_APPROVAL_BOARD_WHERE, mayJoinApprovalBoard } from "@/lib/service-accounts";
 
 export type ChangeForCab = {
   id: number;
@@ -22,7 +22,7 @@ export function normalizeCabRule(rule: string | null | undefined): CabApprovalRu
 /**
  * Compute the CAB (Change Advisory Board) for a change at submit time — a pure
  * query, no membership table. Eligible approvers are active MANAGER/ADMIN users
- * whose account may approve changes (not a service account, switch on),
+ * whose account may join a board (not a service account, switch on),
  * never the change owner OR its creator (separation of duties). HIGH-risk
  * changes require ADMIN. NORMAL = the full eligible board; EMERGENCY = an
  * expedited ECAB (≤2, ADMINs first).
@@ -40,7 +40,7 @@ export async function selectApprovers(change: ChangeForCab): Promise<string[]> {
   const candidates = await db.user.findMany({
     where: {
       isActive: true,
-      ...MAY_APPROVE_CHANGES_WHERE,
+      ...MAY_JOIN_APPROVAL_BOARD_WHERE,
       role: { in: roles },
       id: excluded.length ? { notIn: excluded } : undefined,
     },
@@ -127,5 +127,5 @@ export async function isEligibleApprover(userId: string, risk: string): Promise<
     where: { id: userId },
     select: { role: true, isActive: true, isServiceAccount: true, canApproveChanges: true },
   });
-  return !!u && u.isActive && mayApproveChanges(u) && approverRolesForRisk(risk).includes(u.role);
+  return !!u && u.isActive && mayJoinApprovalBoard(u) && approverRolesForRisk(risk).includes(u.role);
 }

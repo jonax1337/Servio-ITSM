@@ -1327,9 +1327,21 @@ curl -X PATCH "$BASE/api/v1/users/$USER_ID" -H "Authorization: Bearer $TOKEN" \
   leaves through drops service accounts from every recipient list (to, cc, bcc; primary and secondary
   addresses); a message nobody is left to receive is recorded as `SUPPRESSED` in Settings › Mail and not
   sent. A ticket that an integration files and resolves under its own account therefore produces no mail.
-- `can_approve_changes` (boolean): the per-account switch for change approval boards. `true` for people,
+- `can_approve_changes` (boolean): the per-account switch for approving changes. `true` for people,
   `false` for service accounts. Marking an account as a service account turns it off, unmarking turns it
-  back on; send both in one request to set them explicitly. A service account cannot be switched on (`422`).
+  back on; send both in one request to set them explicitly. Switching it **on for a service account** is a
+  deliberate widening of its rights and needs an ADMIN token owner (this endpoint is admin-only anyway). It is
+  meant for an automation account that owns its own changes and self-approves low-risk ones under the
+  self-approval mode (Settings › Changes): such an account is seated only on changes it owns or requested,
+  only as far as the mode allows, decides only its own seat (with the written justification a self-approval
+  needs) and never joins the board of other people's changes. The role limits the risk it can approve: a
+  MANAGER-role account cannot approve HIGH-risk changes. The edit is audited as "service account approval
+  enabled / disabled". Email suppression is independent of this switch.
+
+  ```bash
+  curl -X PATCH "$BASE/api/v1/users/$USER_ID" -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" -d '{"can_approve_changes": true}'
+  ```
 - Fields left out stay as they are; unknown fields and an empty body are a `422`. Both fields are returned by
   `GET /users`, which also filters by `service_account`.
 - Existing accounts are people (`service_account: false`, `can_approve_changes: true`): nothing changes until

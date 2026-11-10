@@ -4,7 +4,7 @@ import { writeAudit } from "@/lib/audit";
 import { AUTOMATION_EMAIL } from "@/lib/system-user";
 import { userPatchSchema } from "@/lib/api-user-input";
 import { normalizeSecondaryEmails } from "@/lib/user-email-rules";
-import { resolveAccountFlags } from "@/lib/service-accounts";
+import { resolveAccountFlags, type ServiceAccountApprovalChange } from "@/lib/service-accounts";
 import { applyAccountFlags } from "@/lib/user-accounts";
 import { EMAIL_TAKEN, replaceSecondaryEmails } from "@/lib/user-emails";
 import { agentGuard, readBody } from "../../_itsm";
@@ -49,7 +49,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if ("response" in body) return body.response;
 
   const next = { isServiceAccount: body.data.service_account, canApproveChanges: body.data.can_approve_changes };
-  const check = resolveAccountFlags(target, next);
+  const check = resolveAccountFlags(target, next, auth.principal.role);
   if (!check.ok) return apiError(422, "Validation failed", { can_approve_changes: [check.error] });
   let emails: string[] | undefined;
   if (body.data.secondary_emails !== undefined) {
@@ -60,13 +60,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   let added: string[] = [];
   let removed: string[] = [];
-  let account: { changed: string[]; openSeats: number } = { changed: [], openSeats: 0 };
+  let account: { changed: string[]; openSeats: number; serviceAccountApproval: ServiceAccountApprovalChange } = { changed: [], openSeats: 0, serviceAccountApproval: null };
   try {
     // One transaction: a refused address leaves the account type untouched, and the other way round.
     const done = await db.$transaction(async (tx) => {
       const replaced = emails === undefined ? { ok: true as const, added: [] as string[], removed: [] as string[] } : await replaceSecondaryEmails(id, emails, tx);
       if (!replaced.ok) return { replaced };
-      const flags = await applyAccountFlags(id, next, tx);
+      const flags = await applyAccountFlags(id, next, auth.principal.role, tx);
       if (!flags.ok) throw new Error(flags.error); // checked above; throwing rolls the edit back
       return { replaced, flags };
     });
@@ -78,7 +78,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     throw e;
   }
 
-  const changed = [...(added.length || removed.length ? ["secondaryEmails"] : []), ...account.changed];
+  const changed = [
+    ...(added.length || removed.length ? ["secondaryEmails"] : []),
+    ...account.changed,
+    // Letting a service account approve changes is a deliberate widening of its rights: name it in the summary.
+    ...(account.serviceAccountApproval ? [`service account approval ${account.serviceAccountApproval}`] : []),
+  ];
   if (changed.length > 0) {
     await writeAudit({
       userId: auth.principal.userId,
@@ -90,6 +95,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         ...(added.length || removed.length ? { secondaryAdded: added, secondaryRemoved: removed } : {}),
         // Seats on changes already in approval are left alone; a manager removes them on the change if they should not count.
         ...(account.openSeats ? { openApprovalSeatsKept: account.openSeats } : {}),
+        ...(account.serviceAccountApproval ? { serviceAccountApproval: account.serviceAccountApproval } : {}),
       },
     });
   }

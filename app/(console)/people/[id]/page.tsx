@@ -139,6 +139,7 @@ export default async function PersonDetailPage({
                 </h1>
                 {user.isVip ? <VipBadge /> : null}
                 {user.isServiceAccount ? <ToneBadge meta={{ label: t("serviceAccountBadge"), tone: "neutral" }} icon={false} /> : null}
+                {user.isServiceAccount && user.canApproveChanges ? <ToneBadge meta={{ label: t("serviceAccountApprovesBadge"), tone: "warning" }} icon={false} /> : null}
               </div>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {user.jobTitle ?? "—"}

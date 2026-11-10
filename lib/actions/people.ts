@@ -12,7 +12,7 @@ import { isEmailShape, normalizeEmail, passwordError } from "@/lib/person-rules"
 import { normalizeSecondaryEmails, splitEmailList } from "@/lib/user-email-rules";
 import { EMAIL_TAKEN, emailTakenByOther, replaceSecondaryEmails } from "@/lib/user-emails";
 import { distinctIds } from "@/lib/utils";
-import { resolveAccountFlags } from "@/lib/service-accounts";
+import { resolveAccountFlags, type ServiceAccountApprovalChange } from "@/lib/service-accounts";
 import { applyAccountFlags } from "@/lib/user-accounts";
 
 // Fresh DB row (not the possibly-stale JWT): only active ADMINs may manage people.
@@ -147,7 +147,7 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
     return { error: "Please fix the errors below.", fieldErrors: parsed.error.flatten().fieldErrors };
   }
   const { password, ...profile } = parsed.data;
-  const flags = resolveAccountFlags({ isServiceAccount: false, canApproveChanges: true }, accountSchema.parse(Object.fromEntries(formData)));
+  const flags = resolveAccountFlags({ isServiceAccount: false, canApproveChanges: true }, accountSchema.parse(Object.fromEntries(formData)), me.role);
   if (!flags.ok) return fieldError("canApproveChanges", flags.error);
 
   // No password = SSO / directory sign-in only (no reset flow exists).
@@ -180,13 +180,16 @@ export async function createPerson(_prev: PersonState, formData: FormData): Prom
     throw e;
   }
 
+  const serviceAccountMayApprove = flags.isServiceAccount && flags.canApproveChanges;
   await writeAudit({
     userId: me.id,
     action: "CREATE",
     entity: "User",
     entityId: created.id,
-    summary: `Created ${flags.isServiceAccount ? "service account" : profile.role} ${profile.email} (${password ? "local password" : "no local password"}, ${groupIds.length} ${groupIds.length === 1 ? "group" : "groups"})`,
-    meta: secondary.emails.length ? { secondaryEmails: secondary.emails } : undefined,
+    summary: `Created ${flags.isServiceAccount ? "service account" : profile.role} ${profile.email} (${password ? "local password" : "no local password"}, ${groupIds.length} ${groupIds.length === 1 ? "group" : "groups"}${serviceAccountMayApprove ? ", allowed to approve changes" : ""})`,
+    meta: secondary.emails.length || serviceAccountMayApprove
+      ? { ...(secondary.emails.length ? { secondaryEmails: secondary.emails } : {}), ...(serviceAccountMayApprove ? { serviceAccountApproval: "enabled" } : {}) }
+      : undefined,
   });
   revalidatePath("/people");
   return { ok: true };
@@ -218,9 +221,9 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
   if ("state" in secondary) return secondary.state;
 
   const account = accountSchema.parse(Object.fromEntries(formData));
-  const accountCheck = resolveAccountFlags(target, account);
+  const accountCheck = resolveAccountFlags(target, account, me.role);
   if (!accountCheck.ok) return fieldError("canApproveChanges", accountCheck.error);
-  let accountChange: { changed: string[]; openSeats: number } = { changed: [], openSeats: 0 };
+  let accountChange: { changed: string[]; openSeats: number; serviceAccountApproval: ServiceAccountApprovalChange } = { changed: [], openSeats: 0, serviceAccountApproval: null };
   let secondaryChange: { added: string[]; removed: string[] };
   try {
     // One transaction: if the primary update loses a race for its address, the
@@ -230,8 +233,8 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
     const replaced = await db.$transaction(async (tx) => {
       const result = await replaceSecondaryEmails(id, secondary.emails, tx);
       if (result.ok && changed.length) await tx.user.update({ where: { id }, data: profile });
-      if (!result.ok) return { result, flags: { changed: [], openSeats: 0 } };
-      const flags = await applyAccountFlags(id, account, tx);
+      if (!result.ok) return { result, flags: { changed: [], openSeats: 0, serviceAccountApproval: null } };
+      const flags = await applyAccountFlags(id, account, me.role, tx);
       if (!flags.ok) throw new Error(flags.error); // checked above; throwing rolls the whole edit back
       return { result, flags };
     });
@@ -244,6 +247,8 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
   }
   if (secondaryChange.added.length || secondaryChange.removed.length) changed.push("secondaryEmails");
   changed.push(...accountChange.changed);
+  // Letting a service account approve changes is a deliberate widening of its rights: name it in the summary.
+  if (accountChange.serviceAccountApproval) changed.push(`service account approval ${accountChange.serviceAccountApproval}`);
   if (changed.length === 0) return { ok: true };
 
   await writeAudit({
@@ -258,6 +263,7 @@ export async function updatePerson(_prev: PersonState, formData: FormData): Prom
       ...(secondaryChange.removed.length ? { secondaryRemoved: secondaryChange.removed } : {}),
       // Seats on changes already in approval are left alone; a manager removes them on the change if they should not count.
       ...(accountChange.openSeats ? { openApprovalSeatsKept: accountChange.openSeats } : {}),
+      ...(accountChange.serviceAccountApproval ? { serviceAccountApproval: accountChange.serviceAccountApproval } : {}),
     },
   });
   revalidatePath(`/people/${id}`);

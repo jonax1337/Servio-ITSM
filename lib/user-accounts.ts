@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { resolveAccountFlags } from "@/lib/service-accounts";
+import { resolveAccountFlags, serviceAccountApprovalChange, type ServiceAccountApprovalChange } from "@/lib/service-accounts";
 
 /**
  * Writes the account-type flags of a person (service account, may approve changes) for both edit paths,
@@ -14,29 +14,32 @@ import { resolveAccountFlags } from "@/lib/service-accounts";
 type Client = Prisma.TransactionClient;
 
 export type AccountFlagsChange =
-  | { ok: true; changed: string[]; openSeats: number }
+  | { ok: true; changed: string[]; openSeats: number; serviceAccountApproval: ServiceAccountApprovalChange }
   | { ok: false; error: string };
 
 export async function applyAccountFlags(
   userId: string,
   next: { isServiceAccount?: boolean; canApproveChanges?: boolean },
+  actorRole: string | null | undefined,
   client: Client = db,
 ): Promise<AccountFlagsChange> {
-  if (next.isServiceAccount === undefined && next.canApproveChanges === undefined) return { ok: true, changed: [], openSeats: 0 };
+  const unchanged: AccountFlagsChange = { ok: true, changed: [], openSeats: 0, serviceAccountApproval: null };
+  if (next.isServiceAccount === undefined && next.canApproveChanges === undefined) return unchanged;
   const current = await client.user.findUniqueOrThrow({
     where: { id: userId },
     select: { isServiceAccount: true, canApproveChanges: true },
   });
-  const flags = resolveAccountFlags(current, next);
+  const flags = resolveAccountFlags(current, next, actorRole);
   if (!flags.ok) return flags;
   const changed = [
     ...(flags.isServiceAccount !== current.isServiceAccount ? ["isServiceAccount"] : []),
     ...(flags.canApproveChanges !== current.canApproveChanges ? ["canApproveChanges"] : []),
   ];
-  if (changed.length === 0) return { ok: true, changed, openSeats: 0 };
+  if (changed.length === 0) return unchanged;
   await client.user.update({ where: { id: userId }, data: { isServiceAccount: flags.isServiceAccount, canApproveChanges: flags.canApproveChanges } });
-  const openSeats = flags.canApproveChanges
+  // A service account does not belong on a board of other people's changes, so its seats count as open too.
+  const openSeats = flags.canApproveChanges && !flags.isServiceAccount
     ? 0
     : await client.changeApproval.count({ where: { approverId: userId, status: "PENDING", change: { status: "APPROVAL" } } });
-  return { ok: true, changed, openSeats };
+  return { ok: true, changed, openSeats, serviceAccountApproval: serviceAccountApprovalChange(current, flags) };
 }
