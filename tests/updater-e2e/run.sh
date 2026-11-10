@@ -291,8 +291,6 @@ self_updated=$(updater_id)
 request_update e2e-4 1.4.0
 expect_status e2e-4 SUCCEEDED
 wait_for 60 "the image cleanup note" status_mentions "Removed superseded images"
-# Checked here, not after 1.1.0: the container that logged 1.1.0's check has since replaced itself.
-updater_logged "space check: probe_dir=/backups free_bytes=" || fail "the updater log has no space check line with byte counts"
 in_data cat /data/state/updater/status.json |
   jq -e '[.log[] | select(.state == "SUCCEEDED")] | length >= 2 and (.[0].message | contains("superseded") | not)' >/dev/null ||
   fail "SUCCEEDED was not reported before the image cleanup note"
@@ -323,6 +321,9 @@ no_container servio-updater-pre-1.1.0 || fail "the renamed updater container was
 wait_for 60 "the heartbeat of the rolled-back updater" \
   heartbeat_matches '.updaterVersion == "1.1.0" and .selfUpdate.state == "ROLLED_BACK" and .selfUpdate.targetVersion == "1.4.0"'
 ! in_backups test -e /backups/.self-update.json || fail "the handover record was left behind"
+# Checked once the self-update is over: the container that logged 1.1.0's check has replaced itself,
+# and during a handover `servio-updater` names the new container.
+updater_logged "space check: probe_dir=/backups free_bytes=" || fail "the updater log has no space check line with byte counts"
 docker rm e2e-holder-1.2.0 e2e-holder-1.3.0 >/dev/null
 heartbeat_idle() { in_data cat /data/state/updater/heartbeat.json | jq -e '.activeRequestId == null'; }
 wait_for 45 "the heartbeat to report no active request" heartbeat_idle
