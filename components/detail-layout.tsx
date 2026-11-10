@@ -16,7 +16,7 @@ export function DetailShell({ aside, children }: { aside: ReactNode; children: R
   return (
     <div
       data-viewport-pane
-      className="grid grid-cols-[minmax(0,1fr)] gap-0 lg:h-full lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_400px]"
+      className="grid grid-cols-[minmax(0,1fr)] gap-0 lg:h-full lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_380px]"
     >
       <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">{children}</div>
       {/* A block stack, not a grid: Cards clip their overflow, so in a height-capped grid the

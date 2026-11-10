@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
+import { DEFAULT_TICKET_SORT, ticketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
 
 // The ticket list page and its "Export CSV" must apply the SAME filters and sort,
 // otherwise an export silently contains rows the agent never saw on screen.
@@ -10,10 +10,15 @@ describe("ticketListQuery", () => {
     expect(JSON.stringify(where)).toContain("OPEN");
   });
 
-  it("applies the requested sort and falls back to newest activity", () => {
-    expect(ticketListQuery({ sort: "createdAt", dir: "asc" }).orderBy).toEqual({ createdAt: "asc" });
-    expect(ticketListQuery({}).orderBy).toEqual({ updatedAt: "desc" });
-    expect(ticketListQuery({ sort: "bogus" }).orderBy).toEqual({ updatedAt: "desc" });
+  it("applies the requested sort with the ticket number as a stable tie-break", () => {
+    expect(ticketListQuery({ sort: "createdAt", dir: "asc" }).orderBy).toEqual([{ createdAt: "asc" }, { id: "desc" }]);
+    expect(ticketListQuery({ sort: "updatedAt" }).orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+  });
+
+  it("falls back to the newest ticket first", () => {
+    expect(DEFAULT_TICKET_SORT).toBe("id");
+    expect(ticketListQuery({}).orderBy).toEqual([{ id: "desc" }]);
+    expect(ticketListQuery({ sort: "bogus" }).orderBy).toEqual([{ id: "desc" }]);
   });
 
   it("forwards every filter the list understands to the export", () => {

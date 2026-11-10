@@ -104,7 +104,7 @@ export default async function DashboardPage({
             href="/api/export?type=tickets"
             download
             title={t("exportTitle")}
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
+            className={buttonVariants({ variant: "ghost" })}
           >
             <Download className="size-4" /> {t("exportCsv")}
           </a>

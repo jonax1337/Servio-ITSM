@@ -7,6 +7,9 @@ import { PRIORITIES, TICKET_STATUSES } from "@/lib/constants";
 import { getParam, type SearchParams } from "@/lib/query";
 import { applyTicketSearch } from "@/lib/search";
 
+/** The list's sort when the URL names none: the ticket number, newest first (stable, unlike activity). */
+export const DEFAULT_TICKET_SORT = "id";
+
 /** URL params the ticket list understands — the page forwards all of them to its CSV export. */
 export const TICKET_LIST_PARAMS = [
   "q", "status", "priority", "type", "group", "assignee", "category", "service",
@@ -94,7 +97,7 @@ export async function loadTicketListQuery(sp: SearchParams) {
  */
 export function ticketListQuery(sp: SearchParams, slaFilter?: Prisma.TicketWhereInput): {
   where: Prisma.TicketWhereInput;
-  orderBy: Prisma.TicketOrderByWithRelationInput;
+  orderBy: Prisma.TicketOrderByWithRelationInput[];
   rankSort?: RankSort;
   slaSort?: SlaSort;
 } {
@@ -128,8 +131,10 @@ export function ticketListQuery(sp: SearchParams, slaFilter?: Prisma.TicketWhere
     requester: { requester: { name: dir } },
     assignee: { assignee: { name: dir } },
   };
-  const orderBy = ORDER[getParam(sp, "sort") ?? "updatedAt"] ?? { updatedAt: dir };
   const sort = getParam(sp, "sort");
+  const requested = sort ? ORDER[sort] : undefined;
+  // Ties (same timestamp, same assignee …) fall back to the ticket number, so the order never jumps.
+  const orderBy = requested && sort !== "id" ? [requested, { id: "desc" as const }] : [{ id: requested ? dir : "desc" }];
   const rankSort: RankSort | undefined = sort === "priority" || sort === "status" ? { key: sort, dir } : undefined;
   const slaSort: SlaSort | undefined = sort === "sla" ? { dir } : undefined;
   return { where, orderBy, rankSort, slaSort };

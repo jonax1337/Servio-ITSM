@@ -175,7 +175,7 @@ export default async function OnCallSchedulePage({ params }: { params: Promise<{
               description={t("deleteDescription", { name: schedule.name, team: schedule.group.name })}
               confirmLabel={t("deleteSchedule")}
               triggerVariant="outline"
-              triggerSize="icon-sm"
+              triggerSize="icon"
               triggerLabel={t("deleteSchedule")}
               triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
             >

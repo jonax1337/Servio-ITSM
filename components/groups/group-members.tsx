@@ -95,7 +95,7 @@ export function GroupMembers({
                 onClick={() => toggleRole(m.id, m.role)}
                 disabled={pending}
                 title={m.role === "LEAD" ? t("demote") : t("promote")}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50 ${
+                className={`inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-50 ${
                   m.role === "LEAD"
                     ? "border-primary/20 bg-primary/10 text-primary hover:bg-primary/20"
                     : "border-border bg-muted text-muted-foreground hover:bg-accent"

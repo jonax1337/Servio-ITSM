@@ -50,7 +50,7 @@ export default async function KnowledgePage({
         title={t("title")}
         description={t("description")}
       >
-        <LinkButton href="/knowledge/new" size="sm">
+        <LinkButton href="/knowledge/new">
           <Plus className="size-4" /> {t("newArticle")}
         </LinkButton>
       </PageHeader>

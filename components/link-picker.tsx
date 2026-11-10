@@ -74,7 +74,7 @@ export function LinkPicker({
 
   return (
     <>
-      <Button type="button" variant="outline" size="xs" onClick={() => setOpen(true)}>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
         <Plus className="size-3.5" /> {triggerLabel}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

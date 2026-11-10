@@ -378,7 +378,7 @@ experience. It gates on `requireRole("AGENT")`, then renders a
   `CommandMenu`, `CreateMenu`, a notifications bell with unread count, `ThemeToggle`,
   and `UserMenu`.
 - **Record detail pages** share [`components/detail-layout.tsx`](../components/detail-layout.tsx):
-  `DetailShell` (main column + a 360 px / `xl` 400 px properties rail), `DetailTopBar`
+  `DetailShell` (main column + a 340 px / `xl` 380 px properties rail), `DetailTopBar`
   (back link and identifying chips left, actions then state badges right), `DetailTitle`,
   `RailCard` and `MetaRow` (label left, value right). Keep the rail to status, editable
   properties, ownership and key dates; related records go in the main column's tabs.

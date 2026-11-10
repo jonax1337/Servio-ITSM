@@ -124,9 +124,7 @@ export function TicketsTable({
 
   function toggleSort(k: string) {
     const params = new URLSearchParams(sp.toString());
-    const curSort = params.get("sort") ?? "updatedAt";
-    const curDir = params.get("dir") === "asc" ? "asc" : "desc";
-    const nextDir = curSort === k ? (curDir === "asc" ? "desc" : "asc") : k === "updatedAt" || k === "id" ? "desc" : "asc";
+    const nextDir = sort === k ? (dir === "asc" ? "desc" : "asc") : k === "updatedAt" || k === "id" ? "desc" : "asc";
     params.set("sort", k);
     params.set("dir", nextDir);
     params.delete("page");

@@ -3,7 +3,7 @@ import { HardDrive, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
+import { PAGE_SIZE, type SearchParams, type SortDir, getPage, getParam, listSort } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -33,6 +33,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 export const dynamic = "force-dynamic";
 
+const SORT_KEYS = ["name", "status", "owner", "location", "ipAddress", "updatedAt"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+const DEFAULT_SORT: { sort: SortKey; dir: SortDir } = { sort: "name", dir: "asc" };
+
 export default async function AssetsPage({
   searchParams,
 }: {
@@ -55,9 +59,8 @@ export default async function AssetsPage({
   if (type && type !== "all") where.type = type;
   if (status && status !== "all") where.status = status;
 
-  const sort = getParam(sp, "sort") ?? "updatedAt";
-  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
-  const ORDER: Record<string, Prisma.AssetOrderByWithRelationInput> = {
+  const { sort, dir } = listSort(sp, SORT_KEYS, DEFAULT_SORT);
+  const ORDER: Record<SortKey, Prisma.AssetOrderByWithRelationInput> = {
     name: { name: dir },
     status: { status: dir },
     owner: { owner: { name: dir } },
@@ -65,14 +68,15 @@ export default async function AssetsPage({
     ipAddress: { ipAddress: dir },
     updatedAt: { updatedAt: dir },
   };
-  const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+  // Ties fall back to the id, so equal values keep a stable order across pages.
+  const orderBy = [ORDER[sort], { id: "desc" as const }];
 
   const [total, assets] = await Promise.all([
     db.asset.count({ where }),
     db.asset.findMany({
       where,
       include: { owner: true },
-      orderBy: [orderBy],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),

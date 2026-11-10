@@ -65,8 +65,8 @@ export function AppTopbar({
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarTrigger className="-ml-1" />
-      <Breadcrumb className="ml-1 hidden md:block">
-        <BreadcrumbList className="flex-nowrap whitespace-nowrap">
+      <Breadcrumb className="ml-1 hidden min-w-0 overflow-hidden md:block">
+        <BreadcrumbList className="flex-nowrap whitespace-nowrap [&>li:last-child]:min-w-0 [&>li:last-child]:truncate">
           <BreadcrumbItem>
             <BreadcrumbLink render={<Link href="/" />}>Servio</BreadcrumbLink>
           </BreadcrumbItem>
@@ -95,7 +95,7 @@ export function AppTopbar({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
         <CommandMenu role={user.role} sableEnabled={sableEnabled} />
         <CreateMenu />
         <NotificationsMenu unreadCount={notifications} />
