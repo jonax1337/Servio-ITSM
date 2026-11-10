@@ -38,6 +38,7 @@ const messages: ServerMessages = {
   "Invalid input.": "Ungültige Eingabe.",
   "Missing SLA id.": "SLA-ID fehlt.",
   "Missing calendar id.": "Kalender-ID fehlt.",
+  "Calendar not found.": "Kalender nicht gefunden.",
   "Missing calendar.": "Kalender fehlt.",
   "Missing macro id.": "Makro-ID fehlt.",
   "Missing policy id.": "Richtlinien-ID fehlt.",

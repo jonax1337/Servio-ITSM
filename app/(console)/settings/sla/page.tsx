@@ -31,8 +31,8 @@ export default async function SlaSettingsPage() {
     db.businessCalendar.findMany({
       orderBy: { name: "asc" },
       select: {
-        id: true, name: true, timezone: true, weeklyHours: true,
-        holidays: { orderBy: { date: "asc" }, select: { id: true, name: true, date: true } },
+        id: true, name: true, timezone: true, weeklyHours: true, holidayRegion: true,
+        holidays: { orderBy: { date: "asc" }, select: { id: true, name: true, date: true, generated: true } },
       },
     }),
     db.escalationPolicy.findMany({

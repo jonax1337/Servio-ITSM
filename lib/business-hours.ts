@@ -179,7 +179,12 @@ function parseCalendar(cal: BusinessCalendarLike): ParsedCalendar {
   for (const h of cal.holidays ?? []) {
     const d = h.date instanceof Date ? h.date : new Date(h.date);
     if (isNaN(d.getTime())) continue;
-    // A holiday date is a whole local calendar day. Read its local Y-M-D.
+    // A holiday is a whole calendar day, stored as UTC midnight of that day: read it as such, so a calendar
+    // west of UTC does not move it to the day before. Any other instant is read in the calendar's timezone.
+    if (d.getTime() % DAY_MS === 0) {
+      holidays.add(ymdKey(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+      continue;
+    }
     const p = localParts(d, timezone);
     holidays.add(ymdKey(p.year, p.month, p.day));
   }

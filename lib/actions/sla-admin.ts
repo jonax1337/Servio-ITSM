@@ -8,6 +8,8 @@ import { writeAudit } from "@/lib/audit";
 import { PRIORITIES, ESCALATION_ACTIONS } from "@/lib/constants";
 import { WEEKDAY_KEYS } from "@/lib/business-hours";
 import { isOnCallEscalationAction } from "@/lib/oncall-rules";
+import { isHolidayRegion } from "@/lib/public-holidays";
+import { syncGeneratedHolidays } from "@/lib/holiday-sync";
 
 // DB-truth (not the stale JWT): a demoted/deactivated manager must lose write access
 // immediately, consistent with the requireRole gate on the pages.
@@ -168,6 +170,8 @@ const calendarSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(80),
   timezone: z.string().min(1).max(64).default("UTC"),
   weeklyHours: z.string().default("{}"),
+  /** Region whose public holidays are generated (lib/public-holidays.ts); null = none. */
+  holidayRegion: z.string().refine(isHolidayRegion).nullable().default(null),
 });
 
 function parseCalendar(formData: FormData) {
@@ -184,6 +188,7 @@ function parseCalendar(formData: FormData) {
     name: String(formData.get("name") ?? ""),
     timezone: String(formData.get("timezone") ?? "UTC") || "UTC",
     weeklyHours,
+    holidayRegion: noneToNull(String(formData.get("holidayRegion") ?? "")),
   });
   return base.success ? { ok: true as const, data: base.data } : { ok: false as const, err: base.error };
 }
@@ -194,8 +199,14 @@ export async function createCalendar(_prev: SlaState, formData: FormData): Promi
   const parsed = parseCalendar(formData);
   if (!parsed.ok) return { error: "Please fix the calendar fields.", fieldErrors: parsed.err?.flatten().fieldErrors };
   const cal = await db.businessCalendar.create({
-    data: { name: parsed.data.name, timezone: parsed.data.timezone, weeklyHours: parsed.data.weeklyHours },
+    data: {
+      name: parsed.data.name,
+      timezone: parsed.data.timezone,
+      weeklyHours: parsed.data.weeklyHours,
+      holidayRegion: parsed.data.holidayRegion,
+    },
   });
+  await syncGeneratedHolidays(cal.id, { reset: true });
   await writeAudit({ userId: me.id, action: "CREATE", entity: "BusinessCalendar", entityId: cal.id, summary: `Created business calendar "${cal.name}"` });
   revalidatePath("/settings/sla");
   return { ok: true };
@@ -208,10 +219,19 @@ export async function updateCalendar(_prev: SlaState, formData: FormData): Promi
   if (!id) return { error: "Missing calendar id." };
   const parsed = parseCalendar(formData);
   if (!parsed.ok) return { error: "Please fix the calendar fields.", fieldErrors: parsed.err?.flatten().fieldErrors };
+  const before = await db.businessCalendar.findUnique({ where: { id }, select: { holidayRegion: true } });
+  if (!before) return { error: "Calendar not found." };
   await db.businessCalendar.update({
     where: { id },
-    data: { name: parsed.data.name, timezone: parsed.data.timezone, weeklyHours: parsed.data.weeklyHours },
+    data: {
+      name: parsed.data.name,
+      timezone: parsed.data.timezone,
+      weeklyHours: parsed.data.weeklyHours,
+      holidayRegion: parsed.data.holidayRegion,
+    },
   });
+  // A new region replaces the old region's holidays; a new timezone can move the window to another year.
+  await syncGeneratedHolidays(id, { reset: before.holidayRegion !== parsed.data.holidayRegion });
   await writeAudit({ userId: me.id, action: "UPDATE", entity: "BusinessCalendar", entityId: id, summary: `Updated business calendar "${parsed.data.name}"` });
   revalidatePath("/settings/sla");
   return { ok: true };
@@ -245,6 +265,8 @@ export async function addHoliday(_prev: SlaState, formData: FormData): Promise<S
   const date = new Date(`${dateRaw}T00:00:00.000Z`);
   if (isNaN(date.getTime())) return { error: "Invalid date.", fieldErrors: { date: ["Invalid date"] } };
   await db.holiday.create({ data: { calendarId, name, date } });
+  // A manual holiday wins over a generated one on the same date.
+  await syncGeneratedHolidays(calendarId);
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Holiday", entityId: calendarId, summary: `Added holiday "${name}"` });
   revalidatePath("/settings/sla");
   return { ok: true };
@@ -256,8 +278,13 @@ export async function deleteHoliday(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   try {
+    // Generated holidays follow the calendar's region and cannot be removed one by one.
+    const row = await db.holiday.findUnique({ where: { id }, select: { calendarId: true, generated: true } });
+    if (!row || row.generated) return;
     await db.holiday.delete({ where: { id } });
     await writeAudit({ userId: me.id, action: "DELETE", entity: "Holiday", entityId: id, summary: "Removed holiday" });
+    // The region's own holiday on that date comes back.
+    await syncGeneratedHolidays(row.calendarId);
   } catch {
     /* already gone */
   }

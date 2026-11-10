@@ -20,6 +20,7 @@ import { runMaintenanceTick } from "@/lib/ticks/maintenance";
 import { runUpdateCheckTick } from "@/lib/ticks/update-check";
 import { runRecurringTicketsTick } from "@/lib/ticks/recurring-tickets";
 import { runAutoCloseTick } from "@/lib/ticks/auto-close";
+import { runHolidaysTick } from "@/lib/ticks/holidays";
 import { runAppHeartbeatTick, runBackupTick } from "@/lib/ticks/backup";
 import { removeAppHeartbeat } from "@/lib/backup";
 import { APP_HEARTBEAT_MAX_INTERVAL_MS } from "@/scripts/backup/layout.mjs";
@@ -210,6 +211,8 @@ const FEATURE_TICKS: FeatureTick[] = [
   { name: "recurring-tickets", settingKey: "RECURRING_TICKETS_TICK_SECONDS", defaultSeconds: 300, minSeconds: 60, run: runRecurringTicketsTick },
   // The auto-close delay is counted in days; a ticket closed within the hour is fine.
   { name: "auto-close", settingKey: "AUTO_CLOSE_TICK_SECONDS", defaultSeconds: 3600, minSeconds: 300, run: runAutoCloseTick },
+  // Generated public holidays only change when a year turns; a few checks a day also pick up a calendar created meanwhile.
+  { name: "holidays", settingKey: "HOLIDAYS_TICK_SECONDS", defaultSeconds: 21600, minSeconds: 3600, run: runHolidaysTick },
   // The backup schedule has minute granularity; the run itself happens in a child process.
   { name: "backup", settingKey: "BACKUP_TICK_SECONDS", defaultSeconds: 60, minSeconds: 30, run: runBackupTick },
   // Liveness file for the restore script (scripts/restore-backup.mjs), which refuses to run while it is fresh.

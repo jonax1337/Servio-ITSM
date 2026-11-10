@@ -491,6 +491,7 @@ model SLA {
 
   businessCalendarId String? // optional working-hours calendar the SLA clock honours (null = 24/7)
   escalationPolicyId String? // optional escalation policy fired as the clock elapses
+  importRef          String? @unique // origin key of a record kept in step through PUT /api/v1/slas/ref/{ref}
 
   businessCalendar BusinessCalendar? @relation(fields: [businessCalendarId], references: [id])
   escalationPolicy EscalationPolicy? @relation(fields: [escalationPolicyId], references: [id])
@@ -512,6 +513,9 @@ model BusinessCalendar {
   name        String
   timezone    String   @default("UTC")
   weeklyHours String   @default("{}") // JSON: per-weekday open/close windows
+  /// Region whose public holidays are generated into `holidays` (lib/public-holidays.ts), e.g. "DE-BE"; null = none.
+  holidayRegion String?
+  importRef   String?  @unique // origin key of a record kept in step through PUT /api/v1/business-calendars/ref/{ref}
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -525,6 +529,8 @@ model Holiday {
   calendarId String
   date       DateTime
   name       String
+  /// True for a holiday computed from the calendar's `holidayRegion`; false for one entered by hand (which wins on the same date).
+  generated  Boolean  @default(false)
 
   calendar BusinessCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
 

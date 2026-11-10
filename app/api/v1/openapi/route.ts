@@ -28,6 +28,8 @@ import { LEGACY_SCOPES, RESOURCE_SCOPES, requiredScope, scopesGranting } from "@
 import { catalogItemCreateSchema, catalogItemPatchSchema, catalogItemUpsertSchema } from "@/lib/api-catalog-input";
 import { changeTemplateCreateSchema, changeTemplatePatchSchema, changeTemplateUpsertSchema } from "@/lib/api-change-template-input";
 import { contractCreateSchema, contractPatchSchema, contractUpsertSchema } from "@/lib/api-contract-input";
+import { slaCreateSchema, slaPatchSchema, slaUpsertSchema } from "@/lib/api-sla-input";
+import { calendarCreateSchema, calendarPatchSchema, calendarUpsertSchema, holidayInputSchema } from "@/lib/api-calendar-input";
 
 export const runtime = "nodejs";
 
@@ -664,6 +666,105 @@ const spec = {
           "`details.references` counts them by kind and `details.hint` says what to do; to retire a category, archive it with PATCH instead.",
         parameters: [strId],
         responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The category is still referenced (details.references)" } },
+      },
+    },
+    "/slas": {
+      get: { summary: "List SLAs", description: `${agentOnly} Filters: \`active\`, \`priority\`, \`import_ref\`.`, parameters: [q("active", "true | false"), q("priority"), q("import_ref")], responses: { "200": { description: "OK" } } },
+      post: {
+        summary: "Create an SLA (MANAGER+)",
+        description:
+          `${managerWrites} Needs the \`sla:write\` scope. \`name\` (unique), \`response_mins\` and \`resolve_mins\` are required. The working-hours calendar is set with \`business_calendar_id\` or \`business_calendar_ref\` (its \`import_ref\`); without one the clock runs 24/7. ` +
+          "`import_ref` is the origin key for later upserts through PUT /slas/ref/{ref}.",
+        requestBody: body(slaCreateSchema),
+        responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "Name or import_ref already used (existing id in details)" }, "422": { description: "Validation failed or unknown calendar / escalation policy" } },
+      },
+    },
+    "/slas/{id}": {
+      get: { summary: "Get an SLA", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Update an SLA (MANAGER+)",
+        description: "Fields left out keep their value; `null` clears description, priority, calendar, escalation policy and import_ref. `meta.changed` lists what changed; an unchanged body writes nothing and no audit row.",
+        parameters: [strId],
+        requestBody: body(slaPatchSchema),
+        responses: { "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name or import_ref already used" }, "422": { description: "Validation failed or unknown calendar / escalation policy" } },
+      },
+      delete: {
+        summary: "Delete an SLA (MANAGER+)",
+        description:
+          "Refused with 409 (`details.code` SLA_IN_USE) while tickets or services still point at the SLA; `details.references` counts them by kind (`tickets`, `services`) and `details.hint` says what to do. " +
+          "To retire an SLA without deleting it, set `is_active` to false.",
+        parameters: [strId],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The SLA is still referenced (details.references)" } },
+      },
+    },
+    "/slas/ref/{ref}": {
+      get: { summary: "Get an SLA by origin reference", description: agentOnly, parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Create or update an SLA by origin reference (MANAGER+)",
+        description:
+          "Creates the SLA (201; `name`, `response_mins` and `resolve_mins` required) when the reference is new, otherwise writes only the fields sent (200). Strict body; unchanged fields write nothing and no audit row. " +
+          "`meta.created` and `meta.changed` say what happened. A name another SLA already has is a 409 with its id (adopt it by setting `import_ref` with PATCH).",
+        parameters: [refParam],
+        requestBody: body(slaUpsertSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "409": { description: "Name or import_ref already used" }, "422": { description: "Validation failed, unknown calendar / escalation policy, or required fields missing for a new SLA" } },
+      },
+    },
+    "/business-calendars": {
+      get: { summary: "List business calendars with their holidays", description: `${agentOnly} Holidays are sorted by date; \`generated\` marks the ones computed from \`holiday_region\`. Filter: \`import_ref\`.`, parameters: [q("import_ref")], responses: { "200": { description: "OK" } } },
+      post: {
+        summary: "Create a business calendar (MANAGER+)",
+        description:
+          `${managerWrites} Needs the \`sla:write\` scope. \`weekly_hours\` (required) gives the open windows per weekday (\`sun\`..\`sat\`, "HH:MM" wall-clock in \`timezone\`; a day left out is closed), \`holidays\` the manual holidays and ` +
+          "`holiday_region` (`DE` for the federal holidays, `DE-BE`, `DE-BY`, ... for a state) switches on generated public holidays for the current and the next year.",
+        requestBody: body(calendarCreateSchema),
+        responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "import_ref already used (existing id in details)" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/business-calendars/{id}": {
+      get: { summary: "Get a business calendar", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Update a business calendar (MANAGER+)",
+        description:
+          "Fields left out keep their value. `holidays` replaces the manual holidays (generated ones are not touched); changing `holiday_region` regenerates the public holidays, `null` removes the generated ones. A manual holiday on the same date wins over a generated one. " +
+          "`meta.changed` lists what changed; an unchanged body writes nothing and no audit row.",
+        parameters: [strId],
+        requestBody: body(calendarPatchSchema),
+        responses: { "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "import_ref already used" }, "422": { description: "Validation failed" } },
+      },
+      delete: {
+        summary: "Delete a business calendar (MANAGER+)",
+        description: "Refused with 409 (`details.code` CALENDAR_IN_USE) while SLAs still use it; `details.references` counts them (`slas`). Its holidays are removed with it.",
+        parameters: [strId],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The calendar is still referenced (details.references)" } },
+      },
+    },
+    "/business-calendars/ref/{ref}": {
+      get: { summary: "Get a business calendar by origin reference", description: agentOnly, parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Create or update a business calendar by origin reference (MANAGER+)",
+        description:
+          "Creates the calendar (201; `name` and `weekly_hours` required) when the reference is new, otherwise writes only the fields sent (200). Strict body; unchanged fields write nothing and no audit row. " +
+          "Sending `holidays` replaces the manual holidays. `meta.created` and `meta.changed` say what happened.",
+        parameters: [refParam],
+        requestBody: body(calendarUpsertSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "409": { description: "import_ref already used" }, "422": { description: "Validation failed, or required fields missing for a new calendar" } },
+      },
+    },
+    "/business-calendars/{id}/holidays": {
+      post: {
+        summary: "Add a manual holiday (MANAGER+)",
+        description: "Idempotent per date: a manual holiday already on that date only gets the new name (200, `meta.created` false), otherwise it is created (201). A manual holiday wins over a generated one on the same date.",
+        parameters: [strId],
+        requestBody: body(holidayInputSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Renamed or unchanged" }, "403": { description: "Not a manager" }, "404": { description: "Calendar not found" }, "422": { description: "Validation failed" } },
+      },
+    },
+    "/business-calendars/{id}/holidays/{holidayId}": {
+      delete: {
+        summary: "Remove a manual holiday (MANAGER+)",
+        description: "A generated holiday cannot be removed on its own (409, `details.code` HOLIDAY_GENERATED): clear `holiday_region`, or add a manual holiday on that date. Removing a manual holiday on a date the region also names brings the generated one back.",
+        parameters: [strId, { name: "holidayId", in: "path", required: true, schema: { type: "string" } }],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The holiday is generated" } },
       },
     },
     "/groups": {

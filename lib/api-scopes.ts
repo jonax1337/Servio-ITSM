@@ -34,6 +34,8 @@ export const RESOURCE_SCOPES = [
   "kb:publish",
   "catalog:read",
   "catalog:write",
+  "sla:read",
+  "sla:write",
   "directory:read",
   "directory:write",
   "system:read",
@@ -131,6 +133,9 @@ export const RESOURCE_BY_SEGMENT: Record<string, ApiResource> = {
   "change-templates": "catalog",
   articles: "kb",
   categories: "catalog",
+  // Service levels: SLA targets and the business calendars (working hours, holidays) their clock honours.
+  slas: "sla",
+  "business-calendars": "sla",
   groups: "directory",
   users: "directory",
   system: "system",
