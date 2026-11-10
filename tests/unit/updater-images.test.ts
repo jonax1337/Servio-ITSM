@@ -31,6 +31,7 @@ import {
 const UPDATER_REPO = `${IMAGE_REPO}-updater`;
 const REQUEST = { id: "win-1", targetVersion: NEW_VERSION, requestedAt: FRESH_REQUESTED_AT, requestedBy: "admin@x" };
 const GB = 1024 ** 3;
+const messages = (status: { log: Array<{ message: string }> }) => status.log.map((entry) => entry.message);
 const digest = (seed: string) => `sha256:${createHash("sha256").update(seed).digest("hex")}`;
 
 /** An entry of `GET /images/json` for a release of `repo`. */
@@ -92,6 +93,12 @@ describe("planImagePrune", () => {
       release(IMAGE_REPO, "0.1.0"),
     ];
     expect(plan(images, { protectedIds: ["sha256:protected"], rollbackImageId: null, keep: 1 })).toEqual([]);
+  });
+
+  it("never removes a release named in protectedVersions, even when it looks superseded", () => {
+    const images = ["0.1.0", "0.2.0", "0.3.0"].map((v) => release(IMAGE_REPO, v));
+    expect(plan(images, { rollbackImageId: null, keep: 1 })).toEqual(["0.2.0", "0.1.0"]);
+    expect(plan(images, { rollbackImageId: null, keep: 1, protectedVersions: ["0.2.0"] })).toEqual(["0.1.0"]);
   });
 
   it("leaves images alone that also carry a reference of another repository", () => {
@@ -224,6 +231,33 @@ describe("update flow: image cleanup after success", () => {
     expect(left).toEqual([`${IMAGE_REPO}:${OLD_VERSION}`, `${IMAGE_REPO}:${NEW_VERSION}`, `${UPDATER_REPO}:0.0.2`, "postgres:16"]);
     expect(status.message).toContain(`Removed superseded images: ${IMAGE_REPO}:0.1.0.`);
     expect(status.message).toContain(`Removed superseded images: ${UPDATER_REPO}:0.0.1.`);
+  });
+
+  it("applies the same keep rules to the updater repository and never removes the running updater release", async () => {
+    await update({ UPDATER_KEEP_IMAGES: "2" });
+    const running = harness.config.updaterVersion;
+    harness.docker.imageList.push(release(UPDATER_REPO, "0.0.3"), release(UPDATER_REPO, running));
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    // 0.0.1 is the oldest of three superseded updater releases and goes; the newest two and the running one stay.
+    expect(harness.docker.callsTo("removeImage").filter((call) => call.includes(UPDATER_REPO))).toEqual([
+      `removeImage ${UPDATER_REPO}:0.0.1`,
+      `removeImage ${UPDATER_REPO}@${digest(`${UPDATER_REPO}:0.0.1`)}`,
+    ]);
+    const updaterTags = harness.docker.imageList.flatMap((image) => image.RepoTags ?? []).filter((tag) => tag.startsWith(`${UPDATER_REPO}:`));
+    expect(updaterTags).toEqual([`${UPDATER_REPO}:0.0.2`, `${UPDATER_REPO}:0.0.3`, `${UPDATER_REPO}:${running}`]);
+  });
+
+  it("keeps the running updater image whatever its tag says", async () => {
+    await update();
+    const running = harness.config.updaterVersion;
+    // An image labelled with the running updater's version is the running one, however its tag sorts.
+    harness.docker.imageList.push(release(UPDATER_REPO, "0.0.0", { Labels: { "org.opencontainers.image.version": running } }));
+    await harness.writeRequest(REQUEST);
+    await harness.flow.processPendingRequest();
+
+    expect(harness.docker.imageList.some((image) => image.RepoTags?.includes(`${UPDATER_REPO}:0.0.0`))).toBe(true);
   });
 
   it("keeps an image Docker refuses to delete because a container uses it", async () => {
@@ -362,20 +396,52 @@ describe("update flow: free space before the pull", () => {
     expect(harness.docker.callsTo("pull")).toEqual([`pull ${TARGET}`]);
   });
 
-  it("skips the check when the image is already on the host", async () => {
+  it("skips the check when the image is already on the host and says so", async () => {
     await setUp(GB);
     harness.docker.missingImages.clear();
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
 
-    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+    const status = await harness.readStatus();
+    expect(status.state).toBe("SUCCEEDED");
+    expect(messages(status)).toContain(`Space check skipped: ${TARGET} is already present on the host.`);
+    expect(harness.logLines.some((line) => line.includes("space check:"))).toBe(false);
+  });
+
+  it("logs the measured and the required bytes and the probe directory when there is room", async () => {
+    await setUp(10 * GB);
+    await harness.writeRequest({ ...REQUEST, downloadBytes: GB });
+    await harness.flow.processPendingRequest();
+
+    const status = await harness.readStatus();
+    const probe = harness.config.pullSpaceProbeDir;
+    const line = `Free space for the pull: 10.0 GB free on the filesystem of ${probe} (Docker's data root), 5.0 GB needed for ${TARGET} (1.0 GB download, 3.0 GB unpacked, 1.0 GB margin).`;
+    expect(messages(status)).toContain(line);
+    // Before the pull starts, so the admin sees it in the window log.
+    const entries = messages(status);
+    expect(entries.indexOf(line)).toBeLessThan(entries.findIndex((message: string) => message.startsWith("Pulling ")));
+    expect(harness.logLines).toContain(
+      `[updater] space check: probe_dir=${probe} free_bytes=${10 * GB} required_bytes=${5 * GB} download_bytes=${GB} unpacked_bytes=${3 * GB} margin_bytes=${GB} result=ok`,
+    );
+  });
+
+  it("logs the numbers of a failed check as well", async () => {
+    await setUp(2 * GB);
+    await harness.writeRequest({ ...REQUEST, downloadBytes: GB });
+    await harness.flow.processPendingRequest();
+
+    expect(harness.logLines).toContain(
+      `[updater] space check: probe_dir=${harness.config.pullSpaceProbeDir} free_bytes=${2 * GB} required_bytes=${5 * GB} download_bytes=${GB} unpacked_bytes=${3 * GB} margin_bytes=${GB} result=short`,
+    );
   });
 
   it("skips the check with PULL_SPACE_CHECK=false and honours PULL_SPACE_MARGIN_MB", async () => {
     await setUp(GB, { PULL_SPACE_CHECK: "false" });
     await harness.writeRequest(REQUEST);
     await harness.flow.processPendingRequest();
-    expect((await harness.readStatus()).state).toBe("SUCCEEDED");
+    const skipped = await harness.readStatus();
+    expect(skipped.state).toBe("SUCCEEDED");
+    expect(messages(skipped)).toContain("Space check skipped: PULL_SPACE_CHECK=false.");
     await harness.cleanup();
 
     await setUp(6 * GB + 1, { PULL_SPACE_MARGIN_MB: "0" });

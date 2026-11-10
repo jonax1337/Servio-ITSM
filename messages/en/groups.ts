@@ -16,7 +16,7 @@ const groups = {
   backToGroups: "Back to groups",
   deleteGroup: "Delete group",
   deleteGroupText:
-    "Permanently delete “{name}”? Members are removed; tickets, changes and other records are kept but unassigned from this group.",
+    "Permanently delete “{name}”? Members are removed; closed tickets, changes and other finished records are kept but unassigned from this group. A group that is still referenced (categories, services, open tickets, schedules, …) is not deleted.",
   openTickets: "Open tickets",
   members: "Members",
   membersCount: "Members · {count}",

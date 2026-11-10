@@ -17,7 +17,7 @@ const groups: Translations<typeof en> = {
   backToGroups: "Zurück zu Gruppen",
   deleteGroup: "Gruppe löschen",
   deleteGroupText:
-    "„{name}“ endgültig löschen? Die Mitglieder werden entfernt; Tickets, Changes und andere Datensätze bleiben erhalten, sind aber keiner Gruppe mehr zugewiesen.",
+    "„{name}“ endgültig löschen? Die Mitglieder werden entfernt; abgeschlossene Tickets, Changes und andere erledigte Datensätze bleiben erhalten, sind aber keiner Gruppe mehr zugewiesen. Eine Gruppe, auf die noch verwiesen wird (Kategorien, Services, offene Tickets, Bereitschaftspläne, …), wird nicht gelöscht.",
   openTickets: "Offene Tickets",
   members: "Mitglieder",
   membersCount: "Mitglieder · {count}",

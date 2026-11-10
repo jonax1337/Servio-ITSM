@@ -249,12 +249,41 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
     if (!config.pruneImages) return "";
     return pruneImages([
       { repository: config.image, runningVersion: data.targetVersion, protectedIds: [data.newImageId], rollbackImageId: data.oldImageId ?? null },
-      { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
+      updaterImageTarget(),
     ]);
   }
 
   /**
-   * @param {Array<{ repository: string, runningVersion: string | null, protectedIds: string[], rollbackImageId: string | null }>} targets
+   * The updater's own repository. It is replaced by the operator (compose), not by
+   * an update, so the running release is the updater's own version: that image is
+   * never removed (also not when its tag or label disagrees with the order), and the
+   * newest older release stays as its rollback target, as for the app. UPDATER_KEEP_IMAGES applies.
+   */
+  function updaterImageTarget() {
+    return {
+      repository: config.updaterImage,
+      runningVersion: config.updaterVersion,
+      protectedIds: [],
+      protectedVersions: [config.updaterVersion],
+      rollbackImageId: null,
+    };
+  }
+
+  /**
+   * After the updater itself was replaced (it starts with a new version): removes
+   * the updater images the new one supersedes, so they do not wait for the next
+   * app update. Never fails the start.
+   *
+   * @returns {Promise<string>} a note for the log ("" when nothing happened)
+   */
+  async function pruneUpdaterImages() {
+    if (!config.pruneImages) return "";
+    return (await pruneImages([updaterImageTarget()])).trim();
+  }
+
+  /**
+   * @param {Array<{ repository: string, runningVersion: string | null, protectedIds: string[], protectedVersions?: string[],
+   *   rollbackImageId: string | null }>} targets
    * @returns {Promise<string>} a note for the status ("" when nothing was removed or kept)
    */
   async function pruneImages(targets) {
@@ -275,13 +304,23 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    * Refuses to pull when Docker's data root lacks room for the image: a pull that
    * runs out of space fails half-way and can leave the host with a full disk.
    * When space is short, superseded images are cleaned up first and the space is
-   * measured again. An image that is already present needs no room.
+   * measured again. An image that is already present needs no room. Every outcome
+   * (passed, skipped and why, failed) is written to the update log and the
+   * updater's own log, with the measured and the required bytes, so an operator
+   * can tell afterwards that the check ran and with which numbers.
    *
    * @param {{ request: any, imageRef: string, current: any, currentImage: any, fromVersion: string | null,
    *   reporter: ReturnType<typeof createReporter> }} ctx
    */
   async function assertRoomForPull({ request, imageRef, current, currentImage, fromVersion, reporter }) {
-    if (!config.pullSpaceCheck || (await imageIsPresent(imageRef))) return;
+    if (!config.pullSpaceCheck) {
+      await reporter.report("PULLING", "Space check skipped: PULL_SPACE_CHECK=false.");
+      return;
+    }
+    if (await imageIsPresent(imageRef)) {
+      await reporter.report("PULLING", `Space check skipped: ${imageRef} is already present on the host.`);
+      return;
+    }
     const hint = downloadHint(request.downloadBytes);
     const need = pullSpaceNeeded({
       downloadBytes: hint,
@@ -289,21 +328,40 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       installedBytes: currentImage.Size,
       marginBytes: config.pullSpaceMarginBytes,
     });
+    /** @param {number} free */
+    const measured = (free) =>
+      `${formatBytes(free)} free on the filesystem of ${config.pullSpaceProbeDir} (Docker's data root), ${formatBytes(need.total)} needed ` +
+      `for ${imageRef} (${formatBytes(need.download)} ${hint === null ? "estimated download" : "download"}, ` +
+      `${formatBytes(need.unpacked)} unpacked, ${formatBytes(need.margin)} margin)`;
+    /** @param {number} free @param {"ok" | "short"} result */
+    const logBytes = (free, result) =>
+      log(
+        `[updater] space check: probe_dir=${config.pullSpaceProbeDir} free_bytes=${free} required_bytes=${need.total} ` +
+          `download_bytes=${need.download} unpacked_bytes=${need.unpacked} margin_bytes=${need.margin} result=${result}`,
+      );
     let free = await freeBytes(config.pullSpaceProbeDir);
-    if (free >= need.total) return;
+    if (free >= need.total) {
+      logBytes(free, "ok");
+      await reporter.report("PULLING", `Free space for the pull: ${measured(free)}.`);
+      return;
+    }
+    logBytes(free, "short");
     if (config.pruneImages) {
       const note = await pruneImages([
         { repository: config.image, runningVersion: fromVersion, protectedIds: [current.Image], rollbackImageId: null },
-        { repository: config.updaterImage, runningVersion: config.updaterVersion, protectedIds: [], rollbackImageId: null },
+        updaterImageTarget(),
       ]);
-      if (note) await reporter.note(`Low on space before the pull.${note}`);
+      if (note) await reporter.report("PULLING", `Low on space before the pull.${note}`);
       free = await freeBytes(config.pullSpaceProbeDir);
-      if (free >= need.total) return;
+      if (free >= need.total) {
+        logBytes(free, "ok");
+        await reporter.report("PULLING", `Free space for the pull after the cleanup: ${measured(free)}.`);
+        return;
+      }
+      logBytes(free, "short");
     }
     throw new Error(
-      `Not enough free space for the image pull: ${formatBytes(free)} free on the filesystem of ${config.pullSpaceProbeDir} ` +
-        `(Docker's data root), ${formatBytes(need.total)} needed for ${imageRef} (${formatBytes(need.download)} ` +
-        `${hint === null ? "estimated download" : "download"}, ${formatBytes(need.unpacked)} unpacked, ${formatBytes(need.margin)} margin). ` +
+      `Not enough free space for the image pull: ${measured(free)}. ` +
         "Free up space (for example remove unused images with `docker image prune`) and schedule the update again, " +
         "or adjust PULL_SPACE_MARGIN_MB. Nothing was changed.",
     );
@@ -1067,7 +1125,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   /** @returns {ActiveRequest | null} the request being worked on (including a rollback waiting for Docker) */
   const activeRequest = () => (active ? { ...active } : null);
 
-  return { processPendingRequest, recoverInterrupted, activeRequest };
+  return { processPendingRequest, recoverInterrupted, activeRequest, pruneUpdaterImages };
 }
 
 /**

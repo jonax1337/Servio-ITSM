@@ -146,7 +146,7 @@ the migrated database; always drive the tag from `SERVIO_VERSION`.
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Unix socket (or Windows named pipe) to reach Docker; the compose file sets the proxy's `/run/docker-api/docker.sock`. |
 | `DOCKER_HOST` | – | `tcp://host:port` of a TCP proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. Not recommended (unauthenticated). |
 | `DOCKER_API_VERSION` | `v1.44` | Engine API prefix. `v1.44` is accepted by Engine 25+ (Engine 29.0–29.2 refuse older); use `v1.43` for Engine 24. |
-| `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image; its superseded versions are cleaned up too. The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
+| `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image; its superseded versions are cleaned up too (after an update and once at every start of the updater; the running release is never removed, the newest older one stays as rollback, `UPDATER_KEEP_IMAGES` applies). The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
 | `UPDATER_KEEP_IMAGES` | `1` | Superseded releases kept per repository after a successful update (at least 1). The image the replaced container ran (recorded by id in the journal) is always kept and counts as the first, as the rollback target. |
 | `PRUNE_IMAGES` | `true` | `false` turns the cleanup of superseded images off (after updates and before a pull that lacks space). |
 | `PULL_SPACE_CHECK` | `true` | `false` turns the free-space check before a pull off. |
@@ -194,7 +194,9 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    `PULL_SPACE_MARGIN_MB`. When
    it is short, superseded images are removed first (keeping the installed release and the newest
    `UPDATER_KEEP_IMAGES` older ones); if it is still short → `FAILED` ("Not enough free space for the image
-   pull"), nothing changed.
+   pull"), nothing changed. Every outcome is logged with the measured and the required bytes (`Free space for the
+   pull: …` in the window log, plus a `space check:` line with exact byte counts in the container log);
+   a skipped check says why (image already present, `PULL_SPACE_CHECK=false`).
 2. **PULLING** `SERVIO_IMAGE:targetVersion` under `PULL_TIMEOUT_SECONDS`. The pulled image must be labelled
    with the requested version; its id and digest are logged. The new container is created **by tag**
    (`SERVIO_IMAGE:targetVersion`, so operators and tooling see the release) and must resolve to the pulled

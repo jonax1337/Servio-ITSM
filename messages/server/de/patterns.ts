@@ -20,6 +20,11 @@ export const patterns: ServerMessagePattern[] = [
   [/^Stage (\d+): the selected group has no active agents to approve\.$/, "Stufe $1: Die gewählte Gruppe hat keine aktiven Agents zum Genehmigen."],
   [/^Stage (\d+): the selected approver is not an active agent\.$/, "Stufe $1: Die gewählte genehmigende Person ist kein aktiver Agent."],
   [/^Stage (\d+): choose an approver or a group\.$/, "Stufe $1: Bitte eine genehmigende Person oder Gruppe wählen."],
+  // Console group delete: groupInUseText() in lib/group-rules.ts
+  [
+    /^The group is still referenced \((.+)\)\. Point those records at another group \(or clear their group\), then delete it\. Nothing is removed automatically\. Closed tickets, problems and changes are not counted: they keep their row and lose the group\. To retire a group without deleting it, remove its members and rename it\.$/,
+    "Die Gruppe wird noch referenziert ($1). Ordnen Sie diese Datensätze einer anderen Gruppe zu (oder entfernen Sie deren Gruppe) und löschen Sie die Gruppe dann. Nichts wird automatisch entfernt. Abgeschlossene Tickets, Probleme und Changes werden nicht mitgezählt: Sie behalten ihren Datensatz und verlieren die Gruppe. Um eine Gruppe stillzulegen, ohne sie zu löschen, entfernen Sie ihre Mitglieder und benennen Sie sie um.",
+  ],
   // Catalog forms: formSchemaProblems() in lib/service-forms.ts
   [/^Question (\d+): another question already uses this key\.$/, "Frage $1: Eine andere Frage verwendet bereits diesen Schlüssel."],
   [/^Question (\d+): add at least one option\.$/, "Frage $1: Bitte mindestens eine Option angeben."],

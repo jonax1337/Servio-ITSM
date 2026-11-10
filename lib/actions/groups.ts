@@ -8,6 +8,9 @@ import { db } from "@/lib/db";
 import { getCurrentUser, hasRole, type Role } from "@/lib/session";
 import { writeAudit } from "@/lib/audit";
 import { GROUP_TYPES, AUTO_ASSIGN_STRATEGIES, GROUP_MEMBER_ROLES } from "@/lib/constants";
+import type { ActionResult } from "@/lib/action-result";
+import { groupReferences } from "@/lib/group-references";
+import { groupInUseRefusal, groupInUseText } from "@/lib/group-rules";
 
 /** MANAGER+ gate shared by every group mutation (matches createGroup). */
 async function requireManager() {
@@ -141,17 +144,21 @@ export async function updateGroup(
 }
 
 // ── Delete group ─────────────────────────────────────────────────────────────
-// Memberships cascade. Everything else that references the group (tickets,
-// problems, changes, assets, services, categories, saved views, dashboards)
-// keeps its row with groupId=null (optional relations → Prisma default SetNull),
-// so no work history is lost. Redirects to the list on success.
+// Memberships cascade. Like DELETE /groups/{id}, the console refuses while anything
+// still points at the group (categories, services, catalog items, open tickets,
+// problems, changes, schedules, automations, ...): quietly clearing those links would
+// break routing. The refusal comes back as a result the confirm dialog toasts, with
+// the same counts and hint as the API. Closed work keeps its row and loses the group
+// (optional relations → Prisma default SetNull). Redirects to the list on success.
 
-export async function deleteGroup(formData: FormData) {
+export async function deleteGroup(formData: FormData): Promise<ActionResult | void> {
   const me = await requireManager();
   if (!me) return;
   const id = String(formData.get("id") ?? "");
   const group = await db.group.findUnique({ where: { id }, select: { name: true } });
   if (!group) return;
+  const inUse = groupInUseRefusal(await groupReferences(id));
+  if (inUse) return { ok: false, error: groupInUseText(inUse) };
   await db.group.delete({ where: { id } });
   await writeAudit({ userId: me.id, action: "DELETE", entity: "Group", entityId: id, summary: `Deleted group "${group.name}"` });
   revalidatePath("/groups");

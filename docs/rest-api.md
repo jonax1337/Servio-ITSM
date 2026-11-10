@@ -1338,7 +1338,7 @@ The kinds are `categories`, `services`, `catalog_items` (routing team), `catalog
 `catalog_visibility`, `open_tickets`, `open_problems`, `open_changes`, `active_assets`, `open_releases`,
 `change_templates`, `recurring_tickets`, `on_call_schedules`, `freeze_windows` and `automation_rules`. Closed
 tickets, problems and changes (and retired assets, finished releases) are not counted: they keep their
-row and lose the group. The console's delete button is unchanged and clears those links without asking.
+row and lose the group. The console's delete button applies the same check and refuses with the same counts and hint (as a message in the dialog) instead of clearing those links.
 A deleted group takes its memberships with it.
 
 `import_ref` is also what a directory sync source refers to when it maps a directory group to a Servio group

@@ -120,12 +120,14 @@ function versionOf(image, tags) {
  * repository or several tags, and the `keep` newest superseded releases. The
  * image an update just replaced (`rollbackImageId`, the rollback target) is
  * always kept and counts as the first of them, whatever its version label says.
+ * `protectedVersions` names releases that stay whatever their order (the running
+ * updater, found by its version because the updater does not know its own image id).
  *
  * @param {{ images: ImageSummary[], repository: string, runningVersion: string | null, protectedIds: string[],
- *   rollbackImageId: string | null, keep: number }} input
+ *   protectedVersions?: string[], rollbackImageId: string | null, keep: number }} input
  * @returns {PrunableImage[]} images to remove, oldest release last
  */
-export function planImagePrune({ images, repository, runningVersion, protectedIds, rollbackImageId, keep }) {
+export function planImagePrune({ images, repository, runningVersion, protectedIds, protectedVersions = [], rollbackImageId, keep }) {
   if (!runningVersion || compareVersions(runningVersion, runningVersion) === null) return [];
   const protectedSet = new Set(protectedIds);
   const keepsRollback = rollbackImageId !== null && !protectedSet.has(rollbackImageId) && images.some((image) => image.Id === rollbackImageId);
@@ -137,7 +139,7 @@ export function planImagePrune({ images, repository, runningVersion, protectedId
     if (!own) continue;
     const version = versionOf(image, own.tags);
     const order = version === null ? null : compareVersions(version, runningVersion);
-    if (version === null || order === null || order >= 0) continue;
+    if (version === null || order === null || order >= 0 || protectedVersions.includes(version)) continue;
     superseded.push({ id: image.Id, version, refs: own.refs });
   }
   superseded.sort((a, b) => /** @type {number} */ (compareVersions(b.version, a.version)));
@@ -150,7 +152,7 @@ export function planImagePrune({ images, repository, runningVersion, protectedId
  * image, which then stays with its references.
  *
  * @param {{ docker: import("./docker-client.mjs").DockerClient, repository: string, runningVersion: string | null,
- *   protectedIds: string[], rollbackImageId: string | null, keep: number }} options
+ *   protectedIds: string[], protectedVersions?: string[], rollbackImageId: string | null, keep: number }} options
  * @returns {Promise<PruneResult>}
  */
 export async function pruneSupersededImages({ docker, repository, ...plan }) {
