@@ -14,4 +14,13 @@ describe("OpenAPI spec", () => {
     const contract = spec.paths["/contracts"].post.requestBody!.content["application/json"].schema.properties!;
     expect(Object.keys(contract)).toEqual(expect.arrayContaining(["vendor_id", "owner_id", "renewal_notice_days", "auto_renew", "asset_ids", "import_ref"]));
   });
+
+  it("documents creating, editing, deleting and upserting groups", async () => {
+    const spec = (await GET().json()) as { paths: Record<string, Record<string, { requestBody?: { content: Record<string, { schema: { properties?: Record<string, unknown> } }> } }>> };
+    expect(Object.keys(spec.paths["/groups"])).toEqual(["get", "post"]);
+    expect(Object.keys(spec.paths["/groups/{id}"])).toEqual(["get", "patch", "delete"]);
+    expect(Object.keys(spec.paths["/groups/ref/{ref}"])).toEqual(["get", "put"]);
+    const create = spec.paths["/groups"].post.requestBody!.content["application/json"].schema.properties!;
+    expect(Object.keys(create)).toEqual(expect.arrayContaining(["name", "type", "email", "color", "manager_id", "auto_assign", "import_ref"]));
+  });
 });

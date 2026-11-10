@@ -78,7 +78,7 @@ Roles are a `String` on `User` (`role`), not a separate table. Allowed values: `
 
 | Model | Purpose | Key fields / relations |
 | --- | --- | --- |
-| `Group` | Team, department, or vendor that owns work | `name` (unique), `type` (`TEAM`/`DEPARTMENT`/`VENDOR`), `email`, `color`, `managerId`, `autoAssign` strategy (`OFF`/`ROUND_ROBIN`/`LEAST_BUSY`), `lastAssignedUserId` (round-robin cursor); has members, tickets, problems, changes, assets, on-call schedules, freeze windows, releases, change templates |
+| `Group` | Team, department, or vendor that owns work | `name` (unique), `type` (`TEAM`/`DEPARTMENT`/`VENDOR`), `email`, `color`, `managerId`, `autoAssign` strategy (`OFF`/`ROUND_ROBIN`/`LEAST_BUSY`), `lastAssignedUserId` (round-robin cursor), `importRef` (unique, nullable): origin key for `PUT /api/v1/groups/ref/{ref}`; has members, tickets, problems, changes, assets, on-call schedules, freeze windows, releases, change templates |
 | `GroupMember` | User membership in a group | `(groupId, userId)` unique; `role` (`MEMBER`/`LEAD`) |
 
 > **Note:** Groups are the unit of assignment/auto-routing. The old `Queue` model and the "Board"/`/queues`

@@ -387,6 +387,7 @@ Groups are the unit of assignment/auto-routing (they replaced Queues). Includes 
 | --- | --- |
 | Routes | `app/(console)/groups/page.tsx`, `[id]/page.tsx`, `new/page.tsx` |
 | Actions | `lib/actions/groups.ts` — `createGroup`, `setGroupAutoAssign` |
+| REST | `app/api/v1/groups/` — create / edit / delete and `PUT /groups/ref/{ref}` upsert by `Group.importRef` (shared plumbing `app/api/v1/_groups.ts`, bodies in `lib/api-group-input.ts`); delete is refused while the group is referenced (`lib/group-references.ts` counts, `lib/group-rules.ts` decides), see [rest-api.md](rest-api.md#groups) |
 | Components | `components/groups/` — `group-form`, `create-group-dialog`, `auto-assign-control` |
 
 ### People
