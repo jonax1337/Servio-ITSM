@@ -770,8 +770,8 @@ const spec = {
         description:
           "Needs the `directory:write` scope (the legacy `write` works too) and a token owned by an ADMIN. `secondary_emails` replaces the whole list (`[]` removes all). " +
           "An address must not be the user's own primary address and must not belong to anyone else, as primary or secondary address. " +
-          "`service_account` marks a non-human account: it never receives email and never sits on an approval board, and marking it turns `can_approve_changes` off (unmarking turns it on). " +
-          "`can_approve_changes` is the per-account switch for change approval boards; a service account cannot be switched on (422). Approvals already in progress are not changed. Fields left out stay as they are.",
+          "`service_account` marks a non-human account: it never receives email and never sits on the approval board of other people's changes, and marking it turns `can_approve_changes` off (unmarking turns it on). " +
+          "`can_approve_changes` is the per-account switch for approving changes. Switching it on for a service account is deliberate (an automation account that self-approves its own changes under the self-approval mode): the endpoint already needs an ADMIN owner, the edit is audited, and such an account is seated only on its own changes and decides only its own seat. Approvals already in progress are not changed. Fields left out stay as they are.",
         parameters: [strId],
         requestBody: body(userPatchSchema),
         responses: {

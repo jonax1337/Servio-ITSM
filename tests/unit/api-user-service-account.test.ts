@@ -78,11 +78,35 @@ describe("PATCH /users/{id} account type", () => {
     expect(json.data).toMatchObject({ service_account: false, can_approve_changes: false });
   });
 
-  it("is a 422 to make a service account an approver", async () => {
+  it("keeps the approval switch off for a service account unless it is set on purpose", async () => {
+    const { json } = await patch({ service_account: true });
+    expect(json.data).toMatchObject({ service_account: true, can_approve_changes: false });
+  });
+
+  it("lets an ADMIN allow a service account to approve changes, in the same edit, and audits it as such", async () => {
     const { status, json } = await patch({ service_account: true, can_approve_changes: true });
-    expect(status).toBe(422);
-    expect(json.error?.details).toHaveProperty("can_approve_changes");
+    expect(status).toBe(200);
+    expect(json.data).toMatchObject({ service_account: true, can_approve_changes: true });
+    expect(world.updates).toEqual([{ isServiceAccount: true, canApproveChanges: true }]);
+    expect(world.audits[0].summary).toContain("service account approval enabled");
+    expect(world.audits[0].meta).toMatchObject({ serviceAccountApproval: "enabled" });
+  });
+
+  it("lets an ADMIN switch an existing service account on afterwards, and off again", async () => {
+    world.user = { ...world.user, isServiceAccount: true, canApproveChanges: false };
+    expect((await patch({ can_approve_changes: true })).json.data).toMatchObject({ service_account: true, can_approve_changes: true });
+    const off = await patch({ can_approve_changes: false });
+    expect(off.json.data).toMatchObject({ service_account: true, can_approve_changes: false });
+    expect(world.audits[1].meta).toMatchObject({ serviceAccountApproval: "disabled" });
+  });
+
+  it("does not let a manager do it: the whole endpoint is admin-only and nothing is written", async () => {
+    world.role = "MANAGER";
+    world.user = { ...world.user, isServiceAccount: true, canApproveChanges: false };
+    expect((await patch({ can_approve_changes: true })).status).toBe(403);
+    expect((await patch({ service_account: true, can_approve_changes: true })).status).toBe(403);
     expect(world.updates).toEqual([]);
+    expect(world.audits).toEqual([]);
   });
 
   it("leaves approvals in progress alone and reports how many open seats stay in the audit entry", async () => {

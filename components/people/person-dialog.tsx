@@ -105,7 +105,7 @@ export function PersonDialog({
         <form method="post" onSubmit={submit} className="grid gap-4">
           {person ? <input type="hidden" name="id" value={person.id} /> : null}
           <input type="hidden" name="isServiceAccount" value={String(serviceAccount)} />
-          <input type="hidden" name="canApproveChanges" value={String(!serviceAccount && canApprove)} />
+          <input type="hidden" name="canApproveChanges" value={String(canApprove)} />
 
           {syncSourceName ? (
             <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
@@ -167,10 +167,16 @@ export function PersonDialog({
               </label>
               <p className="text-xs text-muted-foreground">{t("serviceAccountHint")}</p>
               <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={!serviceAccount && canApprove} disabled={serviceAccount} onCheckedChange={(v) => setCanApprove(!!v)} />
+                <Checkbox checked={canApprove} onCheckedChange={(v) => setCanApprove(!!v)} />
                 {t("canApproveChanges")}
               </label>
               <p className="text-xs text-muted-foreground">{t("canApproveChangesHint")}</p>
+              {serviceAccount && canApprove ? (
+                <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{t("serviceAccountApprovalWarning")}</span>
+                </p>
+              ) : null}
               {fe.canApproveChanges?.[0] ? <p className="text-xs text-destructive">{tm(fe.canApproveChanges[0])}</p> : null}
             </div>
             {editing || groups.length === 0 ? null : (

@@ -11,7 +11,7 @@ import { writeAudit, notify } from "@/lib/audit";
 import { canTransitionConfigured } from "@/lib/workflow";
 import { isGroupMember } from "@/lib/assignment";
 import { selectApprovers, isEligibleApprover, evaluateCab, approverRolesForRisk } from "@/lib/cab";
-import { approverAccountError, mayApproveChanges } from "@/lib/service-accounts";
+import { SERVICE_ACCOUNT_OWN_SEAT_ONLY, approverAccountError, mayApproveChanges, mayJoinApprovalBoard } from "@/lib/service-accounts";
 import {
   changeSelfApprovalError,
   isChangeSelfApproval,
@@ -458,6 +458,9 @@ export async function decideApproval(formData: FormData): Promise<ChangeActionRe
   // A service account, or an account switched off for change approvals, decides nothing - not even as an admin.
   const notAnApprover = approverAccountError(me);
   if (notAnApprover) return refuse(notAnApprover);
+  // A service account that an admin allowed to approve decides its own seat only (self-approval of its own
+  // changes), never another approver's, whatever its role.
+  if (me.isServiceAccount && existing.approverId !== me.id) return refuse(SERVICE_ACCOUNT_OWN_SEAT_ONLY);
   // SoD (four-eyes): never decide on a change you own OR created, even as ADMIN, unless an
   // admin allowed self-approval (and then only on your own seat, with a role the risk accepts).
   const { changeId } = existing;
@@ -544,7 +547,7 @@ async function planCabBoard(change: BoardChange, mode: ChangeSelfApprovalMode) {
     approverId: s.approverId,
     role: s.approver.role,
     isActive: s.approver.isActive,
-    mayApprove: mayApproveChanges(s.approver),
+    mayApprove: mayJoinApprovalBoard(s.approver),
   }));
   const eligibleRoles = approverRolesForRisk(change.risk);
   const dropped = invalidSeats(seated, change, eligibleRoles);

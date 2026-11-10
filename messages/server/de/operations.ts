@@ -48,7 +48,8 @@ const messages: ServerMessages = {
   "A selected group no longer exists.": "Eine ausgewählte Gruppe existiert nicht mehr.",
   "Group not found.": "Gruppe nicht gefunden.",
   "This account may not approve changes.": "Dieses Konto darf Changes nicht genehmigen.",
-  "A service account cannot approve changes.": "Ein Servicekonto kann Changes nicht genehmigen.",
+  "Only an administrator can allow a service account to approve changes.": "Nur ein Administrator darf einem Servicekonto das Genehmigen von Changes erlauben.",
+  "A service account can only decide its own approval seat.": "Ein Servicekonto darf nur über den eigenen Genehmigungssitz entscheiden.",
   // Status page
   "Status incident not found.": "Störungsmeldung nicht gefunden.",
   "You can't link a ticket you can't act on.": "Sie können kein Ticket verknüpfen, das Sie nicht bearbeiten dürfen.",
