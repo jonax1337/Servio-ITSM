@@ -5,6 +5,7 @@ import { runUpdater } from "../../updater/service.mjs";
 import {
   CONTAINER_NAME,
   FRESH_REQUESTED_AT,
+  IMAGE_REPO,
   NEW_VERSION,
   OLD_DB,
   createHarness,
@@ -76,6 +77,45 @@ describe("updater service start-up (finding M1)", () => {
 
     expect(lines[0]).toContain("waiting for Docker");
     expect(pings).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("updater service start-up: superseded updater images", () => {
+  const UPDATER_REPO = `${IMAGE_REPO}-updater`;
+  const updaterRelease = (version: string) => ({
+    Id: `sha256:updater-${version}`,
+    RepoTags: [`${UPDATER_REPO}:${version}`],
+    RepoDigests: [],
+    Labels: { "org.opencontainers.image.version": version },
+  });
+
+  it("removes the updater images the running release supersedes, keeping the running one and the newest older one", async () => {
+    const running = harness.config.updaterVersion;
+    harness.docker.imageList = [updaterRelease("0.0.1"), updaterRelease("0.0.2"), updaterRelease(running)];
+
+    await start(stopOnceRunning);
+
+    expect(harness.docker.callsTo("removeImage")).toEqual([`removeImage ${UPDATER_REPO}:0.0.1`]);
+    expect(logLines).toContain(`[updater] Removed superseded images: ${UPDATER_REPO}:0.0.1.`);
+    expect(harness.docker.imageList.map((image) => image.RepoTags?.[0])).toEqual([`${UPDATER_REPO}:0.0.2`, `${UPDATER_REPO}:${running}`]);
+  });
+
+  it("touches no image with PRUNE_IMAGES=false", async () => {
+    harness.config.pruneImages = false;
+    harness.docker.imageList = [updaterRelease("0.0.1"), updaterRelease("0.0.2")];
+
+    await start(stopOnceRunning);
+
+    expect(harness.docker.callsTo("listImages")).toEqual([]);
+  });
+
+  it("still starts when the image list cannot be read", async () => {
+    harness.docker.failOn("listImages", new Error("proxy refused"));
+
+    await start(stopOnceRunning);
+
+    expect(logLines.some((line) => line.includes(" managing "))).toBe(true);
+    expect(logLines.some((line) => line.includes("could not be cleaned up (proxy refused)"))).toBe(true);
   });
 });
 

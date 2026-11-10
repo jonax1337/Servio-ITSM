@@ -15,6 +15,10 @@ export const FINISHED_RELEASE_STATUSES = ["DEPLOYED", "CANCELLED"] as const;
 export const FINISHED_ASSET_STATUSES = ["RETIRED", "DISPOSED"] as const;
 
 export const GROUP_IN_USE_CODE = "GROUP_IN_USE";
+const GROUP_IN_USE_ADVICE = "Point those records at another group (or clear their group), then delete it.";
+const GROUP_IN_USE_HINT =
+  "Nothing is removed automatically. Closed tickets, problems and changes are not counted: they keep their row and lose the group. " +
+  "To retire a group without deleting it, remove its members and rename it.";
 
 /** What still points at a group, by kind; only kinds with at least one entry are listed. */
 export type GroupReferences = Partial<Record<string, number>>;
@@ -28,11 +32,19 @@ export function nonEmptyReferences(counts: Record<string, number>): GroupReferen
 export function groupInUseRefusal(references: GroupReferences) {
   if (Object.keys(references).length === 0) return null;
   return {
-    message: "The group is still referenced. Point those records at another group (or clear their group), then delete it.",
+    message: `The group is still referenced. ${GROUP_IN_USE_ADVICE}`,
     code: GROUP_IN_USE_CODE,
     references,
-    hint:
-      "Nothing is removed automatically. Closed tickets, problems and changes are not counted: they keep their row and lose the group. " +
-      "To retire a group without deleting it, remove its members and rename it.",
+    hint: GROUP_IN_USE_HINT,
   };
+}
+
+/**
+ * The same refusal as one sentence for the console (a toast): what still points at the group, what to do
+ * and the API's hint. Server messages are translated as whole strings, see the pattern in
+ * messages/server/de/patterns.ts, which has to follow this text.
+ */
+export function groupInUseText(refusal: NonNullable<ReturnType<typeof groupInUseRefusal>>) {
+  const counts = Object.entries(refusal.references).map(([kind, n]) => `${kind}: ${n}`).join(", ");
+  return `The group is still referenced (${counts}). ${GROUP_IN_USE_ADVICE} ${refusal.hint}`;
 }

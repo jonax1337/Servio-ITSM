@@ -23,6 +23,8 @@ export async function runUpdater({ config, docker, signal, clock = systemClock, 
 
   const flow = createUpdateFlow({ docker, config, clock, log });
   await flow.recoverInterrupted();
+  const imageNote = await flow.pruneUpdaterImages();
+  if (imageNote) log(`[updater] ${imageNote}`);
 
   const paths = statePaths(config.stateDir);
   await prepareStateDirectories(paths, log);

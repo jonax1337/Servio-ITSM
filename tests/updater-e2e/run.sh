@@ -15,6 +15,11 @@
 #      cleanup as a note, keep the replaced 1.1.0 image (rollback target), keep
 #      1.2.0 (a container uses it) and 1.3.0 (two tags, one of them used by a
 #      container: neither tag may be removed), and remove the superseded 1.0.0.
+#      Every pre-pull space check leaves a line (measured and required bytes) in
+#      the update log and the updater's container log.
+#   5. The updater's own repository follows the same rules: at start-up and after
+#      an update its superseded images go, except the running updater release and
+#      the newest older one (the rollback target, UPDATER_KEEP_IMAGES=1).
 # The proxy must refuse calls outside its allowlist and host bind mounts.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -65,6 +70,12 @@ build_release() { # <version> <healthy> [build target]
   docker push --quiet "$REPO:$1"
 }
 
+# A stand-in release of the updater's own repository (distinct image id per version).
+build_updater_release() { # <version>
+  printf 'FROM %s\nLABEL org.opencontainers.image.version=%s\n' "$BUSYBOX" "$1" | docker build --quiet --tag "$REPO-updater:$1" - >/dev/null
+}
+updater_image_exists() { docker image inspect "$REPO-updater:$1" >/dev/null 2>&1; }
+
 # Not `grep -q`: with pipefail, a grep that stops reading early fails the pipeline.
 updater_logged() { docker logs "$(updater_id)" 2>&1 | grep -F "$1" >/dev/null; }
 updater_log_count() { docker logs "$(updater_id)" 2>&1 | grep -cF "$1" || true; }
@@ -112,11 +123,22 @@ build_release 1.4.0 true
 # The updater must really pull the new releases.
 docker image rm "$REPO:1.1.0" "$REPO:1.2.0" "$REPO:1.3.0" "$REPO:1.4.0" >/dev/null
 docker build --quiet --tag servio-updater:e2e updater
+# The running updater release and two older ones in the updater's own repository.
+updater_version=$(jq -r .version updater/package.json)
+docker tag servio-updater:e2e "$REPO-updater:$updater_version"
+build_updater_release 0.0.1
+build_updater_release 0.0.2
 
 echo "== stack"
 "${COMPOSE[@]}" up --detach web docker-proxy updater
 wait_for 60 "web to be healthy" web_is_healthy
 wait_for 60 "the updater heartbeat" heartbeat_reports_docker
+
+echo "== updater images: cleanup at start-up"
+wait_for 60 "the start-up cleanup of updater images" updater_logged "Removed superseded images: $REPO-updater:0.0.1."
+! updater_image_exists 0.0.1 || fail "the superseded updater image 0.0.1 was not removed at start-up"
+updater_image_exists 0.0.2 || fail "the newest older updater image (rollback target) was removed"
+updater_image_exists "$updater_version" || fail "the running updater image lost its tag"
 
 echo "== socket proxy allowlist"
 [[ $(proxy_call GET /_ping) == 200 ]] || fail "the proxy refused /_ping"
@@ -158,6 +180,10 @@ request_update e2e-1 1.1.0
 expect_status e2e-1 SUCCEEDED
 [[ $(inspect_web '{{index .Config.Labels "org.opencontainers.image.version"}} {{.State.Running}}') == "1.1.0 true" ]] || fail "1.1.0 is not serving"
 [[ $(inspect_web '{{.HostConfig.RestartPolicy.Name}}') == unless-stopped ]] || fail "the new container lost the restart policy"
+in_data cat /data/state/updater/status.json |
+  jq -e '[.log[] | select(.message | startswith("Free space for the pull: "))] | length == 1 and (.[0].message | test("free on the filesystem of /backups .* needed for .*:1[.]1[.]0 [(]"))' >/dev/null ||
+  fail "the update log has no line for the free-space check"
+updater_logged "space check: probe_dir=/backups free_bytes=" || fail "the updater log has no space check line with byte counts"
 ! docker inspect servio-web-pre-1.0.0 >/dev/null 2>&1 || fail "the previous container was not removed"
 in_data grep -qx migrated-to-1.1.0 /data/servio.db || fail "1.1.0 did not migrate the database"
 
@@ -209,6 +235,7 @@ echo "== update 1.1.0 -> 1.4.0: tag reference and cleanup of superseded images"
 docker create --name e2e-holder-1.2.0 "$REPO:1.2.0" >/dev/null
 docker tag "$REPO:1.3.0" "$REPO:e2e-extra"
 docker create --name e2e-holder-1.3.0 "$REPO:1.3.0" >/dev/null
+build_updater_release 0.0.3
 request_update e2e-4 1.4.0
 expect_status e2e-4 SUCCEEDED
 status_mentions() { in_data cat /data/state/updater/status.json | jq -e --arg text "$1" '.message | contains($text)'; }
@@ -226,6 +253,11 @@ status_mentions "Kept superseded images a container still uses: $REPO:1.2.0" >/d
 for tag in 1.3.0 e2e-extra; do
   docker image inspect "$REPO:$tag" >/dev/null 2>&1 || fail "the image with two tags lost $REPO:$tag"
 done
+# The updater's own repository: the running release and the newest older one (0.0.3) stay, 0.0.2 goes.
+status_mentions "Removed superseded images: $REPO-updater:0.0.2." >/dev/null || fail "the status does not report the removed updater image"
+! updater_image_exists 0.0.2 || fail "the superseded updater image 0.0.2 was not removed"
+updater_image_exists 0.0.3 || fail "the newest older updater image (rollback target) was removed"
+updater_image_exists "$updater_version" || fail "the running updater image lost its tag"
 docker rm e2e-holder-1.2.0 e2e-holder-1.3.0 >/dev/null
 heartbeat_idle() { in_data cat /data/state/updater/heartbeat.json | jq -e '.activeRequestId == null'; }
 wait_for 45 "the heartbeat to report no active request" heartbeat_idle
