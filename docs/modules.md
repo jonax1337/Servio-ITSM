@@ -509,7 +509,7 @@ A hub page (`app/(console)/settings/page.tsx`, MANAGER+) linking to sub-pages â€
 | Ticks | `lib/ticks/maintenance.ts` (every 15 s: start, hand over to the updater, copy progress, end, rewrite `maintenance.json`), `lib/ticks/update-check.ts` (every 6 h) |
 | Components | `components/maintenance/` â€” `maintenance-banner` (console and portal layouts), `scheduled-maintenance` (status pages), `maintenance-countdown` (maintenance page), `schedule-window-dialog`, `windows-table`, `window-actions`, `window-log-dialog`, `check-updates-button` |
 | Elsewhere | the change calendar draws maintenance windows as a third layer (`loadSchedule().maintenance`, `components/changes/calendar/change-calendar-grid.tsx`); `/status` and `/portal/status` list scheduled maintenance |
-| Updater | `updater/` (the sidecar, no npm dependencies; `image-housekeeping.mjs`: free-space estimate before a pull and cleanup of superseded images), `docker-compose.release.yml` |
+| Updater | `updater/` (the sidecar, no npm dependencies; `image-housekeeping.mjs`: free-space estimate before a pull and cleanup of superseded images; `self-update.mjs`: the updater replacing its own container after a successful update), `docker-compose.release.yml` |
 | Health | `app/api/v1/health/route.ts` + `lib/health-rules.ts` (public liveness, the running version for API tokens; reachable during maintenance) |
 
 Operator guide, file contract and security notes: [updates.md](./updates.md). Notifications use types `UPDATE_AVAILABLE` and `MAINTENANCE`.

@@ -19,16 +19,20 @@ export function loadConfig(env = process.env) {
   const image = requireImageRepository(env.SERVIO_IMAGE);
   const updaterImage = env.UPDATER_IMAGE?.trim() ? requireImageRepository(env.UPDATER_IMAGE, "UPDATER_IMAGE") : `${image}-updater`;
   const backupDir = env.BACKUP_DIR || "/backups";
-  const containerName = env.SERVIO_CONTAINER?.trim() || undefined;
-  if (containerName && !CONTAINER_NAME.test(containerName)) {
-    throw new Error(`SERVIO_CONTAINER is not a valid container name: ${containerName}`);
-  }
+  const containerName = optionalContainerName(env.SERVIO_CONTAINER, "SERVIO_CONTAINER");
+  const updaterContainer = optionalContainerName(env.UPDATER_CONTAINER, "UPDATER_CONTAINER");
 
   return {
     image,
     /** Repository of the updater's own image; its superseded versions are cleaned up too. */
     updaterImage,
     containerName,
+    /** Name of the updater's own container; a self-update replaces it under this name. */
+    updaterContainer,
+    /** After a successful app update to X, replace the updater with `updaterImage:X`. */
+    selfUpdate: booleanFlag(env.UPDATER_SELF_UPDATE, true, "UPDATER_SELF_UPDATE"),
+    /** How long the new updater may take to report in before the old one rolls the self-update back. */
+    selfUpdateTimeoutMs: positiveInteger(env.UPDATER_SELF_UPDATE_TIMEOUT_SECONDS, 120, "UPDATER_SELF_UPDATE_TIMEOUT_SECONDS") * 1000,
     stateDir: env.SERVIO_STATE_DIR || "/data/state",
     dbFile: env.DB_FILE || "/data/servio.db",
     backupDir,
@@ -93,6 +97,16 @@ function bindSourcesFrom(value) {
   const relative = dirs.find((dir) => !dir.startsWith("/"));
   if (relative) throw new Error(`ALLOW_BIND_MOUNTS_FROM entries must be absolute paths, got: ${relative}`);
   return dirs.map((dir) => dir.replace(/\/+$/, "") || "/");
+}
+
+/**
+ * @param {string | undefined} value
+ * @param {string} name
+ */
+function optionalContainerName(value, name) {
+  const containerName = value?.trim() || undefined;
+  if (containerName && !CONTAINER_NAME.test(containerName)) throw new Error(`${name} is not a valid container name: ${containerName}`);
+  return containerName;
 }
 
 /**

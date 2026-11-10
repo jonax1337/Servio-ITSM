@@ -1,6 +1,7 @@
 // Liveness: `heartbeat.json` for the app (it decides whether updates can be
 // scheduled) and a stamp on the updater-only backup volume for the container
-// HEALTHCHECK, which must not trust a file the app can forge.
+// HEALTHCHECK, which must not trust a file the app can forge. The stamp carries
+// the updater's version: during a self-update it proves that the new updater runs.
 import { join } from "node:path";
 import { containerNameOf, findManagedContainer } from "./managed-container.mjs";
 import { writeJsonAtomic } from "./state-files.mjs";
@@ -19,11 +20,24 @@ export const livenessFile = (backupDir) => join(backupDir, ".liveness.json");
  *   now?: () => number,
  *   log?: (line: string) => void,
  *   activeRequest?: () => import("./update-flow.mjs").ActiveRequest | null,
+ *   selfUpdateResult?: () => Promise<import("./self-update.mjs").SelfUpdateResult | null>,
+ *   paused?: () => boolean,
  * }} deps `activeRequest` tells the app which update is in progress, so it can tell a
- *   working updater from one that lost track of an update (e.g. could not write status.json)
+ *   working updater from one that lost track of an update (e.g. could not write status.json);
+ *   `selfUpdateResult` is the outcome of the last self-update, shown to admins; while `paused`
+ *   (a self-update hands over to a new updater) nothing is written, so only the new updater can prove it runs
  * @returns {() => Promise<void>} writes one heartbeat
  */
-export function createHeartbeat({ docker, config, paths, now = Date.now, log = console.log, activeRequest = () => null }) {
+export function createHeartbeat({
+  docker,
+  config,
+  paths,
+  now = Date.now,
+  log = console.log,
+  activeRequest = () => null,
+  selfUpdateResult = async () => null,
+  paused = () => false,
+}) {
   let wasDockerOk = true;
 
   /**
@@ -43,9 +57,10 @@ export function createHeartbeat({ docker, config, paths, now = Date.now, log = c
   }
 
   return async function beat() {
+    if (paused()) return;
     const at = new Date(now()).toISOString();
     // First, so a sabotaged state directory cannot make the updater look dead (or alive).
-    await writeJsonAtomic(livenessFile(config.backupDir), { at }, [config.backupDir]);
+    await writeJsonAtomic(livenessFile(config.backupDir), { at, version: config.updaterVersion }, [config.backupDir]);
 
     let dockerOk = true;
     try {
@@ -65,6 +80,7 @@ export function createHeartbeat({ docker, config, paths, now = Date.now, log = c
         dockerOk,
         ...(await describeManagedContainer(dockerOk)),
         activeRequestId: activeRequest()?.id ?? null,
+        selfUpdate: await selfUpdateResult(),
       },
       [paths.stateDir, paths.updaterDir],
     );

@@ -8,7 +8,8 @@ name: servio
 #
 # Pin the version in .env (SERVIO_VERSION=0.3.0) or leave it on `latest`.
 # Never write a fixed tag into `image:` below; drive it from SERVIO_VERSION.
-# NOTE: the updater swaps the `web` container to a new image behind compose's
+# NOTE: the updater swaps the `web` container (and afterwards its own `updater`
+# container, see UPDATER_SELF_UPDATE) to a new image behind compose's
 # back (the new container references it as `ghcr.io/…/servio:<version>`, so
 # `docker ps` shows the running release). A later manual `docker compose up`
 # recreates `web` from the tag below, so after an update from the UI set
@@ -91,10 +92,12 @@ services:
   # and path do not match an allow rule below is refused with 403/405; that
   # excludes exec, attach, archive, logs, volumes, build, swarm, system, info, …
   # (`$$` is compose's escape for a literal `$`.)
-  # Container calls are scoped: by name only `servio-web` and its `-pre-<version>`
-  # twin, otherwise a full 64-hex id (no short-id prefixes, and no container list,
-  # so ids of unrelated containers cannot be discovered). Renaming the `web`
-  # container means changing SERVIO_CONTAINER and these rules together.
+  # Container calls are scoped: by name only `servio-web`, the updater's own
+  # `servio-updater` (for its self-update) and their `-pre-<version>` twins,
+  # otherwise a full 64-hex id (no short-id prefixes, and no container list,
+  # so ids of unrelated containers cannot be discovered). Renaming the `web` or
+  # `updater` container means changing SERVIO_CONTAINER / UPDATER_CONTAINER and
+  # these rules together.
   # Image calls are scoped to the managed repositories: SERVIO_IMAGE_PATTERN is
   # the updater's SERVIO_IMAGE as a regular expression (dots escaped); the
   # updater's own repository is the same name plus `-updater`. Inspect also
@@ -127,15 +130,15 @@ services:
       # listed here AND in the updater's ALLOW_BIND_MOUNTS_FROM.
       - -allowbindmountfrom=/servio-no-host-binds
       - -allowGET=^/_ping$$
-      - -allowGET=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/json$$
+      - -allowGET=^/v1\.[0-9]+/containers/((servio-web|servio-updater)(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/json$$
       - -allowGET=^/v1\.[0-9]+/images/(${SERVIO_IMAGE_PATTERN:-ghcr\.io/jonax1337/servio}(-updater)?(:[A-Za-z0-9_][A-Za-z0-9_.-]*|@sha256:[0-9a-f]{64})|sha256:[0-9a-f]{64})/json$$
       - -allowGET=^/v1\.[0-9]+/images/json$$
       - -allowPOST=^/v1\.[0-9]+/images/create$$
       - -allowDELETE=^/v1\.[0-9]+/images/${SERVIO_IMAGE_PATTERN:-ghcr\.io/jonax1337/servio}(-updater)?(:[A-Za-z0-9_][A-Za-z0-9_.-]*|@sha256:[0-9a-f]{64})$$
       - -allowPOST=^/v1\.[0-9]+/containers/create$$
-      - -allowPOST=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/(start|stop|rename|update)$$
+      - -allowPOST=^/v1\.[0-9]+/containers/((servio-web|servio-updater)(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})/(start|stop|rename|update)$$
       - -allowPOST=^/v1\.[0-9]+/networks/[A-Za-z0-9][A-Za-z0-9_.-]*/connect$$
-      - -allowDELETE=^/v1\.[0-9]+/containers/(servio-web(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})$$
+      - -allowDELETE=^/v1\.[0-9]+/containers/((servio-web|servio-updater)(-pre-[A-Za-z0-9_.-]+)?|[0-9a-f]{64})$$
       - -shutdowngracetime=10
     volumes:
       # A unix socket gives full API access whatever the mount mode says.
@@ -144,6 +147,8 @@ services:
 
   updater:
     image: ghcr.io/jonax1337/servio-updater:${SERVIO_VERSION:-latest}
+    # A fixed name lets the updater find and replace its own container (self-update).
+    container_name: servio-updater
     restart: unless-stopped
     depends_on:
       - docker-proxy
@@ -166,6 +171,11 @@ services:
       # request, the image never does. Keep the proxy's SERVIO_IMAGE_PATTERN in line.
       SERVIO_IMAGE: ghcr.io/jonax1337/servio
       SERVIO_CONTAINER: servio-web
+      # After a successful update to X the updater replaces itself with
+      # servio-updater:X (same name and configuration) and rolls that back if the
+      # new updater does not report in. "false" leaves the updater to compose.
+      UPDATER_CONTAINER: servio-updater
+      UPDATER_SELF_UPDATE: ${UPDATER_SELF_UPDATE:-true}
       SERVIO_STATE_DIR: /data/state
       DB_FILE: /data/servio.db
       BACKUP_DIR: /backups

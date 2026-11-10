@@ -42,6 +42,12 @@ export type UpdaterStatus = {
   log: UpdaterLogEntry[];
 };
 
+export const SELF_UPDATE_STATES = ["SUCCEEDED", "ROLLED_BACK", "FAILED"] as const;
+export type SelfUpdateState = (typeof SELF_UPDATE_STATES)[number];
+
+/** The outcome of the updater's last self-update (it replaces itself after a successful app update). */
+export type UpdaterSelfUpdate = { state: SelfUpdateState; fromVersion: string; targetVersion: string; message: string; at: string };
+
 export type UpdaterHeartbeat = {
   updaterVersion: string;
   at: string;
@@ -53,6 +59,8 @@ export type UpdaterHeartbeat = {
    * updater is too old to report it; the app then cannot tell idle from busy.
    */
   activeRequestId?: string | null;
+  /** Null: no self-update recorded (or the updater is too old to report one). */
+  selfUpdate: UpdaterSelfUpdate | null;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object";
@@ -91,6 +99,13 @@ export function parseUpdaterStatus(raw: unknown): UpdaterStatus | null {
   };
 }
 
+function parseSelfUpdate(raw: unknown): UpdaterSelfUpdate | null {
+  if (!isRecord(raw) || !SELF_UPDATE_STATES.includes(raw.state as SelfUpdateState)) return null;
+  const [fromVersion, targetVersion, message, at] = [raw.fromVersion, raw.targetVersion, raw.message, raw.at].map(asString);
+  if (fromVersion === null || targetVersion === null || message === null || at === null || Number.isNaN(Date.parse(at))) return null;
+  return { state: raw.state as SelfUpdateState, fromVersion, targetVersion, message, at };
+}
+
 /** The updater's heartbeat.json, or null when absent or not in the documented shape. */
 export function parseUpdaterHeartbeat(raw: unknown): UpdaterHeartbeat | null {
   if (!isRecord(raw)) return null;
@@ -103,6 +118,7 @@ export function parseUpdaterHeartbeat(raw: unknown): UpdaterHeartbeat | null {
     container: asString(raw.container),
     image: asString(raw.image),
     ...("activeRequestId" in raw ? { activeRequestId: asString(raw.activeRequestId) } : {}),
+    selfUpdate: parseSelfUpdate(raw.selfUpdate),
   };
 }
 
