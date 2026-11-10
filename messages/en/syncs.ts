@@ -145,6 +145,23 @@ const syncs = {
   "spec.Users": "Users",
   "spec.Assets": "Assets",
   "trigger.API": "API",
+  "preview.button": "Preview groups",
+  "preview.title": "Group membership preview",
+  "preview.description": "What the next run would change in Servio groups, from the current directory. Nothing is written. Only users imported by this source are added or removed; members added by hand who are not imported from this source are left alone.",
+  "preview.loading": "Reading the directory…",
+  "preview.nothing": "No changes planned: the Servio groups already match the directory groups.",
+  "preview.problems": "{count, plural, one {# mapping cannot be used} other {# mappings cannot be used}}",
+  "preview.add": "Will be added ({count})",
+  "preview.remove": "Will be removed ({count})",
+  "preview.heldBack": "{count, plural, one {# removal is} other {# removals are}} held back because a mapped directory group could not be read reliably.",
+  "preview.pending": "{count, plural, one {# directory member is} other {# directory members are}} not an imported user yet and joins after the next user import.",
+  "spec.Group membership": "Group membership",
+  "spec.Group mappings": "Group mappings",
+  "spec.Optional. One mapping per line: <directory group DN or name> => <Servio group id or import ref>. On every run the Servio group membership of the users this source imported follows the directory group; members added by hand who are not imported from this source are left alone.": "Optional. One mapping per line: <directory group DN or name> => <Servio group id or import ref>. On every run the Servio group membership of the users this source imported follows the directory group; members added by hand who are not imported from this source are left alone.",
+  "spec.Group search base": "Group search base",
+  "spec.Where a directory group given by name is looked up. Blank = the base DN above.": "Where a directory group given by name is looked up. Blank = the base DN above.",
+  "spec.Include nested groups": "Include nested groups",
+  "spec.Also count members of groups nested in a mapped group. Active Directory only (matching rule in chain).": "Also count members of groups nested in a mapped group. Active Directory only (matching rule in chain).",
 };
 
 export default syncs;

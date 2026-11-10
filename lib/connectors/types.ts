@@ -1,4 +1,5 @@
 import type { SyncSource } from "@prisma/client";
+import type { GroupSyncReport } from "./group-sync";
 
 /**
  * The connector contract every sync integration implements. `runSync`
@@ -21,9 +22,14 @@ export type SyncResult = {
 
 export type ConnectorRunContext = {
   trigger: "MANUAL" | "SCHEDULED";
+  /** The user who started a manual run; audit entries of the run name them (null for scheduled runs). */
+  actorId?: string | null;
 };
 
 export type ConnectorTestResult = { ok: boolean; message: string };
+
+/** The planned Servio group membership of a directory sync, without writing anything. */
+export type GroupPreviewResult = { ok: true; report: GroupSyncReport } | { ok: false; message: string };
 
 export interface Connector {
   /** Cheap connectivity/credentials check for the "Test connection" button. */
@@ -31,6 +37,8 @@ export interface Connector {
   /** Perform the actual import/export. Should never throw — map failures into
    *  a FAILED result with a descriptive log so the run row is always written. */
   run(source: SyncSource, ctx: ConnectorRunContext): Promise<SyncResult>;
+  /** Directory connectors with group mappings: what the next run would add to / remove from Servio groups. Writes nothing. */
+  previewGroups?(source: SyncSource): Promise<GroupPreviewResult>;
 }
 
 /** Accumulates log lines during a run and reports counts. */

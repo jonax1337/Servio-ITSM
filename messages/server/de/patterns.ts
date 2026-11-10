@@ -30,6 +30,16 @@ export const patterns: ServerMessagePattern[] = [
   [/^A form can have at most (\d+) questions\.$/, "Ein Formular kann höchstens $1 Fragen haben."],
   [/^Action (\d+): choose an action\.$/, "Aktion $1: Bitte eine Aktion wählen."],
   [/^Condition (\d+): (.+)$/, "Bedingung $1: $2"],
+  // Directory sync: group mappings
+  [/^Line (\d+): expected "(.+)"\.$/, "Zeile $1: Erwartet wird „$2“."],
+  [/^Unknown Servio group in the group mappings: (.+)\. Use a group id or an import ref\.$/, "Unbekannte Servio-Gruppe in den Gruppenzuordnungen: $1. Verwenden Sie eine Gruppen-ID oder eine Import-Referenz."],
+  [/^Servio group "(.+)" \(mapped from "(.+)"\) does not exist\.$/, "Die Servio-Gruppe „$1“ (zugeordnet von „$2“) existiert nicht."],
+  [/^Directory group "(.+)" was not found\.$/, "Die Verzeichnisgruppe „$1“ wurde nicht gefunden."],
+  [/^Directory group "(.+)" was not found under (.+)\.$/, "Die Verzeichnisgruppe „$1“ wurde unter $2 nicht gefunden."],
+  [/^Directory group name "(.+)" is not unique(?: \((.+)\))?\. Use its distinguished name\.$/, "Der Name der Verzeichnisgruppe „$1“ ist nicht eindeutig. Verwenden Sie den Distinguished Name."],
+  [/^Directory group "(.+)" has members but none of them matched the user filter with memberOf\. .*$/, "Die Verzeichnisgruppe „$1“ hat Mitglieder, aber keines passte mit memberOf zum Benutzerfilter. Das Verzeichnis pflegt memberOf möglicherweise nicht, die Mitglieder liegen außerhalb der Base DN oder sind nur verschachtelte Gruppen (siehe „Verschachtelte Gruppen einbeziehen“): Die Mitgliedschaft blieb unverändert."],
+  [/^Could not (?:read|look up) directory group "(.+)": (.+)$/, "Die Verzeichnisgruppe „$1“ konnte nicht gelesen werden: $2"],
+  [/^Could not list the members of "(.+)": (.+)$/, "Die Mitglieder von „$1“ konnten nicht aufgelistet werden: $2"],
   // Inbound mail and uploads settings
   [/^Not a valid domain: (.+)\.$/, "Keine gültige Domain: $1."],
   [/^Not a valid address or domain: (.+)\.$/, "Keine gültige Adresse oder Domain: $1."],

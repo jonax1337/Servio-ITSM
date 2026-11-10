@@ -148,6 +148,23 @@ const syncs: Translations<typeof en> = {
   "spec.Users": "Benutzer",
   "spec.Assets": "Assets",
   "trigger.API": "API",
+  "preview.button": "Gruppen-Vorschau",
+  "preview.title": "Vorschau der Gruppenmitgliedschaft",
+  "preview.description": "Was der nächste Lauf in den Servio-Gruppen ändern würde, ausgehend vom aktuellen Verzeichnis. Es wird nichts geschrieben. Nur Benutzer, die diese Quelle importiert hat, werden hinzugefügt oder entfernt; von Hand hinzugefügte Mitglieder, die nicht von dieser Quelle stammen, bleiben unberührt.",
+  "preview.loading": "Verzeichnis wird gelesen…",
+  "preview.nothing": "Keine Änderungen geplant: Die Servio-Gruppen entsprechen bereits den Verzeichnisgruppen.",
+  "preview.problems": "{count, plural, one {# Zuordnung ist nicht nutzbar} other {# Zuordnungen sind nicht nutzbar}}",
+  "preview.add": "Werden hinzugefügt ({count})",
+  "preview.remove": "Werden entfernt ({count})",
+  "preview.heldBack": "{count, plural, one {# Entfernung wird} other {# Entfernungen werden}} zurückgehalten, weil eine zugeordnete Verzeichnisgruppe nicht verlässlich gelesen werden konnte.",
+  "preview.pending": "{count, plural, one {# Verzeichnismitglied ist} other {# Verzeichnismitglieder sind}} noch kein importierter Benutzer und {count, plural, one {kommt} other {kommen}} nach dem nächsten Benutzerimport hinzu.",
+  "spec.Group membership": "Gruppenmitgliedschaft",
+  "spec.Group mappings": "Gruppenzuordnungen",
+  "spec.Optional. One mapping per line: <directory group DN or name> => <Servio group id or import ref>. On every run the Servio group membership of the users this source imported follows the directory group; members added by hand who are not imported from this source are left alone.": "Optional. Eine Zuordnung pro Zeile: <DN oder Name der Verzeichnisgruppe> => <Servio-Gruppen-ID oder Import-Referenz>. Bei jedem Lauf folgt die Servio-Gruppenmitgliedschaft der Benutzer, die diese Quelle importiert hat, der Verzeichnisgruppe; von Hand hinzugefügte Mitglieder, die nicht von dieser Quelle importiert wurden, bleiben unberührt.",
+  "spec.Group search base": "Suchbasis für Gruppen",
+  "spec.Where a directory group given by name is looked up. Blank = the base DN above.": "Wo eine Verzeichnisgruppe gesucht wird, die per Name angegeben ist. Leer = die Base DN oben.",
+  "spec.Include nested groups": "Verschachtelte Gruppen einbeziehen",
+  "spec.Also count members of groups nested in a mapped group. Active Directory only (matching rule in chain).": "Auch Mitglieder von Gruppen zählen, die in einer zugeordneten Gruppe verschachtelt sind. Nur Active Directory (Matching Rule in Chain).",
 };
 
 export default syncs;

@@ -1,3 +1,5 @@
+import { formatMappingLines, type GroupMapping } from "./group-mapping";
+
 /**
  * Declarative, per-connector form metadata. PURE data — no server imports — so
  * both the client config form (components/syncs/source-form.tsx) and the server
@@ -125,6 +127,31 @@ const LDAP: ConnectorSpec = {
     },
     { name: "pageSize", label: "Page size", type: "number", section: "Directory", placeholder: "500" },
     deactivateField,
+    {
+      name: "groupMappings",
+      label: "Group mappings",
+      type: "textarea",
+      section: "Group membership",
+      mono: true,
+      placeholder: "CN=IT-Support,OU=Groups,DC=corp,DC=local => service-desk\nNetwork Team => cl_group_id",
+      hint:
+        "Optional. One mapping per line: <directory group DN or name> => <Servio group id or import ref>. On every run the Servio group membership of the users this source imported follows the directory group; members added by hand who are not imported from this source are left alone.",
+    },
+    {
+      name: "groupBaseDN",
+      label: "Group search base",
+      section: "Group membership",
+      mono: true,
+      placeholder: "ou=groups,dc=example,dc=com",
+      hint: "Where a directory group given by name is looked up. Blank = the base DN above.",
+    },
+    {
+      name: "groupNested",
+      label: "Include nested groups",
+      type: "switch",
+      section: "Group membership",
+      hint: "Also count members of groups nested in a mapped group. Active Directory only (matching rule in chain).",
+    },
   ],
   mapping: { USERS: userMapping() },
   defaults: {
@@ -142,6 +169,9 @@ const LDAP: ConnectorSpec = {
     phone: "telephoneNumber",
     department: "ou",
     deactivateMissing: false,
+    groupMappings: "",
+    groupBaseDN: "",
+    groupNested: false,
   },
   secretFields: ["bindPassword"],
   configurable: true,
@@ -168,6 +198,9 @@ const ACTIVE_DIRECTORY: ConnectorSpec = {
     phone: "telephoneNumber",
     department: "department",
     deactivateMissing: false,
+    groupMappings: "",
+    groupBaseDN: "",
+    groupNested: false,
   },
 };
 
@@ -352,6 +385,11 @@ export function configToFormValues(
   for (const f of fieldsFor(spec, scope)) {
     if (spec.secretFields.includes(f.name)) continue;
     const v = obj[f.name];
+    if (f.name === "groupMappings" && Array.isArray(v)) {
+      // Stored as a list of mappings, edited as one line per mapping.
+      values[f.name] = formatMappingLines(v as GroupMapping[]);
+      continue;
+    }
     values[f.name] =
       v === undefined || v === null
         ? spec.defaults[f.name] ?? (f.type === "switch" ? false : "")

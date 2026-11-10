@@ -3,10 +3,13 @@ import { z } from "zod";
 import type { Entry } from "ldapts";
 import type { SyncSource } from "@prisma/client";
 import { decryptSecret } from "@/lib/crypto";
-import type { Connector, ConnectorTestResult, SyncResult } from "./types";
+import type { Connector, ConnectorRunContext, ConnectorTestResult, GroupPreviewResult, SyncResult } from "./types";
 import { SyncLog } from "./types";
 import { importUsers, errMessage, type ImportError, type ImportUser } from "./import";
 import { binaryExternalId, isBinaryAttr } from "./ldap-identifiers";
+import { groupMappingSchema, MAX_GROUP_MAPPINGS } from "./group-mapping";
+import { applyGroupSync, logGroupSyncReport, planGroupSync } from "./group-sync";
+import type { DirectoryGroupConfig } from "./ldap-groups";
 
 /**
  * LDAP / Active Directory user import. Binds with a service account, pages
@@ -32,6 +35,12 @@ export const ldapConfigSchema = z.object({
   jobTitle: z.string().optional().default(""),
   phone: z.string().optional().default(""),
   department: z.string().optional().default(""),
+  /** Directory group -> Servio group mappings: the Servio membership of the imported users follows the directory group. */
+  groupMappings: z.array(groupMappingSchema).max(MAX_GROUP_MAPPINGS).optional().default([]),
+  /** Where a directory group given by name is looked up (blank = baseDN). */
+  groupBaseDN: z.string().optional().default(""),
+  /** Follow nested groups (Active Directory only). */
+  groupNested: z.coerce.boolean().optional().default(false),
 });
 
 export type LdapConfig = z.infer<typeof ldapConfigSchema>;
@@ -141,7 +150,62 @@ async function testConnection(source: SyncSource): Promise<ConnectorTestResult> 
   }
 }
 
-async function run(source: SyncSource): Promise<SyncResult> {
+/** What the group sync needs from the source configuration. */
+function groupConfig(cfg: LdapConfig): DirectoryGroupConfig {
+  return {
+    baseDN: cfg.baseDN,
+    groupBaseDN: cfg.groupBaseDN.trim(),
+    userFilter: cfg.userFilter,
+    searchScope: cfg.searchScope,
+    pageSize: cfg.pageSize,
+    externalId: cfg.externalId,
+    groupNested: cfg.groupNested,
+  };
+}
+
+/** The group-membership step of a run, after the users are imported. A failure here never undoes the user import. */
+async function syncGroups(client: Client, source: SyncSource, cfg: LdapConfig, usersFound: number, log: SyncLog, actorId?: string | null) {
+  if (cfg.groupMappings.length === 0) return;
+  // Same guard as the deactivation of missing users: an empty answer is a misconfiguration, not a reason to change memberships.
+  if (usersFound === 0) {
+    log.line("Skipped group membership: the directory returned no users (guarding against emptying groups from a misconfiguration).");
+    return;
+  }
+  try {
+    const report = await planGroupSync(source, client, groupConfig(cfg), cfg.groupMappings);
+    logGroupSyncReport(report, log);
+    const done = await applyGroupSync(source, report, log, actorId);
+    log.line(`Group membership: ${done.added} added, ${done.removed} removed.`);
+  } catch (e) {
+    log.failed++;
+    log.line(`Group membership failed: ${errMessage(e)}`);
+  }
+}
+
+async function previewGroups(source: SyncSource): Promise<GroupPreviewResult> {
+  let cfg: LdapConfig;
+  try {
+    cfg = loadConfig(source);
+  } catch (e) {
+    return { ok: false, message: `Invalid configuration: ${errMessage(e)}` };
+  }
+  if (cfg.groupMappings.length === 0) return { ok: false, message: "This source has no group mappings." };
+  const client = makeClient(cfg);
+  try {
+    await client.bind(cfg.bindDN, cfg.bindPassword);
+    return { ok: true, report: await planGroupSync(source, client, groupConfig(cfg), cfg.groupMappings) };
+  } catch (e) {
+    return { ok: false, message: errMessage(e) };
+  } finally {
+    try {
+      await client.unbind();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function run(source: SyncSource, ctx?: ConnectorRunContext): Promise<SyncResult> {
   const log = new SyncLog();
 
   let cfg: LdapConfig;
@@ -169,6 +233,7 @@ async function run(source: SyncSource): Promise<SyncResult> {
 
     const records = searchEntries.map((e) => mapEntry(e, cfg));
     await importUsers(source, records, cfg.deactivateMissing, log);
+    await syncGroups(client, source, cfg, searchEntries.length, log, ctx?.actorId);
   } catch (e) {
     log.line(`Sync error: ${errMessage(e)}`);
     if (log.created === 0 && log.updated === 0 && log.unchanged === 0) {
@@ -192,4 +257,4 @@ async function run(source: SyncSource): Promise<SyncResult> {
   return log.result();
 }
 
-export const ldapConnector: Connector = { test: testConnection, run };
+export const ldapConnector: Connector = { test: testConnection, run, previewGroups };

@@ -1341,6 +1341,9 @@ tickets, problems and changes (and retired assets, finished releases) are not co
 row and lose the group. The console's delete button is unchanged and clears those links without asking.
 A deleted group takes its memberships with it.
 
+`import_ref` is also what a directory sync source refers to when it maps a directory group to a Servio group
+([Directory group sync](modules.md#directory-group-sync)), so a group created here can be wired up without knowing its id.
+
 ### Secondary email addresses
 
 `PATCH /users/{id}` replaces a person's secondary addresses — extra addresses inbound
