@@ -109,7 +109,7 @@ All scripts live in [`package.json`](../package.json) and are run with `pnpm <sc
 | `brand:check` / `brand:sync` | `node scripts/sync-brand-assets.mjs [--check]` | Validate / regenerate application brand assets ([branding.md](./branding.md)). |
 | `db:generate` | `prisma generate` | Regenerate the Prisma Client after schema changes. |
 | `db:migrate` | `prisma migrate dev` | Apply pending migrations to the dev DB. To **create** one, use `db:migrate:new` (below). |
-| `db:migrate:new` | `node scripts/new-migration.mjs <name>` | Create the next migration (`--create-only`) with a folder name that sorts after every existing one, then apply it with `db:migrate`. |
+| `db:migrate:new` | `node scripts/new-migration.mjs <name>` | Create the next migration with a folder name that sorts after every existing one (non-interactive, see [Creating a migration](#creating-a-migration)), then apply it with `db:migrate`. |
 | `db:push` | `prisma db push` | Push schema to the DB without a migration (prototyping). |
 | `db:seed` | `prisma db seed` | Run the seed (`tsx prisma/seed.ts`, which also runs `prisma/seed-extras.ts`) on an **empty** database. |
 | `db:reset` | `prisma migrate reset --force` | Drop, re-migrate, and reseed the database. |
@@ -351,6 +351,8 @@ Copy this structure for new modules; see [modules.md](./modules.md) for the full
 pnpm db:migrate:new add_widget     # writes prisma/migrations/<stamp>_add_widget/migration.sql
 pnpm db:migrate                    # review the SQL, then apply it to your dev DB
 ```
+
+`db:migrate:new` generates the SQL with `prisma migrate diff --from-migrations … --to-schema-datamodel … --script` on a temporary shadow database and writes it into the correctly named folder. It never prompts (so it also works in CI and for agents, e.g. when Prisma would ask about a new unique constraint), and only the script on stdout is written: output of pnpm or other tools can never end up in `migration.sql`. Before writing, the script is validated to start with SQL (a comment or a statement); anything else aborts with an error and no folder is created. If the schema already matches the migrations it reports so and creates nothing. Review the SQL before committing it.
 
 Use `db:migrate:new` rather than `prisma migrate dev --name …` to create a migration. Prisma stamps the folder with
 your **wall clock**, and migrations in this repository are numbered ahead of the calendar. A migration created with
