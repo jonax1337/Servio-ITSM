@@ -18,7 +18,8 @@ import { getContractFormOptions } from "@/components/contracts/contract-options"
 import { LicenseDialog } from "@/components/contracts/license-dialog";
 import { LicenseExpiryBadge, LicenseComplianceBadge, SeatMeter } from "@/components/contracts/contract-badges";
 import { LicenseSeatsTab } from "@/components/contracts/detail-tabs";
-import { DetailShell, DetailTitle, DetailTopBar, MetaRow, Notice, NotesBlock, RailCard } from "@/components/contracts/detail-bits";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
+import { Notice, NotesBlock } from "@/components/contracts/detail-bits";
 import { RecordAttachments } from "@/components/attachments/record-attachments";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +98,6 @@ export default async function LicenseDetailPage({
             <MetaRow label={t("col.expires")}>{license.expiresAt ? day(license.expiresAt) : tc("never")}</MetaRow>
             <MetaRow label={t("col.cost")}>{license.cost != null ? formatCostIn(t.locale, license.cost) : "—"}</MetaRow>
           </RailCard>
-          <RecordAttachments target={{ licenseId: license.id }} role={me?.role ?? "USER"} />
         </>
       }
     >
@@ -162,6 +162,7 @@ export default async function LicenseDetailPage({
                 <SeatMeter compliance={compliance} />
               </div>
               <NotesBlock notes={license.notes} />
+              <RecordAttachments target={{ licenseId: license.id }} role={me?.role ?? "USER"} />
             </>
           ) : null}
           {active === "seats" ? <LicenseSeatsTab licenseId={license.id} seats={license.seats} canWrite={canWrite} /> : null}

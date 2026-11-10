@@ -14,6 +14,23 @@ export function getPage(sp: SearchParams, key = "page"): number {
 
 export const PAGE_SIZE = 15;
 
+export type SortDir = "asc" | "desc";
+
+/**
+ * A list's effective `?sort=&dir=`: the URL's sort when the page offers that key (descending
+ * unless `dir=asc`), otherwise the page's default sort in its own direction.
+ */
+export function listSort<K extends string>(
+  sp: SearchParams,
+  keys: readonly K[],
+  fallback: { sort: K; dir: SortDir },
+): { sort: K; dir: SortDir } {
+  const requested = getParam(sp, "sort");
+  const known = keys.find((k) => k === requested);
+  if (!known) return fallback;
+  return { sort: known, dir: getParam(sp, "dir") === "asc" ? "asc" : "desc" };
+}
+
 export function buildHref(
   pathname: string,
   current: SearchParams,

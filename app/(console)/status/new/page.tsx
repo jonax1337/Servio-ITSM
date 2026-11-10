@@ -28,7 +28,7 @@ export default async function NewStatusIncidentPage({ searchParams }: { searchPa
   return (
     <>
       <PageHeader icon={Activity} title={t("newTitle")} description={t("newDescription")}>
-        <LinkButton href="/status" variant="outline" size="sm">
+        <LinkButton href="/status" variant="outline">
           <ArrowLeft className="size-4" /> {tc("back")}
         </LinkButton>
       </PageHeader>

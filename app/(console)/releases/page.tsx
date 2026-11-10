@@ -3,7 +3,7 @@ import { Plus, Rocket } from "lucide-react";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
+import { PAGE_SIZE, type SearchParams, type SortDir, getPage, getParam, listSort } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -24,13 +24,16 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 export const dynamic = "force-dynamic";
 
-const DEFAULT_SORT = "updatedAt";
 
 function windowLabel({ start, end }: { start: Date | null; end: Date | null }, f: Formatter) {
   if (!start && !end) return "—";
   const fmt = (d: Date | null) => (d ? f.date(d) : "…");
   return `${fmt(start)} – ${fmt(end)}`;
 }
+
+const SORT_KEYS = ["id", "name", "status", "owner", "updatedAt"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+const DEFAULT_SORT: { sort: SortKey; dir: SortDir } = { sort: "id", dir: "desc" };
 
 export default async function ReleasesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -46,15 +49,16 @@ export default async function ReleasesPage({ searchParams }: { searchParams: Pro
   }
   if (status && status !== "all") where.status = status;
 
-  const sort = getParam(sp, "sort") ?? DEFAULT_SORT;
-  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
-  const ORDER: Record<string, Prisma.ReleaseOrderByWithRelationInput> = {
+  const { sort, dir } = listSort(sp, SORT_KEYS, DEFAULT_SORT);
+  const ORDER: Record<SortKey, Prisma.ReleaseOrderByWithRelationInput> = {
     id: { id: dir },
     name: { name: dir },
     status: { status: dir },
     owner: { owner: { name: dir } },
     updatedAt: { updatedAt: dir },
   };
+  // Ties fall back to the id, so equal values keep a stable order across pages.
+  const orderBy = sort === "id" ? [ORDER.id] : [ORDER[sort], { id: "desc" as const }];
 
   const [total, releases] = await Promise.all([
     db.release.count({ where }),
@@ -64,7 +68,7 @@ export default async function ReleasesPage({ searchParams }: { searchParams: Pro
         owner: true,
         changes: { select: { id: true, status: true, plannedStart: true, plannedEnd: true } },
       },
-      orderBy: [ORDER[sort] ?? ORDER[DEFAULT_SORT]],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),

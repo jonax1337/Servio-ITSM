@@ -17,7 +17,8 @@ import { getContractFormOptions } from "@/components/contracts/contract-options"
 import { ContractDialog } from "@/components/contracts/contract-dialog";
 import { ContractExpiryBadge } from "@/components/contracts/contract-badges";
 import { ContractAssetsTab, ContractLicensesTab } from "@/components/contracts/detail-tabs";
-import { DetailShell, DetailTitle, DetailTopBar, MetaRow, Notice, NotesBlock, RailCard } from "@/components/contracts/detail-bits";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
+import { Notice, NotesBlock } from "@/components/contracts/detail-bits";
 
 export const dynamic = "force-dynamic";
 

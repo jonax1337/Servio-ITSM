@@ -2,15 +2,13 @@ import { canReadConsoleTitle } from "@/lib/metadata-access";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { allowedTransitions } from "@/lib/workflow";
 import { requireUser, isAgent, hasRole, type Role } from "@/lib/session";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTitle, DetailTopBar, RailCard } from "@/components/detail-layout";
 import { StatusBadge } from "@/components/status-badge";
 import { ChangeProperties } from "@/components/changes/change-properties";
-import { RecordAffectedServices } from "@/components/services/affected-services";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
@@ -24,8 +22,6 @@ import { ChangeTabPanel } from "@/components/changes/tabs/change-tab-panel";
 import { buildChangeTabs, changeLinkCount, DEFAULT_CHANGE_TAB } from "@/components/changes/tabs/change-tabs";
 import { TabSkeleton } from "@/components/changes/tabs/tab-skeleton";
 import { WindowSummary } from "@/components/changes/tabs/window-summary";
-import { RecordAttachments } from "@/components/attachments/record-attachments";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CHANGE_STATUS_META, CHANGE_TYPE_META, RISK_META, changeRef } from "@/lib/constants";
 import type { SearchParams } from "@/lib/query";
 import { getFormatter, getT } from "@/lib/i18n/server";
@@ -105,105 +101,97 @@ export default async function ChangeDetailPage({
   });
   const active = resolveTab(sp, tabs, DEFAULT_CHANGE_TAB);
 
+  const rail = (
+    <>
+      <RailCard title={tc("properties")}>
+        <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} locked={locked} />
+      </RailCard>
+
+      <EntityCustomFields
+        entityType="CHANGE"
+        entityId={change.id}
+        defs={visibleCustomFields}
+        values={cfValues}
+        editable={isAgentUser}
+      />
+
+      <WindowSummary change={change} />
+    </>
+  );
+
   return (
-    <div data-viewport-pane className="grid gap-0 lg:h-full grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
-      {/* Main column — scrolls independently from the properties rail */}
-      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/changes" variant="ghost" size="icon-sm" aria-label={t("detail.back")}>
-            <ArrowLeft className="size-4" />
-          </LinkButton>
-          <span className="font-mono text-sm text-muted-foreground">
-            {changeRef(change.id)}
-          </span>
-          <StatusBadge map={CHANGE_TYPE_META} value={change.type} dot />
-          <ReleaseChip changeId={change.id} />
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-            {isAgentUser && change.status === "DRAFT" ? (
-              <SubmitForApproval
-                changeId={change.id}
-                isStandard={preAuthorized}
-                approverCount={change.approvals.length}
-                missing={missingForSubmit}
-              />
-            ) : null}
-            {isAgentUser && change.status !== "CANCELLED" && allowedStatuses?.includes("CANCELLED") ? <CancelChangeButton changeId={change.id} /> : null}
-            {canEdit ? (
-              <ChangeDetailsDialog
-                id={change.id}
-                title={change.title}
-                description={change.description}
-                descriptionHtml={change.descriptionHtml}
-              />
-            ) : null}
-            <StatusBadge map={RISK_META} value={change.risk} dot />
-            <StatusBadge map={CHANGE_STATUS_META} value={change.status} />
-          </div>
-        </div>
-
-        <ChangeConflicts changeId={change.id} variant="banner" />
-
-        <div className="p-4 sm:p-6">
-          <h1 className="font-display text-2xl font-semibold tracking-tight wrap-anywhere">
-            {change.title}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("detail.raised", { time: f.relative(change.createdAt) })}
-            {change.assignee ? <> · {t("detail.ownedBy", { name: change.assignee.name ?? change.assignee.email })}</> : null}
-          </p>
-
-          <EntityTabs
-            className="mt-4"
-            tabs={tabs}
-            active={active}
-            defaultTab={DEFAULT_CHANGE_TAB}
-            basePath={`/changes/${change.id}`}
-            searchParams={sp}
-            label={t("detail.sections")}
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/changes"
+        backLabel={t("detail.back")}
+        lead={
+          <>
+            <span className="font-mono text-sm text-muted-foreground">{changeRef(change.id)}</span>
+            <StatusBadge map={CHANGE_TYPE_META} value={change.type} dot />
+            <ReleaseChip changeId={change.id} />
+          </>
+        }
+      >
+        {isAgentUser && change.status === "DRAFT" ? (
+          <SubmitForApproval
+            changeId={change.id}
+            isStandard={preAuthorized}
+            approverCount={change.approvals.length}
+            missing={missingForSubmit}
           />
+        ) : null}
+        {isAgentUser && change.status !== "CANCELLED" && allowedStatuses?.includes("CANCELLED") ? <CancelChangeButton changeId={change.id} /> : null}
+        {canEdit ? (
+          <ChangeDetailsDialog
+            id={change.id}
+            title={change.title}
+            description={change.description}
+            descriptionHtml={change.descriptionHtml}
+          />
+        ) : null}
+        <StatusBadge map={RISK_META} value={change.risk} dot />
+        <StatusBadge map={CHANGE_STATUS_META} value={change.status} />
+      </DetailTopBar>
 
-          <div className="mt-4">
-            <Suspense key={active} fallback={<TabSkeleton />}>
-              <ChangeTabPanel
-                tab={active}
-                change={change}
-                approvals={approvals}
-                userId={me?.id ?? ""}
-                isAgent={isAgentUser}
-                canEdit={canEdit}
-                canManage={canManage}
-                isAdmin={me?.role === "ADMIN"}
-              />
-            </Suspense>
-          </div>
-        </div>
-      </div>
+      <ChangeConflicts changeId={change.id} variant="banner" />
 
-      {/* Sidebar */}
-      <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
-        <Card>
-          <CardHeader><CardTitle className="text-sm">{tc("properties")}</CardTitle></CardHeader>
-          <CardContent>
-            <ChangeProperties change={change} options={options} allowedStatuses={allowedStatuses} locked={locked} />
-          </CardContent>
-        </Card>
-
-        <EntityCustomFields
-          className="mt-4"
-          entityType="CHANGE"
-          entityId={change.id}
-          defs={visibleCustomFields}
-          values={cfValues}
-          editable={isAgentUser}
+      <div className="p-4 sm:p-6">
+        <DetailTitle
+          title={change.title}
+          subtitle={
+            <>
+              {t("detail.raised", { time: f.relative(change.createdAt) })}
+              {change.assignee ? <> · {t("detail.ownedBy", { name: change.assignee.name ?? change.assignee.email })}</> : null}
+            </>
+          }
         />
 
-        <WindowSummary className="mt-4" change={change} />
+        <EntityTabs
+          className="mt-4"
+          tabs={tabs}
+          active={active}
+          defaultTab={DEFAULT_CHANGE_TAB}
+          basePath={`/changes/${change.id}`}
+          searchParams={sp}
+          label={t("detail.sections")}
+        />
 
-        {/* Services hit through the change's affected CIs (read-only) */}
-        {isAgentUser ? <RecordAffectedServices className="mt-4" record={{ kind: "change", id: change.id }} /> : null}
-
-        <RecordAttachments className="mt-4" target={{ changeId: change.id }} role={me?.role ?? "USER"} />
-      </aside>
-    </div>
+        <div className="mt-4">
+          <Suspense key={active} fallback={<TabSkeleton />}>
+            <ChangeTabPanel
+              tab={active}
+              change={change}
+              approvals={approvals}
+              userId={me?.id ?? ""}
+              isAgent={isAgentUser}
+              canEdit={canEdit}
+              canManage={canManage}
+              isAdmin={me?.role === "ADMIN"}
+              role={me?.role ?? "USER"}
+            />
+          </Suspense>
+        </div>
+      </div>
+    </DetailShell>
   );
 }

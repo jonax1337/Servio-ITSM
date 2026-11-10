@@ -97,6 +97,30 @@ A single `--radius: 0.7rem` drives a derived scale in `@theme inline`:
 | `rounded-2xl` | `--radius * 1.8` |
 | `rounded-3xl` / `4xl` | `* 2.2` / `* 2.6` |
 
+### Controls — one height for everything interactive
+
+Every interactive control shares **one height** so a row of mixed controls (a search field,
+a select, a filter combobox and a button) always lines up. The heights are spacing tokens in
+the `@theme` block of [`app/globals.css`](../app/globals.css), so Tailwind exposes them as
+`h-control`, `min-h-control`, `size-control`, …:
+
+| Token | Value | Used by |
+| --- | --- | --- |
+| `--spacing-control` | `2rem` (32 px) | `Button` sizes `default` / `sm` / `lg` and `icon` / `icon-sm` / `icon-lg`, `Input`, `InputGroup`, `Combobox`, `MultiCombobox`, the topbar search |
+| `--spacing-control-compact` | `1.5rem` (24 px) | `Button` sizes `xs` / `icon-xs` only |
+
+Rules:
+
+- **Default to the default size.** `sm` and `lg` keep the control height and only change the
+  padding; they exist so older call sites stay valid. Do not pass `h-*` overrides to buttons.
+- **`xs` / `icon-xs` are for actions inside dense content only**: a table row, a chip, a list
+  row's reorder arrows, a message header ("Reply", "Forward"), an inline suggestion. Never
+  put a compact control next to a full-height one.
+- **Variant expresses weight, not size:** `default` for the one primary action of a view,
+  `outline` for secondary actions, `ghost` for tertiary/toolbar actions (it must still be a
+  `Button`, never a hand-rolled `<button>` with its own padding), `destructive` for deletes.
+- New controls (a custom trigger, a pill toggle) use `h-control` too.
+
 ### Base layer & utilities
 
 The `@layer base` block applies sensible global defaults: every element gets
@@ -368,12 +392,20 @@ experience. It gates on `requireRole("AGENT")`, then renders a
 - **[`AppSidebar`](../components/app-sidebar.tsx)** — collapsible-to-icon
   (`collapsible="icon"`) rail with the `Logo`/wordmark header and role-filtered nav
   groups from [`lib/nav.ts`](../lib/nav.ts) (`consoleNav` + `filterNav`). Active
-  state is derived from `usePathname`.
+  state is derived from `usePathname`. Each group label folds its group away; the
+  folded set is remembered per browser (`localStorage` key
+  `servio:nav-collapsed-groups`), the group holding the current page always stays
+  open, and the icon-only rail shows every item.
 - **[`AppTopbar`](../components/app-topbar.tsx)** — sticky, blurred bar with a
   sidebar trigger, breadcrumb built from the path (numeric segments become
   `#123`, cuid-like ids collapse to "Details"), and the right cluster:
   `CommandMenu`, `CreateMenu`, a notifications bell with unread count, `ThemeToggle`,
   and `UserMenu`.
+- **Record detail pages** share [`components/detail-layout.tsx`](../components/detail-layout.tsx):
+  `DetailShell` (main column + a 340 px / `xl` 380 px properties rail), `DetailTopBar`
+  (back link and identifying chips left, actions then state badges right), `DetailTitle`,
+  `RailCard` and `MetaRow` (label left, value right). Keep the rail to status, editable
+  properties, ownership and key dates; related records go in the main column's tabs.
 - **Split-pane detail pages** (ticket, asset, change, … and `/assistant`) mark their
   root with `data-viewport-pane` and size it `lg:h-full`, with `lg:min-h-0
   lg:overflow-y-auto` on each pane. The layout then locks `SidebarInset` to the

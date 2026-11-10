@@ -22,8 +22,8 @@ export function CreateMenu() {
           no divider. The chevron overlaps by 1px (-ml-px) so sub-pixel rounding
           can never open a hairline between them. */}
       <div data-slot="button-group" className="inline-flex items-center">
-        <LinkButton href="/tickets/new" size="lg" className="rounded-r-none">
-          <Plus className="size-4" /> {t("create")}
+        <LinkButton href="/tickets/new" size="lg" className="rounded-r-none" aria-label={t("create")}>
+          <Plus className="size-4" /> <span className="hidden lg:inline">{t("create")}</span>
         </LinkButton>
         <DropdownMenuTrigger
           render={

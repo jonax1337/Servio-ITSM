@@ -2,25 +2,15 @@ import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import {
-  ArrowLeft,
-  Mail,
-  Phone,
-  Building2,
-  Briefcase,
-  Users as UsersIcon,
-  Ticket as TicketIcon,
-  Server,
-  AtSign,
-} from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser, hasRole } from "@/lib/session";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
+import { EntityTabs, resolveTab } from "@/components/entity-tabs";
 import { StatusBadge, ToneBadge, VipBadge } from "@/components/status-badge";
 import { UserProperties } from "@/components/people/user-properties";
 import { PersonDialog } from "@/components/people/person-dialog";
+import { buildPersonTabs, DEFAULT_PERSON_TAB } from "@/components/people/person-tabs";
 import { UserAvatar } from "@/components/user-avatar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ROLE_META,
   GROUP_TYPE_META,
@@ -30,6 +20,7 @@ import {
   ASSET_STATUS_META,
   ticketRef,
 } from "@/lib/constants";
+import type { SearchParams } from "@/lib/query";
 import { getFormatter, getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -50,10 +41,12 @@ export async function generateMetadata({
 
 export default async function PersonDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const { id } = await params;
+  const [{ id }, sp] = await Promise.all([params, searchParams]);
   const me = await requireUser();
   const [t, f] = await Promise.all([getT("people"), getFormatter()]);
 
@@ -86,94 +79,103 @@ export default async function PersonDetailPage({
   const displayName = user.name ?? user.email;
   const secondaryEmails = user.secondaryEmails.map((e) => e.email);
 
+  const tabs = buildPersonTabs({
+    openTickets: openTickets.length,
+    assets: ownedAssets.length,
+    groups: user.memberships.length,
+  }).map((tab) => ({ ...tab, label: t(`tab.${tab.key}`) }));
+  const active = resolveTab(sp, tabs, DEFAULT_PERSON_TAB);
+
+  const rail = (
+    <>
+      <RailCard title={t("access")}>
+        <UserProperties
+          user={{
+            id: user.id,
+            role: user.role,
+            isActive: user.isActive,
+            isVip: user.isVip,
+          }}
+        />
+      </RailCard>
+
+      <RailCard title={t("contact")}>
+        <MetaRow label={t("email")}>{user.email}</MetaRow>
+        {secondaryEmails.length > 0 ? <MetaRow label={t("secondaryEmails")}>{secondaryEmails.join(", ")}</MetaRow> : null}
+        <MetaRow label={t("phone")}>{user.phone ?? "—"}</MetaRow>
+        <MetaRow label={t("jobTitle")}>{user.jobTitle ?? "—"}</MetaRow>
+        <MetaRow label={t("department")}>{user.department ?? "—"}</MetaRow>
+      </RailCard>
+
+      <RailCard title={t("details")}>
+        <MetaRow label={t("lastLogin")}>{user.lastLoginAt ? f.date(user.lastLoginAt, "dateTime") : t("never")}</MetaRow>
+        <MetaRow label={t("created")}>{f.date(user.createdAt)}</MetaRow>
+      </RailCard>
+    </>
+  );
+
   return (
-    <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
-      {/* Main column — scrolls independently from the properties rail */}
-      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/people" variant="ghost" size="icon-sm" aria-label={t("backToPeople")}>
-            <ArrowLeft className="size-4" />
-          </LinkButton>
-          <span className="text-sm text-muted-foreground">{t("title")}</span>
-          <div className="ml-auto flex items-center gap-2">
-            {hasRole(me.role, "ADMIN") ? (
-              <PersonDialog
-                person={{
-                  id: user.id, name: user.name, email: user.email,
-                  phone: user.phone, jobTitle: user.jobTitle, department: user.department,
-                  secondaryEmails: secondaryEmails,
-                  isServiceAccount: user.isServiceAccount,
-                  canApproveChanges: user.canApproveChanges,
-                }}
-                syncSourceName={user.syncSource?.name ?? null}
-              />
-            ) : null}
-            <StatusBadge map={ROLE_META} value={user.role} />
-            <span className="inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              <span
-                className={
-                  user.isActive
-                    ? "size-1.5 rounded-full bg-emerald-500"
-                    : "size-1.5 rounded-full bg-muted-foreground/40"
-                }
-              />
-              {user.isActive ? t("active") : t("inactive")}
-            </span>
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/people"
+        backLabel={t("backToPeople")}
+        lead={<span className="text-sm text-muted-foreground">{t("title")}</span>}
+      >
+        {hasRole(me.role, "ADMIN") ? (
+          <PersonDialog
+            person={{
+              id: user.id, name: user.name, email: user.email,
+              phone: user.phone, jobTitle: user.jobTitle, department: user.department,
+              secondaryEmails: secondaryEmails,
+              isServiceAccount: user.isServiceAccount,
+              canApproveChanges: user.canApproveChanges,
+            }}
+            syncSourceName={user.syncSource?.name ?? null}
+          />
+        ) : null}
+        <StatusBadge map={ROLE_META} value={user.role} />
+        <ToneBadge meta={user.isActive ? { label: t("active"), tone: "success" } : { label: t("inactive"), tone: "neutral" }} dot />
+      </DetailTopBar>
+
+      <div className="p-4 sm:p-6">
+        {/* Profile header */}
+        <div className="flex items-start gap-4">
+          <UserAvatar
+            name={user.name}
+            email={user.email}
+            image={user.image}
+            size="lg"
+            className="size-16 text-lg"
+          />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl font-semibold tracking-tight wrap-anywhere">
+                {displayName}
+              </h1>
+              {user.isVip ? <VipBadge /> : null}
+              {user.isServiceAccount ? <ToneBadge meta={{ label: t("serviceAccountBadge"), tone: "neutral" }} icon={false} /> : null}
+              {user.isServiceAccount && user.canApproveChanges ? <ToneBadge meta={{ label: t("serviceAccountApprovesBadge"), tone: "warning" }} icon={false} /> : null}
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {user.jobTitle ?? "—"}
+              {user.department ? ` · ${user.department}` : ""}
+            </p>
           </div>
         </div>
 
-        <div className="p-4 sm:p-6">
-          {/* Profile header */}
-          <div className="flex items-start gap-4">
-            <UserAvatar
-              name={user.name}
-              email={user.email}
-              image={user.image}
-              size="lg"
-              className="size-16 text-lg"
-            />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="font-display text-2xl font-semibold tracking-tight">
-                  {displayName}
-                </h1>
-                {user.isVip ? <VipBadge /> : null}
-                {user.isServiceAccount ? <ToneBadge meta={{ label: t("serviceAccountBadge"), tone: "neutral" }} icon={false} /> : null}
-                {user.isServiceAccount && user.canApproveChanges ? <ToneBadge meta={{ label: t("serviceAccountApprovesBadge"), tone: "warning" }} icon={false} /> : null}
-              </div>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {user.jobTitle ?? "—"}
-                {user.department ? ` · ${user.department}` : ""}
-              </p>
-            </div>
-          </div>
+        <EntityTabs
+          className="mt-6"
+          tabs={tabs}
+          active={active}
+          defaultTab={DEFAULT_PERSON_TAB}
+          basePath={`/people/${user.id}`}
+          searchParams={sp}
+          label={t("sections")}
+        />
 
-          {/* Contact rows */}
-          <div className="mt-6 grid gap-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2">
-            <ContactRow icon={Mail} label={t("email")} value={user.email} />
-            {secondaryEmails.length > 0 ? (
-              <ContactRow icon={AtSign} label={t("secondaryEmails")} value={secondaryEmails.join(", ")} />
-            ) : null}
-            <ContactRow icon={Phone} label={t("phone")} value={user.phone ?? "—"} />
-            <ContactRow
-              icon={Briefcase}
-              label={t("jobTitle")}
-              value={user.jobTitle ?? "—"}
-            />
-            <ContactRow
-              icon={Building2}
-              label={t("department")}
-              value={user.department ?? "—"}
-            />
-          </div>
-
-          {/* Open tickets this person has raised */}
-          <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <TicketIcon className="size-4 text-muted-foreground" />
-              {t("openTickets", { count: openTickets.length })}
-            </h2>
-            {openTickets.length === 0 ? (
+        <div className="mt-6">
+          {active === "tickets" ? (
+            openTickets.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("noOpenTickets")}</p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
@@ -191,16 +193,11 @@ export default async function PersonDetailPage({
                   </Link>
                 ))}
               </div>
-            )}
-          </div>
+            )
+          ) : null}
 
-          {/* Assets assigned to this person */}
-          <div className="mt-8">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
-              <Server className="size-4 text-muted-foreground" />
-              {t("assignedAssets", { count: ownedAssets.length })}
-            </h2>
-            {ownedAssets.length === 0 ? (
+          {active === "assets" ? (
+            ownedAssets.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("noAssets")}</p>
             ) : (
               <div className="overflow-hidden rounded-xl border bg-card">
@@ -219,106 +216,30 @@ export default async function PersonDetailPage({
                   </Link>
                 ))}
               </div>
-            )}
-          </div>
+            )
+          ) : null}
+
+          {active === "groups" ? (
+            user.memberships.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("noGroups")}</p>
+            ) : (
+              <div className="overflow-hidden rounded-xl border bg-card">
+                {user.memberships.map((m) => (
+                  <Link
+                    key={m.id}
+                    href={`/groups/${m.group.id}`}
+                    className="flex items-center gap-3 border-b px-4 py-3 last:border-b-0 hover:bg-accent"
+                  >
+                    <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: m.group.color }} />
+                    <span className="line-clamp-1 flex-1 text-sm font-medium">{m.group.name}</span>
+                    <StatusBadge map={GROUP_TYPE_META} value={m.group.type} dot={false} />
+                  </Link>
+                ))}
+              </div>
+            )
+          ) : null}
         </div>
       </div>
-
-      {/* Sidebar */}
-      <aside className="p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">{t("access")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <UserProperties
-              user={{
-                id: user.id,
-                role: user.role,
-                isActive: user.isActive,
-                isVip: user.isVip,
-              }}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <UsersIcon className="size-4 text-muted-foreground" />
-              {t("groupsCount", { count: user.memberships.length })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2 text-sm">
-            {user.memberships.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {t("noGroups")}
-              </p>
-            ) : (
-              user.memberships.map((m) => (
-                <Link
-                  key={m.id}
-                  href={`/groups/${m.group.id}`}
-                  className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 hover:border-primary/40"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: m.group.color }}
-                    />
-                    <span className="font-medium">{m.group.name}</span>
-                  </span>
-                  <StatusBadge map={GROUP_TYPE_META} value={m.group.type} dot={false} />
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="mt-4">
-          <CardHeader>
-            <CardTitle className="text-sm">{t("details")}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2.5 text-sm">
-            <Meta
-              label={t("lastLogin")}
-              value={user.lastLoginAt ? f.date(user.lastLoginAt, "dateTime") : t("never")}
-            />
-            <Meta label={t("created")} value={f.date(user.createdAt)} />
-          </CardContent>
-        </Card>
-      </aside>
-    </div>
-  );
-}
-
-function ContactRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border bg-card text-muted-foreground">
-        <Icon className="size-4" />
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="truncate font-medium">{value}</div>
-      </div>
-    </div>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium tabular-nums">{value}</span>
-    </div>
+    </DetailShell>
   );
 }

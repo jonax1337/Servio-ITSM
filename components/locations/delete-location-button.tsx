@@ -37,6 +37,7 @@ export function DeleteLocationButton({
       })}
       triggerLabel={t("delete.title")}
       triggerVariant="outline"
+      triggerSize="icon"
       triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
     >
       <Trash2 className="size-4" />

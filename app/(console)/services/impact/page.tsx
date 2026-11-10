@@ -37,7 +37,7 @@ export default async function ServiceImpactPage({ searchParams }: { searchParams
   return (
     <>
       <PageHeader icon={Radar} title={t("impactPage.title")} description={t("impactPage.description")}>
-        <LinkButton href="/services" variant="outline" size="sm">
+        <LinkButton href="/services" variant="outline">
           <ArrowLeft className="size-4" /> {t("backToServices")}
         </LinkButton>
       </PageHeader>

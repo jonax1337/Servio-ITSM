@@ -2,7 +2,7 @@ import { canReadConsoleTitle } from "@/lib/metadata-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowLeft, CalendarClock, Trash2 } from "lucide-react";
+import { CalendarClock, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireRole, hasRole } from "@/lib/session";
 import { getFormOptions } from "@/lib/data/options";
@@ -10,7 +10,7 @@ import { loadSchedules, onCallPersonAt, toScheduleInput, type LoadedSchedule } f
 import { buildTimeline, canRemoveOverride, localDate, type TimelineSegment } from "@/lib/oncall-rules";
 import { ONCALL_ROTATION_META, type OnCallRotationType } from "@/lib/constants";
 import { deleteOverride, deleteSchedule, setScheduleActive } from "@/lib/actions/oncall";
-import { LinkButton } from "@/components/link-button";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
 import { ConfirmButton } from "@/components/confirm-dialog";
 import { ToneBadge } from "@/components/status-badge";
 import { UserAvatar } from "@/components/user-avatar";
@@ -37,15 +37,6 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const schedule = await db.onCallSchedule.findUnique({ where: { id }, select: { name: true } });
   const t = await getT("oncall");
   return { title: schedule?.name ?? t("schedule") };
-}
-
-function Prop({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="text-sm">{children}</div>
-    </div>
-  );
 }
 
 /** Why nobody holds the schedule right now, in words a first-time reader can act on. */
@@ -126,188 +117,132 @@ export default async function OnCallSchedulePage({ params }: { params: Promise<{
       />
     ) : null;
 
+  const rail = (
+    <>
+      <RailCard title={tc("properties")}>
+        <MetaRow label={t("team")}>
+          <Link href={`/groups/${schedule.group.id}`} className="inline-flex items-center gap-2 hover:text-primary">
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: schedule.group.color }} aria-hidden />
+            {schedule.group.name}
+          </Link>
+        </MetaRow>
+        <MetaRow label={t("rotation")}>
+          {cadenceLabel(schedule.rotationType, schedule.customIntervalHours, t)}
+          {schedule.rotationType === "CUSTOM" ? "" : t("handingOffAt", { time: schedule.handoffTime })}
+        </MetaRow>
+        <MetaRow label={t("timeZone")}>{schedule.timezone}</MetaRow>
+        <MetaRow label={t("firstHandoff")}>{inZone(schedule.rotationStart)}</MetaRow>
+      </RailCard>
+    </>
+  );
+
   return (
-    <div data-viewport-pane className="grid gap-0 lg:h-full lg:grid-cols-[1fr_320px] lg:overflow-hidden">
-      {/* Main column: scrolls independently from the properties rail */}
-      <div className="min-w-0 border-b lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-6">
-          <LinkButton href="/oncall" variant="ghost" size="icon-sm" aria-label={t("backToOnCall")}>
-            <ArrowLeft className="size-4" />
-          </LinkButton>
-          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: schedule.group.color }} aria-hidden />
-          <Link href={`/groups/${schedule.group.id}`} className="text-sm font-medium hover:text-primary">{schedule.group.name}</Link>
-          <ToneBadge meta={rotationMeta} icon={false} />
-          <ToneBadge meta={activityMeta(schedule.isActive, tc)} dot />
-          {isManager ? (
-            <div className="ml-auto flex items-center gap-2">
-              <EditScheduleDialog scheduleId={schedule.id} initial={initial} groups={options.groups} agents={options.agents} />
-              <ConfirmButton
-                action={setScheduleActive}
-                fields={{ id: schedule.id, active: String(!schedule.isActive) }}
-                title={schedule.isActive ? t("deactivateTitle") : t("activateTitle")}
-                description={
-                  schedule.isActive
-                    ? t("deactivateDescription", { team: schedule.group.name, name: schedule.name })
-                    : t("activateDescription", { team: schedule.group.name, name: schedule.name })
-                }
-                confirmLabel={schedule.isActive ? t("deactivate") : t("activate")}
-                confirmVariant="default"
-                triggerVariant="outline"
-                triggerSize="default"
-              >
-                {schedule.isActive ? t("deactivate") : t("activate")}
-              </ConfirmButton>
-              <ConfirmButton
-                action={deleteSchedule}
-                fields={{ id: schedule.id }}
-                title={t("deleteTitle")}
-                description={t("deleteDescription", { name: schedule.name, team: schedule.group.name })}
-                confirmLabel={t("deleteSchedule")}
-                triggerVariant="outline"
-                triggerSize="icon-sm"
-                triggerLabel={t("deleteSchedule")}
-                triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
-              >
-                <Trash2 className="size-4" />
-              </ConfirmButton>
-            </div>
-          ) : null}
+    <DetailShell aside={rail}>
+      <DetailTopBar
+        backHref="/oncall"
+        backLabel={t("backToOnCall")}
+        lead={
+          <>
+            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: schedule.group.color }} aria-hidden />
+            <Link href={`/groups/${schedule.group.id}`} className="text-sm font-medium hover:text-primary">{schedule.group.name}</Link>
+            <ToneBadge meta={rotationMeta} icon={false} />
+          </>
+        }
+      >
+        {isManager ? (
+          <>
+            <EditScheduleDialog scheduleId={schedule.id} initial={initial} groups={options.groups} agents={options.agents} />
+            <ConfirmButton
+              action={setScheduleActive}
+              fields={{ id: schedule.id, active: String(!schedule.isActive) }}
+              title={schedule.isActive ? t("deactivateTitle") : t("activateTitle")}
+              description={
+                schedule.isActive
+                  ? t("deactivateDescription", { team: schedule.group.name, name: schedule.name })
+                  : t("activateDescription", { team: schedule.group.name, name: schedule.name })
+              }
+              confirmLabel={schedule.isActive ? t("deactivate") : t("activate")}
+              confirmVariant="default"
+              triggerVariant="outline"
+              triggerSize="default"
+            >
+              {schedule.isActive ? t("deactivate") : t("activate")}
+            </ConfirmButton>
+            <ConfirmButton
+              action={deleteSchedule}
+              fields={{ id: schedule.id }}
+              title={t("deleteTitle")}
+              description={t("deleteDescription", { name: schedule.name, team: schedule.group.name })}
+              confirmLabel={t("deleteSchedule")}
+              triggerVariant="outline"
+              triggerSize="icon"
+              triggerLabel={t("deleteSchedule")}
+              triggerClassName="text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+            >
+              <Trash2 className="size-4" />
+            </ConfirmButton>
+          </>
+        ) : null}
+        <ToneBadge meta={activityMeta(schedule.isActive, tc)} dot />
+      </DetailTopBar>
+
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div>
+          <DetailTitle title={schedule.name} subtitle={schedule.description ?? t("rotationFor", { team: schedule.group.name })} />
         </div>
 
-        <div className="grid gap-4 p-4 sm:p-6">
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight">{schedule.name}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {schedule.description ?? t("rotationFor", { team: schedule.group.name })}
-            </p>
-          </div>
-
-          <Card>
-            <CardHeader><CardTitle className="text-sm">{t("colOnCallNow")}</CardTitle></CardHeader>
-            <CardContent className="grid gap-2">
-              {holder ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <UserAvatar name={holder.name} email={holder.email} />
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{holder.name ?? holder.email}</div>
-                      <div className="text-xs text-muted-foreground">{t("until", { date: inZone(holderUntil) })}</div>
-                    </div>
-                  </div>
-                  {nextUp ? <p className="text-xs text-muted-foreground">{nextUp}</p> : null}
-                  {holder.isActive ? null : (
-                    <p className="text-xs text-destructive">{t("accountDeactivated")}</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm font-medium text-destructive">{nobodyMessage(schedule, now, isManager, t)}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className={schedule.isActive ? undefined : "opacity-60"}>
-            <CardHeader>
-              <CardTitle className="text-sm">{t("nextDays", { days: TIMELINE_DAYS })}</CardTitle>
-              {schedule.isActive ? null : <p className="text-xs text-muted-foreground">{t("inactivePlan")}</p>}
-            </CardHeader>
-            <CardContent>
-              <OnCallTimeline
-                segments={timeline}
-                people={people}
-                from={now}
-                to={timelineEnd}
-                timezone={schedule.timezone}
-                now={now}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="grid-cols-[1fr_auto] items-center">
-              <div className="grid gap-1">
-                <CardTitle className="text-sm">{t("overrides")}</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {t("overridesHint")}
-                </p>
-              </div>
-              {overrideAction}
-            </CardHeader>
-            <CardContent>
-              {schedule.overrides.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {overrideAction ? t("noOverridesWithAction") : t("noOverrides")}
-                </p>
-              ) : (
-                <ul className="divide-y">
-                  {schedule.overrides.map((o) => (
-                    <li key={o.id} className="flex items-start gap-2.5 py-2 text-sm first:pt-0 last:pb-0">
-                      <UserAvatar name={o.user.name} email={o.user.email} size="xs" className="mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="truncate font-medium">{o.user.name ?? o.user.email}</span>
-                          {o.replaces ? <span className="text-muted-foreground">{t("covers", { name: o.replaces.name ?? o.replaces.email })}</span> : null}
-                          {o.startsAt <= now ? <ToneBadge meta={{ label: t("inEffect"), tone: "info" }} icon={false} /> : null}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <CalendarClock className="size-3" />
-                          {inZone(o.startsAt)} – {inZone(o.endsAt)}
-                        </div>
-                        {o.reason ? <div className="text-xs text-muted-foreground">{o.reason}</div> : null}
-                      </div>
-                      {canRemoveOverride({ id: me.id, isManager }, { replacesUserId: o.replaces?.id ?? null }) ? (
-                        <ConfirmButton
-                          action={deleteOverride}
-                          fields={{ id: o.id, scheduleId: schedule.id }}
-                          title={t("removeOverrideTitle")}
-                          description={t("removeOverrideDescription")}
-                          confirmLabel={t("remove")}
-                          triggerVariant="ghost"
-                          triggerLabel={t("removeOverride")}
-                        >
-                          <Trash2 className="size-4 text-muted-foreground" />
-                        </ConfirmButton>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Sidebar */}
-      <aside className="grid content-start gap-4 p-4 sm:p-6 lg:min-h-0 lg:overflow-y-auto">
         <Card>
-          <CardHeader><CardTitle className="text-sm">{tc("properties")}</CardTitle></CardHeader>
-          <CardContent className="grid gap-4">
-            <Prop label={t("team")}>
-              <Link href={`/groups/${schedule.group.id}`} className="inline-flex items-center gap-2 font-medium hover:text-primary">
-                <span className="size-2.5 rounded-full" style={{ backgroundColor: schedule.group.color }} aria-hidden />
-                {schedule.group.name}
-              </Link>
-            </Prop>
-            <Prop label={t("rotation")}>
-              {cadenceLabel(schedule.rotationType, schedule.customIntervalHours, t)}
-              {schedule.rotationType === "CUSTOM" ? "" : t("handingOffAt", { time: schedule.handoffTime })}
-            </Prop>
-            <Prop label={t("timeZone")}>{schedule.timezone}</Prop>
-            <Prop label={t("firstHandoff")}>{inZone(schedule.rotationStart)}</Prop>
+          <CardHeader><CardTitle className="text-sm">{t("colOnCallNow")}</CardTitle></CardHeader>
+          <CardContent className="grid gap-2">
+            {holder ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <UserAvatar name={holder.name} email={holder.email} />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{holder.name ?? holder.email}</div>
+                    <div className="text-xs text-muted-foreground">{t("until", { date: inZone(holderUntil) })}</div>
+                  </div>
+                </div>
+                {nextUp ? <p className="text-xs text-muted-foreground">{nextUp}</p> : null}
+                {holder.isActive ? null : (
+                  <p className="text-xs text-destructive">{t("accountDeactivated")}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm font-medium text-destructive">{nobodyMessage(schedule, now, isManager, t)}</p>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={schedule.isActive ? undefined : "opacity-60"}>
+          <CardHeader>
+            <CardTitle className="text-sm">{t("nextDays", { days: TIMELINE_DAYS })}</CardTitle>
+            {schedule.isActive ? null : <p className="text-xs text-muted-foreground">{t("inactivePlan")}</p>}
+          </CardHeader>
+          <CardContent>
+            <OnCallTimeline
+              segments={timeline}
+              people={people}
+              from={now}
+              to={timelineEnd}
+              timezone={schedule.timezone}
+              now={now}
+            />
+          </CardContent>
+        </Card>
+
+      <Card>
           <CardHeader>
             <CardTitle className="text-sm">{t("rotationOrder", { count: schedule.members.length })}</CardTitle>
             <p className="text-xs text-muted-foreground">{t("rotationOrderHint")}</p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="text-sm">
             {schedule.members.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t("noOneInRotation")}</p>
+              <p className="text-muted-foreground">{t("noOneInRotation")}</p>
             ) : (
               <ol className="grid gap-2">
                 {schedule.members.map((m, index) => (
-                  <li key={m.id} className="flex items-center gap-2.5 text-sm">
+                  <li key={m.id} className="flex items-center gap-2.5">
                     <span className="w-4 text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                     <UserAvatar name={m.name} email={m.email} size="xs" />
                     <span className="min-w-0 flex-1 truncate">{m.name ?? m.email}</span>
@@ -320,7 +255,59 @@ export default async function OnCallSchedulePage({ params }: { params: Promise<{
             )}
           </CardContent>
         </Card>
-      </aside>
-    </div>
+
+        <Card>
+          <CardHeader className="grid-cols-[1fr_auto] items-center">
+            <div className="grid gap-1">
+              <CardTitle className="text-sm">{t("overrides")}</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {t("overridesHint")}
+              </p>
+            </div>
+            {overrideAction}
+          </CardHeader>
+          <CardContent>
+            {schedule.overrides.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {overrideAction ? t("noOverridesWithAction") : t("noOverrides")}
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {schedule.overrides.map((o) => (
+                  <li key={o.id} className="flex items-start gap-2.5 py-2 text-sm first:pt-0 last:pb-0">
+                    <UserAvatar name={o.user.name} email={o.user.email} size="xs" className="mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="truncate font-medium">{o.user.name ?? o.user.email}</span>
+                        {o.replaces ? <span className="text-muted-foreground">{t("covers", { name: o.replaces.name ?? o.replaces.email })}</span> : null}
+                        {o.startsAt <= now ? <ToneBadge meta={{ label: t("inEffect"), tone: "info" }} icon={false} /> : null}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <CalendarClock className="size-3" />
+                        {inZone(o.startsAt)} – {inZone(o.endsAt)}
+                      </div>
+                      {o.reason ? <div className="text-xs text-muted-foreground">{o.reason}</div> : null}
+                    </div>
+                    {canRemoveOverride({ id: me.id, isManager }, { replacesUserId: o.replaces?.id ?? null }) ? (
+                      <ConfirmButton
+                        action={deleteOverride}
+                        fields={{ id: o.id, scheduleId: schedule.id }}
+                        title={t("removeOverrideTitle")}
+                        description={t("removeOverrideDescription")}
+                        confirmLabel={t("remove")}
+                        triggerVariant="ghost"
+                        triggerLabel={t("removeOverride")}
+                      >
+                        <Trash2 className="size-4 text-muted-foreground" />
+                      </ConfirmButton>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </DetailShell>
   );
 }

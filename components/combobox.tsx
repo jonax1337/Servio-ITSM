@@ -116,7 +116,7 @@ export function Combobox({
               className={cn(
                 // h-auto + min-h keeps single-line rows compact but lets a two-line
                 // person (name over email) grow the trigger.
-                "h-auto min-h-8 w-full justify-between gap-2 rounded-md py-1 font-normal data-[pending]:opacity-70",
+                "h-auto min-h-control w-full justify-between gap-2 rounded-md py-1 font-normal data-[pending]:opacity-70",
                 !selected && "text-muted-foreground",
                 className,
               )}

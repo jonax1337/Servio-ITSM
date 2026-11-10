@@ -3,6 +3,7 @@ import { searchAttachableCis } from "@/lib/actions/changes";
 import { computeImpact } from "@/lib/cmdb-graph";
 import { blastRadiusRisk } from "@/lib/change-brief-rules";
 import { AffectedCiPanel, type ChangeImpact } from "@/components/changes/affected-ci-panel";
+import { RecordAffectedServices } from "@/components/services/affected-services";
 import type { ChangeTabContext } from "@/components/changes/tabs/types";
 
 /**
@@ -36,7 +37,7 @@ export async function ImpactTab({ change, isAgent }: ChangeTabContext) {
   const impact = await impactOf(affectedIds);
 
   return (
-    <div className="[&>div]:mt-0">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 [&>div]:mt-0">
       <AffectedCiPanel
         changeId={change.id}
         affected={affectedLinks.map((a) => ({
@@ -49,6 +50,8 @@ export async function ImpactTab({ change, isAgent }: ChangeTabContext) {
         searchAssets={searchAttachableCis.bind(null, change.id)}
         editable={isAgent}
       />
+      {/* Services hit through the affected CIs (read-only) */}
+      {isAgent ? <RecordAffectedServices record={{ kind: "change", id: change.id }} /> : null}
     </div>
   );
 }

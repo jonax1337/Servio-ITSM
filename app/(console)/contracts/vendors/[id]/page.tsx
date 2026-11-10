@@ -13,7 +13,8 @@ import { ConfirmButton } from "@/components/confirm-dialog";
 import { EntityTabs, resolveTab, type EntityTab } from "@/components/entity-tabs";
 import { VendorDialog } from "@/components/contracts/vendor-dialog";
 import { VendorContractsTab, VendorLicensesTab } from "@/components/contracts/detail-tabs";
-import { DetailShell, DetailTitle, DetailTopBar, MetaRow, NotesBlock, RailCard } from "@/components/contracts/detail-bits";
+import { DetailShell, DetailTitle, DetailTopBar, MetaRow, RailCard } from "@/components/detail-layout";
+import { NotesBlock } from "@/components/contracts/detail-bits";
 
 export const dynamic = "force-dynamic";
 

@@ -13,4 +13,6 @@ export type ChangeTabContext = {
   /** MANAGER+ (curates the approval board). */
   canManage: boolean;
   isAdmin: boolean;
+  /** Session role, for the attachment rules (USER when there is no session). */
+  role: string;
 };

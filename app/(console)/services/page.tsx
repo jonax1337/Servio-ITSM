@@ -78,7 +78,7 @@ export default async function ServicesPage({
         title={t("title")}
         description={t("description")}
       >
-        <LinkButton href="/services/impact" variant="outline" size="sm">
+        <LinkButton href="/services/impact" variant="outline">
           <Radar className="size-4" /> {t("impact.open")}
         </LinkButton>
         {canManage ? <CreateServiceDialog options={options} /> : null}

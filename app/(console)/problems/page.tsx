@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { getFormOptions } from "@/lib/data/options";
 import { requireUser } from "@/lib/session";
 import { refSearchWhere } from "@/lib/ref-search";
-import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
+import { PAGE_SIZE, type SearchParams, type SortDir, getPage, getParam, listSort } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { CreateProblemDialog } from "@/components/problems/create-problem-dialog";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -38,6 +38,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 export const dynamic = "force-dynamic";
 
+const SORT_KEYS = ["id", "title", "status", "priority", "assignee", "incidents", "createdAt"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+const DEFAULT_SORT: { sort: SortKey; dir: SortDir } = { sort: "id", dir: "desc" };
+
 export default async function ProblemsPage({
   searchParams,
 }: {
@@ -62,9 +66,8 @@ export default async function ProblemsPage({
   if (status && status !== "all") where.status = status;
   if (priority && priority !== "all") where.priority = priority;
 
-  const sort = getParam(sp, "sort") ?? "createdAt";
-  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
-  const ORDER: Record<string, Prisma.ProblemOrderByWithRelationInput> = {
+  const { sort, dir } = listSort(sp, SORT_KEYS, DEFAULT_SORT);
+  const ORDER: Record<SortKey, Prisma.ProblemOrderByWithRelationInput> = {
     id: { id: dir },
     title: { title: dir },
     status: { status: dir },
@@ -73,7 +76,8 @@ export default async function ProblemsPage({
     incidents: { tickets: { _count: dir } },
     createdAt: { createdAt: dir },
   };
-  const orderBy = ORDER[sort] ?? ORDER.createdAt;
+  // Ties fall back to the id, so equal values keep a stable order across pages.
+  const orderBy = sort === "id" ? [ORDER.id] : [ORDER[sort], { id: "desc" as const }];
 
   const [total, problems] = await Promise.all([
     db.problem.count({ where }),
@@ -84,7 +88,7 @@ export default async function ProblemsPage({
         category: true,
         _count: { select: { tickets: true } },
       },
-      orderBy: [orderBy],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),

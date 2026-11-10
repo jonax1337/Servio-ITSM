@@ -11,7 +11,7 @@ import { slaCell } from "@/lib/sla-column";
 import { SAVED_VIEW_KEYS } from "@/lib/saved-view-filters";
 import { TicketsTable } from "@/components/tickets/tickets-table";
 import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
-import { findTicketWindow, loadTicketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
+import { DEFAULT_TICKET_SORT, findTicketWindow, loadTicketListQuery, TICKET_LIST_PARAMS } from "@/lib/ticket-list";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -51,7 +51,7 @@ export default async function TicketsPage({
   // and matching the dashboard widgets' drill-down params.
   const query = await loadTicketListQuery(sp);
   const { where } = query;
-  const sort = getParam(sp, "sort") ?? "updatedAt";
+  const sort = getParam(sp, "sort") ?? DEFAULT_TICKET_SORT;
   const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
 
   // "Export CSV" carries the current filters/search/sort through to /api/export.

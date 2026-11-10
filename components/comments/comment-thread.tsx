@@ -264,7 +264,7 @@ export function CommentThread({
             <div key={c.id} className="group flex gap-3">
               <UserAvatar name={c.author} className="shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-sm font-medium">{c.author}</span>
                   {forwarded ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
@@ -281,16 +281,18 @@ export function CommentThread({
                   ) : null}
                   <span className="text-xs text-muted-foreground"><LocalTime date={c.createdAt} render={timeAgo} /></span>
                   {(emailReply || enableForward) && !forwarded ? (
-                    <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="ml-auto flex items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                       {emailReply ? (
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="xs"
                           onClick={() => replyToMessage(c)}
-                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+                          className="text-muted-foreground"
                           title={t("comments.replyToMessage")}
                         >
-                          <Reply className="size-3.5" /> {t("comments.reply")}
-                        </button>
+                          <Reply /> {t("comments.reply")}
+                        </Button>
                       ) : null}
                       {enableForward ? (
                         <ForwardMessageDialog ticketId={entityId} comment={{ id: c.id, author: c.author, bodyHtml: c.bodyHtml, body: c.body }} />
@@ -332,7 +334,7 @@ export function CommentThread({
                 <Lock className="size-4" /> {t("comments.addNote")}
               </Button>
               {anchor ? (
-                <ForwardMessageDialog ticketId={entityId} comment={{ id: anchor.id, author: anchor.author, bodyHtml: anchor.bodyHtml, body: anchor.body }} />
+                <ForwardMessageDialog size="sm" ticketId={entityId} comment={{ id: anchor.id, author: anchor.author, bodyHtml: anchor.bodyHtml, body: anchor.body }} />
               ) : null}
             </div>
           ) : null}

@@ -75,7 +75,7 @@ export function DashboardPicker({
         size="sm"
         className="w-auto min-w-[13rem]"
       />
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)}>
         <Plus className="size-4" /> {t("newDashboard")}
       </Button>
 

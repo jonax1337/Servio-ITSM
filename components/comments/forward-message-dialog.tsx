@@ -21,9 +21,12 @@ import { useServerMessage, useT } from "@/lib/i18n/client";
 export function ForwardMessageDialog({
   ticketId,
   comment,
+  size = "xs",
 }: {
   ticketId: number;
   comment: { id: string; author: string; bodyHtml: string | null; body: string };
+  /** Trigger size: compact inside a message header, `sm` next to the composer's buttons. */
+  size?: "xs" | "sm";
 }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<ForwardState>();
@@ -45,14 +48,16 @@ export function ForwardMessageDialog({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size={size}
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground"
         title={t("forward.thisMessage")}
       >
-        <Forward className="size-3.5" /> {t("forward.forward")}
-      </button>
+        <Forward /> {t("forward.forward")}
+      </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">

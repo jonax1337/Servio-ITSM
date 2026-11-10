@@ -6,7 +6,9 @@
 const nav = {
   "group.Overview": "Overview",
   "group.Service Desk": "Service Desk",
-  "group.Catalog": "Catalog",
+  "group.Change & Release": "Change & Release",
+  "group.Operations": "Operations",
+  "group.Services": "Services",
   "group.CMDB": "CMDB",
   "group.Organisation": "Organisation",
   "group.Administration": "Administration",

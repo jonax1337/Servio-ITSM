@@ -5,7 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { refSearchWhere } from "@/lib/ref-search";
 import { hasRole, requireUser } from "@/lib/session";
-import { getParam, getPage, PAGE_SIZE, type SearchParams } from "@/lib/query";
+import { PAGE_SIZE, type SearchParams, type SortDir, getPage, getParam, listSort } from "@/lib/query";
 import { PageHeader, PageBody } from "@/components/page-header";
 import { LinkButton } from "@/components/link-button";
 import { ListToolbar, type FilterDef } from "@/components/list-toolbar";
@@ -39,6 +39,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 export const dynamic = "force-dynamic";
 
+const SORT_KEYS = ["id", "title", "status", "plannedStart", "assignee", "updatedAt"] as const;
+type SortKey = (typeof SORT_KEYS)[number];
+const DEFAULT_SORT: { sort: SortKey; dir: SortDir } = { sort: "id", dir: "desc" };
+
 export default async function ChangesPage({
   searchParams,
 }: {
@@ -59,9 +63,8 @@ export default async function ChangesPage({
   if (type && type !== "all") where.type = type;
   if (risk && risk !== "all") where.risk = risk;
 
-  const sort = getParam(sp, "sort") ?? "updatedAt";
-  const dir: "asc" | "desc" = getParam(sp, "dir") === "asc" ? "asc" : "desc";
-  const ORDER: Record<string, Prisma.ChangeOrderByWithRelationInput> = {
+  const { sort, dir } = listSort(sp, SORT_KEYS, DEFAULT_SORT);
+  const ORDER: Record<SortKey, Prisma.ChangeOrderByWithRelationInput> = {
     id: { id: dir },
     title: { title: dir },
     status: { status: dir },
@@ -69,14 +72,15 @@ export default async function ChangesPage({
     assignee: { assignee: { name: dir } },
     updatedAt: { updatedAt: dir },
   };
-  const orderBy = ORDER[sort] ?? ORDER.updatedAt;
+  // Ties fall back to the id, so equal values keep a stable order across pages.
+  const orderBy = sort === "id" ? [ORDER.id] : [ORDER[sort], { id: "desc" as const }];
 
   const [total, changes] = await Promise.all([
     db.change.count({ where }),
     db.change.findMany({
       where,
       include: { assignee: true, category: true },
-      orderBy: [orderBy],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),

@@ -20,7 +20,7 @@ export function PageHeader({
         className,
       )}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-0 items-start gap-3">
         {Icon ? (
           <div className="mt-0.5 grid size-9 place-items-center rounded-lg border bg-card text-primary">
             <Icon className="size-4.5" />
@@ -36,7 +36,7 @@ export function PageHeader({
         </div>
       </div>
       {children ? (
-        <div className="flex shrink-0 items-center gap-2">{children}</div>
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">{children}</div>
       ) : null}
     </div>
   );

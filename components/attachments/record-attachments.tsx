@@ -13,7 +13,7 @@ function kindOf(target: RecordTarget): RecordTargetKind {
 }
 
 /**
- * The files of a change, problem, asset or license, for the detail page's rail
+ * The files of a change, problem, asset or license, for the detail page's overview tab
  * (Server Component, loads its own rows). Agents read them; uploading and
  * removing follows the server rule (any agent, licenses MANAGER+), so the
  * upload route and deleteAttachment would refuse what this hides anyway.
