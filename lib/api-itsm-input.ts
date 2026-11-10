@@ -119,6 +119,8 @@ export const problemCreateSchema = z.strictObject({
   assignee_id: id.optional(),
   group_id: id.optional(),
   category_id: id.optional(),
+  /** The configuration items the problem affects; the services they run are derived from them. */
+  asset_ids: z.array(id).max(200).optional(),
   custom_fields: customFields.optional(),
 });
 
@@ -133,6 +135,8 @@ export const problemPatchSchema = z
     category_id: nullableId.optional(),
     root_cause: text.nullable().optional(),
     workaround: text.nullable().optional(),
+    /** Replaces the problem's affected CIs; [] removes them all. */
+    asset_ids: z.array(id).max(200).optional(),
   })
   .refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" });
 
@@ -223,6 +227,7 @@ export function problemCreateForm(b: ProblemCreate): FormData {
       assigneeId: b.assignee_id,
       groupId: b.group_id,
       categoryId: b.category_id,
+      assetIds: b.asset_ids,
     },
     b.custom_fields,
   );
@@ -234,7 +239,8 @@ export type EditStep =
   | { kind: "field"; fields: string[]; field: string; value: string | null }
   | { kind: "text"; fields: string[]; field: string; value: string | null }
   | { kind: "window"; fields: string[]; plannedStart?: string | null; plannedEnd?: string | null; reason?: string; justification?: string }
-  | { kind: "problem"; fields: string[]; problemId: number | null };
+  | { kind: "problem"; fields: string[]; problemId: number | null }
+  | { kind: "assets"; fields: string[]; assetIds: string[] };
 
 const CHANGE_FIELDS = { type: "type", risk: "risk", priority: "priority", impact: "impact", assignee_id: "assigneeId", group_id: "groupId", category_id: "categoryId" } as const;
 const CHANGE_TEXTS = { reason: "reason", implementation_plan: "implementationPlan", rollback_plan: "rollbackPlan" } as const;
@@ -289,6 +295,7 @@ export function problemEditSteps(b: ProblemPatch): EditStep[] {
     const value = b[key];
     if (value !== undefined) steps.push({ kind: "text", fields: [key], field: PROBLEM_TEXTS[key], value });
   }
+  if (b.asset_ids !== undefined) steps.push({ kind: "assets", fields: ["asset_ids"], assetIds: b.asset_ids });
   return steps;
 }
 
@@ -300,7 +307,7 @@ export function problemEditSteps(b: ProblemPatch): EditStep[] {
 export function refusalStatus(message: string): 403 | 404 | 409 | 422 {
   if (/not found/i.test(message)) return 404;
   if (/not authori[sz]ed|not signed in|only managers|only the assigned|cannot change the approval board|own or created|cannot self-approve|can't change this ticket|requires manager approval|different reviewer than its author/i.test(message)) return 403;
-  if (/invalid request|isn't valid|must be at least|must come after|must be a member|needs a comment/i.test(message)) return 422;
+  if (/invalid request|isn't valid|configuration items no longer exists|must be at least|must come after|must be a member|needs a comment/i.test(message)) return 422;
   return 409;
 }
 

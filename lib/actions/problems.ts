@@ -16,6 +16,7 @@ import { canActOnTicket } from "@/lib/authz";
 import { problemTraits } from "@/lib/ai-insights-rules";
 import { problemFieldsCheck } from "@/lib/ai-insights-handling";
 import { linkTicketsToProblem, NONE_LINKABLE, NothingToLink } from "@/lib/problem-linking";
+import { distinctIds } from "@/lib/utils";
 import { findSimilarTickets } from "@/lib/ai-similarity-search";
 import {
   PROBLEM_STATUSES,
@@ -84,8 +85,19 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   if (!checked.ok) return { error: checked.error };
   const customFields = checked.values;
 
+  // Affected CIs (the REST API sends `asset_ids`): all of them have to exist.
+  const assetIds = distinctIds(formData.getAll("assetIds"));
+  if (assetIds.length && (await db.asset.count({ where: { id: { in: assetIds } } })) !== assetIds.length) {
+    return { error: UNKNOWN_AFFECTED_CI, fieldErrors: { assetIds: [UNKNOWN_AFFECTED_CI] } };
+  }
+
   const problem = await db.problem.create({
-    data: { ...data, ...resolvedAtPatch(data.status, new Date(), null), ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}) },
+    data: {
+      ...data,
+      ...resolvedAtPatch(data.status, new Date(), null),
+      ...(Object.keys(customFields).length ? { customFields: JSON.stringify(customFields) } : {}),
+      ...(assetIds.length ? { assets: { create: assetIds.map((assetId) => ({ assetId })) } } : {}),
+    },
   });
 
   await writeAudit({ userId: me.id, action: "CREATE", entity: "Problem", entityId: problem.id, summary: `Created problem "${problem.title}"` });
@@ -97,6 +109,8 @@ export async function createProblem(_prev: ActionState, formData: FormData): Pro
   if (apiActorUserId()) return { createdId: problem.id };
   redirect(`/problems/${problem.id}`);
 }
+
+const UNKNOWN_AFFECTED_CI = "One of the selected configuration items no longer exists.";
 
 const MAX_RAISED_TICKETS = 200;
 const MAX_TITLE_CHARS = 160;

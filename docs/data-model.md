@@ -157,6 +157,7 @@ releases a claim held by a ticket that is no longer open the next time the key i
 | `ServiceAsset` | Service ↔ supporting-CI join (CMDB service mapping) | composite PK `(serviceId, assetId)`, `createdAt` |
 | `ServiceDependency` | Service → service dependency: `fromService` depends on `toService` (an outage of `toService` affects `fromService`) | `(fromServiceId, toServiceId)` unique, `toServiceId` indexed, `note`, `createdAt`; both ends `Cascade`. Self-dependencies and cycles are refused by every writer (`lib/service-graph-rules.ts`), see [services.md](./services.md) |
 | `ChangeAsset` | Change ↔ affected-CI join (attach/detach via `lib/actions/change-assets.ts`; feeds automated impact/risk) | composite PK `(changeId, assetId)` |
+| `ProblemAsset` | Problem ↔ affected-CI join (`lib/actions/problem-assets.ts`; feeds the problem's affected services) | composite PK `(problemId, assetId)`; `onDelete: Cascade` on both sides |
 
 ### Locations
 
@@ -279,7 +280,8 @@ New columns on existing models: `Ticket.slaNudgedAt` (at-most-once SLA nudge mar
 (`SetNull`), `Change.templateId` (`SetNull`) and an index on `Change(plannedStart, plannedEnd)` for calendar and
 conflict queries. `EscalationStep.action` gained `NOTIFY_ONCALL` and `REASSIGN_ONCALL` (no new column: the target is
 the current on-call of the ticket's team). A change has no service column; its services are those of its affected CIs
-(`ChangeAsset` → `ServiceAsset`).
+(`ChangeAsset` → `ServiceAsset`). A problem's services come from its own affected CIs (`ProblemAsset`) together with
+the CIs of its linked incidents and changes.
 
 At-most-once markers in this group: `Ticket.slaNudgedAt`, `Contract.renewalNotifiedFor`,
 `SoftwareLicense.overAllocatedNotifiedAt`, `AiInsight.dedupeKey`, `StatusIncident.ticketId`,

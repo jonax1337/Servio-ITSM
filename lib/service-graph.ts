@@ -82,11 +82,12 @@ export async function changeAffectedServices(changeId: number) {
   return servicesAffectedByAssets(links.map((l) => l.assetId));
 }
 
-/** The affected services of a problem, from the CIs of its linked incidents and changes. */
+/** The affected services of a problem, from its own affected CIs and those of its linked incidents and changes. */
 export async function problemAffectedServices(problemId: number) {
-  const [tickets, changes] = await Promise.all([
+  const [own, tickets, changes] = await Promise.all([
+    db.problemAsset.findMany({ where: { problemId }, select: { assetId: true } }),
     db.ticketAsset.findMany({ where: { ticket: { problemId } }, select: { assetId: true } }),
     db.changeAsset.findMany({ where: { change: { problemId } }, select: { assetId: true } }),
   ]);
-  return servicesAffectedByAssets([...new Set([...tickets, ...changes].map((l) => l.assetId))]);
+  return servicesAffectedByAssets([...new Set([...own, ...tickets, ...changes].map((l) => l.assetId))]);
 }

@@ -115,6 +115,8 @@ const assets: Translations<typeof en> = {
   "work.addedToChange": "Zum Change hinzugefügt",
   "work.inactiveHint": "Außer Betrieb genommene oder entsorgte Assets können keinen neuen Changes hinzugefügt werden.",
   "work.changesEmpty": "Keine Changes betreffen dieses Asset.",
+  "work.problemsHeading": "Probleme, die dieses Asset betreffen · {count}",
+  "work.problemsEmpty": "Keine Probleme betreffen dieses Asset.",
   "work.removedFromChange": "Aus dem Change entfernt",
   "contracts.add": "Vertrag hinzufügen",
   "contracts.addTitle": "Asset durch einen Vertrag abdecken",

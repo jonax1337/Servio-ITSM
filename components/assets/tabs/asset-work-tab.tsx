@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ticket as TicketIcon, GitPullRequestArrow } from "lucide-react";
+import { Ticket as TicketIcon, GitPullRequestArrow, SearchCheck } from "lucide-react";
 import { db } from "@/lib/db";
 import { StatusBadge } from "@/components/status-badge";
 import { LinkPicker } from "@/components/link-picker";
@@ -8,7 +8,7 @@ import {
   linkTicketToAsset, unlinkTicketFromAsset, addAssetToChange, removeAssetFromChange,
 } from "@/lib/actions/assets";
 import { canAttachToChange, SETTLED_CHANGE_STATUSES } from "@/lib/asset-link-rules";
-import { TICKET_STATUS_META, CHANGE_STATUS_META, ticketRef, changeRef } from "@/lib/constants";
+import { TICKET_STATUS_META, CHANGE_STATUS_META, PROBLEM_STATUS_META, ticketRef, changeRef, problemRef } from "@/lib/constants";
 import { getT } from "@/lib/i18n/server";
 
 export async function AssetWorkTab({
@@ -26,6 +26,7 @@ export async function AssetWorkTab({
       select: {
         tickets: { include: { ticket: true } },
         changes: { include: { change: { select: { id: true, title: true, status: true } } } },
+        problems: { include: { problem: { select: { id: true, title: true, status: true } } } },
       },
     }),
     isAgentUser
@@ -48,6 +49,7 @@ export async function AssetWorkTab({
   const t = await getT("assets");
   const tickets = links?.tickets ?? [];
   const changes = links?.changes ?? [];
+  const problems = links?.problems ?? [];
 
   const linkedTicketIds = new Set(tickets.map((tk) => tk.ticketId));
   const ticketOpts = openTickets
@@ -175,6 +177,31 @@ export async function AssetWorkTab({
                   />
                 ) : null}
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Problems that name this asset as affected (linked from the problem page) */}
+      <div className="mt-8">
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
+          <SearchCheck className="size-4 text-muted-foreground" />
+          {t("work.problemsHeading", { count: problems.length })}
+        </h2>
+        {problems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("work.problemsEmpty")}</p>
+        ) : (
+          <div className="grid gap-2">
+            {problems.map((pa) => (
+              <Link
+                key={pa.problemId}
+                href={`/problems/${pa.problemId}`}
+                className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm hover:border-primary/40"
+              >
+                <span className="font-mono text-xs text-muted-foreground">{problemRef(pa.problem.id)}</span>
+                <span className="line-clamp-1 flex-1 font-medium">{pa.problem.title}</span>
+                <StatusBadge map={PROBLEM_STATUS_META} value={pa.problem.status} />
+              </Link>
             ))}
           </div>
         )}

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { ok, apiError, preflight } from "@/lib/api";
 import { updateProblemDetails, updateProblemField, updateProblemText } from "@/lib/actions/problems";
+import { setProblemAssets } from "@/lib/actions/problem-assets";
 import { formOf, problemEditSteps, problemPatchSchema, type EditStep } from "@/lib/api-itsm-input";
 import { PROBLEM_INCLUDE, serializeProblem } from "../../_serializers";
 import { agentGuard, asActor, readBody, recordId, refusal } from "../../_itsm";
@@ -32,6 +33,9 @@ async function applyStep(id: number, step: EditStep, current: { title: string; d
       break;
     case "text":
       result = await updateProblemText(formOf({ id, field: step.field, value: step.value }));
+      break;
+    case "assets":
+      result = await setProblemAssets(formOf({ id, assetIds: step.assetIds }));
       break;
     default:
       return "That change isn't valid for this problem.";
