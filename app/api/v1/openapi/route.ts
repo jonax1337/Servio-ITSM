@@ -657,6 +657,14 @@ const spec = {
         requestBody: body(categoryPatchSchema),
         responses: { "200": { description: "Updated" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name already used under the same parent" }, "422": { description: "Validation failed" } },
       },
+      delete: {
+        summary: "Delete a category (MANAGER+)",
+        description:
+          "Needs the `catalog:write` scope. Refused with 409 (`details.code` CATEGORY_IN_USE) while anything still points at the category: subcategories, tickets, problems and changes (of any status: they keep their category for reporting), services, articles, catalog items, change templates, recurring tickets and automation rules. " +
+          "`details.references` counts them by kind and `details.hint` says what to do; to retire a category, archive it with PATCH instead.",
+        parameters: [strId],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The category is still referenced (details.references)" } },
+      },
     },
     "/groups": {
       get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } },
