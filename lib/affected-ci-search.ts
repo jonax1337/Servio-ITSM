@@ -16,6 +16,11 @@ export function affectedCiSearchWhere(query: string): Prisma.AssetWhereInput {
   };
 }
 
+/** The in-service assets matching the typed text that are not yet an affected CI of the problem. */
+export function problemAssetSearchWhere(query: string, problemId: number): Prisma.AssetWhereInput {
+  return { ...affectedCiSearchWhere(query), problems: { none: { problemId } } };
+}
+
 /** The in-service assets matching the typed text that are not yet an affected CI of the change. */
 export function attachableCiSearchWhere(query: string, changeId: number): Prisma.AssetWhereInput {
   return { ...affectedCiSearchWhere(query), changes: { none: { changeId } } };

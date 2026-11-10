@@ -12,6 +12,7 @@ import { LinkButton } from "@/components/link-button";
 import { StatusBadge } from "@/components/status-badge";
 import { ProblemProperties } from "@/components/problems/problem-properties";
 import { RecordAffectedServices } from "@/components/services/affected-services";
+import { ProblemAffectedCis } from "@/components/problems/problem-affected-cis";
 import { EntityCustomFields } from "@/components/custom-fields/entity-custom-fields";
 import { isFieldVisible, parseValues, entityFieldValues, type CustomFieldDef } from "@/lib/custom-fields";
 import { ProblemDetailsDialog } from "@/components/problems/problem-editors";
@@ -186,7 +187,8 @@ export default async function ProblemDetailPage({
           editable={isAgentUser}
         />
 
-        {/* Services hit through the CIs of the linked incidents and changes (read-only) */}
+        {/* The CIs the problem affects, and the services hit through them and the CIs of the linked incidents and changes (read-only) */}
+        {isAgentUser ? <ProblemAffectedCis className="mt-4" problemId={problem.id} editable /> : null}
         {isAgentUser ? <RecordAffectedServices className="mt-4" record={{ kind: "problem", id: problem.id }} /> : null}
 
         <Card className="mt-4">

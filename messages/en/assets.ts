@@ -113,6 +113,8 @@ const assets = {
   "work.addedToChange": "Added to change",
   "work.inactiveHint": "Retired or disposed assets can't be added to new changes.",
   "work.changesEmpty": "No changes affect this asset.",
+  "work.problemsHeading": "Problems affecting this asset · {count}",
+  "work.problemsEmpty": "No problems affect this asset.",
   "work.removedFromChange": "Removed from change",
   "contracts.add": "Add contract",
   "contracts.addTitle": "Cover this asset with a contract",

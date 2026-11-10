@@ -280,6 +280,7 @@ export const PROBLEM_INCLUDE = {
   category: { select: { id: true, name: true } },
   tickets: { select: { id: true, prefix: true, type: true, title: true, status: true } },
   changes: { select: { id: true, title: true, status: true } },
+  assets: { select: { asset: { select: { id: true, name: true, type: true } } } },
   _count: { select: { comments: true } },
 } as const;
 
@@ -290,6 +291,7 @@ export function serializeProblem(p: {
   assignee?: Userish; group?: Named; category?: Named;
   tickets?: { id: number; prefix: string | null; type: string; title: string; status: string }[];
   changes?: { id: number; title: string; status: string }[];
+  assets?: { asset: { id: string; name: string; type: string } }[];
   _count?: { comments: number };
 }) {
   return {
@@ -308,6 +310,8 @@ export function serializeProblem(p: {
     category: named(p.category),
     tickets: (p.tickets ?? []).map((t) => ({ id: t.id, ref: ticketRef(t.id, t.prefix ?? t.type), title: t.title, status: t.status })),
     changes: (p.changes ?? []).map((c) => ({ id: c.id, ref: changeRef(c.id), title: c.title, status: c.status })),
+    asset_ids: (p.assets ?? []).map(({ asset }) => asset.id),
+    assets: (p.assets ?? []).map(({ asset }) => ({ id: asset.id, name: asset.name, type: asset.type })),
     comment_count: p._count?.comments ?? null,
     import_ref: p.importRef ?? null,
     resolved_at: iso(p.resolvedAt),

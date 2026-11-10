@@ -57,6 +57,9 @@ async function applyStep(id: number, step: EditStep, current: Current): Promise<
     case "problem":
       result = await setChangeProblem(id, step.problemId);
       break;
+    default:
+      // Only problems have an asset step (changeEditSteps never produces one).
+      return "That change isn't valid for this change.";
   }
   return result.ok ? null : result.error;
 }

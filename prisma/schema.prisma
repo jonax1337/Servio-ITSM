@@ -996,6 +996,7 @@ model Problem {
   category    Category?        @relation(fields: [categoryId], references: [id])
   tickets     Ticket[]
   changes     Change[]
+  assets      ProblemAsset[]
   comments    ProblemComment[]
   attachments Attachment[]
   aiProjects  AiProject[]
@@ -1226,6 +1227,7 @@ model Asset {
   relationsTo        AssetRelation[]     @relation("RelationTarget")
   tickets            TicketAsset[]
   changes            ChangeAsset[]
+  problems           ProblemAsset[]
   services           ServiceAsset[]
   contracts          ContractAsset[]
   licenseAssignments LicenseAssignment[]
@@ -1286,6 +1288,17 @@ model ChangeAsset {
   asset    Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@id([changeId, assetId])
+}
+
+/// Configuration items a problem is known to affect (like ChangeAsset); they feed the problem's affected services.
+model ProblemAsset {
+  problemId Int
+  assetId   String
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  asset     Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([problemId, assetId])
+  @@index([assetId])
 }
 
 /// Configuration items a Service runs on / depends on (CMDB service mapping).

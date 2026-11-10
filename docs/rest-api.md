@@ -318,7 +318,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` | `/problems` | List problems (paginated, filterable, full-text `q`). Agent tokens only. | `problems:read` |
 | `POST` | `/problems` | Create a problem. Agent tokens only. | `problems:write` |
 | `GET` | `/problems/{id}` | Get one problem with linked tickets and changes. | `problems:read` |
-| `PATCH` | `/problems/{id}` | Edit fields, root cause, workaround (not the status). | `problems:write` |
+| `PATCH` | `/problems/{id}` | Edit fields, root cause, workaround, affected assets (`asset_ids`; not the status). | `problems:write` |
 | `POST` | `/problems/{id}/transitions` | Move along the lifecycle. | `problems:write` |
 | `GET`/`POST` | `/problems/{id}/comments` | List / add comments. | `problems:read` / `problems:write` |
 | `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `catalog:read` |
@@ -989,7 +989,8 @@ the problem link stay editable, as in the console.
 `ref` is `PRB-0001`. The serialized problem has `id`, `ref`, `title`,
 `description`, `status`, `priority`, `impact`, `root_cause`, `workaround`,
 `custom_fields`, `assignee`, `group`, `category`, `tickets` (`id`, `ref`, `title`,
-`status`), `changes` (`id`, `ref`, `title`, `status`), `comment_count`,
+`status`), `changes` (`id`, `ref`, `title`, `status`), `asset_ids` and `assets`
+(`id`, `name`, `type`: the configuration items the problem affects), `comment_count`,
 `resolved_at`, `created_at`, `updated_at`.
 
 - **`GET /problems` query:** `status` (or `open` = not `RESOLVED`/`CLOSED`),
@@ -997,16 +998,29 @@ the problem link stay editable, as in the console.
   description, root cause, workaround, comments).
 - **`POST /problems` body:** `title` (required), `description`, `status` (default
   `NEW`), `priority`, `impact`, `assignee_id`, `group_id`, `category_id`,
-  `custom_fields`, through `createProblem`.
+  `custom_fields`, `asset_ids` (the affected configuration items; an unknown id is a
+  `422`), through `createProblem`.
 - **`PATCH /problems/{id}` body:** `title`, `description`, `priority`, `impact`,
-  `assignee_id`, `group_id`, `category_id`, `root_cause`, `workaround`; same
-  ordering and partial-failure contract as changes.
+  `assignee_id`, `group_id`, `category_id`, `root_cause`, `workaround`, `asset_ids`
+  (replaces the affected configuration items, `[]` removes them all; an unchanged set
+  writes nothing); same ordering and partial-failure contract as changes.
 - **`POST /problems/{id}/transitions` body:** `{ "to": "<status>" }`. A status that
   needs documentation (e.g. `KNOWN_ERROR` needs a workaround) is refused with `409`
   until it is set via `PATCH`.
 
 Link tickets with `PATCH /tickets/{id}` (`problemId`) and changes with
-`PATCH /changes/{id}` (`problem_id`).
+`PATCH /changes/{id}` (`problem_id`). The affected assets of the problem itself are
+`asset_ids`; the problem page derives its affected services from them together with
+the assets of its linked incidents and changes.
+
+```bash
+# create a problem that affects two configuration items
+curl -X POST "$BASE/api/v1/problems" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"title": "Mail delivery stalls under load", "priority": "HIGH", "asset_ids": ["'$MAIL_ASSET'", "'$DB_ASSET'"]}'
+# -> { "data": { "ref": "PRB-0007", "asset_ids": ["...", "..."], "assets": [ { "id": "...", "name": "mail-01", "type": "SERVER" }, ... ] } }
+
+# replace the set later (the links stay editable on a closed problem)
+curl -X PATCH "$BASE/api/v1/problems/7" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"asset_ids": ["'$DB_ASSET'"]}'
+```
 
 ### Comments
 
