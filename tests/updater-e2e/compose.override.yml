@@ -12,7 +12,9 @@ services:
     healthcheck: !reset {}
 
   updater:
-    image: servio-updater:e2e
+    # Built from this source by run.sh, reporting version 1.0.0.
+    image: localhost:5000/servio-e2e-updater:1.0.0
     environment:
       SERVIO_IMAGE: localhost:5000/servio-e2e
       HEALTH_TIMEOUT_SECONDS: "90"
+      UPDATER_SELF_UPDATE_TIMEOUT_SECONDS: "30"

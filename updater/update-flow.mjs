@@ -2,7 +2,7 @@
 // so the whole flow (including rollback and crash recovery) runs against an
 // in-memory fake in tests.
 //
-//   validate -> space check -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED -> image cleanup (a note)
+//   validate -> space check -> PULLING -> BACKING_UP -> SWITCHING -> HEALTH_CHECK -> SUCCEEDED -> image cleanup -> self-update (notes)
 //                                                          \--> rollback -> ROLLED_BACK (or FAILED if the rollback breaks)
 //
 // Before the old container is stopped, a journal is written to the updater-only
@@ -17,7 +17,16 @@ import { assertFreeSpace, createBackup, findBackupSources, freeBytesOn, pruneBac
 import { isTransientDockerError, retryWhileUnreachable, withRetries } from "./docker-retry.mjs";
 import { describePrune, downloadHint, formatBytes, pruneSupersededImages, pullSpaceNeeded } from "./image-housekeeping.mjs";
 import { createLedger } from "./ledger.mjs";
-import { UPDATE_REQUEST_LABEL, VERSION_LABEL, containerNameOf, findManagedContainer, installedVersionOf } from "./managed-container.mjs";
+import {
+  UPDATE_REQUEST_LABEL,
+  VERSION_LABEL,
+  containerNameOf,
+  findManagedContainer,
+  hasRestartPolicy,
+  ignoreNotFound,
+  inspectContainerOrNull,
+  installedVersionOf,
+} from "./managed-container.mjs";
 import { buildCreateSpec } from "./recreate.mjs";
 import { UnsafeFileError, regularFileExists, syncDirectory } from "./safe-fs.mjs";
 import { MAX_SMALL_JSON_BYTES, MAX_STATUS_BYTES, readJsonFile, statePaths, writeJsonAtomic } from "./state-files.mjs";
@@ -98,9 +107,17 @@ const shortId = (id) => id.replace(/^sha256:/, "").slice(0, SHORT_ID_LENGTH);
  *   clock?: Clock,
  *   log?: (line: string) => void,
  *   freeBytes?: (dir: string) => Promise<number>,
- * }} deps
+ *   selfUpdate?: Pick<ReturnType<typeof import("./self-update.mjs").createSelfUpdate>, "afterAppUpdate" | "resolvePending">,
+ * }} deps `selfUpdate` replaces the updater after a successful update (self-update.mjs); without it the updater never does
  */
-export function createUpdateFlow({ docker: rawDocker, config, clock = systemClock, log = console.log, freeBytes = freeBytesOn }) {
+export function createUpdateFlow({
+  docker: rawDocker,
+  config,
+  clock = systemClock,
+  log = console.log,
+  freeBytes = freeBytesOn,
+  selfUpdate = { afterAppUpdate: async () => "", resolvePending: async () => "none" },
+}) {
   const retryOptions = { clock, windowMs: config.dockerRetryWindowMs, intervalMs: config.dockerRetryIntervalMs, log };
   const docker = withRetries(rawDocker, retryOptions);
   const paths = statePaths(config.stateDir);
@@ -131,6 +148,8 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
    */
   async function processPendingRequest() {
     await retryUnwrittenStatus();
+    // While a handover between two updaters runs, only the old one may act.
+    if ((await selfUpdate.resolvePending()) === "waiting") return "idle";
     if (await regularFileExists(journalFile)) {
       // A rollback that Docker interrupted (or an outcome whose journal could not be set aside).
       await recoverInterrupted();
@@ -217,10 +236,12 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
       await rm(journalFile, { force: true });
       await syncDirectory(config.backupDir);
     }
-    // The update is done once it is reported; the cleanup only adds a note and can never undo the success.
+    // The update is done once it is reported; cleanup and self-update only add notes and can never undo the success.
     if (outcome.state === "SUCCEEDED" && journal) {
       const cleanup = await pruneImagesAfterSuccess(journal.data);
       if (cleanup) await reporter.note(message + cleanup);
+      const handover = await selfUpdate.afterAppUpdate({ requestId: journal.data.requestId, targetVersion: journal.data.targetVersion });
+      if (handover) await reporter.note(`${message}${cleanup} ${handover}`);
     }
   }
 
@@ -254,8 +275,8 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   }
 
   /**
-   * The updater's own repository. It is replaced by the operator (compose), not by
-   * an update, so the running release is the updater's own version: that image is
+   * The updater's own repository. It is replaced by a self-update or by the operator
+   * (compose), so the running release is the updater's own version: that image is
    * never removed (also not when its tag or label disagrees with the order), and the
    * newest older release stays as its rollback target, as for the app. UPDATER_KEEP_IMAGES applies.
    */
@@ -1113,14 +1134,7 @@ export function createUpdateFlow({ docker: rawDocker, config, clock = systemCloc
   }
 
   /** @param {string} nameOrId */
-  async function inspectOrNull(nameOrId) {
-    try {
-      return await docker.inspectContainer(nameOrId);
-    } catch (error) {
-      if (/** @type {{ status?: number }} */ (error).status === 404) return null;
-      throw error;
-    }
-  }
+  const inspectOrNull = (nameOrId) => inspectContainerOrNull(docker, nameOrId);
 
   /** @returns {ActiveRequest | null} the request being worked on (including a rollback waiting for Docker) */
   const activeRequest = () => (active ? { ...active } : null);
@@ -1200,11 +1214,6 @@ function isOurReplacement(container, data) {
   return container.Config?.Labels?.[UPDATE_REQUEST_LABEL] === data.requestId && container.Image === data.newImageId;
 }
 
-/** @param {RestartPolicy | null} policy */
-function hasRestartPolicy(policy) {
-  return Boolean(policy?.Name) && policy?.Name !== "no";
-}
-
 /** @param {JournalData} data the command that gives the old container its restart policy back */
 function restartCommand(data) {
   const { Name, MaximumRetryCount } = /** @type {RestartPolicy} */ (data.restartPolicy);
@@ -1229,13 +1238,4 @@ function restartPolicyHint(data) {
 function envValue(env, key) {
   const prefix = `${key}=`;
   return env?.find((entry) => entry.startsWith(prefix))?.slice(prefix.length);
-}
-
-/** @param {Promise<unknown>} call */
-async function ignoreNotFound(call) {
-  try {
-    await call;
-  } catch (error) {
-    if (/** @type {{ status?: number }} */ (error).status !== 404) throw error;
-  }
 }

@@ -154,6 +154,20 @@ describe("parseUpdaterHeartbeat", () => {
   it("treats anything but dockerOk:true as Docker unreachable", () => {
     expect(parseUpdaterHeartbeat({ at: now.toISOString(), dockerOk: "yes" })?.dockerOk).toBe(false);
   });
+
+  it("reads the outcome of the last self-update", () => {
+    const selfUpdate = { state: "ROLLED_BACK", fromVersion: "0.2.0", targetVersion: "0.3.0", message: "rolled back", at: now.toISOString() };
+    expect(parseUpdaterHeartbeat({ at: now.toISOString(), dockerOk: true, selfUpdate })?.selfUpdate).toEqual(selfUpdate);
+  });
+
+  it("drops a self-update outcome that is missing, of an unknown state or incomplete", () => {
+    const beat = (selfUpdate: unknown) => parseUpdaterHeartbeat({ at: now.toISOString(), dockerOk: true, selfUpdate })?.selfUpdate;
+    const valid = { state: "SUCCEEDED", fromVersion: "0.2.0", targetVersion: "0.3.0", message: "ok", at: now.toISOString() };
+    expect(beat(undefined)).toBeNull();
+    expect(beat({ ...valid, state: "PULLING" })).toBeNull();
+    expect(beat({ ...valid, targetVersion: 3 })).toBeNull();
+    expect(beat({ ...valid, at: "yesterday" })).toBeNull();
+  });
 });
 
 describe("parseUpdaterStatus", () => {

@@ -6,7 +6,7 @@ import { APP_VERSION } from "@/lib/constants";
 import { getBoolSetting, getSetting } from "@/lib/settings";
 import { renderMarkdown } from "@/lib/markdown";
 import { readUpdaterHeartbeat, listWindowsForAdmin } from "@/lib/maintenance";
-import { heartbeatFresh, parseWindowLog, WINDOW_ERRORS } from "@/lib/maintenance-rules";
+import { heartbeatFresh, parseWindowLog, WINDOW_ERRORS, type UpdaterHeartbeat } from "@/lib/maintenance-rules";
 import { DEFAULT_UPDATE_REPOSITORY, readUpdateState } from "@/lib/updates";
 import { saveUpdateSettings } from "@/lib/actions/settings";
 import { PageBody, PageHeader } from "@/components/page-header";
@@ -31,7 +31,9 @@ export const dynamic = "force-dynamic";
 
 const UPDATE_GUIDE_URL = "https://github.com/jonax1337/Servio-ITSM/blob/main/docs/updates.md";
 
-function UpdaterStatusCard({ connected, lastSeen, i18n: { t, f } }: { connected: boolean; lastSeen: Date | null; i18n: I18n }) {
+function UpdaterStatusCard({ connected, heartbeat, i18n: { t, f } }: { connected: boolean; heartbeat: UpdaterHeartbeat | null; i18n: I18n }) {
+  const lastSeen = heartbeat ? new Date(heartbeat.at) : null;
+  const selfUpdate = heartbeat?.selfUpdate ?? null;
   return (
     <Card>
       <CardHeader className="flex-row items-center gap-2">
@@ -45,6 +47,22 @@ function UpdaterStatusCard({ connected, lastSeen, i18n: { t, f } }: { connected:
         </p>
         {lastSeen ? (
           <p className="text-muted-foreground">{t("updates.lastHeartbeat", { when: ago(lastSeen, f) })}</p>
+        ) : null}
+        {heartbeat && heartbeat.updaterVersion !== "unknown" ? (
+          <p className="font-mono text-xs text-muted-foreground">{t("updates.updaterVersion", { version: heartbeat.updaterVersion })}</p>
+        ) : null}
+        {selfUpdate ? (
+          <div className="grid gap-0.5">
+            <p className="text-muted-foreground">
+              {t(`updates.selfUpdate.${selfUpdate.state}`, {
+                from: selfUpdate.fromVersion,
+                to: selfUpdate.targetVersion,
+                when: ago(new Date(selfUpdate.at), f),
+              })}
+            </p>
+            {/* The updater's own wording, as in the window log: why it did not complete. */}
+            {selfUpdate.state === "SUCCEEDED" ? null : <p className="text-xs text-muted-foreground">{selfUpdate.message}</p>}
+          </div>
         ) : null}
         {connected ? null : (
           <p className="text-muted-foreground">
@@ -176,7 +194,7 @@ export default async function UpdatesPage() {
             </CardHeader>
             <CardContent className="font-mono text-2xl font-semibold">{APP_VERSION}</CardContent>
           </Card>
-          <UpdaterStatusCard connected={connected} lastSeen={heartbeat ? new Date(heartbeat.at) : null} i18n={i18n} />
+          <UpdaterStatusCard connected={connected} heartbeat={heartbeat} i18n={i18n} />
         </div>
 
         <AvailableUpdates state={state} disabledReason={connected ? null : WINDOW_ERRORS.updaterOffline} i18n={i18n} />

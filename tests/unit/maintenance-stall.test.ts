@@ -43,6 +43,7 @@ const beat = (agoMs: number, activeRequestId?: string | null): UpdaterHeartbeat 
   dockerOk: true,
   container: "servio-web",
   image: "ghcr.io/x/servio:0.2.0",
+  selfUpdate: null,
   ...(activeRequestId === undefined ? {} : { activeRequestId }),
 });
 

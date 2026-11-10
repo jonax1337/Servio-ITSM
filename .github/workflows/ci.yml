@@ -197,8 +197,8 @@ jobs:
   updater-e2e:
     name: Updater end-to-end (real Docker, socket proxy, registry)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Update to a good release, then roll back a broken one
+      - name: Update to a good release, roll back broken ones, self-update the updater
         run: bash tests/updater-e2e/run.sh

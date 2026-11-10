@@ -26,7 +26,7 @@ container the operator put in place. That is why:
 | Measure | Where |
 | --- | --- |
 | The updater runs as `node` (uid 1000), `read_only`, `cap_drop: ALL`, `no-new-privileges`, `network_mode: none`. It has no more file privileges on `/data` than the attacker; no chown, no root. | `updater/Dockerfile`, compose |
-| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file and the table below) and refuses host `Binds`/bind mounts in create requests. Container calls are scoped: by name only `servio-web` and `servio-web-pre-<version>`, otherwise a full 64-hex id; short-id prefixes and the container list are refused, so the updater cannot discover other containers on the host. This requires `SERVIO_CONTAINER` (the label-only lookup needs the list); renaming the `web` container means changing it and the proxy rules together. Image calls are scoped to the two managed repositories (`SERVIO_IMAGE_PATTERN`, the updater's own `-updater` repository): inspect by tag, digest or full image id, removal only by `repo:tag` / `repo@sha256:…`. Request bodies and query strings are not inspected otherwise. | compose |
+| Docker access goes through [`wollomatic/socket-proxy`](https://github.com/wollomatic/socket-proxy) (pinned by digest). It serves a filtered unix socket on the `docker-api` volume (tmpfs owned by uid/gid 64999, which nothing else uses, mode 0750; the socket 0660). Only the proxy and the updater mount it and are in that group (the updater keeps uid 1000 for `/data`); neither has a network, so neither the host network, another container, nor a host user who happens to have uid 1000 can reach it. The proxy enforces a path allowlist (the method + path pairs the updater uses, anchored; see the compose file and the table below) and refuses host `Binds`/bind mounts in create requests. Container calls are scoped: by name only `servio-web`, the updater's own `servio-updater` (for its [self-update](#self-update)) and their `-pre-<version>` twins, otherwise a full 64-hex id; short-id prefixes and the container list are refused, so the updater cannot discover other containers on the host. This requires `SERVIO_CONTAINER` (the label-only lookup needs the list); renaming the `web` or `updater` container means changing `SERVIO_CONTAINER` / `UPDATER_CONTAINER` and the proxy rules together. Image calls are scoped to the two managed repositories (`SERVIO_IMAGE_PATTERN`, the updater's own `-updater` repository): inspect by tag, digest or full image id, removal only by `repo:tag` / `repo@sha256:…`. Request bodies and query strings are not inspected otherwise. | compose |
 | Backups, the crash journal, the ledger of handled requests and the liveness stamp live on their own volume (`servio-backups` at `/backups`) that the app never mounts. | compose |
 | Every file under `/data` is `lstat`-checked, opened with `O_NOFOLLOW` and `O_NONBLOCK`, then `fstat`-checked: the database and its sidecars (`-wal`, `-shm`, `-journal`) and `request.json` must be regular files, the state directories real directories. A FIFO cannot block a read. | `safe-fs.mjs`, `backup.mjs` |
 | State files are written through a directory descriptor (Linux `/proc/self/fd`), so swapping `/data/state/updater` for a symlink mid-write cannot redirect the write. Temp files carry a random UUID, are created exclusively and fsynced, then renamed, and the directory is fsynced. | `safe-fs.mjs`, `state-files.mjs` |
@@ -35,7 +35,7 @@ container the operator put in place. That is why:
 | The image repository comes only from `SERVIO_IMAGE`; the request supplies a strict `X.Y.Z` version (prereleases only with `ALLOW_PRERELEASE=true`), no older than `REQUEST_MAX_AGE_SECONDS` (default 1 h) and at most 5 min in the future. The pulled image must carry `org.opencontainers.image.version` equal to the requested version. | `config.mjs`, `update-flow.mjs` |
 | Only strictly newer versions are installed, and an installed version that cannot be determined is refused (`ALLOW_DOWNGRADE=true` overrides both). | `versions.mjs`, `update-flow.mjs` |
 | Handled request ids are recorded on `/backups` before an update starts, so a forged or lost `status.json` cannot make the updater run a request twice. After an update that took the app down and did not succeed, the same target is refused for `RETRY_COOLDOWN_SECONDS` (default 1 h). | `ledger.mjs` |
-| The updater only touches the one container labelled `servio.updater.managed=true`, its `-pre-<version>` twin and the replacement it created (labelled `servio.updater.request=<request id>`); it exposes no ports. | `managed-container.mjs`, `update-flow.mjs` |
+| The updater only touches the one container labelled `servio.updater.managed=true`, its `-pre-<version>` twin and the replacement it created (labelled `servio.updater.request=<request id>`); it exposes no ports. For its self-update it also touches its own container (`UPDATER_CONTAINER`, confirmed by its hostname) and the replacement it created (labelled `servio.updater.self-update=<request id>`). | `managed-container.mjs`, `update-flow.mjs`, `self-update.mjs` |
 
 The proxy's allowlist is exactly what the updater calls (`$V` is the API version prefix, `<img>` the managed
 repositories `SERVIO_IMAGE_PATTERN(-updater)?`, `<ref>` a tag `:<tag>` or a digest `@sha256:<64 hex>`):
@@ -43,10 +43,10 @@ repositories `SERVIO_IMAGE_PATTERN(-updater)?`, `<ref>` a tag `:<tag>` or a dige
 | Method | Path | Used for |
 | --- | --- | --- |
 | `GET` | `/_ping` | liveness of Docker |
-| `GET` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}/json` | inspect the managed container, its twin, the replacement |
-| `POST` | `$V/containers/create` | create the replacement |
-| `POST` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}/{start,stop,rename,update}` | switch, rollback, restart policy |
-| `DELETE` | `$V/containers/{servio-web, servio-web-pre-*, <64 hex>}` | remove the old container or a failed replacement |
+| `GET` | `$V/containers/{servio-web, servio-web-pre-*, servio-updater, servio-updater-pre-*, <64 hex>}/json` | inspect the managed container, its twin, the replacement; the updater's own container (self-update) |
+| `POST` | `$V/containers/create` | create the replacement (of the app, or of the updater itself) |
+| `POST` | `$V/containers/{servio-web, servio-web-pre-*, servio-updater, servio-updater-pre-*, <64 hex>}/{start,stop,rename,update}` | switch, rollback, restart policy (also of the updater's own container) |
+| `DELETE` | `$V/containers/{servio-web, servio-web-pre-*, servio-updater, servio-updater-pre-*, <64 hex>}` | remove the old container or a failed replacement |
 | `POST` | `$V/networks/<name>/connect` | re-attach additional networks |
 | `POST` | `$V/images/create` | pull |
 | `GET` | `$V/images/{<img><ref>, sha256:<64 hex>}/json` | inspect the target and the running image |
@@ -75,6 +75,13 @@ never forces it, so Docker refuses to delete an image a container uses. Whoever 
 host. The updater only ever sends create bodies derived from the managed container's
 own inspected configuration, which the app cannot change, and pulls with `fromImage`
 only. Use the stack only on hosts where this is acceptable.
+
+The self-update adds a supply-chain risk: a release of `UPDATER_IMAGE` (or a forged image a compromised
+registry serves under a release tag) gets the updater's Docker access without an operator re-running compose.
+The updater only takes a strictly newer version of its own repository whose version label matches, and only
+right after an app update to exactly that version succeeded, which needs an admin to schedule it;
+`UPDATER_SELF_UPDATE=false` leaves updater releases to the operator. A host crash between the rename and the
+start of the new updater leaves no updater running (the app is unaffected; see [Self-update](#self-update)).
 
 Two weaker spots remain on the attacker-writable volume, by design of the
 contract: `status.json` and `heartbeat.json` are output the app trusts, so an
@@ -146,7 +153,10 @@ the migrated database; always drive the tag from `SERVIO_VERSION`.
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Unix socket (or Windows named pipe) to reach Docker; the compose file sets the proxy's `/run/docker-api/docker.sock`. |
 | `DOCKER_HOST` | – | `tcp://host:port` of a TCP proxy (port defaults to 2375). Wins over `DOCKER_SOCKET`. Not recommended (unauthenticated). |
 | `DOCKER_API_VERSION` | `v1.44` | Engine API prefix. `v1.44` is accepted by Engine 25+ (Engine 29.0–29.2 refuse older); use `v1.43` for Engine 24. |
-| `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image; its superseded versions are cleaned up too (after an update and once at every start of the updater; the running release is never removed, the newest older one stays as rollback, `UPDATER_KEEP_IMAGES` applies). The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
+| `UPDATER_IMAGE` | `<SERVIO_IMAGE>-updater` | Repository of the updater's own image: the self-update pulls `UPDATER_IMAGE:<version>`, and its superseded versions are cleaned up too (after an update and once at every start of the updater; the running release is never removed, the newest older one stays as rollback, `UPDATER_KEEP_IMAGES` applies). The proxy rules allow `<SERVIO_IMAGE_PATTERN>-updater` only. |
+| `UPDATER_CONTAINER` | – | Name of the updater's own container (`servio-updater` in the compose file, with `container_name`). Required for the self-update; the proxy rules name it. |
+| `UPDATER_SELF_UPDATE` | `true` | After a successful update to X, replace the updater with `UPDATER_IMAGE:X` ([Self-update](#self-update)). `false` leaves the updater to compose. |
+| `UPDATER_SELF_UPDATE_TIMEOUT_SECONDS` | `120` | How long the new updater may take to write its liveness stamp before the old one rolls the self-update back. |
 | `UPDATER_KEEP_IMAGES` | `1` | Superseded releases kept per repository after a successful update (at least 1). The image the replaced container ran (recorded by id in the journal) is always kept and counts as the first, as the rollback target. |
 | `PRUNE_IMAGES` | `true` | `false` turns the cleanup of superseded images off (after updates and before a pull that lacks space). |
 | `PULL_SPACE_CHECK` | `true` | `false` turns the free-space check before a pull off. |
@@ -162,7 +172,7 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
 | --- | --- | --- |
 | `request.json` | app | `{ "id", "targetVersion", "requestedAt", "requestedBy", "downloadBytes"?, "imageBytes"? }` (≤ 64 KB); from the registry manifest, only used for the free-space check (each ignored unless a positive integer up to 256 GiB): `downloadBytes` is the compressed size of the target's layers the running release does not share, `imageBytes` that of the whole target. The app deletes the file when it fails a running window without the updater's result |
 | `status.json` | updater | `{ "id", "state", "fromVersion", "targetVersion", "message", "updatedAt", "log": [{ "at", "state", "message" }] }` |
-| `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image", "activeRequestId" }`; `activeRequestId` is the request being worked on (also a rollback waiting for Docker), `null` when idle |
+| `heartbeat.json` | updater, every 15 s | `{ "updaterVersion", "at", "dockerOk", "container", "image", "activeRequestId", "selfUpdate" }`; `activeRequestId` is the request being worked on (also a rollback waiting for Docker), `null` when idle; `selfUpdate` is the outcome of the last self-update, `{ "state": "SUCCEEDED" \| "ROLLED_BACK" \| "FAILED", "fromVersion", "targetVersion", "message", "at" }`, or `null`. Not written while the updater hands over to a new one |
 
 `state` is one of `PENDING | PULLING | BACKING_UP | SWITCHING | HEALTH_CHECK | SUCCEEDED | FAILED | ROLLED_BACK`
 (`PENDING` is part of the contract but not currently written).
@@ -227,7 +237,9 @@ Directory: `$SERVIO_STATE_DIR/updater/`.
    several tags would just untag the image under a running container, so such images are left alone (several
    tags only come from manual pulls). The result is added to the status as a note after `SUCCEEDED`; a failed
    cleanup never fails the update. `PRUNE_IMAGES=false` skips it.
-8. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
+8. **Self-update** (see below) once the cleanup note is written: the updater replaces itself with the updater
+   of the release it just installed. Its outcome is another note; it never changes the update's result.
+9. **Rollback** on any failure in 5–6: remove the new container, restore the database files (removing sidecars
    that did not exist at backup time, e.g. the hot `-journal` of a migration that was killed), rename the old
    container back, restore its restart policy, start it and wait until healthy → `ROLLED_BACK`.
 
@@ -296,6 +308,41 @@ survives. Networks keep their aliases (without the
 old container's short id), static IPs and driver options. Compose labels are kept, so `docker compose ps` still
 lists the container; the `config-hash` label is stale afterwards.
 
+## Self-update
+
+After an update to X ends `SUCCEEDED` (also one that crash recovery completed), and when X is newer than its own
+version, the updater replaces its own container with `UPDATER_IMAGE:X` (`self-update.mjs`). The old updater runs
+the handover from start to end and is never stopped while it does; a record on `/backups` (`.self-update.json`)
+lets either updater finish or undo it after a restart.
+
+1. **Checks** (on failure nothing changes, the outcome is recorded as `FAILED`): `UPDATER_CONTAINER` is set and
+   is this updater's container (its id starts with the hostname, which Docker sets to the short id; an explicit
+   `hostname:` disables the self-update), no `<name>-pre-<version>` container and no unfinished handover exist,
+   `UPDATER_IMAGE:X` pulls (under `PULL_TIMEOUT_SECONDS`) and carries `org.opencontainers.image.version=X`.
+2. **Handover**: write the record (`PREPARING`), pause the heartbeat and liveness stamp, set the own restart
+   policy to `no` (a Docker restart must not start two updaters), rename the own container to
+   `<name>-pre-<version>` (`RENAMED`), create the new container under the original name from the own
+   configuration exactly as an app update does (`recreate.mjs`, by tag, label `servio.updater.self-update=<request id>`,
+   must resolve to the pulled image), start it (`STARTED`).
+3. **Proof of life**: the new updater's liveness stamp (`{ "at", "version" }` on `/backups`) must show version X and
+   a time after the handover began within `UPDATER_SELF_UPDATE_TIMEOUT_SECONDS`, and the container must then stay
+   running as the same instance for two more polls. Exiting, restarting or `unhealthy` fails at once.
+4. **Success**: record `HANDED_OVER`, record the outcome (`SUCCEEDED`), stop the loops and exit. The old container has
+   restart policy `no` and stays stopped. The new updater, on every poll while the record exists, waits until the
+   old container is no longer running, then removes it and the record; until then it processes no request. Its
+   start-up image cleanup keeps the previous release as rollback target.
+5. **Rollback** on any failure in 2–3: stop and remove the new container (the recorded one, or one holding the name
+   with this handover's label and image), rename the own container back, restore its restart policy, delete the
+   record, resume (`ROLLED_BACK`). If that fails, the record is set aside as `.self-update.manual-<time>.json`, the
+   updater keeps running and the outcome says `MANUAL ACTION REQUIRED`.
+
+An old updater that is started again with the record present (it has restart policy `no`, so only by hand) resumes:
+after `HANDED_OVER` it exits again, during `STARTED` it waits for the new updater as in step 3, before that it rolls
+back. A record that names neither this container as the old nor as the new updater is set aside and logged.
+
+The outcome of the last self-update (`.self-update-result.json` on `/backups`) is reported in the heartbeat and shown
+in Settings › Updates; the same message is added to the update's `status.json` as a note.
+
 ## What rollback does and does not cover
 
 Covered: the container swap and the SQLite database (restored byte for byte from the backup taken while the
@@ -327,3 +374,7 @@ everywhere.
 The CI job `updater-e2e` (`tests/updater-e2e/run.sh`) runs the real updater image behind the real proxy, configured
 by `docker-compose.release.yml`, against a local registry: one update must succeed, and one to a release whose
 health check fails must roll back with the database restored byte for byte and the previous container running.
+The updater under test is a release built from this source that reports 1.0.0; after the update to 1.1.0 it must
+replace itself with the updater release 1.1.0 from the registry (same name and configuration, previous container and
+superseded updater images removed, 1.0.0 kept), and after the update to 1.4.0 its self-update to a broken updater
+release 1.4.0 (runs, never reports a heartbeat) must roll back to the running 1.1.0 updater.

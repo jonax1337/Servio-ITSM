@@ -552,7 +552,7 @@ that value minus ~1 MB for multipart overhead; above it, uploads fail.
 
 ## Updates & maintenance
 
-Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. `UPDATER_STALE_MINUTES` and `SERVIO_IMAGE` are environment-only as well. The updater's own variables (`UPDATER_KEEP_IMAGES`, `PRUNE_IMAGES`, `PULL_SPACE_*`, …) are set on the updater container: [`updater/README.md`](../updater/README.md#configuration-environment-of-the-updater-container). Operator guide: [updates.md](./updates.md).
+Settings › Updates (`/settings/updates`, ADMIN) edits `UPDATE_CHECK_ENABLED`, `UPDATE_REPOSITORY` and `UPDATE_INCLUDE_PRERELEASES` as database overrides of the environment variables above. The update-check result is cached in the `UPDATE_CACHE` setting. `SERVIO_STATE_DIR` is environment-only: it is the file contract with the updater and `proxy.ts`, so both containers must see the same directory. `UPDATER_STALE_MINUTES` and `SERVIO_IMAGE` are environment-only as well. The updater's own variables (`UPDATER_KEEP_IMAGES`, `UPDATER_SELF_UPDATE`, `PRUNE_IMAGES`, `PULL_SPACE_*`, …) are set on the updater container: [`updater/README.md`](../updater/README.md#configuration-environment-of-the-updater-container). Operator guide: [updates.md](./updates.md).
 
 ---
 

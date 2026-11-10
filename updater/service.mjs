@@ -1,10 +1,12 @@
 // The updater's lifecycle, separate from process wiring so it can be tested:
 // crash recovery first (it needs only Docker and the updater-only backup
 // volume), then the app-writable state directory, then the heartbeat and
-// request loops until `signal` aborts. An update in progress is allowed to
-// finish when the signal fires (see `stop_grace_period` in docker-compose.release.yml).
+// request loops until `signal` aborts or a self-update handed over to a new
+// updater. An update in progress is allowed to finish when the signal fires
+// (see `stop_grace_period` in docker-compose.release.yml).
 import { setTimeout as delay } from "node:timers/promises";
 import { createHeartbeat } from "./heartbeat.mjs";
+import { createSelfUpdate } from "./self-update.mjs";
 import { ensureDirectory, statePaths } from "./state-files.mjs";
 import { createUpdateFlow, systemClock } from "./update-flow.mjs";
 
@@ -15,27 +17,43 @@ import { createUpdateFlow, systemClock } from "./update-flow.mjs";
  *   signal: AbortSignal,
  *   clock?: import("./update-flow.mjs").Clock,
  *   log?: (line: string) => void,
- * }} deps
+ *   hostname?: () => string,
+ * }} deps `hostname` identifies the updater's own container for a self-update (default: the OS hostname)
  */
-export async function runUpdater({ config, docker, signal, clock = systemClock, log = console.log }) {
+export async function runUpdater({ config, docker, signal, clock = systemClock, log = console.log, hostname }) {
   await ensureDirectory(config.backupDir);
   if (!(await waitForDocker(docker, config.pollIntervalMs, signal, log))) return;
 
-  const flow = createUpdateFlow({ docker, config, clock, log });
+  const retired = new AbortController();
+  const running = AbortSignal.any([signal, retired.signal]);
+  const selfUpdate = createSelfUpdate({ docker, config, clock, log, hostname, retire: () => retired.abort() });
+  const flow = createUpdateFlow({ docker, config, clock, log, selfUpdate });
   await flow.recoverInterrupted();
+  await selfUpdate.resolvePending();
   const imageNote = await flow.pruneUpdaterImages();
   if (imageNote) log(`[updater] ${imageNote}`);
 
   const paths = statePaths(config.stateDir);
   await prepareStateDirectories(paths, log);
-  const beat = createHeartbeat({ docker, config, paths, now: clock.now, log, activeRequest: flow.activeRequest });
+  const beat = createHeartbeat({
+    docker,
+    config,
+    paths,
+    now: clock.now,
+    log,
+    activeRequest: flow.activeRequest,
+    selfUpdateResult: selfUpdate.readResult,
+    paused: selfUpdate.isHandingOver,
+  });
 
-  log(`[updater] v${config.updaterVersion} managing ${config.containerName ?? "the labelled container"} (${config.image})`);
-  await Promise.all([
-    every(config.heartbeatIntervalMs, beat, signal, log),
-    every(config.pollIntervalMs, () => flow.processPendingRequest(), signal, log),
-  ]);
-  log("[updater] stopped");
+  if (!running.aborted) {
+    log(`[updater] v${config.updaterVersion} managing ${config.containerName ?? "the labelled container"} (${config.image})`);
+    await Promise.all([
+      every(config.heartbeatIntervalMs, beat, running, log),
+      every(config.pollIntervalMs, () => flow.processPendingRequest(), running, log),
+    ]);
+  }
+  log(retired.signal.aborted ? "[updater] stopped: handed over to the new updater" : "[updater] stopped");
 }
 
 /**

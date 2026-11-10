@@ -46,6 +46,7 @@ describe("heartbeat", () => {
       container: CONTAINER_NAME,
       image: `${IMAGE_REPO}:${OLD_VERSION}`,
       activeRequestId: null,
+      selfUpdate: null,
     });
   });
 

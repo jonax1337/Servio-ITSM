@@ -64,3 +64,31 @@ export function installedVersionOf(container) {
   const tag = reference.slice(reference.lastIndexOf("/") + 1).split(":")[1];
   return tag || null;
 }
+
+/**
+ * @param {import("./docker-client.mjs").DockerClient} docker
+ * @param {string} nameOrId
+ * @returns {Promise<any | null>} the inspected container, or null when Docker says it does not exist
+ */
+export async function inspectContainerOrNull(docker, nameOrId) {
+  try {
+    return await docker.inspectContainer(nameOrId);
+  } catch (error) {
+    if (/** @type {{ status?: number }} */ (error).status === 404) return null;
+    throw error;
+  }
+}
+
+/** @param {Promise<unknown>} call */
+export async function ignoreNotFound(call) {
+  try {
+    await call;
+  } catch (error) {
+    if (/** @type {{ status?: number }} */ (error).status !== 404) throw error;
+  }
+}
+
+/** @param {{ Name?: string } | null | undefined} policy a restart policy under which Docker starts the container on its own */
+export function hasRestartPolicy(policy) {
+  return Boolean(policy?.Name) && policy?.Name !== "no";
+}
