@@ -375,6 +375,7 @@ model Group {
   managerId          String?
   autoAssign         String   @default("OFF") // OFF | ROUND_ROBIN | LEAST_BUSY
   lastAssignedUserId String? // round-robin cursor (indexed for the assign lookup)
+  importRef          String?  @unique // origin key of a group maintained through the API; PUT /api/v1/groups/ref/{ref} upserts by it
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

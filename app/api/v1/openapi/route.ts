@@ -15,7 +15,7 @@ import {
 } from "@/lib/api-import-input";
 import { ticketCreateSchema, ticketResolveSchema } from "@/lib/api-ticket-input";
 import { categoryCreateSchema, categoryPatchSchema } from "@/lib/api-category-input";
-import { groupMemberAddSchema } from "@/lib/api-group-input";
+import { groupCreateSchema, groupMemberAddSchema, groupPatchSchema, groupUpsertSchema } from "@/lib/api-group-input";
 import { serviceCreateSchema, servicePatchSchema, serviceUpsertSchema } from "@/lib/api-service-input";
 import { articleCreateSchema, articlePatchSchema, articleTransitionSchema, articleUpsertSchema } from "@/lib/api-article-input";
 import { recurringTicketCreateSchema, recurringTicketPatchSchema } from "@/lib/recurring-ticket-input";
@@ -658,9 +658,46 @@ const spec = {
         responses: { "200": { description: "Updated" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name already used under the same parent" }, "422": { description: "Validation failed" } },
       },
     },
-    "/groups": { get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } } },
+    "/groups": {
+      get: { summary: "List groups with member ids", description: agentOnly, responses: { "200": { description: "OK" } } },
+      post: {
+        summary: "Create a group (MANAGER+)",
+        description:
+          `${managerWrites} Needs the \`directory:write\` scope. \`name\` is required and unique; \`manager_id\` must be an active agent; \`import_ref\` is the origin key for later upserts through PUT /groups/ref/{ref}. ` +
+          "Members are managed through `/groups/{id}/members`.",
+        requestBody: body(groupCreateSchema),
+        responses: { "201": { description: "Created" }, "403": { description: "Not a manager" }, "409": { description: "Name or import_ref already used (existing id in details)" }, "422": { description: "Validation failed or unknown manager" } },
+      },
+    },
     "/groups/{id}": {
       get: { summary: "Get a group with its members", description: agentOnly, parameters: [strId], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      patch: {
+        summary: "Update a group (MANAGER+)",
+        description: "Fields left out keep their value; `null` clears description, email, manager and import_ref. `meta.changed` lists what changed; an unchanged body writes nothing and no audit row.",
+        parameters: [strId],
+        requestBody: body(groupPatchSchema),
+        responses: { "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "Name or import_ref already used" }, "422": { description: "Validation failed or unknown manager" } },
+      },
+      delete: {
+        summary: "Delete a group (MANAGER+)",
+        description:
+          "Refused with 409 (`details.code` GROUP_IN_USE) while anything still points at the group: categories, services, catalog items (routing, approval stages, visibility), open tickets, problems, changes and releases, active assets, change templates, recurring tickets, on-call schedules, freeze windows and automation rules. " +
+          "`details.references` counts them by kind and `details.hint` says what to do. Closed records are not counted. Its memberships are removed with it.",
+        parameters: [strId],
+        responses: { "200": { description: "Deleted ({ id, deleted: true })" }, "403": { description: "Not a manager" }, "404": { description: "Not found" }, "409": { description: "The group is still referenced (details.references)" } },
+      },
+    },
+    "/groups/ref/{ref}": {
+      get: { summary: "Get a group by origin reference", description: agentOnly, parameters: [refParam], responses: { "200": { description: "OK" }, "404": { description: "Not found" } } },
+      put: {
+        summary: "Create or update a group by origin reference (MANAGER+)",
+        description:
+          "Creates the group (201; `name` required) when the reference is new, otherwise writes only the fields sent (200). Strict body; unchanged fields write nothing and no audit row. " +
+          "`meta.created` and `meta.changed` say what happened. A name another group already has is a 409 with its id (adopt it by setting `import_ref` with PATCH). Members are not touched.",
+        parameters: [refParam],
+        requestBody: body(groupUpsertSchema),
+        responses: { "201": { description: "Created" }, "200": { description: "Updated or unchanged (meta.changed)" }, "403": { description: "Not a manager" }, "409": { description: "Name or import_ref already used" }, "422": { description: "Validation failed, unknown manager, or name missing for a new group" } },
+      },
     },
     "/groups/{id}/members": {
       post: {

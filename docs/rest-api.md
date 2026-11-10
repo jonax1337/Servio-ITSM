@@ -91,7 +91,7 @@ scope of every operation.
 | `kb:publish` | setting `status` on `PUT /articles/ref/{ref}` (publish or retire without the review). Privileged: includes `kb:write` and `kb:read`; ADMIN owners only |
 | `catalog:read` / `catalog:write` | `/categories/**`, `/catalog-items/**`, `/change-templates/**` (standard templates are pre-approved changes, so they sit here and not under `changes`) |
 | `directory:read` | `/groups`, `/groups/{id}`, `/users` and `/users/{id}` (lookups) |
-| `directory:write` | `PATCH /users/{id}` (secondary email addresses; the owner must be an ADMIN) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`; the owner must be a MANAGER or ADMIN). Not privileged: the legacy `write` covers it |
+| `directory:write` | `PATCH /users/{id}` (secondary email addresses and account type; the owner must be an ADMIN), creating, editing and deleting groups (`POST /groups`, `PATCH` / `DELETE /groups/{id}`, `PUT /groups/ref/{ref}`) and group membership (`POST /groups/{id}/members`, `DELETE /groups/{id}/members/{userId}`); group writes need a MANAGER or ADMIN owner. Not privileged: the legacy `write` covers it |
 | `system:read` | `/system/**`: operational status for monitoring (the built-in backup), read only |
 | `import:write` | `/import/**` and the history fields of uploads. Privileged: ADMIN owners only |
 
@@ -324,7 +324,9 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `POST` | `/categories` | Create a category (MANAGER+). | `catalog:write` |
 | `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
-| `GET` | `/groups/{id}` | One group with its members (`user_id`, `name`, `email`, `active`, `role`). Agent tokens only. | `directory:read` |
+| `POST` | `/groups` | Create a group (MANAGER+), see [Groups](#groups). | `directory:write` |
+| `GET` / `PATCH` / `DELETE` | `/groups/{id}` | One group with its members (`user_id`, `name`, `email`, `active`, `role`) / edit / delete (edit and delete: MANAGER+; delete is a `409` while the group is referenced). | `directory:read` / `directory:write` |
+| `GET` / `PUT` | `/groups/ref/{ref}` | Get / create-or-update a group by origin reference (`import_ref`), MANAGER+. | `directory:read` / `directory:write` |
 | `POST` | `/groups/{id}/members` | Add a user: body `{ "user_id": "…", "role"?: "MEMBER" \| "LEAD" }`. Idempotent: 201 when added, 200 (`meta.created` false, role unchanged) when already a member. MANAGER+ owner. | `directory:write` |
 | `DELETE` | `/groups/{id}/members/{userId}` | Remove a user. Idempotent: 200 with `removed` false when they were not a member. MANAGER+ owner. | `directory:write` |
 | `GET` | `/users` | User lookup, minimal fields (`q`, `role`, `active`). Agent tokens only. | `directory:read` |
@@ -1289,10 +1291,55 @@ without a contract.
 shared tree for tickets, problems, changes, catalog items, change templates and
 articles — there are no separate change categories; a change takes one as
 `category_id` on `POST` / `PATCH /changes` and is filtered by it on `GET /changes`. `GET /groups` (`id`,
-`name`, `description`, `type`, `email`, `members` with `user_id` and `role`),
+`name`, `description`, `type`, `email`, `color`, `manager_id`, `auto_assign`, `import_ref`, `members` with `user_id` and `role`),
 `GET /users` (`id`, `name`, `email`, `secondary_emails`, `role`, `active`, `service_account`,
 `can_approve_changes`; `q` matches name, primary or secondary email, `role`,
 `active=true|false|all`, `service_account=true|false`, paginated; `GET /users/{id}` returns one).
+
+### Groups
+
+Groups can be created and maintained over the API, so a team layout can be set up from a script or kept in
+step with another system. All writes need the `directory:write` scope and a token owned by a **MANAGER or ADMIN**
+(else `403`), like the console's group admin, and are audited. Keys are snake_case; unknown keys are a `422`.
+Group members are managed through `/groups/{id}/members`.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string, 2-120 | required on create; unique (a duplicate is a `409` with the existing `id`) |
+| `description` | string \| null | |
+| `type` | `TEAM` \| `DEPARTMENT` \| `VENDOR` | default `TEAM` |
+| `email` | string \| null | the group's shared mailbox |
+| `color` | `#rrggbb` | default `#6366f1` |
+| `manager_id` | string \| null | an active agent (AGENT, MANAGER, ADMIN); anything else is a `422` |
+| `auto_assign` | `OFF` \| `ROUND_ROBIN` \| `LEAST_BUSY` | default `OFF` |
+| `import_ref` | string \| null | origin key, unique; set on create or with `PATCH` (to adopt an existing group), `null` releases it |
+
+```bash
+# create
+curl -X POST "$BASE/api/v1/groups" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"name": "Service Desk", "type": "DEPARTMENT", "auto_assign": "ROUND_ROBIN", "import_ref": "directory:service-desk"}'
+
+# idempotent upsert by origin reference: 201 when new, 200 afterwards; an unchanged body writes nothing
+curl -X PUT "$BASE/api/v1/groups/ref/directory:service-desk" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"name": "Service Desk", "description": "First line support"}'
+# -> { "data": { "id": "...", "import_ref": "directory:service-desk", ... }, "meta": { "created": false, "changed": ["description"] } }
+
+# edit (only the fields sent change; null clears)
+curl -X PATCH "$BASE/api/v1/groups/$GROUP_ID" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json"   -d '{"manager_id": "'$USER_ID'", "email": null}'
+```
+
+`DELETE /groups/{id}` is refused with `409` while anything still points at the group. The response lists
+what, by kind, and says what to do:
+
+```json
+{ "error": { "message": "The group is still referenced. Point those records at another group (or clear their group), then delete it.",
+  "details": { "code": "GROUP_IN_USE", "references": { "categories": 2, "open_tickets": 5 }, "hint": "Nothing is removed automatically. ..." } } }
+```
+
+The kinds are `categories`, `services`, `catalog_items` (routing team), `catalog_approval_stages`,
+`catalog_visibility`, `open_tickets`, `open_problems`, `open_changes`, `active_assets`, `open_releases`,
+`change_templates`, `recurring_tickets`, `on_call_schedules`, `freeze_windows` and `automation_rules`. Closed
+tickets, problems and changes (and retired assets, finished releases) are not counted: they keep their
+row and lose the group. The console's delete button is unchanged and clears those links without asking.
+A deleted group takes its memberships with it.
 
 ### Secondary email addresses
 
