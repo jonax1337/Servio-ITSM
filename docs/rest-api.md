@@ -323,6 +323,7 @@ the legacy `read` / `write` / `admin` scopes satisfy them as described there.
 | `GET` | `/categories` | Categories, to resolve a `category_id`. Agent tokens only. | `catalog:read` |
 | `POST` | `/categories` | Create a category (MANAGER+). | `catalog:write` |
 | `GET` / `PATCH` | `/categories/{id}` | Get / edit a category (edit: MANAGER+). | `catalog:read` / `catalog:write` |
+| `DELETE` | `/categories/{id}` | Delete a category (MANAGER+); `409` while it is still referenced, see below. | `catalog:write` |
 | `GET` | `/groups` | Groups with member ids. Agent tokens only. | `directory:read` |
 | `POST` | `/groups` | Create a group (MANAGER+), see [Groups](#groups). | `directory:write` |
 | `GET` / `PATCH` / `DELETE` | `/groups/{id}` | One group with its members (`user_id`, `name`, `email`, `active`, `role`) / edit / delete (edit and delete: MANAGER+; delete is a `409` while the group is referenced). | `directory:read` / `directory:write` |
@@ -1340,6 +1341,13 @@ The kinds are `categories`, `services`, `catalog_items` (routing team), `catalog
 tickets, problems and changes (and retired assets, finished releases) are not counted: they keep their
 row and lose the group. The console's delete button applies the same check and refuses with the same counts and hint (as a message in the dialog) instead of clearing those links.
 A deleted group takes its memberships with it.
+
+`DELETE /categories/{id}` follows the same pattern: `409` with `details.code` `CATEGORY_IN_USE`,
+`details.references` by kind (`subcategories`, `tickets`, `problems`, `changes`, `services`, `articles`,
+`catalog_items`, `change_templates`, `recurring_tickets`, `automation_rules`) and `details.hint`. Unlike groups,
+tickets, problems and changes count whatever their status, because the category is part of their history (the
+console's delete applies the same rule). To retire a category, archive it instead
+(`PATCH /categories/{id}` with `{"archived": true}`): it leaves the pickers and the portal, existing records keep it.
 
 `import_ref` is also what a directory sync source refers to when it maps a directory group to a Servio group
 ([Directory group sync](modules.md#directory-group-sync)), so a group created here can be wired up without knowing its id.

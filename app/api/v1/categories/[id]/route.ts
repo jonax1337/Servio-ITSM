@@ -1,7 +1,10 @@
+import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { apiError, ok, preflight } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { categoryData, categoryPatchSchema } from "@/lib/api-category-input";
+import { categoryReferences } from "@/lib/category-references";
+import { categoryInUseRefusal } from "@/lib/category-rules";
 import { agentGuard, readBody } from "../../_itsm";
 import { CATEGORY_SELECT, DUPLICATE_NAME, categoryWriteErrors, isDuplicateName, serializeCategory } from "../../_categories";
 import { managerOnly } from "../../_manage";
@@ -47,4 +50,34 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (isDuplicateName(err)) return apiError(409, DUPLICATE_NAME);
     throw err;
   }
+}
+
+/**
+ * Delete a category (MANAGER+). Refused with 409 while anything still points at it (subcategories,
+ * tickets, problems and changes of any status, services, articles, catalog items, change templates,
+ * recurring tickets, automation rules): `details.references` counts them by kind and `details.hint`
+ * says what to do (archive it instead).
+ */
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await agentGuard(req, "catalog:write");
+  if ("response" in auth) return auth.response;
+  const refused = managerOnly(auth.principal, "categories");
+  if (refused) return refused;
+  const { id } = await ctx.params;
+  const category = await db.category.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!category) return apiError(404, "Category not found");
+  const inUse = categoryInUseRefusal(await categoryReferences(id));
+  if (inUse) {
+    const { message, ...details } = inUse;
+    return apiError(409, message, details);
+  }
+  // deleteMany: a concurrent delete of the same category is not an error, and only a real deletion is audited.
+  const res = await db.category.deleteMany({ where: { id } });
+  if (res.count > 0) {
+    await writeAudit({
+      userId: auth.principal.userId, action: "DELETE", entity: "Category", entityId: id, summary: `Deleted category "${category.name}" via API`,
+    });
+    revalidatePath("/categories");
+  }
+  return ok({ id, deleted: res.count > 0 });
 }
